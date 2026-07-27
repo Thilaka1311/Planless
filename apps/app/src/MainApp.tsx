@@ -428,6 +428,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
             userProfile={userProfile}
             interestedPlanIds={interestedPlanIds}
             setSelectedPlan={setSelectedPlanId}
+            selectedPlan={selectedPlanId}
             setPaymentConfirmationPlan={setPaymentConfirmationPlanId}
             walletBalance={walletBalance}
             handleToggleJoin={handleToggleJoin}
@@ -516,6 +517,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       {selectedPlanId && isInitialLoadComplete && (
         <DetailedPlanModal
           planId={selectedPlanId}
+          activeTab={activeTab}
           onClose={() => setSelectedPlanId(null)}
           userProfile={userProfile}
           activeUserId={activeUserId}

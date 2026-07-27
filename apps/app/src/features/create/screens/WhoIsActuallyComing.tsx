@@ -27,8 +27,21 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
   onAddFriends,
   selectedCategory = 'custom',
 }) => {
-  const selectedFriends: Friend[] = form.selectedFriends || [];
+  const selectedFriends: Friend[] = React.useMemo(() => {
+    const raw: Friend[] = form.selectedFriends || [];
+    const priorityIds: string[] = form.priorityGuestIds || [];
+    if (priorityIds.length === 0) return raw;
+
+    const orderMap = new Map(priorityIds.map((id, index) => [id, index]));
+    return [...raw].sort((a, b) => {
+      const aIdx = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+      const bIdx = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+      return aIdx - bIdx;
+    });
+  }, [form.selectedFriends, form.priorityGuestIds]);
+
   const capacity: number = form.totalCapacity || 2;
+  const currentWaitlistMode: 'automatic' | 'assigned' = form.waitlistMode || 'automatic';
 
   const eventDateObj = form.eventDateTime ? new Date(form.eventDateTime) : new Date();
   const formattedDate = eventDateObj.toLocaleDateString('en-US', {
@@ -55,10 +68,12 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
   };
 
   /**
-   * Continue handler — persist the final Going order so that if the user returns
+   * Continue handler — persist the final Going order and full participant queue so that if the user returns
    * to this screen, the same order is restored.
    */
-  const handleContinue = (going: Friend[], _waitlist: Friend[]) => {
+  const handleContinue = (going: Friend[], waitlist: Friend[]) => {
+    const fullOrderedList = [...going, ...waitlist].filter((f) => !f.isHost);
+    form.setSelectedFriends(fullOrderedList);
     form.setPriorityGuestIds(going.map((item) => item.id));
     onContinue();
   };
@@ -71,6 +86,7 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
       eventTime={formattedTime}
       capacity={capacity}
       isHostSelected={form.isHostSelected}
+      isHostUser={true}
       userProfile={form.userProfile}
       selectedFriends={selectedFriends}
       mode="wizard"
@@ -78,7 +94,7 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
       onContinue={handleContinue}
       onAddFriends={onAddFriends}
       onAdjustCapacity={(val) => form.setTotalCapacity(val)}
-      waitlistMode={form.waitlistMode}
+      waitlistMode={currentWaitlistMode}
       onWaitlistModeChange={form.setWaitlistMode}
       // Only remove is surfaced externally; Going / Waitlist moves stay internal.
       onRemoveParticipant={handleRemoveParticipant}

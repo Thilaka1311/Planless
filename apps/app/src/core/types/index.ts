@@ -77,6 +77,7 @@ export interface DbPlan {
   latitude?: number | null;
   longitude?: number | null;
   allow_participant_invites?: boolean;
+  participant_filtering?: 'AUTOMATIC' | 'ASSIGNED';
 }
 
 // 5. PLAN_PARTICIPANTS TABLE (Attendance & payment status)
@@ -89,6 +90,8 @@ export interface DbPlanParticipant {
   delivery_status?: 'DELIVERED';
   skip_reason?: 'LEFT' | 'REMOVED' | null;
   responded_at: string | null;
+  joined_queue_at?: string;
+  assigned_group?: 'GOING' | 'WAITLIST' | null;
   created_at: string;
   updated_at: string;
   cost_per_participant?: number | null;
@@ -216,6 +219,8 @@ export interface Plan {
   createdAt: string;
   waitlistEnabled?: boolean;
   joinLimit?: number;
+  participantFiltering?: 'AUTOMATIC' | 'ASSIGNED';
+  participant_filtering?: 'AUTOMATIC' | 'ASSIGNED';
 
   // UI Legacy Properties (Synced with Strict Contracts)
   category: "movies" | "sports" | "restaurants" | "custom";

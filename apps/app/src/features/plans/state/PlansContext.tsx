@@ -4,7 +4,7 @@ import { DbPlanTeamAssignment } from "../../../../lib/db";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { useCirclesStore } from "../../circles/state/CirclesContext";
 import { usePlanTeams } from "../hooks/usePlanTeams";
-import { usePlanParticipants } from "../hooks/usePlanParticipants";
+import { usePlanParticipants, AddParticipantsOptions } from "../hooks/usePlanParticipants";
 import { usePlanLifecycle } from "../hooks/usePlanLifecycle";
 import { usePlanOutcomes } from "../hooks/usePlanOutcomes";
 import { insertParticipant, updateParticipantStatus, insertPlanReminder, removePlanTeamAssignment, deleteAllPlanTeamAssignments, syncUserStats } from "../../../../lib/db";
@@ -71,7 +71,9 @@ interface PlansContextType {
     selectedCircles: string[],
     selectedFriends: any[],
     userProfile: any,
-    titleToUse: string
+    titleToUse: string,
+    isHostSelected?: boolean,
+    priorityGuestIds?: string[]
   ) => Promise<{ dbPlanRow: any; dbPartRow: any; inviteeUuids: string[]; hostJoinedAt: string }>;
   dbPlanTeamAssignments: DbPlanTeamAssignment[];
   setDbPlanTeamAssignments: React.Dispatch<React.SetStateAction<DbPlanTeamAssignment[]>>;
@@ -82,13 +84,7 @@ interface PlansContextType {
   promoteWaitlistParticipant: (planId: string, participantUserUuid: string) => Promise<void>;
   rebalanceCapacity: (planId: string, newCapacity: number) => Promise<{ promotedCount: number; demotedCount: number }>;
   getAvailableCapacity: (planId: string) => { capacity: number; goingCount: number; availableSpots: number };
-  addParticipantsToPlan: (
-    planId: string,
-    inviteeUuids: string[],
-    userProfile: any,
-    planTitle: string,
-    inviteeCircleMap?: Record<string, string | null>
-  ) => Promise<void>;
+  addParticipantsToPlan: (options: AddParticipantsOptions) => Promise<void>;
   moveParticipantToGoing: (planId: string, participantUserUuid: string) => Promise<void>;
   moveParticipantToWaitlist: (planId: string, participantUserUuid: string) => Promise<void>;
   moveParticipantToInvited: (planId: string, participantUserUuid: string) => Promise<void>;
@@ -103,6 +99,7 @@ interface PlansContextType {
   ) => Promise<void>;
   promoteParticipantToHost: (planId: string, participantUserUuid: string) => Promise<void>;
   demoteHostToParticipant: (planId: string, participantUserUuid: string) => Promise<void>;
+  reorderWaitlist: (planId: string, orderedUserUuids: string[]) => Promise<void>;
 }
 
 const PlansContext = createContext<PlansContextType | undefined>(undefined);
@@ -574,7 +571,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     getAvailableCapacity,
     moveParticipantToGoing,
     moveParticipantToWaitlist,
-    moveParticipantToInvited
+    moveParticipantToInvited,
+    reorderWaitlist
   } = usePlanParticipants({
     userId,
     dbUsers: dbUsers,
@@ -804,7 +802,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     selectedFriends: any[],
     userProfile: any,
     titleToUse: string,
-    isHostSelected = true
+    isHostSelected = true,
+    priorityGuestIds: string[] = []
   ) => {
     const dbPlanRow = await api.createPlan(newDbPlan);
     const insertedPlanUuid = dbPlanRow?.id;
@@ -861,6 +860,25 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return matchedMember?.circle_id || null;
     };
 
+    const isAssignedMode = newDbPlan?.participant_filtering === 'ASSIGNED';
+
+    // Map each friend to their host-assigned group (GOING vs WAITLIST) if in Assigned mode
+    const friendAssignmentMap = new Map<string, 'GOING' | 'WAITLIST'>();
+    if (isAssignedMode && selectedFriends.length > 0) {
+      const priorityIds: string[] = priorityGuestIds;
+      const capacity: number = newDbPlan?.max_participants || 2;
+      const hostOffset = isHostSelected ? 1 : 0;
+      const goingCapacityForFriends = Math.max(0, capacity - hostOffset);
+
+      selectedFriends.forEach((f: any, index: number) => {
+        const fUuid = f.dbUuid || f.id;
+        if (!fUuid) return;
+        // Priority guest IDs or first N friends fit into GOING; overflow into WAITLIST
+        const isPriority = priorityIds.length > 0 ? priorityIds.includes(fUuid) : index < goingCapacityForFriends;
+        friendAssignmentMap.set(fUuid, isPriority ? 'GOING' : 'WAITLIST');
+      });
+    }
+
     const hostJoinedAt = new Date().toISOString();
     const participantRecords: any[] = [];
     if (isHostSelected) {
@@ -869,6 +887,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         user_id: userProfile.dbUuid || userProfile.id || userId,
         role: "HOST",
         rsvp_status: "JOINED",
+        assigned_group: isAssignedMode ? "GOING" : null,
         responded_at: hostJoinedAt,
         circle_id: getParticipantCircleId(userProfile.dbUuid || userProfile.id || userId)
       });
@@ -887,11 +906,16 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       }
 
+      const assignedGroup = isAssignedMode
+        ? (friendAssignmentMap.get(inviteeUuid) || "GOING")
+        : null;
+
       participantRecords.push({
         plan_id: insertedPlanUuid,
         user_id: inviteeUuid,
         role: "PARTICIPANT",
         rsvp_status: shouldAutoJoin ? "JOINED" : "INVITED",
+        assigned_group: assignedGroup,
         responded_at: shouldAutoJoin ? new Date().toISOString() : null,
         circle_id: cId
       });
@@ -950,34 +974,29 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const getHomeFeedPlans = (userIdStr: string) => {
     const userUuid = resolveUserUuid(userIdStr);
-    const myParticipantRecords = dbPlanParticipants.filter(pp => pp.user_id === userUuid);
+    const myParticipantRecords = dbPlanParticipants.filter(pp => pp.user_id === userUuid || pp.user_id === userIdStr);
+
     const filtered = plans.filter(plan => {
+      // Plan must be active
+      const statusNorm = (plan.status || "").toLowerCase();
+      if (statusNorm !== "active" && statusNorm !== "live") return false;
+
+      // Respect response deadline for pending invitations if present
+      if (plan.response_deadline_at) {
+        const deadline = new Date(plan.response_deadline_at).getTime();
+        const now = new Date().getTime();
+        if (now > deadline) return false;
+      }
+
       const planUuid = plan.dbUuid || plan.id;
       const ppRecord = myParticipantRecords.find(pp => pp.plan_id === planUuid);
       if (!ppRecord) return false;
 
-      const rsvp = ppRecord.rsvp_status;
-      const delivery = ppRecord.delivery_status || "DELIVERED";
+      const rsvp = normalizeStatus(ppRecord.rsvp_status);
+      const isHostRole = ppRecord.role === "HOST";
 
-      // Home Feed only allows INVITED status (unanswered participation decision)
-      if (rsvp !== "INVITED" || delivery !== "DELIVERED") return false;
-
-      // Must not be hosted by the user
-      if (plan.hostId === userUuid) return false;
-
-      // Plan must be active — mappers convert DB status (LIVE -> active)
-      const statusNorm = (plan.status || "").toLowerCase();
-      if (statusNorm !== "active" && statusNorm !== "live") return false;
-
-      if (plan.response_deadline_at) {
-        const deadline = new Date(plan.response_deadline_at).getTime();
-        const now = new Date().getTime();
-        if (now > deadline) {
-          return false;
-        }
-      }
-
-      return true;
+      // Home screen visibility strictly determined by plan_participants: role = PARTICIPANT & rsvp_status = INVITED
+      return !isHostRole && rsvp === "INVITED";
     });
 
     return filtered.sort((a, b) => {
@@ -1188,7 +1207,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     moveParticipantToInvited,
     updatePlanSettings,
     promoteParticipantToHost,
-    demoteHostToParticipant
+    demoteHostToParticipant,
+    reorderWaitlist
   }), [
     plans, dbPlans, dbPlanParticipants,
     dbPlanOutcomes, dbMemories, dbMemoryResults, dbPlanTeamAssignments,
@@ -1204,7 +1224,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     outcomes.submitReview, outcomes.submitStats, outcomes.submitMvp,
     addParticipantsToPlan, promoteWaitlistParticipant, rebalanceCapacity, getAvailableCapacity,
     moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited,
-    updatePlanSettings, promoteParticipantToHost, demoteHostToParticipant
+    updatePlanSettings, promoteParticipantToHost, demoteHostToParticipant,
+    reorderWaitlist
   ]);
 
   return (

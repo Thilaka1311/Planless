@@ -247,6 +247,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       "longitude",
       "updated_at",
       "host_id",
+      "participant_filtering",
     ];
 
     const planUpdate: any = {};

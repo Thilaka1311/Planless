@@ -202,6 +202,9 @@ export async function updateParticipantStatus(
     return null;
   }
   const update: any = { plan_id: planId, user_id: userId, rsvp_status: rsvpStatus };
+  if (rsvpStatus === "JOINED" || rsvpStatus === "WAITLISTED") {
+    update.joined_queue_at = new Date().toISOString();
+  }
   if (rsvpStatus === "SKIPPED") {
     update.role = "PARTICIPANT";
   } else if (role !== undefined) {

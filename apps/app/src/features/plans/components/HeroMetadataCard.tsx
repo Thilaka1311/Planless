@@ -1,14 +1,19 @@
-import React from "react";
+import React, { useState } from "react";
 import { Clock, Hourglass, MapPin, ChevronRight } from "lucide-react";
 import { formatPlanDate } from "../../../../lib/mappers";
 import { formatDeadlineFull } from "../../home/components/PlanCard";
 import { useRSVPDeadline } from "../utils/rsvpFormatter";
+import { CostBreakdownPopover } from "./CostBreakdownPopover";
 
 interface HeroMetadataCardProps {
   datetime?: string;
   createdAt: string;
   hasCost: boolean;
   costText?: string;
+  totalCost?: number | null;
+  maxParticipants?: number | null;
+  isHost?: boolean;
+  onEditCost?: () => void;
   urgencyColor: string;
   responseDeadlineAt?: any;
   location: string;
@@ -19,10 +24,16 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
   createdAt,
   hasCost,
   costText,
+  totalCost,
+  maxParticipants,
+  isHost,
+  onEditCost,
   urgencyColor,
   responseDeadlineAt,
   location,
 }) => {
+  const [isCostPopoverOpen, setIsCostPopoverOpen] = useState(false);
+
   const handleLocationClick = () => {
     if (!location) return;
     const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
@@ -45,8 +56,24 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
           </span>
         </div>
         {hasCost && costText && (
-          <div className="text-[10px] text-emerald-400 font-semibold pl-6 leading-none">
-            {costText}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsCostPopoverOpen((prev) => !prev)}
+              className="text-[10px] text-emerald-400 font-semibold pl-6 leading-none cursor-pointer hover:underline text-left"
+            >
+              {costText}
+            </button>
+            <CostBreakdownPopover
+              totalCost={totalCost}
+              maxParticipants={maxParticipants}
+              isOpen={isCostPopoverOpen}
+              onClose={() => setIsCostPopoverOpen(false)}
+              isHost={isHost}
+              onEditCost={onEditCost}
+              position="above"
+              align="left"
+            />
           </div>
         )}
         <div className="flex flex-col gap-1" style={{ color: rsvp.color }}>

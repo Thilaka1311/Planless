@@ -20,7 +20,7 @@ export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]
   // Phase 1 - Merge
   const hostedPlanIds = (hostedData || []).map(p => p.id);
   const participantPlanIds = (partData || [])
-    .filter(p => !(p.rsvp_status === "SKIPPED" && p.skip_reason === "REMOVED"))
+    .filter(p => p.rsvp_status !== "SKIPPED")
     .map(p => p.plan_id);
 
   const allPlanIds = Array.from(new Set([...hostedPlanIds, ...participantPlanIds])).filter(Boolean);
@@ -185,11 +185,13 @@ export async function updatePlanSettingsInDb(
  */
 export async function inviteParticipantsRPC(
   planId: string,
-  inviteeUserIds: string[]
+  inviteeUserIds: string[],
+  assignedGroup?: 'GOING' | 'WAITLIST' | null
 ): Promise<any> {
   const { data, error } = await supabase.rpc("invite_participants" as any, {
     p_plan_id: planId,
-    p_invitee_user_ids: inviteeUserIds
+    p_invitee_user_ids: inviteeUserIds,
+    p_assigned_group: assignedGroup || null
   });
 
   if (error) throw error;
@@ -198,8 +200,8 @@ export async function inviteParticipantsRPC(
 
 /**
  * Invokes the promote_to_host SECURITY DEFINER RPC.
- * Only the creator host (plans.host_id) may call this.
- * Updates plan_participants.role to 'HOST'. Does NOT modify plans.host_id.
+ * Authorized for any Host (role IN ('HOST', 'CO_HOST') or plans.host_id).
+ * Updates plan_participants.role to 'HOST'.
  */
 export async function promoteToHostRPC(
   planId: string,
@@ -216,8 +218,8 @@ export async function promoteToHostRPC(
 
 /**
  * Invokes the demote_from_host SECURITY DEFINER RPC.
- * Only the creator host (plans.host_id) may call this.
- * Updates plan_participants.role back to 'PARTICIPANT'. Does NOT modify plans.host_id.
+ * Authorized for any Host (role IN ('HOST', 'CO_HOST') or plans.host_id).
+ * Updates plan_participants.role back to 'PARTICIPANT'.
  */
 export async function demoteFromHostRPC(
   planId: string,
@@ -234,7 +236,7 @@ export async function demoteFromHostRPC(
 
 /**
  * Invokes the update_plan_capacity SECURITY DEFINER RPC.
- * Authorized for Creator Host (plans.host_id) or Additional Hosts (role IN ('HOST', 'CO_HOST')).
+ * Authorized for any Host (role IN ('HOST', 'CO_HOST') or plans.host_id).
  * Updates max_participants on a plan.
  */
 export async function updatePlanCapacityRPC(
@@ -252,12 +254,30 @@ export async function updatePlanCapacityRPC(
 
 /**
  * Invokes the cancel_plan SECURITY DEFINER RPC.
- * Only the Creator Host (plans.host_id) may call this.
+ * Authorized for any Host (role IN ('HOST', 'CO_HOST') or plans.host_id).
  * Updates plans.status to 'CANCELLED'.
  */
 export async function cancelPlanRPC(planId: string): Promise<any> {
   const { data, error } = await supabase.rpc("cancel_plan" as any, {
     p_plan_id: planId
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Invokes the remove_participant SECURITY DEFINER RPC.
+ * Authorized for Creator Host or Additional Hosts (role IN ('HOST', 'CO_HOST')).
+ * Updates participant rsvp_status to 'SKIPPED' with skip_reason = 'REMOVED'.
+ */
+export async function removeParticipantRPC(
+  planId: string,
+  targetUserId: string
+): Promise<any> {
+  const { data, error } = await supabase.rpc("remove_participant" as any, {
+    p_plan_id: planId,
+    p_target_user_id: targetUserId
   });
 
   if (error) throw error;

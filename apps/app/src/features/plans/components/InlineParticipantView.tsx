@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Crown } from 'lucide-react';
 import { Plan } from '../../../core/types';
 import { normalizeStatus } from '../../../../lib/participantStatus';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
@@ -8,53 +9,108 @@ type InlineTab = 'going' | 'invited' | 'waitlist';
 
 interface InlineParticipantViewProps {
   plan: Plan;
+  activeUserId?: string;
 }
 
-export function InlineParticipantView({ plan }: InlineParticipantViewProps) {
+export function InlineParticipantView({ plan, activeUserId }: InlineParticipantViewProps) {
   const members = plan.members || [];
   const hostId = plan.hostId;
 
-  const [activeTab, setActiveTab] = React.useState<InlineTab>('going');
   const [isExpanded, setIsExpanded] = React.useState(false);
+
+  const planFiltering = plan.participantFiltering || (plan as any).participant_filtering || 'AUTOMATIC';
+  const isAssignedMode = planFiltering === 'ASSIGNED';
+
+  // Compute initial tab: the one that contains the current user
+  const initialTab = React.useMemo<InlineTab>(() => {
+    if (!activeUserId) return 'going';
+    const currentMember = members.find((m) => {
+      const mId = m.userUuid || m.userId || (m as any).user_id || (m as any).id;
+      return mId === activeUserId;
+    });
+    if (!currentMember) return 'going';
+    if (isAssignedMode) {
+      const group = (currentMember as any).assignedGroup || (currentMember as any).assigned_group;
+      return group === 'WAITLIST' ? 'waitlist' : 'going';
+    }
+    const status = normalizeStatus(currentMember.joinState);
+    if (status === 'WAITLISTED') return 'waitlist';
+    if (status === 'INVITED') return 'invited';
+    return 'going';
+  }, [members, activeUserId, isAssignedMode]);
+
+  const [activeTab, setActiveTab] = React.useState<InlineTab>(initialTab);
 
   const groups = useMemo(() => {
     const going: { name: string; avatar: string; userId: string; isHost: boolean }[] = [];
     const invited: { name: string; avatar: string; userId: string; isHost: boolean }[] = [];
     const waitlist: { name: string; avatar: string; userId: string; isHost: boolean }[] = [];
 
-    if (plan.creatorName) {
-      going.push({
-        name: plan.creatorName,
-        avatar: plan.creatorAvatar || '',
-        userId: hostId,
-        isHost: true,
-      });
-    }
-
     for (const m of members) {
-      if (m.userUuid === hostId || m.userId === hostId) continue;
-      const entry = {
-        name: m.name || 'Unknown',
-        avatar: m.avatar || '',
-        userId: m.userUuid || m.userId,
-        isHost: false,
-      };
       const status = normalizeStatus(m.joinState);
-      if (status === 'JOINED') going.push(entry);
-      else if (status === 'INVITED') invited.push(entry);
-      else if (status === 'WAITLISTED') waitlist.push(entry);
+      if (status === 'SKIPPED') continue;
+
+      const isHostRole = m.role === 'HOST' || m.isHost === true;
+      const mId = m.userUuid || m.userId || (m as any).user_id || (m as any).id;
+      const isCurrentUser = Boolean(activeUserId && mId === activeUserId);
+      const entry = {
+        name: isCurrentUser ? 'You' : (m.name || 'Unknown'),
+        avatar: m.avatar || '',
+        userId: mId,
+        isHost: Boolean(isHostRole),
+      };
+
+      if (isAssignedMode) {
+        const group = (m as any).assignedGroup || (m as any).assigned_group;
+        if (group === 'WAITLIST' || (!group && status === 'WAITLISTED')) {
+          waitlist.push(entry);
+        } else {
+          going.push(entry);
+        }
+      } else {
+        if (status === 'JOINED') going.push(entry);
+        else if (status === 'INVITED') invited.push(entry);
+        else if (status === 'WAITLISTED') waitlist.push(entry);
+      }
     }
 
-    return { going, invited, waitlist };
-  }, [members, hostId, plan.creatorName, plan.creatorAvatar]);
+    const sortAlpha = (list: typeof going) => [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+
+    const prioritizeUserAndSort = (list: typeof going) => {
+      const currentUser = list.find(item => item.name === 'You' || (activeUserId && item.userId === activeUserId));
+      const remaining = list.filter(item => item !== currentUser);
+      const remainingHosts = sortAlpha(remaining.filter(i => i.isHost));
+      const remainingNonHosts = sortAlpha(remaining.filter(i => !i.isHost));
+      return [
+        ...(currentUser ? [currentUser] : []),
+        ...remainingHosts,
+        ...remainingNonHosts,
+      ];
+    };
+
+    return {
+      going: prioritizeUserAndSort(going),
+      invited: prioritizeUserAndSort(invited),
+      waitlist
+    };
+  }, [members, hostId, plan.creatorName, plan.creatorAvatar, activeUserId, isAssignedMode]);
 
   const tabs = useMemo(() => {
     const t: { key: InlineTab; label: string; count: number }[] = [];
-    if (groups.going.length > 0) t.push({ key: 'going', label: 'Going', count: groups.going.length });
-    if (groups.invited.length > 0) t.push({ key: 'invited', label: 'Invited', count: groups.invited.length });
-    if (groups.waitlist.length > 0) t.push({ key: 'waitlist', label: 'Waitlist', count: groups.waitlist.length });
+    if (isAssignedMode) {
+      if (groups.going.length > 0 || groups.waitlist.length === 0) {
+        t.push({ key: 'going', label: 'Going', count: groups.going.length });
+      }
+      if (groups.waitlist.length > 0) {
+        t.push({ key: 'waitlist', label: 'Waitlist', count: groups.waitlist.length });
+      }
+    } else {
+      if (groups.going.length > 0) t.push({ key: 'going', label: 'Going', count: groups.going.length });
+      if (groups.waitlist.length > 0) t.push({ key: 'waitlist', label: 'Waitlist', count: groups.waitlist.length });
+      if (groups.invited.length > 0) t.push({ key: 'invited', label: 'Invited', count: groups.invited.length });
+    }
     return t;
-  }, [groups]);
+  }, [groups, isAssignedMode]);
 
   React.useEffect(() => {
     if (tabs.length > 0 && !tabs.find(t => t.key === activeTab)) {
@@ -64,9 +120,11 @@ export function InlineParticipantView({ plan }: InlineParticipantViewProps) {
 
   const activeList = groups[activeTab] || [];
   const allForStrip = [...groups.going, ...groups.invited, ...groups.waitlist];
-  const maxAvatars = 5;
+  const maxAvatars = 4;
   const visibleAvatars = allForStrip.slice(0, maxAvatars);
   const overflowCount = allForStrip.length - maxAvatars;
+
+  const maxCapacity = plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
 
   return (
     <div className="w-full bg-[#111111] rounded-3xl border border-white/[0.08] overflow-hidden">
@@ -98,7 +156,7 @@ export function InlineParticipantView({ plan }: InlineParticipantViewProps) {
           </div>
         </div>
         <div className="flex items-center gap-2 self-start mt-0.5">
-          <span className="text-xs font-mono font-medium text-white/50">{allForStrip.length}</span>
+          <span className="text-xs font-mono font-medium text-white/50">{groups.going.length} / {maxCapacity}</span>
           <motion.span
             animate={{ rotate: isExpanded ? 180 : 0 }}
             transition={{ duration: 0.22, ease: 'easeInOut' }}
@@ -122,33 +180,31 @@ export function InlineParticipantView({ plan }: InlineParticipantViewProps) {
           >
             <div className="w-full h-px bg-white/[0.06]" />
 
-            {/* Segmented tab toggle — only render if more than one non-empty tab */}
+            {/* Segmented page divider toggle — matching PlansDivider control */}
             {tabs.length > 1 && (
               <div className="px-4 pt-4">
-                <div
-                  className="flex rounded-xl"
-                  style={{ background: 'rgba(255,255,255,0.05)', padding: '3px', gap: '2px' }}
-                >
+                <div className="flex bg-[#0A0A0C] border border-[#1A1A1A] rounded-[24px] p-1 gap-1">
                   {tabs.map(tab => {
                     const isActive = activeTab === tab.key;
+                    const activeColor =
+                      tab.key === 'going'
+                        ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                        : tab.key === 'waitlist'
+                        ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+                        : 'text-white border-white/10 bg-white/[0.04]';
+
                     return (
                       <button
                         key={tab.key}
                         type="button"
                         onClick={() => setActiveTab(tab.key)}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-[10px] text-[12px] font-semibold transition-all duration-200 select-none"
-                        style={{
-                          background: isActive ? 'rgba(255,255,255,0.12)' : 'transparent',
-                          color: isActive ? '#FFFFFF' : 'rgba(255,255,255,0.38)',
-                        }}
+                        className={`flex-1 py-1.5 rounded-[18px] text-[10px] font-sans font-bold tracking-wide transition-all duration-300 focus:outline-none flex items-center justify-center cursor-pointer ${
+                          isActive
+                            ? `${activeColor} border shadow-md`
+                            : 'text-zinc-500 hover:text-zinc-300'
+                        }`}
                       >
-                        {tab.label}
-                        <span
-                          className="text-[10px] font-mono font-bold tabular-nums"
-                          style={{ opacity: isActive ? 0.7 : 0.45 }}
-                        >
-                          {tab.count}
-                        </span>
+                        <span className="truncate">{tab.label} ({tab.count})</span>
                       </button>
                     );
                   })}
@@ -189,12 +245,12 @@ export function InlineParticipantView({ plan }: InlineParticipantViewProps) {
                             <UserAvatar src={person.avatar} alt={person.name} size="w-full h-full" />
                           </div>
                           {person.isHost && (
-                            <span
-                              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[7px] font-bold"
-                              style={{ background: '#FF6B2C', color: '#fff' }}
+                            <div
+                              className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center border border-[#F59E0B] shadow-[0_1px_3px_rgba(0,0,0,0.5)]"
+                              style={{ background: '#000000' }}
                             >
-                              ★
-                            </span>
+                              <Crown className="w-2 h-2 text-[#F59E0B]" fill="#F59E0B" />
+                            </div>
                           )}
                         </div>
                         <span className="font-sans text-[13.5px] text-white/90 font-medium leading-none truncate flex-1">

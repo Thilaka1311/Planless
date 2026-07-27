@@ -30,6 +30,7 @@ interface HeroHeaderProps {
   showInfoButton?: boolean;
   isHost?: boolean;
   onEdit?: () => void;
+  onEditTitle?: (newTitle: string) => Promise<void> | void;
   /** Items to show in the ⋮ overflow menu */
   overflowMenuItems?: OverflowMenuItem[];
 }
@@ -43,10 +44,44 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   onClose,
   isHost = false,
   onEdit,
+  onEditTitle,
   overflowMenuItems = [],
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [isEditingTitle, setIsEditingTitle] = React.useState(false);
+  const [tempTitle, setTempTitle] = React.useState(title);
+  const titleInputRef = React.useRef<HTMLInputElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!isEditingTitle) {
+      setTempTitle(title);
+    }
+  }, [title, isEditingTitle]);
+
+  React.useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
+
+  const handleSaveTitle = async () => {
+    setIsEditingTitle(false);
+    const trimmed = tempTitle.trim();
+    if (!trimmed || trimmed === title) {
+      setTempTitle(title);
+      return;
+    }
+    if (trimmed.length > 50) return;
+    if (onEditTitle) {
+      try {
+        await onEditTitle(trimmed);
+      } catch {
+        setTempTitle(title);
+      }
+    }
+  };
 
   // Close menu on outside click
   React.useEffect(() => {
@@ -62,39 +97,16 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
 
   const showOverflow = overflowMenuItems.length > 0;
 
-  // Fall back to single creator host if hosts prop is not passed
+  // Standardized Host Ordering & Formatting
   const hostList: HostInfo[] = React.useMemo(() => {
     if (hosts && hosts.length > 0) return hosts;
-    return [{ id: "", name: creatorName || "Host", avatar: creatorAvatar, isCreator: true }];
+    return [{ id: "", name: creatorName || "Host", avatar: creatorAvatar }];
   }, [hosts, creatorName, creatorAvatar]);
 
-  const creatorHost = hostList.find(h => h.isCreator) || hostList[0];
-  const additionalHosts = hostList.filter(h => h !== creatorHost);
-
-  const isViewerCreator = viewerId ? creatorHost.id === viewerId : false;
-  const viewerAdditionalHost = viewerId ? additionalHosts.find(h => h.id === viewerId) : undefined;
-
-  // Rule-based Host Ordering
-  const orderedHosts: HostInfo[] = React.useMemo(() => {
-    if (hostList.length <= 1) return hostList;
-
-    if (isViewerCreator) {
-      // Rule 1: Creator Host ("you") comes first, then additional hosts
-      return [creatorHost, ...additionalHosts];
-    } else if (viewerAdditionalHost) {
-      // Rule 2: Additional Host viewing -> viewing user ("you") comes first, then Creator Host, then remaining additional hosts
-      const remainingAdditional = additionalHosts.filter(h => h.id !== viewerId);
-      return [viewerAdditionalHost, creatorHost, ...remainingAdditional];
-    } else {
-      // Rule 3: Participant viewing -> Creator Host comes first, then additional hosts
-      return [creatorHost, ...additionalHosts];
-    }
-  }, [hostList, creatorHost, additionalHosts, isViewerCreator, viewerAdditionalHost, viewerId]);
-
   const hostedByText = React.useMemo(() => {
-    const formattedNames = orderedHosts.map(h => (h.id && h.id === viewerId ? "You" : h.name || "Host"));
+    const formattedNames = hostList.map(h => (h.id && h.id === viewerId ? "You" : h.name || "Host"));
     return formattedNames.join(", ");
-  }, [orderedHosts, viewerId]);
+  }, [hostList, viewerId]);
 
   return (
     <div
@@ -160,21 +172,78 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
         </div>
 
         {/* Centered Title */}
-        <h1 className="text-[17px] font-bold text-white tracking-[0.08em] leading-tight select-text text-center px-10">
-          {title}
-        </h1>
+        {isEditingTitle ? (
+          <div className="flex flex-col items-center w-full max-w-[calc(100%-6.5rem)] px-2 z-40 pointer-events-auto">
+            <input
+              ref={titleInputRef}
+              type="text"
+              maxLength={50}
+              value={tempTitle}
+              onChange={(e) => setTempTitle(e.target.value.slice(0, 50))}
+              onBlur={handleSaveTitle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  titleInputRef.current?.blur();
+                } else if (e.key === "Escape") {
+                  setIsEditingTitle(false);
+                  setTempTitle(title);
+                }
+              }}
+              className="w-full bg-transparent border-b border-[#FF6B2C] text-[17px] font-bold text-white tracking-[0.08em] leading-tight text-center focus:outline-none py-0.5"
+            />
+            <span className="text-[10px] text-white/40 font-mono mt-0.5">
+              {tempTitle.length} / 50
+            </span>
+          </div>
+        ) : isHost && onEditTitle ? (
+          <button
+            type="button"
+            onClick={() => {
+              setTempTitle(title);
+              setIsEditingTitle(true);
+            }}
+            className="group flex items-center justify-center gap-1.5 px-3 py-0.5 rounded-lg hover:bg-white/[0.06] active:bg-white/10 transition cursor-pointer max-w-[calc(100%-6.5rem)] pointer-events-auto"
+            title="Tap to edit title"
+          >
+            <h1
+              className="text-[17px] font-bold text-white tracking-[0.08em] leading-tight text-center line-clamp-2 break-words"
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {title}
+            </h1>
+            <Edit className="w-3.5 h-3.5 text-white/30 group-hover:text-white/60 transition-colors flex-shrink-0 self-center" />
+          </button>
+        ) : (
+          <h1
+            className="text-[17px] font-bold text-white tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full line-clamp-2 break-words"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {title}
+          </h1>
+        )}
 
         {/* Centered Hosted By with Overlapping Avatars */}
         <div className="flex items-center gap-2 mt-1 select-none">
           <div className="flex items-center -space-x-1.5 flex-shrink-0">
-            {orderedHosts.map((h, idx) => (
+            {hostList.map((h, idx) => (
               <UserAvatar
                 key={h.id || idx}
                 src={h.avatar}
                 alt={h.name || "Host"}
                 size="w-4.5 h-4.5"
                 className="border border-black/80 rounded-full relative"
-                style={{ zIndex: orderedHosts.length - idx }}
+                style={{ zIndex: hostList.length - idx }}
               />
             ))}
           </div>

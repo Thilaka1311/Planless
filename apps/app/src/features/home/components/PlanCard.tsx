@@ -232,6 +232,7 @@ export interface PlanCardProps {
   setShowWaitlistSuccess?: (planId: string | null) => void;
   setNotifications: React.Dispatch<React.SetStateAction<NotificationItem[]>>;
   activeCardId: string | null;
+  selectedPlanId?: string | null;
   onSelectCard: (planId: string) => void;
   handleSnoozePlan: (planId: string) => void;
   waitlistPlan?: (planId: string, userProfile: any) => void;
@@ -251,6 +252,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({
   setShowWaitlistSuccess,
   setNotifications,
   activeCardId,
+  selectedPlanId,
   onSelectCard,
   handleSnoozePlan,
   waitlistPlan,
@@ -330,20 +332,29 @@ export const PlanCard: React.FC<PlanCardProps> = ({
 
 
   const getParticipantStatusList = React.useCallback(() => {
-    const hostName = plan.creatorName || "Host";
-    const hostAvatar = plan.creatorAvatar || defaultAvatar;
-
     const going: { name: string; avatar: string; status: string; isHost: boolean; userId: string }[] = [];
     const waitlist: { name: string; avatar: string; status: string; userId: string }[] = [];
     const delivered: { name: string; avatar: string; status: string; userId: string }[] = [];
     const skipped: { name: string; avatar: string; status: string; userId: string }[] = [];
 
-    // Always put host first in going
-    going.push({ name: hostName, avatar: hostAvatar, status: "JOINED", isHost: true, userId: plan.hostId });
-
-    const hostUuid = plan.hostId;
+    // Push all actual hosts from members list first
     for (const m of plan.members) {
-      if (m.userUuid === hostUuid || m.userId === hostUuid) continue;
+      if (m.isHost) {
+        going.push({
+          name: m.name || "Host",
+          avatar: m.avatar || defaultAvatar,
+          status: "JOINED",
+          isHost: true,
+          userId: m.userUuid || m.userId,
+        });
+      }
+    }
+
+    // Sort hosts alphabetically
+    going.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+    for (const m of plan.members) {
+      if (m.isHost) continue;
 
       const entry = {
         name: m.name,
@@ -367,7 +378,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({
     }
 
     return { going, waitlist, delivered, skipped };
-  }, [plan.creatorName, plan.creatorAvatar, plan.hostId, plan.members]);
+  }, [plan.members]);
 
   const displayActivityName = React.useMemo(() => {
     const userTitle = plan.title || (plan as any).plan_name;
@@ -509,18 +520,18 @@ export const PlanCard: React.FC<PlanCardProps> = ({
         }
         onSelectCard(plan.id);
       }}
-      className="h-full w-full snap-start snap-always relative rounded-[32px] overflow-hidden border border-white/[0.08] flex flex-col justify-end bg-[#050505] shadow-2xl shadow-black/80 group cursor-pointer flex-shrink-0 mb-0"
+      className="h-full w-full snap-start snap-always relative rounded-none border-0 overflow-hidden flex flex-col justify-end bg-[#050505] group cursor-pointer flex-shrink-0 mb-0"
     >
-      {/* Full-bleed high-contrast premium card poster cover image */}
+      {/* Full-bleed crisp hero poster cover image - original colors & brightness */}
       <DiscoveryImages
         src={coverToUse}
         category={plan.category}
         alt={plan.title}
-        className="absolute inset-0 w-full h-full object-cover filter brightness-[0.80] transition-transform duration-700 group-hover:scale-105 pointer-events-none"
+        className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 pointer-events-none"
       />
 
-      {/* Shadow gradient mesh overlay over imagery to guarantee extreme textual readability */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent pointer-events-none z-0" />
+      {/* Subtle bottom-only gradient for legibility */}
+      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent pointer-events-none z-0" />
 
       {/* Top Row Badges of the event poster */}
       <div
@@ -600,14 +611,15 @@ export const PlanCard: React.FC<PlanCardProps> = ({
       <ParticipantToggleBar
         plan={plan}
         userProfile={userProfile}
-        isExpanded={isExpanded}
-        setIsExpanded={setIsExpanded}
         isHolding={isHolding}
         holdProgress={holdProgress}
-        showExpandableDetails={true}
         planTitle={displayActivityName}
         formattedDateAndTime={formattedDateAndTime}
         setSelectedPlan={setSelectedPlan}
+        activeCardId={activeCardId}
+        selectedPlanId={selectedPlanId}
+        isExpanded={isExpanded}
+        setIsExpanded={setIsExpanded}
       />
 
       <AnimatePresence>

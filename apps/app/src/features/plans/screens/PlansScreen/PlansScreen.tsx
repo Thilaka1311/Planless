@@ -156,11 +156,15 @@ export const PlansScreen = React.memo(({
       const isSkipped = myStatus === "SKIPPED";
       const isJoined = myStatus === "JOINED";
       const isWaitlisted = myStatus === "WAITLISTED";
-      const isHosted = p.hostId === userUuid || p.hostId === activeUserId;
+      const isRoleHost = myParticipant
+        ? (myParticipant.role === "HOST")
+        : p.members.some(m => (m.userId === userUuid || m.userUuid === userUuid) && m.isHost);
+      const isHosted = isRoleHost && (isJoined || myParticipant?.rsvp_status === "JOINED");
+      const isRegularJoined = isJoined && !isRoleHost;
       const autoPassed = (passedByPlanId[p.id] || []).includes(userProfile?.name || "");
 
       if (statusFilter === "all") return isJoined || isWaitlisted || isHosted || isSkipped || autoPassed;
-      if (statusFilter === "JOINED") return isJoined;
+      if (statusFilter === "JOINED") return isRegularJoined;
       if (statusFilter === "WAITLISTED") return isWaitlisted;
       if (statusFilter === "passed") return isSkipped || autoPassed;
       if (statusFilter === "hosted") return isHosted;

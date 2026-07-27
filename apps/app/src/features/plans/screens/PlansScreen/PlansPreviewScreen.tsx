@@ -28,6 +28,7 @@ import { normalizeStatus } from "../../../../../lib/participantStatus";
 import { getPlanCover } from "../../config/planCoverImages";
 import { formatPlanDate } from "../../../../../lib/mappers";
 import { UserAvatar } from "../../../../IMGfromDB/UserAvatar";
+import { CostBreakdownPopover } from "../../components/CostBreakdownPopover";
 import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
 import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
@@ -111,38 +112,62 @@ function PlanCategoryIcon({ plan }: { plan: any }) {
 interface ParticipantsSectionProps {
   plan: Plan;
   userProfile: UserProfile;
+  activeUserId?: string;
   onOpenParticipants: () => void;
 }
 
 export function ParticipantsSection({
   plan,
   userProfile,
+  activeUserId,
   onOpenParticipants,
 }: ParticipantsSectionProps) {
   const members = plan.members || [];
+  const currentUserId = userProfile.dbUuid || activeUserId;
 
-  // Group members
-  const goingList = members.filter(m => normalizeStatus(m.joinState) === "JOINED");
-  const waitlistList = members.filter(m => normalizeStatus(m.joinState) === "WAITLISTED");
-  const invitedList = members.filter(m => normalizeStatus(m.joinState) === "INVITED");
+  const mapMemberName = (m: any) => {
+    const mId = m.userId || m.userUuid || m.user_id || m.id;
+    if (currentUserId && mId === currentUserId) {
+      return { ...m, name: "You" };
+    }
+    return m;
+  };
+
+  // Group members with Current User first, then Hosts (A-Z), then Participants (A-Z)
+  const hostId = plan.hostId;
+  const sortAlpha = (list: any[]) => [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+
+  const prioritizeUserAndSort = (list: any[]) => {
+    const currentUser = list.find(m => {
+      const mId = m.userId || m.userUuid || m.user_id || m.id;
+      return m.name === "You" || (currentUserId && mId === currentUserId);
+    });
+    const remaining = list.filter(m => m !== currentUser);
+    const isHostCheck = (m: any) => (m.role === 'HOST' || m.isHost === true);
+    const hosts = sortAlpha(remaining.filter(isHostCheck));
+    const nonHosts = sortAlpha(remaining.filter(m => !isHostCheck(m)));
+    return [
+      ...(currentUser ? [currentUser] : []),
+      ...hosts,
+      ...nonHosts,
+    ];
+  };
+
+  const rawGoingList = members.filter(m => normalizeStatus(m.joinState) === "JOINED").map(mapMemberName);
+  const goingList = prioritizeUserAndSort(rawGoingList);
+
+  const waitlistList = members.filter(m => normalizeStatus(m.joinState) === "WAITLISTED").map(mapMemberName);
+
+  const rawInvitedList = members.filter(m => normalizeStatus(m.joinState) === "INVITED").map(mapMemberName);
+  const invitedList = prioritizeUserAndSort(rawInvitedList);
 
   // Sorted list of all participants to show in avatar strip (going first, then waitlist, then invited)
   const sortedForStrip = [...goingList, ...waitlistList, ...invitedList];
-  const maxAvatars = 5;
+  const maxAvatars = 4;
   const visibleAvatars = sortedForStrip.slice(0, maxAvatars);
   const overflowCount = sortedForStrip.length - maxAvatars;
 
-  // Calculate activity line
-  const activityLine = useMemo(() => {
-    if (invitedList.length > 0) {
-      return `Waiting for ${invitedList.length} ${invitedList.length === 1 ? 'reply' : 'replies'}`;
-    }
-    if (goingList.length > 0) {
-      const lastJoiner = goingList[goingList.length - 1];
-      return `${lastJoiner.name} joined recently`;
-    }
-    return "No recent activity";
-  }, [goingList, invitedList]);
+  const maxCapacity = plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
 
   return (
     <div
@@ -153,7 +178,7 @@ export function ParticipantsSection({
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-sans font-semibold tracking-wider text-white/60 uppercase">Participants</h3>
         <div className="flex items-center gap-1.5 text-white/60">
-          <span className="text-xs font-mono font-medium">{members.length}</span>
+          <span className="text-xs font-mono font-medium">{goingList.length} / {maxCapacity}</span>
           <ChevronDown className="w-4 h-4 opacity-60" />
         </div>
       </div>
@@ -195,11 +220,6 @@ export function ParticipantsSection({
           <span>Invited {invitedList.length}</span>
         </div>
       </div>
-
-      {/* Subtle Activity Line */}
-      <p className="text-[11px] font-mono text-white/38 leading-none pt-1">
-        {activityLine}
-      </p>
     </div>
   );
 }
@@ -560,6 +580,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     updatePlanSettings,
     promoteParticipantToHost,
     demoteHostToParticipant,
+    reorderWaitlist,
   } = usePlansStore();
   const selectedPlan = useLivePlan(planId);
 
@@ -583,6 +604,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [tempRSVPTime, setTempRSVPTime] = useState("");
 
   const [isEditingCostSheetOpen, setIsEditingCostSheetOpen] = useState(false);
+  const [isCostPopoverOpen, setIsCostPopoverOpen] = useState(false);
   const [editTotalCostInput, setEditTotalCostInput] = useState<string>("");
 
   const [isEditingDetailsSheetOpen, setIsEditingDetailsSheetOpen] = useState(false);
@@ -808,42 +830,42 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   }, [dbPlanParticipants, selectedPlan, planUuid, activeUserId, resolvedUserUuid]);
 
   const isHost = myParticipantRecord
-    ? myParticipantRecord.role === "HOST"
-    : (selectedPlan ? selectedPlan.hostId === resolvedUserUuid : false);
+    ? (myParticipantRecord.role === "HOST")
+    : (selectedPlan?.members ? selectedPlan.members.some(m => (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid) && m.isHost) : false);
 
-  const isCreatorHost = selectedPlan ? selectedPlan.hostId === resolvedUserUuid : false;
+  const isCreatorHost = isHost;
 
   const allHosts = useMemo(() => {
     if (!selectedPlan) return [];
-    const hostId = selectedPlan.hostId;
     const members = selectedPlan.members || [];
 
-    const creatorMember = members.find(
-      (m) => (m.userId || m.userUuid || (m as any).user_id || (m as any).id) === hostId
-    );
-
-    const creatorHostInfo = {
-      id: hostId || "",
-      name: creatorMember?.name || selectedPlan.creatorName || "Creator",
-      avatar: creatorMember?.avatar || selectedPlan.creatorAvatar,
-      isCreator: true,
-    };
-
-    const additionalHostsInfo = members
+    const hostMembers = members
       .filter((m) => {
-        const uId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
-        const isCoHost = (m as any).role === "HOST" || (m as any).role === "CO_HOST" || m.isHost;
-        return isCoHost && uId !== hostId;
+        const isHostRole = (m as any).role === "HOST" || m.isHost === true;
+        const status = normalizeStatus(m.joinState);
+        return isHostRole && status === "JOINED";
       })
-      .map((m) => ({
-        id: m.userId || m.userUuid || (m as any).user_id || (m as any).id,
-        name: m.name || "Host",
-        avatar: m.avatar,
-        isCreator: false,
-      }));
+      .map((m) => {
+        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
+        const isCurrentUser = Boolean(resolvedUserUuid && mId === resolvedUserUuid);
+        return {
+          id: mId,
+          name: isCurrentUser ? "You" : (m.name || "Host"),
+          avatar: m.avatar || "",
+        };
+      });
 
-    return [creatorHostInfo, ...additionalHostsInfo];
-  }, [selectedPlan]);
+    const sortAlpha = (list: typeof hostMembers) =>
+      [...list].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
+
+    const currentUserHost = hostMembers.find(h => h.name === "You" || (resolvedUserUuid && h.id === resolvedUserUuid));
+    const remainingHosts = sortAlpha(hostMembers.filter(h => h !== currentUserHost));
+
+    return [
+      ...(currentUserHost ? [currentUserHost] : []),
+      ...remainingHosts,
+    ];
+  }, [selectedPlan, resolvedUserUuid]);
 
   const participantManagementMode = isHost
     ? "host"
@@ -922,17 +944,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     return dbPlans.find(p => p.id === planUuid);
   }, [dbPlans, planUuid]);
 
-  const hasCost = rawDbPlan ? (rawDbPlan.total_cost !== undefined && rawDbPlan.total_cost !== null) : false;
+  const hasCost = rawDbPlan ? (rawDbPlan.total_cost !== undefined && rawDbPlan.total_cost !== null && Number(rawDbPlan.total_cost) > 0) : false;
   const costText = useMemo(() => {
     if (!rawDbPlan || !hasCost) return "Free";
     const totalCostVal = Number(rawDbPlan.total_cost || 0);
-    if (totalCostVal === 0) return "Free";
-    if (myParticipantRecord && myParticipantRecord.cost_per_participant !== undefined && myParticipantRecord.cost_per_participant !== null) {
-      const shareVal = Number(myParticipantRecord.cost_per_participant);
-      return `₹${Math.round(shareVal)} / person`;
-    }
-    return `₹${Math.round(totalCostVal)}`;
-  }, [rawDbPlan, hasCost, myParticipantRecord]);
+    const maxCapacity = Number(rawDbPlan.max_participants || 0);
+    if (totalCostVal <= 0 || maxCapacity <= 0) return "Free";
+    const perPerson = Math.round((totalCostVal / maxCapacity) * 100) / 100;
+    return `₹${perPerson} / person`;
+  }, [rawDbPlan, hasCost]);
 
   const currentStatus = normalizeStatus(myParticipantRecord?.rsvp_status);
   const showJoinDirect = ["INVITED", "WAITLISTED", "new"].includes(currentStatus);
@@ -1101,6 +1121,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onDemoteHost={async (userId) => {
           await demoteHostToParticipant(selectedPlan.id, userId);
         }}
+        onRemoveParticipant={async (userId) => {
+          await removeParticipant(selectedPlan.id, userId);
+        }}
       />
     );
   }
@@ -1140,6 +1163,14 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               viewerId={resolvedUserUuid}
               onClose={onClose}
               isHost={isHost}
+              onEditTitle={async (newTitle) => {
+                try {
+                  await updatePlanDetails(selectedPlan.id, { title: newTitle });
+                  showToast("✓ Title updated");
+                } catch {
+                  showToast("Failed to update title");
+                }
+              }}
               overflowMenuItems={
                 isCreatorHost
                   ? [
@@ -1268,20 +1299,32 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     </button>
 
                     {/* Right part: Cost */}
-                    <button
-                      type="button"
-                      disabled={!isHost}
-                      onClick={() => {
-                        const currentCost = rawDbPlan?.total_cost;
-                        setEditTotalCostInput(currentCost && Number(currentCost) > 0 ? String(currentCost) : "");
-                        setIsEditingCostSheetOpen(true);
-                      }}
-                      className="flex items-center gap-2 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-right text-white/60 font-semibold"
-                    >
-                      <span>
-                        {hasCost && costText ? costText : "Free"}
-                      </span>
-                    </button>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setIsCostPopoverOpen((prev) => !prev)}
+                        className="flex items-center gap-2 hover:bg-white/[0.06] active:bg-white/10 transition p-1.5 -m-1.5 rounded-xl cursor-pointer text-right text-white/90 font-semibold"
+                      >
+                        <span>
+                          {hasCost && costText ? costText : "Free"}
+                        </span>
+                      </button>
+
+                      <CostBreakdownPopover
+                        totalCost={rawDbPlan?.total_cost}
+                        maxParticipants={rawDbPlan?.max_participants}
+                        isOpen={isCostPopoverOpen}
+                        onClose={() => setIsCostPopoverOpen(false)}
+                        isHost={isHost}
+                        onEditCost={() => {
+                          const currentCost = rawDbPlan?.total_cost;
+                          setEditTotalCostInput(currentCost && Number(currentCost) > 0 ? String(currentCost) : "");
+                          setIsEditingCostSheetOpen(true);
+                        }}
+                        position="above"
+                        align="right"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1291,16 +1334,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
         <div id="immersive-plan-scroll-content" className="px-6 pt-[80px] space-y-7">
           {selectedPlan && (
-            participantManagementMode !== "participant"
-              ? (
-                <ParticipantsSection
-                  plan={selectedPlan}
-                  userProfile={userProfile}
-                  onOpenParticipants={() => setShowParticipantManagement(true)}
-                />
-              ) : (
-                <InlineParticipantView plan={selectedPlan} />
-              )
+            (isHost || Boolean(selectedPlan.allowParticipantInvites || (selectedPlan as any).allow_participant_invites)) ? (
+              <ParticipantsSection
+                plan={selectedPlan}
+                userProfile={userProfile}
+                activeUserId={activeUserId}
+                onOpenParticipants={() => setShowParticipantManagement(true)}
+              />
+            ) : (
+              <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} />
+            )
           )}
           {hasUserEnteredDescription(selectedPlan) && (
             <div id="immersive-description-block" className="space-y-2 text-left bg-zinc-900/20 p-5 rounded-3xl border border-white/[0.02] select-text">
@@ -1360,7 +1403,14 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               onPromoteToHost={(planId, userId) => promoteParticipantToHost(planId, userId)}
               onDemoteFromHost={(planId, userId) => demoteHostToParticipant(planId, userId)}
               onUpdatePlanCapacity={(planId, capacity) => updatePlanDetails(planId, { max_participants: capacity })}
-              onAddParticipants={(planId, userIds, circleIds) => addParticipantsToPlan(planId, userIds, circleIds)}
+              onAddParticipants={(planId, userIds, circleIds, assignedGroup) => addParticipantsToPlan({
+                planId,
+                inviteeUuids: userIds,
+                userProfile,
+                planTitle: selectedPlan?.title || '',
+                assignedGroup
+              })}
+              onReorderWaitlist={(planId, orderedUserUuids) => reorderWaitlist(planId, orderedUserUuids)}
               onOpenSettings={() => {
                 setShowParticipantManagement(false);
                 setShowPlanSettingsScreen(true);
@@ -1745,6 +1795,45 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   </div>
                 </div>
 
+                {/* Minimal Typographic Live Cost Preview */}
+                {(() => {
+                  const currentCapacity = Number(
+                    rawDbPlan?.max_participants ||
+                      selectedPlan?.joinLimit ||
+                      selectedPlan?.capacity ||
+                      selectedPlan?.maxSpots ||
+                      0
+                  );
+                  const parsedInput = parseFloat(editTotalCostInput);
+                  const isCostSet = editTotalCostInput.trim() !== "" && !isNaN(parsedInput) && parsedInput > 0;
+
+                  let mainDisplay = "Free";
+                  let subDisplay = "No cost has been set.";
+
+                  if (isCostSet) {
+                    if (currentCapacity > 0) {
+                      const perPersonVal = Math.round((parsedInput / currentCapacity) * 100) / 100;
+                      const formattedVal = perPersonVal.toLocaleString("en-IN");
+                      mainDisplay = `₹${formattedVal} each`;
+                      subDisplay = `${currentCapacity} ${currentCapacity === 1 ? "participant" : "participants"}`;
+                    } else {
+                      mainDisplay = "Unable to calculate";
+                      subDisplay = "Invalid participant capacity";
+                    }
+                  }
+
+                  return (
+                    <div className="flex flex-col gap-0.5 text-left py-0.5">
+                      <span className="text-[22px] font-bold text-white tracking-tight">
+                        {mainDisplay}
+                      </span>
+                      <span className="text-[13px] text-white/40 font-medium">
+                        {subDisplay}
+                      </span>
+                    </div>
+                  );
+                })()}
+
                 {/* Action Buttons: Cancel & Save */}
                 <div className="flex items-center gap-3 pt-2">
                   <button
@@ -1808,8 +1897,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   <label className="text-[10px] font-sans font-bold tracking-[0.1em] text-zinc-500 uppercase">Plan Title</label>
                   <input
                     type="text"
+                    maxLength={50}
                     value={tempTitle}
-                    onChange={(e) => setTempTitle(e.target.value)}
+                    onChange={(e) => setTempTitle(e.target.value.slice(0, 50))}
                     className="w-full bg-zinc-900/30 border border-white/[0.04] rounded-2xl px-4 py-3 text-white text-sm font-semibold focus:outline-none focus:border-white/10"
                     placeholder="Enter plan title"
                   />

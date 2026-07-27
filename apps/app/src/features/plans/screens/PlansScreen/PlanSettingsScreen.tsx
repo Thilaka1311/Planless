@@ -1,8 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { ChevronLeft, Crown, Users } from "lucide-react";
 import { Plan, UserProfile } from "../../../../core/types";
 import { UserAvatar } from "../../../../IMGfromDB/UserAvatar";
-import { PlanSizeSlider } from "../../../create/components/PlanSizeSlider";
 import { useToast } from "../../../../shared/contexts/ToastContext";
 
 interface PlanSettingsScreenProps {
@@ -15,15 +14,18 @@ interface PlanSettingsScreenProps {
     maxParticipants?: number;
   }) => Promise<void> | void;
   onDemoteHost?: (userId: string) => Promise<void> | void;
+  onRemoveParticipant?: (userId: string) => Promise<void> | void;
+  onSelectHost?: (hostItem: { id: string; dbUuid: string; name: string; avatar: string; isHost: boolean }) => void;
 }
 
 export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   plan,
   userProfile,
-  isCreatorHost = false,
   onBack,
   onUpdateSettings,
   onDemoteHost,
+  onRemoveParticipant,
+  onSelectHost,
 }) => {
   const { showToast } = useToast();
 
@@ -31,36 +33,37 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   const [allowInvites, setAllowInvites] = useState<boolean>(
     plan.allowParticipantInvites ?? false
   );
-  const [maxParticipants, setMaxParticipants] = useState<number>(
-    plan.capacity || plan.joinLimit || plan.maxSpots || 10
-  );
 
-  // Creator Host ID
-  const hostId = plan.hostId;
   const members = plan.members || [];
+  const activeUserUuid = userProfile.dbUuid || userProfile.user_id || "";
 
-  // 1. Identify Creator Host item
-  const creatorMember = members.find(
-    (m) => (m.userId || m.userUuid || m.user_id || m.id) === hostId
-  );
-  const creatorHost = {
-    id: hostId || "host",
-    name: creatorMember?.name || plan.creatorName || "Creator",
-    avatar: creatorMember?.avatar || plan.creatorAvatar,
-  };
+  // Derive ALL hosts strictly from plan_participants with "You" at top and remaining sorted alphabetically
+  const allHosts = useMemo(() => {
+    const rawHosts = members
+      .filter((m) => Boolean(m.isHost || (m as any).role === "HOST"))
+      .map((m) => {
+        const uId = m.userId || m.userUuid || (m as any).user_id || m.id || "";
+        const isSelf = Boolean(activeUserUuid && (uId === activeUserUuid || m.userUuid === activeUserUuid || m.userId === activeUserUuid));
+        return {
+          id: uId,
+          dbUuid: m.userUuid || uId,
+          name: isSelf ? "You" : (m.name || "Host"),
+          avatar: m.avatar || "",
+          isHost: true,
+          isSelf,
+        };
+      });
 
-  // 2. Identify Additional Hosts (role === 'HOST' or isHost, excluding primary creator)
-  const additionalHosts = members
-    .filter((m) => {
-      const uId = m.userId || m.userUuid || m.user_id || m.id;
-      const isCoHost = (m as any).role === "HOST" || (m as any).role === "CO_HOST" || m.isHost;
-      return isCoHost && uId !== hostId;
-    })
-    .map((m) => ({
-      id: m.userId || m.userUuid || m.user_id || m.id,
-      name: m.name || "Host",
-      avatar: m.avatar,
-    }));
+    const currentUserHost = rawHosts.find((h) => h.isSelf);
+    const remainingHosts = rawHosts
+      .filter((h) => !h.isSelf)
+      .sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
+
+    return [
+      ...(currentUserHost ? [currentUserHost] : []),
+      ...remainingHosts,
+    ];
+  }, [members, activeUserUuid]);
 
   const handleToggleInvites = async () => {
     const previousVal = allowInvites;
@@ -76,19 +79,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     }
   };
 
-  const handleCapacityChange = async (val: number) => {
-    const previousCapacity = maxParticipants;
-    setMaxParticipants(val);
-    try {
-      if (onUpdateSettings) {
-        await onUpdateSettings({ maxParticipants: val });
-      }
-    } catch (err) {
-      setMaxParticipants(previousCapacity);
-      showToast("Failed to update maximum participants. Please try again.");
-    }
-  };
-
   const handleDemoteHost = async (userId: string) => {
     if (!onDemoteHost) return;
     try {
@@ -97,6 +87,22 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     } catch (err) {
       showToast("Failed to remove host. Please try again.");
     }
+  };
+
+  // Action sheet state for host card tap inside Plan Settings
+  const [selectedHost, setSelectedHost] = useState<{
+    id: string;
+    dbUuid: string;
+    name: string;
+    avatar: string;
+    isHost: boolean;
+    isSelf: boolean;
+  } | null>(null);
+  const [showConfirmRemoveHost, setShowConfirmRemoveHost] = useState(false);
+
+  const closeHostSheet = () => {
+    setSelectedHost(null);
+    setShowConfirmRemoveHost(false);
   };
 
   return (
@@ -124,12 +130,12 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         <div className="space-y-3">
           <div className="flex items-center gap-2 px-1">
             <Users className="w-4 h-4 text-[#FF6B2C]" />
-            <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+            <h2 className="text-xs font-bold text-zinc-400">
               Participants
             </h2>
           </div>
 
-          <div className="bg-[#111111] border border-white/[0.08] rounded-2xl p-4.5 space-y-5">
+          <div className="bg-[#111111] border border-white/[0.08] rounded-2xl p-4.5">
             {/* Setting 1: Allow participants to invite others */}
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-0.5 pr-2">
@@ -154,30 +160,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                 />
               </button>
             </div>
-
-            <div className="h-px bg-white/[0.06]" />
-
-            {/* Setting 2: Maximum Participants */}
-            <div className="space-y-3">
-              <div>
-                <span className="text-sm font-semibold text-white block">
-                  Maximum Participants
-                </span>
-                <span className="text-xs text-zinc-400 block leading-relaxed mt-0.5">
-                  Set the maximum number of confirmed spots for this plan.
-                </span>
-              </div>
-
-              <div className="pt-2 pb-1">
-                <PlanSizeSlider
-                  value={maxParticipants}
-                  onChange={handleCapacityChange}
-                  hasError={false}
-                  min={2}
-                  max={50}
-                />
-              </div>
-            </div>
           </div>
         </div>
 
@@ -187,48 +169,27 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         <div className="space-y-3">
           <div className="flex items-center gap-2 px-1">
             <Crown className="w-4 h-4 text-[#FF6B2C]" />
-            <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+            <h2 className="text-xs font-bold text-zinc-400">
               Hosts
             </h2>
           </div>
 
           <div className="bg-[#111111] border border-white/[0.08] rounded-2xl p-4.5 space-y-4">
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Hosts can edit plan settings, manage waitlists, and invite participants. The creator host cannot be removed.
+              Hosts can edit plan settings, manage waitlists, invite participants, and manage host roles.
             </p>
 
             <div className="space-y-2.5">
-              {/* Creator Host Card */}
-              <div className="flex items-center justify-between p-3 bg-black/40 border border-white/[0.06] rounded-xl">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="relative flex-shrink-0">
-                    <UserAvatar
-                      src={creatorHost.avatar}
-                      alt={creatorHost.name}
-                      size="w-9 h-9"
-                      className="border border-white/10"
-                    />
-                    <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#FF6B2C] flex items-center justify-center border border-black">
-                      <Crown className="w-2.5 h-2.5 text-white" />
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-sm font-semibold text-white truncate block">
-                      {creatorHost.name}
-                    </span>
-                    <span className="text-[11px] text-[#FF6B2C] font-medium block">
-                      Creator Host
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Additional Hosts List */}
-              {additionalHosts.length > 0 ? (
-                additionalHosts.map((h) => (
+              {allHosts.length > 0 ? (
+                allHosts.map((h) => (
                   <div
                     key={h.id}
-                    className="flex items-center justify-between p-3 bg-black/40 border border-white/[0.06] rounded-xl"
+                    onClick={() => {
+                      setSelectedHost(h);
+                      setShowConfirmRemoveHost(false);
+                      if (onSelectHost) onSelectHost(h);
+                    }}
+                    className="flex items-center justify-between p-3 bg-black/40 hover:bg-white/[0.04] active:scale-[0.99] border border-white/[0.06] rounded-xl cursor-pointer transition"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="relative flex-shrink-0">
@@ -238,35 +199,19 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                           size="w-9 h-9"
                           className="border border-white/10"
                         />
-                        <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#FF6B2C] flex items-center justify-center border border-black">
-                          <Crown className="w-2.5 h-2.5 text-white" />
-                        </div>
                       </div>
                       <div className="min-w-0">
                         <span className="text-sm font-semibold text-white truncate block">
                           {h.name}
                         </span>
-                        <span className="text-[11px] text-zinc-400 block">
-                          Host
-                        </span>
                       </div>
                     </div>
-
-                    {isCreatorHost && onDemoteHost && (
-                      <button
-                        type="button"
-                        onClick={() => handleDemoteHost(h.id)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 border border-red-500/20 active:scale-95 transition cursor-pointer flex-shrink-0"
-                      >
-                        Remove Host
-                      </button>
-                    )}
                   </div>
                 ))
               ) : (
                 <div className="p-3 bg-black/20 border border-dashed border-white/10 rounded-xl text-center">
                   <span className="text-xs text-zinc-500">
-                    No additional hosts yet.
+                    No hosts assigned.
                   </span>
                 </div>
               )}
@@ -274,6 +219,132 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ── Participant Action Bottom Sheet for Host Cards in Plan Settings ── */}
+      {selectedHost && (
+        <div
+          onClick={closeHostSheet}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'flex-end',
+            animation: 'fadeIn 0.2s ease-out',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              background: '#1C1C1E',
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              padding: '16px 20px 32px',
+              color: '#FFFFFF',
+              boxShadow: '0 -8px 24px rgba(0, 0, 0, 0.3)',
+              animation: 'slideUp 0.28s cubic-bezier(0.25, 1, 0.5, 1)',
+            }}
+          >
+            {/* Drag handle */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+              <div style={{ width: 36, height: 5, borderRadius: 2.5, background: 'rgba(255, 255, 255, 0.15)' }} />
+            </div>
+
+            {/* Person header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+              <UserAvatar src={selectedHost.avatar} alt={selectedHost.name} size="w-10 h-10" />
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: 16, fontWeight: 600 }}>{selectedHost.name}</span>
+                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)' }}>
+                  Host
+                </span>
+              </div>
+            </div>
+
+            {!showConfirmRemoveHost ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {/* Stop Hosting / Remove Host */}
+                {onDemoteHost && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const hostIdToDemote = selectedHost.id;
+                      closeHostSheet();
+                      await handleDemoteHost(hostIdToDemote);
+                    }}
+                    style={{ width: '100%', padding: '14px', background: 'rgba(245,158,11,0.08)', border: 'none', borderRadius: 12, color: '#F59E0B', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    {selectedHost.isSelf ? "Stop Hosting" : "Remove Host"}
+                  </button>
+                )}
+
+                {/* Leave Plan / Remove from Plan */}
+                {(onRemoveParticipant || onDemoteHost) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmRemoveHost(true)}
+                    style={{ width: '100%', padding: '14px', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    {selectedHost.isSelf ? "Leave Plan" : "Remove from Plan"}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={closeHostSheet}
+                  style={{ width: '100%', padding: '14px', background: 'none', border: 'none', borderRadius: 12, color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: 500, cursor: 'pointer', textAlign: 'center', marginTop: 8 }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', margin: '8px 0' }}>
+                  {selectedHost.isSelf
+                    ? "Leave this plan?"
+                    : `Remove "${selectedHost.name}" from this plan?`}
+                </span>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmRemoveHost(false)}
+                    style={{ flex: 1, padding: '14px', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const hostIdToRemove = selectedHost.id;
+                      closeHostSheet();
+                      try {
+                        if (onRemoveParticipant) {
+                          await onRemoveParticipant(hostIdToRemove);
+                        } else if (onDemoteHost) {
+                          await onDemoteHost(hostIdToRemove);
+                        }
+                        showToast(selectedHost.isSelf ? "You left the plan" : "✓ Participant removed");
+                      } catch {
+                        showToast("Failed to remove participant");
+                      }
+                    }}
+                    style={{ flex: 1, padding: '14px', background: '#EF4444', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {selectedHost.isSelf ? "Leave" : "Remove"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+      `}</style>
     </div>
   );
 };
