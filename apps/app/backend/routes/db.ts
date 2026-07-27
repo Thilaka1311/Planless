@@ -1074,7 +1074,7 @@ async function recalculatePlanParticipantsCosts(client: any, planUuid: string): 
 
   // Divisor is strictly the max_participants capacity determined during Plan Creation
   const divisor = plan.max_participants > 0 ? plan.max_participants : 1;
-  const shareAmount = totalCost <= 0 ? 0 : Math.ceil(totalCost / divisor);
+  const shareAmount = totalCost <= 0 ? 0 : Math.round((totalCost / divisor) * 100) / 100;
 
   console.log(`[Backend Recalculating Costs] Plan total cost: ₹${totalCost}, Capacity limit: ${plan.max_participants}, Share amount: ₹${shareAmount}`);
 

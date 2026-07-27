@@ -18,6 +18,7 @@ interface PlanStackProps {
   setShowWaitlistSuccess?: (planId: string | null) => void;
   setNotifications: React.Dispatch<React.SetStateAction<NotificationItem[]>>;
   activeCardId: string | null;
+  selectedPlanId?: string | null;
   setActiveCardId: (planId: string) => void;
   activeCardIndex: number;
   setActiveCardIndex: (index: number) => void;
@@ -86,6 +87,7 @@ export const PlanStack: React.FC<PlanStackProps> = ({
   setShowWaitlistSuccess,
   setNotifications,
   activeCardId,
+  selectedPlanId,
   setActiveCardId,
   activeCardIndex,
   setActiveCardIndex,
@@ -195,8 +197,15 @@ export const PlanStack: React.FC<PlanStackProps> = ({
           setShowWaitlistSuccess={setShowWaitlistSuccess}
           setNotifications={setNotifications}
           activeCardId={activeCardId}
+          selectedPlanId={selectedPlanId}
           isExpanded={expandedCardId === plan.id}
-          setIsExpanded={(val) => setExpandedCardId(val ? plan.id : null)}
+          setIsExpanded={(val) => {
+            setExpandedCardId((prev) => {
+              const currentIsExpanded = prev === plan.id;
+              const nextVal = typeof val === "function" ? val(currentIsExpanded) : val;
+              return nextVal ? plan.id : null;
+            });
+          }}
           onSelectCard={(id) => {
             setActiveCardId(id);
             setExpandedCardId(null);

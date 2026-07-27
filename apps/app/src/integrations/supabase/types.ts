@@ -619,11 +619,13 @@ export type Database = {
       }
       plans: {
         Row: {
+          allow_participant_invites: boolean
           category: Database["public"]["Enums"]["activity_category"]
           circle_id: string | null
           cover_image: string | null
           created_at: string
           description: string
+
           host_id: string
           id: string
           latitude: number | null
@@ -642,11 +644,13 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          allow_participant_invites?: boolean
           category: Database["public"]["Enums"]["activity_category"]
           circle_id?: string | null
           cover_image?: string | null
           created_at?: string
           description?: string
+
           host_id: string
           id?: string
           latitude?: number | null
@@ -659,17 +663,19 @@ export type Database = {
           rsvp_deadline: string
           scheduled_at: string
           status?: Database["public"]["Enums"]["plan_status"]
-          subcategory: Database["public"]["Enums"]["activity_subcategory"]
+          subcategory?: Database["public"]["Enums"]["activity_subcategory"]
           title: string
           total_cost?: number
           updated_at?: string
         }
         Update: {
+          allow_participant_invites?: boolean
           category?: Database["public"]["Enums"]["activity_category"]
           circle_id?: string | null
           cover_image?: string | null
           created_at?: string
           description?: string
+
           host_id?: string
           id?: string
           latitude?: number | null
@@ -901,6 +907,7 @@ export type Database = {
       circle_role: "admin" | "member"
       completion_status: "PENDING" | "SUBMITTED" | "VERIFIED"
       dining_subcategory_enum: "CAFE" | "PUB" | "FINE_DINE"
+
       dining_type:
         | "CAFE"
         | "RESTAURANT"
@@ -976,6 +983,7 @@ export type Database = {
       sports_subcategory_enum: "FOOTBALL" | "BADMINTON" | "PICKLEBALL"
       team_type: "TEAM_1" | "TEAM_2"
       user_role: "user" | "admin"
+
       wallet_expense_status: "PENDING" | "SETTLED"
       wallet_status: "PENDING" | "PAID"
     }
@@ -1180,6 +1188,7 @@ export const Constants = {
         "WINE_BAR",
         "CAFE",
       ],
+
       friendship_status: ["PENDING", "ACCEPTED"],
       message_status: ["SENT", "DELIVERED"],
       movie_genre: [
@@ -1225,6 +1234,7 @@ export const Constants = {
       user_role: ["user", "admin"],
       wallet_expense_status: ["PENDING", "SETTLED"],
       wallet_status: ["PENDING", "PAID"],
+
     },
   },
 } as const

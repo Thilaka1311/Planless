@@ -9,6 +9,7 @@ export interface HomeScreenProps {
   userProfile: UserProfile;
   interestedPlanIds: string[];
   setSelectedPlan: (planId: string | null) => void;
+  selectedPlan?: string | null;
   setPaymentConfirmationPlan: (planId: string | null) => void;
   walletBalance: number;
   handleToggleJoin: (planId: string) => void;
@@ -29,6 +30,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({
   userProfile,
   interestedPlanIds,
   setSelectedPlan,
+  selectedPlan,
   setPaymentConfirmationPlan,
   walletBalance,
   handleToggleJoin,
@@ -103,7 +105,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({
   };
 
   return (
-    <div id="home_tab_pane" className="w-full h-full relative overflow-hidden bg-[#000000] flex flex-col">
+    <div id="home_tab_pane" className="w-full h-full relative overflow-hidden bg-[#000000] flex flex-col pb-[72px]">
       {discoverablePlans.length === 0 ? (
         <EmptyState
           description={
@@ -130,6 +132,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({
             setShowWaitlistSuccess={setShowWaitlistSuccess}
             setNotifications={setNotifications}
             activeCardId={activeCardId}
+            selectedPlanId={selectedPlan}
             setActiveCardId={setActiveCardId}
             activeCardIndex={activeCardIndex}
             setActiveCardIndex={setActiveCardIndex}

@@ -8,10 +8,19 @@ interface OverflowMenuItem {
   destructive?: boolean;
 }
 
+export interface HostInfo {
+  id: string;
+  name: string;
+  avatar?: string;
+  isCreator?: boolean;
+}
+
 interface HeroHeaderProps {
   title: string;
   creatorName?: string;
   creatorAvatar?: string;
+  hosts?: HostInfo[];
+  viewerId?: string;
   onClose: () => void;
   /** @deprecated — no longer used, kept for back-compat */
   isInfoOpen?: boolean;
@@ -21,7 +30,8 @@ interface HeroHeaderProps {
   showInfoButton?: boolean;
   isHost?: boolean;
   onEdit?: () => void;
-  /** Items to show in the ⋮ overflow menu (only for non-hosts) */
+  onEditTitle?: (newTitle: string) => Promise<void> | void;
+  /** Items to show in the ⋮ overflow menu */
   overflowMenuItems?: OverflowMenuItem[];
 }
 
@@ -29,13 +39,49 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   title,
   creatorName,
   creatorAvatar,
+  hosts,
+  viewerId,
   onClose,
   isHost = false,
   onEdit,
+  onEditTitle,
   overflowMenuItems = [],
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [isEditingTitle, setIsEditingTitle] = React.useState(false);
+  const [tempTitle, setTempTitle] = React.useState(title);
+  const titleInputRef = React.useRef<HTMLInputElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!isEditingTitle) {
+      setTempTitle(title);
+    }
+  }, [title, isEditingTitle]);
+
+  React.useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
+
+  const handleSaveTitle = async () => {
+    setIsEditingTitle(false);
+    const trimmed = tempTitle.trim();
+    if (!trimmed || trimmed === title) {
+      setTempTitle(title);
+      return;
+    }
+    if (trimmed.length > 50) return;
+    if (onEditTitle) {
+      try {
+        await onEditTitle(trimmed);
+      } catch {
+        setTempTitle(title);
+      }
+    }
+  };
 
   // Close menu on outside click
   React.useEffect(() => {
@@ -49,7 +95,18 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
-  const showOverflow = !isHost && overflowMenuItems.length > 0;
+  const showOverflow = overflowMenuItems.length > 0;
+
+  // Standardized Host Ordering & Formatting
+  const hostList: HostInfo[] = React.useMemo(() => {
+    if (hosts && hosts.length > 0) return hosts;
+    return [{ id: "", name: creatorName || "Host", avatar: creatorAvatar }];
+  }, [hosts, creatorName, creatorAvatar]);
+
+  const hostedByText = React.useMemo(() => {
+    const formattedNames = hostList.map(h => (h.id && h.id === viewerId ? "You" : h.name || "Host"));
+    return formattedNames.join(", ");
+  }, [hostList, viewerId]);
 
   return (
     <div
@@ -69,19 +126,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
 
         {/* Right action buttons */}
         <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto">
-          {/* Host: Edit button */}
-          {isHost && onEdit && (
-            <button
-              id="immersive-plan-edit-btn"
-              type="button"
-              onClick={onEdit}
-              className="w-9 h-9 rounded-full bg-white/10 border border-white/10 backdrop-blur-sm flex items-center justify-center text-white active:scale-95 hover:bg-white/20 transition duration-200 cursor-pointer"
-            >
-              <Edit className="w-4.5 h-4.5" />
-            </button>
-          )}
-
-          {/* Non-host: ⋮ overflow menu */}
+          {/* ⋮ overflow menu */}
           {showOverflow && (
             <div ref={menuRef} className="relative">
               <button
@@ -127,15 +172,83 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
         </div>
 
         {/* Centered Title */}
-        <h1 className="text-[17px] font-bold text-white tracking-[0.08em] leading-tight select-text text-center px-10">
-          {title}
-        </h1>
+        {isEditingTitle ? (
+          <div className="flex flex-col items-center w-full max-w-[calc(100%-6.5rem)] px-2 z-40 pointer-events-auto">
+            <input
+              ref={titleInputRef}
+              type="text"
+              maxLength={50}
+              value={tempTitle}
+              onChange={(e) => setTempTitle(e.target.value.slice(0, 50))}
+              onBlur={handleSaveTitle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  titleInputRef.current?.blur();
+                } else if (e.key === "Escape") {
+                  setIsEditingTitle(false);
+                  setTempTitle(title);
+                }
+              }}
+              className="w-full bg-transparent border-b border-[#FF6B2C] text-[17px] font-bold text-white tracking-[0.08em] leading-tight text-center focus:outline-none py-0.5"
+            />
+            <span className="text-[10px] text-white/40 font-mono mt-0.5">
+              {tempTitle.length} / 50
+            </span>
+          </div>
+        ) : isHost && onEditTitle ? (
+          <button
+            type="button"
+            onClick={() => {
+              setTempTitle(title);
+              setIsEditingTitle(true);
+            }}
+            className="group flex items-center justify-center gap-1.5 px-3 py-0.5 rounded-lg hover:bg-white/[0.06] active:bg-white/10 transition cursor-pointer max-w-[calc(100%-6.5rem)] pointer-events-auto"
+            title="Tap to edit title"
+          >
+            <h1
+              className="text-[17px] font-bold text-white tracking-[0.08em] leading-tight text-center line-clamp-2 break-words"
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {title}
+            </h1>
+            <Edit className="w-3.5 h-3.5 text-white/30 group-hover:text-white/60 transition-colors flex-shrink-0 self-center" />
+          </button>
+        ) : (
+          <h1
+            className="text-[17px] font-bold text-white tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full line-clamp-2 break-words"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {title}
+          </h1>
+        )}
 
-        {/* Centered Hosted By */}
-        <div className="flex items-center gap-1.5 mt-1">
-          <UserAvatar src={creatorAvatar} alt={creatorName || "Host"} size="w-4 h-4" className="border border-white/10" />
+        {/* Centered Hosted By with Overlapping Avatars */}
+        <div className="flex items-center gap-2 mt-1 select-none">
+          <div className="flex items-center -space-x-1.5 flex-shrink-0">
+            {hostList.map((h, idx) => (
+              <UserAvatar
+                key={h.id || idx}
+                src={h.avatar}
+                alt={h.name || "Host"}
+                size="w-4.5 h-4.5"
+                className="border border-black/80 rounded-full relative"
+                style={{ zIndex: hostList.length - idx }}
+              />
+            ))}
+          </div>
           <span id="immersive-host-attribution" className="text-[12px] text-white/60 font-medium select-none">
-            Hosted by <span className="text-white/90 font-semibold">{creatorName || "Host"}</span>
+            Hosted by <span className="text-white/90 font-semibold">{hostedByText}</span>
           </span>
         </div>
       </div>

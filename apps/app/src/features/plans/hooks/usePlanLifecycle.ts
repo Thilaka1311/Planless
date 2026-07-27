@@ -7,6 +7,7 @@ import { deleteAllPlanTeamAssignments, removePlanTeamAssignment } from "../../..
 import { normalizeStatus } from "../../../../lib/participantStatus";
 import { cleanPlanId as cleanPlanIdUtil, isUuid as isUuidUtil, resolveUserUuid as resolveUserUuidUtil } from "../utils/planUtils";
 import { recalculateWalletExpenses } from "../../wallet/services/walletSyncService";
+import * as api from "../api/plans";
 
 // ─── Dependency injection types ───────────────────────────────────────────────
 
@@ -198,20 +199,8 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     // 4. System message for plan cancellation
     await insertSystemMessage(planUuid, "Plan cancelled", null);
 
-    // 5. Update the plan status to CANCELLED in the database
-    const planUpdate = {
-      status: "CANCELLED"
-    };
-
-
-
-    const { error: planError } = await (supabase as any)
-      .from("plans")
-      .update(planUpdate)
-      .eq("id", planUuid);
-    if (planError) {
-      throw new Error("Failed to cancel plan in database: " + planError.message);
-    }
+    // 5. Update the plan status to CANCELLED in the database via RPC
+    await api.cancelPlanRPC(planUuid);
 
     // 6. Explicitly refresh plans and memories state to ensure cancellation memory appears immediately
     await refreshPlans(["plans", "plan_participants", "memories"]);
@@ -258,6 +247,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       "longitude",
       "updated_at",
       "host_id",
+      "participant_filtering",
     ];
 
     const planUpdate: any = {};
@@ -267,12 +257,19 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       }
     }
 
-    const { error: planError } = await (supabase as any)
-      .from("plans")
-      .update(planUpdate)
-      .eq("id", planUuid);
-    if (planError) {
-      throw new Error("Failed to update plan details in database: " + planError.message);
+    if (planUpdate.max_participants !== undefined) {
+      await api.updatePlanCapacityRPC(planUuid, planUpdate.max_participants);
+      delete planUpdate.max_participants;
+    }
+
+    if (Object.keys(planUpdate).length > 0) {
+      const { error: planError } = await (supabase as any)
+        .from("plans")
+        .update(planUpdate)
+        .eq("id", planUuid);
+      if (planError) {
+        throw new Error("Failed to update plan details in database: " + planError.message);
+      }
     }
 
     // Fetch fresh participants to avoid stale state

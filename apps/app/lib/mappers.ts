@@ -146,10 +146,14 @@ export const mapPlansToLegacyPlans = (
             name: isUsersHydrating ? "Loading..." : "Participant",
             avatar: "",
             isHydrating: isUsersHydrating,
+            role: ip.role,
+            isHost: ip.role === "HOST" || ip.role === "CO_HOST",
             joinState: normalizeStatus(ip.rsvp_status),
             reminderState: "none" as const,
             joinedAt: ip.responded_at || ip.created_at,
-            waitlistedAt: null,
+            joinedQueueAt: ip.joined_queue_at || ip.created_at,
+            waitlistedAt: ip.joined_queue_at || null,
+            assignedGroup: ip.assigned_group || null,
             skippedAt: null,
             deliveredAt: null,
             updatedAt: ip.updated_at,
@@ -164,10 +168,14 @@ export const mapPlansToLegacyPlans = (
           userUuid: u.id,
           name: u.full_name,
           avatar: (u as any).profile_photo_path || u.profile_photo || defaultAvatar,
+          role: ip.role,
+          isHost: ip.role === "HOST" || ip.role === "CO_HOST",
           joinState: normalizeStatus(ip.rsvp_status),
           reminderState: "none" as const,
           joinedAt: ip.responded_at || ip.created_at,
-          waitlistedAt: null,
+          joinedQueueAt: ip.joined_queue_at || ip.created_at,
+          waitlistedAt: ip.joined_queue_at || null,
+          assignedGroup: ip.assigned_group || null,
           skippedAt: null,
           deliveredAt: null,
           updatedAt: ip.updated_at,
@@ -175,7 +183,8 @@ export const mapPlansToLegacyPlans = (
           checkedIn: false,
           removedByHost: false
         };
-      }).filter(Boolean) as any[]
+      }).filter(Boolean) as any[],
+      (p as any).participant_filtering
     );
 
     const dbItem = (p as any).discovery_items;
@@ -254,6 +263,9 @@ export const mapPlansToLegacyPlans = (
       joinLimit: maxSpotsVal,
       response_cutoff_hours: undefined,
       response_deadline_at: p.rsvp_deadline,
+      allowParticipantInvites: p.allow_participant_invites ?? false,
+      participantFiltering: (p.participant_filtering as any) || 'AUTOMATIC',
+      participant_filtering: (p.participant_filtering as any) || 'AUTOMATIC',
 
       // UI Legacy Properties
       category: (categoryVal === "sports" ? "sports" : categoryVal === "dining" ? "restaurants" : categoryVal) as any,
@@ -262,8 +274,8 @@ export const mapPlansToLegacyPlans = (
       maxSpots: maxSpotsVal,
       coverImage: coverImageVal,
       creatorId: hostIdVal,
-      creatorName: creatorFallback.full_name,
-      creatorAvatar: creatorFallback.profile_photo,
+      creatorName: (members.find(m => m.isHost)?.name) || creatorFallback.full_name,
+      creatorAvatar: (members.find(m => m.isHost)?.avatar) || creatorFallback.profile_photo,
       joinedUsers: members,
       timeline: (dateVal.toLowerCase().includes("today") ? "today" : dateVal.toLowerCase().includes("tomorrow") ? "tomorrow" : "this_week") as any,
       description: p.description,
@@ -288,7 +300,7 @@ export const mapPlansToLegacyPlans = (
         pp => pp.plan_id === plan.id && (pp.user_id === activeUuid || pp.user_id === activeUserId || pp.user_id === activeShortId)
       );
       if (myParticipant) {
-        if (myParticipant.rsvp_status === "SKIPPED" && myParticipant.skip_reason === "REMOVED") {
+        if (myParticipant.rsvp_status === "SKIPPED") {
           return false;
         }
       }
@@ -480,7 +492,7 @@ export function formatPlanDate(datetime: string | undefined): string {
   }
 }
 
-export function sortParticipantsByResponseOrder(membersList: any[]): any[] {
+export function sortParticipantsByResponseOrder(membersList: any[], filteringMode?: string): any[] {
   const joined: any[] = [];
   const waitlisted: any[] = [];
   const skipped: any[] = [];
@@ -516,7 +528,21 @@ export function sortParticipantsByResponseOrder(membersList: any[]): any[] {
   };
 
   joined.sort((a, b) => getEpoch(a.joinedAt, a.updatedAt, a.createdAt) - getEpoch(b.joinedAt, b.updatedAt, b.createdAt));
-  waitlisted.sort((a, b) => getEpoch(a.waitlistedAt, a.updatedAt, a.createdAt) - getEpoch(b.waitlistedAt, b.updatedAt, b.createdAt));
+
+  if (filteringMode === 'ASSIGNED') {
+    waitlisted.sort((a, b) => getEpoch(a.createdAt, a.waitlistedAt, a.joinedAt) - getEpoch(b.createdAt, b.waitlistedAt, b.joinedAt));
+  } else {
+    // AUTOMATIC mode: Order strictly by joinedQueueAt / joined_queue_at ASC, with createdAt ASC tiebreaker
+    waitlisted.sort((a, b) => {
+      const queueA = getEpoch(a.joinedQueueAt, a.waitlistedAt, a.createdAt);
+      const queueB = getEpoch(b.joinedQueueAt, b.waitlistedAt, b.createdAt);
+      if (queueA !== queueB) return queueA - queueB;
+      const createdA = getEpoch(a.createdAt);
+      const createdB = getEpoch(b.createdAt);
+      return createdA - createdB;
+    });
+  }
+
   skipped.sort((a, b) => getEpoch(a.skippedAt, a.updatedAt, a.createdAt) - getEpoch(b.skippedAt, b.updatedAt, b.createdAt));
   invited.sort((a, b) => getEpoch(a.deliveredAt, a.updatedAt, a.createdAt) - getEpoch(b.deliveredAt, b.updatedAt, b.createdAt));
 

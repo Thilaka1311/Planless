@@ -417,6 +417,7 @@ export const CreatePlanScreen = ({
       total_cost: form.costAmount,
       cover_image: coverUrl,
       status: "LIVE" as const,
+      participant_filtering: (form.waitlistMode === "assigned" ? "ASSIGNED" : "AUTOMATIC") as 'AUTOMATIC' | 'ASSIGNED',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -431,7 +432,8 @@ export const CreatePlanScreen = ({
         form.selectedFriends,
         form.userProfile,
         titleToUse,
-        form.isHostSelected
+        form.isHostSelected,
+        form.priorityGuestIds || []
       );
 
       if (hasCustomImage && form.customCoverImage) {

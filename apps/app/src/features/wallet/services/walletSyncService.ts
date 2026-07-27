@@ -31,7 +31,7 @@ export const recalculateWalletExpenses = async (planUuid: string): Promise<void>
     const totalCost = Number(plan.total_cost || 0);
     const hostUuid = plan.host_id;
     const divisor = plan.max_participants > 0 ? plan.max_participants : 1;
-    const shareAmount = totalCost <= 0 ? 0 : Math.ceil(totalCost / divisor);
+    const shareAmount = totalCost <= 0 ? 0 : Math.round((totalCost / divisor) * 100) / 100;
 
     // Small delay to let the preceding write commit before we read participants
     await new Promise(r => setTimeout(r, 80));

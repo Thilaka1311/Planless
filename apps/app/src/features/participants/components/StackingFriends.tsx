@@ -41,26 +41,6 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
           alt={item.name}
           size="w-7 h-7"
         />
-        {item.isHost && (
-          <div
-            style={{
-              position: 'absolute',
-              top: -5,
-              right: -5,
-              background: '#000000',
-              borderRadius: '50%',
-              width: 14,
-              height: 14,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: '1px solid #F59E0B',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.5)'
-            }}
-          >
-            <Crown style={{ width: 8, height: 8, color: '#F59E0B' }} fill="#F59E0B" />
-          </div>
-        )}
       </div>
     );
   };
@@ -83,7 +63,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         boxShadow: isItemDragged ? 'none' : '0 2px 6px rgba(0, 0, 0, 0.3)',
         zIndex: isItemDragged ? 0 : 1,
         position: 'relative',
-        opacity: isItemDragged ? 0.25 : 1,
+        opacity: isItemDragged ? 0.25 : item.isAccepted === false ? 0.7 : 1,
         transition: 'background 0.2s, opacity 0.2s ease, box-shadow 0.28s ease',
         willChange: 'transform'
       }}
@@ -100,11 +80,22 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         </span>
       )}
       {renderAvatar()}
-      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
+      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: item.isAccepted === false ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
         {item.name}
       </span>
       {item.isHost && (
-        <span style={{ fontSize: 9.5, fontWeight: 700, color: '#F59E0B', textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: 'Inter, sans-serif' }}>
+        <span style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: '#F59E0B',
+          background: 'rgba(245, 158, 11, 0.12)',
+          padding: '2px 8px',
+          borderRadius: 9999,
+          fontFamily: 'Inter, sans-serif',
+          lineHeight: 1.2,
+          display: 'inline-flex',
+          alignItems: 'center',
+        }}>
           Host
         </span>
       )}
