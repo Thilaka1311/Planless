@@ -37,7 +37,7 @@ function memberToFriend(m: any, hostId: string, activeUserId?: string): Friend {
   const isHostRole = m.role === 'HOST' || m.isHost === true;
   const isCurrentUser = activeUserId && (id === activeUserId || m.userUuid === activeUserId || m.userId === activeUserId || m.user_id === activeUserId);
   const status = normalizeStatus(m.joinState || m.rsvp_status);
-  const isAccepted = status === 'JOINED';
+  const isAccepted = status !== 'INVITED';
   return {
     id,
     dbUuid: m.userUuid || m.userId || m.user_id || m.id,
@@ -48,6 +48,8 @@ function memberToFriend(m: any, hostId: string, activeUserId?: string): Friend {
     isAccepted,
     rsvpStatus: status,
     assignedGroup: m.assignedGroup || m.assigned_group || (status === 'WAITLISTED' ? 'WAITLIST' : 'GOING'),
+    joinQueue: m.joinQueue ?? m.join_queue ?? null,
+    waitlistPosition: m.waitlistPosition ?? m.waitlist_position ?? null,
   };
 }
 
@@ -369,8 +371,8 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
     if (friendIds.length === 0) return;
 
-    // Check Going capacity overflow
-    if (targetGroup === 'GOING' && capacity > 0) {
+    // Capacity overflow dialog — Assigned Waitlist only
+    if (waitlistMode === 'assigned' && targetGroup === 'GOING' && capacity > 0) {
       const currentGoingCount = goingMembers.length;
       const availableSlots = Math.max(0, capacity - currentGoingCount);
 
@@ -497,19 +499,36 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     return true;
   });
 
-  const sortAlphabetically = (list: Friend[]) =>
-    [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+  const waitlistOrderMode = plan.waitlistOrderMode || (plan as any).waitlist_order_mode || 'AUTO';
+
+  const sortByWaitlistOrder = (list: Friend[]) =>
+    [...list].sort((a, b) => {
+      if (waitlistOrderMode === 'CUSTOM') {
+        const posA = a.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
+        const posB = b.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
+        if (posA !== posB) return posA - posB;
+      }
+      const qA = a.joinQueue ?? Number.MAX_SAFE_INTEGER;
+      const qB = b.joinQueue ?? Number.MAX_SAFE_INTEGER;
+      if (qA !== qB) return qA - qB;
+
+      const queueA = a.joinedQueueAt ? new Date(a.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
+      const queueB = b.joinedQueueAt ? new Date(b.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
+      if (queueA !== queueB) return queueA - queueB;
+      return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+    });
 
   const prioritizeCurrentUserAndSort = (list: Friend[]) => {
-    const currentUserEntry = list.find(f => f.name === 'You' || (activeUserId && (f.dbUuid === activeUserId || f.id === activeUserId)));
-    const remaining = list.filter(f => f !== currentUserEntry);
-    const remainingHosts = sortAlphabetically(remaining.filter(f => f.isHost));
-    const remainingNonHosts = sortAlphabetically(remaining.filter(f => !f.isHost));
-    return [
-      ...(currentUserEntry ? [currentUserEntry] : []),
-      ...remainingHosts,
-      ...remainingNonHosts,
-    ];
+    const currentUserEntry = list.find(
+      (f) => f.name === 'You' || (activeUserId && (f.dbUuid === activeUserId || f.id === activeUserId))
+    );
+    const remaining = list.filter((f) => f !== currentUserEntry);
+    const sortedRemaining = sortByWaitlistOrder(remaining);
+
+    if (currentUserEntry) {
+      return [{ ...currentUserEntry, name: 'You' }, ...sortedRemaining];
+    }
+    return sortedRemaining;
   };
 
   const invitedList: Friend[] = useMemo(() => {
@@ -554,17 +573,10 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const waitlistList: Friend[] = useMemo(() => {
     const rawList = waitlistMembers.map((m) => memberToFriend(m, hostId, activeUserId));
     if (waitlistMode === 'automatic') {
-      return [...rawList].sort((a, b) => {
-        const queueA = a.joinedQueueAt ? new Date(a.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
-        const queueB = b.joinedQueueAt ? new Date(b.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
-        if (queueA !== queueB) return queueA - queueB;
-        const createdA = (a as any).createdAt ? new Date((a as any).createdAt).getTime() : 0;
-        const createdB = (b as any).createdAt ? new Date((b as any).createdAt).getTime() : 0;
-        return createdA - createdB;
-      });
+      return sortByWaitlistOrder(rawList);
     }
     return rawList;
-  }, [waitlistMembers, hostId, activeUserId, waitlistMode]);
+  }, [waitlistMembers, hostId, activeUserId, waitlistMode, sortByWaitlistOrder]);
 
   // Determine which tab to show by default: the one containing the current user
   const initialTab: 'going' | 'waitlist' | 'invited' = useMemo(() => {
@@ -728,21 +740,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
   const handleReorderGoing = useCallback(async (newGoing: Friend[]) => {
     setLocalGoingList(newGoing);
-    try {
-      const planUuid = plan.dbUuid || plan.id;
-      const baseTime = new Date().getTime();
-      for (let i = 0; i < newGoing.length; i++) {
-        const f = newGoing[i];
-        await (supabase as any)
-          .from("plan_participants")
-          .update({ created_at: new Date(baseTime + i * 1000).toISOString() })
-          .eq("plan_id", planUuid)
-          .eq("user_id", f.dbUuid);
-      }
-    } catch (err) {
-      console.error("[handleReorderGoing] Failed to persist new order:", err);
-    }
-  }, [plan.id, plan.dbUuid]);
+  }, []);
 
   const handleReorderWaitlist = useCallback(async (newWaitlist: Friend[]) => {
     setLocalWaitlist(newWaitlist);
@@ -750,22 +748,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       const userUuids = newWaitlist.map((f) => f.dbUuid || f.id);
       if (onReorderWaitlist) {
         await onReorderWaitlist(plan.id, userUuids);
-      } else {
-        const planUuid = plan.dbUuid || plan.id;
-        const baseTime = new Date(2026, 0, 1).getTime();
-        for (let i = 0; i < newWaitlist.length; i++) {
-          const f = newWaitlist[i];
-          await (supabase as any)
-            .from("plan_participants")
-            .update({ created_at: new Date(baseTime + i * 1000).toISOString() })
-            .eq("plan_id", planUuid)
-            .eq("user_id", f.dbUuid || f.id);
-        }
       }
     } catch (err) {
       console.error("[handleReorderWaitlist] Failed to persist new order:", err);
     }
-  }, [plan.id, plan.dbUuid, onReorderWaitlist]);
+  }, [plan.id, onReorderWaitlist]);
 
   return (
     <>

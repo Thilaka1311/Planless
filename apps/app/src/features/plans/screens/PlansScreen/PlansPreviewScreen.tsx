@@ -41,6 +41,7 @@ import { useGooglePlacesAutocomplete } from "../../../../shared/hooks/useGoogleP
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
 import { InlineParticipantView } from "../../components/InlineParticipantView";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";
+import { RSVPCard } from "../../components/RSVPCard";
 
 // ==========================================
 // UTILITIES & CONSTANTS
@@ -820,14 +821,21 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const urgencyColor = rsvp.color;
 
   const planUuid = selectedPlan ? ((selectedPlan as any).dbUuid || selectedPlan.id) : "";
-  const resolvedUserUuid = userProfile.dbUuid || activeUserId || "";
+  const resolvedUserUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId || "";
 
   const myParticipantRecord = useMemo(() => {
     if (!selectedPlan) return undefined;
+    const userIds = new Set<string>();
+    if (resolvedUserUuid) userIds.add(resolvedUserUuid);
+    if (activeUserId) userIds.add(activeUserId);
+    if (userProfile?.dbUuid) userIds.add(userProfile.dbUuid);
+    if ((userProfile as any)?.id) userIds.add((userProfile as any).id);
+    if (userProfile?.user_id) userIds.add(userProfile.user_id);
+
     return dbPlanParticipants.find(
-      pp => pp.plan_id === planUuid && (pp.user_id === resolvedUserUuid || pp.user_id === activeUserId)
+      pp => (pp.plan_id === planUuid || (selectedPlan.id && pp.plan_id === selectedPlan.id)) && userIds.has(pp.user_id)
     );
-  }, [dbPlanParticipants, selectedPlan, planUuid, activeUserId, resolvedUserUuid]);
+  }, [dbPlanParticipants, selectedPlan, planUuid, activeUserId, resolvedUserUuid, userProfile]);
 
   const isHost = myParticipantRecord
     ? (myParticipantRecord.role === "HOST")
@@ -1344,6 +1352,22 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             ) : (
               <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} />
             )
+          )}
+          <RSVPCard
+            myParticipantRecord={myParticipantRecord}
+            className={myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" ? "!bottom-24" : ""}
+          />
+          {myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" && (
+            <div className="fixed bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black via-black/90 to-transparent z-40">
+              <button
+                type="button"
+                disabled={isRejoining}
+                onClick={handleRejoin}
+                className="w-full py-4 bg-white hover:bg-zinc-100 active:bg-zinc-200 text-black font-semibold text-[15px] rounded-full transition cursor-pointer shadow-lg active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isRejoining ? "Rejoining..." : "Rejoin Plan"}
+              </button>
+            </div>
           )}
           {hasUserEnteredDescription(selectedPlan) && (
             <div id="immersive-description-block" className="space-y-2 text-left bg-zinc-900/20 p-5 rounded-3xl border border-white/[0.02] select-text">

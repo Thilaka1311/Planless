@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { ChevronRight, Check, X, CreditCard, Inbox, CalendarCheck, Hourglass, Coffee, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
-import { Plan } from "../../../../core/types";
+import { Plan, DbPlanParticipant } from "../../../../core/types";
 import { normalizeStatus } from "../../../../../lib/participantStatus";
 import { formatPlanDate } from "../../../../../lib/mappers";
 import { usePlansStore } from "../../state/PlansContext";
@@ -14,15 +14,15 @@ import { PlansDivider } from "../../components/PlansDivider";
 
 interface PlansScreenProps {
   setSelectedPlanId: (planId: string | null) => void;
-  passedByPlanId?: Record<string, string[]>;
-  plansFilter?: 'JOINED' | 'WAITLISTED' | 'passed' | 'hosted';
-  setPlansFilter?: (filter: 'JOINED' | 'WAITLISTED' | 'passed' | 'hosted') => void;
+  skippedByPlanId?: Record<string, string[]>;
+  plansFilter?: 'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted';
+  setPlansFilter?: (filter: 'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted') => void;
   onScroll?: (y: number) => void;
 }
 
 export const PlansScreen = React.memo(({
   setSelectedPlanId,
-  passedByPlanId = {},
+  skippedByPlanId = {},
   plansFilter: propPlansFilter,
   setPlansFilter: propSetPlansFilter,
   onScroll,
@@ -31,11 +31,11 @@ export const PlansScreen = React.memo(({
   const { userProfile, activeUserId } = useProfileStore();
   const { circles } = useCirclesStore();
 
-  const [localPlansFilter, setLocalPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'passed' | 'hosted'>('JOINED');
+  const [localPlansFilter, setLocalPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted'>('JOINED');
   const plansFilter = propPlansFilter !== undefined ? propPlansFilter : localPlansFilter;
   const setPlansFilter = propSetPlansFilter !== undefined ? propSetPlansFilter : setLocalPlansFilter;
 
-  const userUuid = userProfile?.dbUuid || "";
+  const userUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId || "";
 
   const getPlanDateTime = (plan: Plan): Date => {
     const now = new Date();
@@ -135,53 +135,101 @@ export const PlansScreen = React.memo(({
     }
   };
 
+  const allMyUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (userUuid) ids.add(userUuid);
+    if (activeUserId) ids.add(activeUserId);
+    if (userProfile?.dbUuid) ids.add(userProfile.dbUuid);
+    if ((userProfile as any)?.id) ids.add((userProfile as any).id);
+    if (userProfile?.user_id) ids.add(userProfile.user_id);
+    return ids;
+  }, [userUuid, activeUserId, userProfile]);
+
+  // 2. Build efficient O(1) participant lookup for current user: planId -> DbPlanParticipant
+  const participantMap = useMemo(() => {
+    const map = new Map<string, DbPlanParticipant>();
+    (dbPlanParticipants || []).forEach(pp => {
+      if (pp.user_id && allMyUserIds.has(pp.user_id) && pp.plan_id) {
+        map.set(pp.plan_id, pp);
+      }
+    });
+    return map;
+  }, [dbPlanParticipants, allMyUserIds]);
+
   const involvedPlans = useMemo(() => {
     return plans.filter(p => {
-      return p.members.some(m => m.userUuid && m.userUuid === userUuid);
+      const isDbParticipant = participantMap.has(p.id) || Boolean(p.dbUuid && participantMap.has(p.dbUuid));
+      return isDbParticipant;
     });
-  }, [plans, userUuid]);
+  }, [plans, participantMap]);
+
+  console.log("=== RUNTIME AUDIT START ===");
+  console.log("Audit 1 - dbPlanParticipants length:", dbPlanParticipants.length);
+  console.log("Audit 1 - SKIPPED rows in dbPlanParticipants:", dbPlanParticipants.filter(pp => pp.rsvp_status === "SKIPPED"));
+
+  plans.forEach(p => {
+    const pp = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
+    console.log("Audit 2 - ID Comparison for Plan:", {
+      title: p.title,
+      "p.id": p.id,
+      "p.dbUuid": p.dbUuid,
+      "pp.plan_id": pp?.plan_id,
+      "pp.plan_id === p.id": pp ? pp.plan_id === p.id : false,
+      "pp.plan_id === p.dbUuid": pp ? pp.plan_id === p.dbUuid : false,
+      "participantMap.has(p.id)": participantMap.has(p.id),
+      "participantMap.has(p.dbUuid)": p.dbUuid ? participantMap.has(p.dbUuid) : false,
+    });
+  });
+
+  console.log("Audit 3 - normalizeStatus('SKIPPED'):", normalizeStatus("SKIPPED"));
+  console.log("Audit 4 - plans count:", plans.length, "plans ids:", plans.map(p => ({ id: p.id, dbUuid: p.dbUuid, title: p.title })));
+  console.log("=== RUNTIME AUDIT END ===");
 
   // Helper filter function for status match
-  const filterByStatus = (statusFilter: 'all' | 'JOINED' | 'WAITLISTED' | 'passed' | 'hosted') => {
+  const filterByStatus = (statusFilter: 'all' | 'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted') => {
     return involvedPlans.filter((p) => {
-      // Cancelled plans should only show up under the 'passed' (past/skipped) filter section.
+      // Cancelled plans should only show up under the 'SKIPPED' (past/skipped) filter section.
       if (p.status === "CANCELLED") {
-        return statusFilter === "passed" || statusFilter === "all";
+        return statusFilter === "SKIPPED" || statusFilter === "all";
       }
 
-      const myParticipant = dbPlanParticipants.find(
-        (pp) => pp.plan_id === p.id && pp.user_id === userUuid
-      );
-      const myStatus = normalizeStatus(myParticipant?.rsvp_status);
-      const isSkipped = myStatus === "SKIPPED";
-      const isJoined = myStatus === "JOINED";
-      const isWaitlisted = myStatus === "WAITLISTED";
-      const isRoleHost = myParticipant
-        ? (myParticipant.role === "HOST")
-        : p.members.some(m => (m.userId === userUuid || m.userUuid === userUuid) && m.isHost);
-      const isHosted = isRoleHost && (isJoined || myParticipant?.rsvp_status === "JOINED");
-      const isRegularJoined = isJoined && !isRoleHost;
-      const autoPassed = (passedByPlanId[p.id] || []).includes(userProfile?.name || "");
+      const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
 
-      if (statusFilter === "all") return isJoined || isWaitlisted || isHosted || isSkipped || autoPassed;
+      if (!myParticipant) {
+        console.warn(`[PlansScreen Warning] No plan_participants row found for plan ${p.id}`);
+      }
+
+      // plan_participants is the canonical single source of truth
+      const rsvpStatus = normalizeStatus(myParticipant?.rsvp_status);
+
+      // Strict categorisation based on plan_participants.rsvp_status
+      const isSkipped = rsvpStatus === "SKIPPED";
+      const isJoined = rsvpStatus === "JOINED";
+      const isWaitlisted = rsvpStatus === "WAITLISTED";
+
+      const isHostRole = myParticipant?.role === "HOST";
+      const isHosted = isHostRole && isJoined;
+      const isRegularJoined = isJoined && !isHostRole;
+
+      if (statusFilter === "all") return isJoined || isWaitlisted || isHosted || isSkipped;
       if (statusFilter === "JOINED") return isRegularJoined;
       if (statusFilter === "WAITLISTED") return isWaitlisted;
-      if (statusFilter === "passed") return isSkipped || autoPassed;
+      if (statusFilter === "SKIPPED") return isSkipped;
       if (statusFilter === "hosted") return isHosted;
 
       return false;
     });
   };
 
-  const allPlans = useMemo(() => filterByStatus('all'), [involvedPlans, circles, dbPlanParticipants, userUuid, userProfile?.name, activeUserId, passedByPlanId]);
-  const joinedPlans = useMemo(() => filterByStatus('JOINED'), [involvedPlans, circles, dbPlanParticipants, userUuid, userProfile?.name, activeUserId, passedByPlanId]);
-  const waitlistedPlans = useMemo(() => filterByStatus('WAITLISTED'), [involvedPlans, circles, dbPlanParticipants, userUuid, userProfile?.name, activeUserId, passedByPlanId]);
-  const passedPlans = useMemo(() => filterByStatus('passed'), [involvedPlans, circles, dbPlanParticipants, userUuid, userProfile?.name, activeUserId, passedByPlanId]);
-  const hostedPlans = useMemo(() => filterByStatus('hosted'), [involvedPlans, circles, dbPlanParticipants, userUuid, userProfile?.name, activeUserId, passedByPlanId]);
+  const allPlans = useMemo(() => filterByStatus('all'), [involvedPlans, participantMap]);
+  const joinedPlans = useMemo(() => filterByStatus('JOINED'), [involvedPlans, participantMap]);
+  const waitlistedPlans = useMemo(() => filterByStatus('WAITLISTED'), [involvedPlans, participantMap]);
+  const skippedPlans = useMemo(() => filterByStatus('SKIPPED'), [involvedPlans, participantMap]);
+  const hostedPlans = useMemo(() => filterByStatus('hosted'), [involvedPlans, participantMap]);
 
   const joinedCount = joinedPlans.length;
   const waitlistedCount = waitlistedPlans.length;
-  const passedCount = passedPlans.length;
+  const skippedCount = skippedPlans.length;
   const hostedCount = hostedPlans.length;
 
   // Status badge config per filter
@@ -197,7 +245,7 @@ export const PlansScreen = React.memo(({
           label: "Waitlisted",
           cls: "bg-amber-500/20 border-amber-500/40 text-amber-300",
         };
-      case "passed":
+      case "SKIPPED":
         return {
           label: "Skipped",
           cls: "bg-rose-500/15 border-rose-500/30 text-rose-400",
@@ -217,20 +265,17 @@ export const PlansScreen = React.memo(({
   };
   const getPlanBucketLabel = (p: Plan) => {
     if (p.status === "CANCELLED") return "Cancelled";
-    const myParticipant = dbPlanParticipants.find(
-      (pp) => pp.plan_id === p.id && pp.user_id === userUuid
-    );
-    const myStatus = normalizeStatus(myParticipant?.rsvp_status);
-    const isSkipped = myStatus === "SKIPPED";
-    const isJoined = myStatus === "JOINED";
-    const isWaitlisted = myStatus === "WAITLISTED";
-    const isHosted = p.hostId === userUuid || p.hostId === activeUserId;
-    const autoPassed = (passedByPlanId[p.id] || []).includes(userProfile?.name || "");
+    const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
+    const rsvpStatus = normalizeStatus(myParticipant?.rsvp_status);
+    const isSkipped = rsvpStatus === "SKIPPED";
+    const isJoined = rsvpStatus === "JOINED";
+    const isWaitlisted = rsvpStatus === "WAITLISTED";
+    const isHosted = myParticipant?.role === "HOST";
 
     if (isHosted) return "Hosted";
-    if (isJoined && !p.isHappened && !autoPassed && !isSkipped) return "Joined";
+    if (isJoined && !p.isHappened && !isSkipped) return "Joined";
     if (isWaitlisted && !p.isHappened && !isSkipped) return "Waitlisted";
-    if (isSkipped || autoPassed) return "Skipped";
+    if (isSkipped) return "Skipped";
     return "";
   };
 
@@ -282,12 +327,15 @@ export const PlansScreen = React.memo(({
   const renderGroupedPlans = (plansList: Plan[]) => {
     const groups = groupPlansByDate(plansList);
 
+    // If viewing SKIPPED, ensure plans that fell into groups.past are still included (e.g. under TODAY)
+    const todayPlans = plansFilter === 'SKIPPED' ? [...groups.today, ...groups.past] : groups.today;
+
     const sectionsToRender = [
-      { id: 'today' as const, label: 'TODAY', plans: groups.today },
+      { id: 'today' as const, label: 'TODAY', plans: todayPlans },
       { id: 'tomorrow' as const, label: 'TOMORROW', plans: groups.tomorrow },
       { id: 'thisWeek' as const, label: 'THIS WEEK', plans: groups.thisWeek },
       { id: 'later' as const, label: 'LATER', plans: groups.later },
-      { id: 'past' as const, label: 'PAST', plans: groups.past },
+      ...(plansFilter !== 'SKIPPED' ? [{ id: 'past' as const, label: 'PAST', plans: groups.past }] : []),
     ];
 
     const activeSections = sectionsToRender.filter(s => s.plans.length > 0);
@@ -301,7 +349,7 @@ export const PlansScreen = React.memo(({
         emptyIcon = <Hourglass className="w-8 h-8 text-amber-400 stroke-[1.5]" />;
         emptyTitle = "No waitlisted plans";
         emptyDesc = "Plans with a waiting list appear here";
-      } else if (plansFilter === 'passed') {
+      } else if (plansFilter === 'SKIPPED') {
         emptyIcon = <Coffee className="w-8 h-8 text-rose-400 stroke-[1.5]" />;
         emptyTitle = "Nothing skipped";
         emptyDesc = "Plans you've chosen to skip are kept here";
@@ -362,7 +410,7 @@ export const PlansScreen = React.memo(({
           counts={{
             joined: joinedCount,
             waitlisted: waitlistedCount,
-            passed: passedCount,
+            skipped: skippedCount,
             hosted: hostedCount,
           }}
           onSelect={setPlansFilter}
@@ -374,7 +422,7 @@ export const PlansScreen = React.memo(({
 
           {plansFilter === 'WAITLISTED' && renderGroupedPlans(waitlistedPlans)}
 
-          {plansFilter === 'passed' && renderGroupedPlans(passedPlans)}
+          {plansFilter === 'SKIPPED' && renderGroupedPlans(skippedPlans)}
 
           {plansFilter === 'hosted' && renderGroupedPlans(hostedPlans)}
         </div>

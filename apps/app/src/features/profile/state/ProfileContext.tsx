@@ -88,8 +88,8 @@ export const ProfileProvider = ({
 
 
 
-  const activeUserId = userProfile?.dbUuid || "";
-  const activeUserUuid = userProfile?.dbUuid || "";
+  const activeUserId = userProfile?.dbUuid || (userProfile as any)?.id || "";
+  const activeUserUuid = userProfile?.dbUuid || (userProfile as any)?.id || "";
   const isAdmin = userProfile?.role === "admin";
 
   const contextValue = useMemo(() => ({

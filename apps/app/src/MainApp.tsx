@@ -68,7 +68,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   // Snooze and Auto-Pass overrides
   const [interestedPlanIds, setInterestedPlanIds] = useState<string[]>([]);
   const [snoozedPlanIds, setSnoozedPlanIds] = useState<string[]>([]);
-  const [passedByPlanId, setPassedByPlanId] = useState<Record<string, string[]>>({});
+  const [skippedByPlanId, setSkippedByPlanId] = useState<Record<string, string[]>>({});
   const [reminderSentPlanIds, setReminderSentPlanIds] = useState<string[]>([]);
 
   // Checkout splits overlay
@@ -76,7 +76,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const [showPaymentSuccessId, setShowPaymentSuccessId] = useState<string | null>(null);
   const [showWaitlistSuccessId, setShowWaitlistSuccessId] = useState<string | null>(null);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
-  const [plansFilter, setPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'passed' | 'hosted'>('JOINED');
+  const [plansFilter, setPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted'>('JOINED');
   const [plansScrollY, setPlansScrollY] = useState(0);
   const [showPlansSearchScreen, setShowPlansSearchScreen] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
@@ -448,7 +448,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
         {activeTab === "plans" && (
           <PlansScreen
             setSelectedPlanId={setSelectedPlanId}
-            passedByPlanId={passedByPlanId}
+            skippedByPlanId={skippedByPlanId}
             plansFilter={plansFilter}
             setPlansFilter={setPlansFilter}
             onScroll={setPlansScrollY}

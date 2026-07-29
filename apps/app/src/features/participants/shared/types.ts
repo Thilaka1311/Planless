@@ -8,6 +8,8 @@ export interface Friend {
   isAccepted?: boolean;
   rsvpStatus?: string;
   assignedGroup?: 'GOING' | 'WAITLIST' | null;
+  joinQueue?: number | null;
+  waitlistPosition?: number | null;
 }
 
 export type ParticipantTab = 'going' | 'waitlist' | 'invited';

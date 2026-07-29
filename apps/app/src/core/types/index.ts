@@ -78,6 +78,7 @@ export interface DbPlan {
   longitude?: number | null;
   allow_participant_invites?: boolean;
   participant_filtering?: 'AUTOMATIC' | 'ASSIGNED';
+  waitlist_order_mode?: 'AUTO' | 'CUSTOM';
 }
 
 // 5. PLAN_PARTICIPANTS TABLE (Attendance & payment status)
@@ -92,6 +93,8 @@ export interface DbPlanParticipant {
   responded_at: string | null;
   joined_queue_at?: string;
   assigned_group?: 'GOING' | 'WAITLIST' | null;
+  join_queue?: number | null;
+  waitlist_position?: number | null;
   created_at: string;
   updated_at: string;
   cost_per_participant?: number | null;
@@ -182,14 +185,16 @@ export interface PlanMember {
   userUuid?: string;
   name: string;
   avatar: string;
-  isHydrating?: boolean;
-  /** Mirrors plan_participants.role — HOST | CO_HOST | PARTICIPANT */
   role?: 'HOST' | 'CO_HOST' | 'PARTICIPANT';
   isHost?: boolean;
   joinState: PlanState;
   reminderState: "sent" | "none";
   joinedAt: string;
+  joinedQueueAt?: string;
   waitlistedAt?: string;
+  assignedGroup?: 'GOING' | 'WAITLIST' | null;
+  joinQueue?: number | null;
+  waitlistPosition?: number | null;
   skippedAt?: string;
   deliveredAt?: string;
   updatedAt?: string;
@@ -221,6 +226,8 @@ export interface Plan {
   joinLimit?: number;
   participantFiltering?: 'AUTOMATIC' | 'ASSIGNED';
   participant_filtering?: 'AUTOMATIC' | 'ASSIGNED';
+  waitlistOrderMode?: 'AUTO' | 'CUSTOM';
+  waitlist_order_mode?: 'AUTO' | 'CUSTOM';
 
   // UI Legacy Properties (Synced with Strict Contracts)
   category: "movies" | "sports" | "restaurants" | "custom";
