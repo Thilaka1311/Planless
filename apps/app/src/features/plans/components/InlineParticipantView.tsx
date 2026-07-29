@@ -244,14 +244,6 @@ export function InlineParticipantView({ plan, activeUserId }: InlineParticipantV
                           <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800">
                             <UserAvatar src={person.avatar} alt={person.name} size="w-full h-full" />
                           </div>
-                          {person.isHost && (
-                            <div
-                              className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center border border-[#F59E0B] shadow-[0_1px_3px_rgba(0,0,0,0.5)]"
-                              style={{ background: '#000000' }}
-                            >
-                              <Crown className="w-2 h-2 text-[#F59E0B]" fill="#F59E0B" />
-                            </div>
-                          )}
                         </div>
                         <span className="font-sans text-[13.5px] text-white/90 font-medium leading-none truncate flex-1">
                           {person.name}

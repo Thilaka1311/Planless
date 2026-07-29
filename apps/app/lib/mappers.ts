@@ -41,6 +41,11 @@ export const mapPlansToLegacyPlans = (
   activeUserId: string = "",
   circlesList: DbCircle[] = []
 ): Plan[] => {
+  console.log("[MAPPERS RUNTIME]", {
+    plansListLength: plansList.length,
+    participantsLength: participants.length,
+    activeUserId
+  });
   const activeUserObj = usersList.find(u => u.user_id === activeUserId || (u as any).id === activeUserId);
   const activeUuid = activeUserObj ? (activeUserObj as any).id : activeUserId;
   const activeShortId = activeUserObj ? activeUserObj.user_id : activeUserId;
@@ -79,11 +84,10 @@ export const mapPlansToLegacyPlans = (
     const circleNameVal = "Custom Plan";
     const isCircleHydrating = false;
 
+    const hostIdVal = p.host_id || "unknown_host";
     if (!p.host_id) {
-      console.error(`[Data Integrity Error] plan ${p.id} is missing a host_id!`);
-      throw new Error(`Data Integrity Error: Plan ${p.id} is missing a host_id.`);
+      console.warn(`[mapPlansToLegacyPlans Warning] Plan ${p.id} is missing host_id, falling back to unknown_host.`);
     }
-    const hostIdVal = p.host_id;
     const isOwner = hostIdVal === activeUserId || hostIdVal === activeUuid || hostIdVal === activeShortId;
 
     let creator = findUserInList(hostIdVal);
@@ -154,6 +158,8 @@ export const mapPlansToLegacyPlans = (
             joinedQueueAt: ip.joined_queue_at || ip.created_at,
             waitlistedAt: ip.joined_queue_at || null,
             assignedGroup: ip.assigned_group || null,
+            joinQueue: ip.join_queue ?? null,
+            waitlistPosition: ip.waitlist_position ?? null,
             skippedAt: null,
             deliveredAt: null,
             updatedAt: ip.updated_at,
@@ -176,6 +182,8 @@ export const mapPlansToLegacyPlans = (
           joinedQueueAt: ip.joined_queue_at || ip.created_at,
           waitlistedAt: ip.joined_queue_at || null,
           assignedGroup: ip.assigned_group || null,
+          joinQueue: ip.join_queue ?? null,
+          waitlistPosition: ip.waitlist_position ?? null,
           skippedAt: null,
           deliveredAt: null,
           updatedAt: ip.updated_at,
@@ -184,7 +192,8 @@ export const mapPlansToLegacyPlans = (
           removedByHost: false
         };
       }).filter(Boolean) as any[],
-      (p as any).participant_filtering
+      (p as any).participant_filtering,
+      (p as any).waitlist_order_mode
     );
 
     const dbItem = (p as any).discovery_items;
@@ -266,6 +275,8 @@ export const mapPlansToLegacyPlans = (
       allowParticipantInvites: p.allow_participant_invites ?? false,
       participantFiltering: (p.participant_filtering as any) || 'AUTOMATIC',
       participant_filtering: (p.participant_filtering as any) || 'AUTOMATIC',
+      waitlistOrderMode: (p.waitlist_order_mode as any) || 'AUTO',
+      waitlist_order_mode: (p.waitlist_order_mode as any) || 'AUTO',
 
       // UI Legacy Properties
       category: (categoryVal === "sports" ? "sports" : categoryVal === "dining" ? "restaurants" : categoryVal) as any,
@@ -293,21 +304,6 @@ export const mapPlansToLegacyPlans = (
       // Restaurant Plan fields
       interestedUsers: [],
     };
-  }).filter(plan => {
-    const isOwner = plan.hostId === activeUserId || plan.hostId === activeUuid || plan.hostId === activeShortId;
-    if (!isOwner) {
-      const myParticipant = participants.find(
-        pp => pp.plan_id === plan.id && (pp.user_id === activeUuid || pp.user_id === activeUserId || pp.user_id === activeShortId)
-      );
-      if (myParticipant) {
-        if (myParticipant.rsvp_status === "SKIPPED") {
-          return false;
-        }
-      }
-
-
-    }
-    return true;
   });
 };
 
@@ -492,28 +488,23 @@ export function formatPlanDate(datetime: string | undefined): string {
   }
 }
 
-export function sortParticipantsByResponseOrder(membersList: any[], filteringMode?: string): any[] {
+function sortMembers(members: any[], filteringMode?: string, waitlistOrderMode: string = 'AUTO'): any[] {
   const joined: any[] = [];
   const waitlisted: any[] = [];
   const skipped: any[] = [];
   const invited: any[] = [];
 
-  for (const m of membersList) {
-    const status = m.joinState || "";
-    if (status === "JOINED") {
-      joined.push(m);
-    } else if (status === "WAITLISTED") {
-      waitlisted.push(m);
-    } else if (status === "SKIPPED") {
-      skipped.push(m);
-    } else {
-      invited.push(m);
-    }
-  }
+  members.forEach(m => {
+    const st = m.joinState || "";
+    if (st === 'JOINED') joined.push(m);
+    else if (st === 'WAITLISTED') waitlisted.push(m);
+    else if (st === 'SKIPPED') skipped.push(m);
+    else invited.push(m);
+  });
 
-  const getEpoch = (timestamp: any, fallback1?: any, fallback2?: any): number => {
-    if (timestamp) {
-      const parsed = Date.parse(timestamp);
+  const getEpoch = (dateStr?: string, fallback1?: string, fallback2?: string) => {
+    if (dateStr) {
+      const parsed = Date.parse(dateStr);
       if (!isNaN(parsed)) return parsed;
     }
     if (fallback1) {
@@ -529,14 +520,23 @@ export function sortParticipantsByResponseOrder(membersList: any[], filteringMod
 
   joined.sort((a, b) => getEpoch(a.joinedAt, a.updatedAt, a.createdAt) - getEpoch(b.joinedAt, b.updatedAt, b.createdAt));
 
-  if (filteringMode === 'ASSIGNED') {
+  if (waitlistOrderMode === 'CUSTOM') {
+    waitlisted.sort((a, b) => {
+      const posA = a.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
+      const posB = b.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
+      if (posA !== posB) return posA - posB;
+      const qA = a.joinQueue ?? Number.MAX_SAFE_INTEGER;
+      const qB = b.joinQueue ?? Number.MAX_SAFE_INTEGER;
+      return qA - qB;
+    });
+  } else if (filteringMode === 'ASSIGNED') {
     waitlisted.sort((a, b) => getEpoch(a.createdAt, a.waitlistedAt, a.joinedAt) - getEpoch(b.createdAt, b.waitlistedAt, b.joinedAt));
   } else {
-    // AUTOMATIC mode: Order strictly by joinedQueueAt / joined_queue_at ASC, with createdAt ASC tiebreaker
+    // AUTOMATIC mode: Order strictly by joinQueue ASC, with createdAt ASC tiebreaker
     waitlisted.sort((a, b) => {
-      const queueA = getEpoch(a.joinedQueueAt, a.waitlistedAt, a.createdAt);
-      const queueB = getEpoch(b.joinedQueueAt, b.waitlistedAt, b.createdAt);
-      if (queueA !== queueB) return queueA - queueB;
+      const qA = a.joinQueue ?? Number.MAX_SAFE_INTEGER;
+      const qB = b.joinQueue ?? Number.MAX_SAFE_INTEGER;
+      if (qA !== qB) return qA - qB;
       const createdA = getEpoch(a.createdAt);
       const createdB = getEpoch(b.createdAt);
       return createdA - createdB;
@@ -547,4 +547,8 @@ export function sortParticipantsByResponseOrder(membersList: any[], filteringMod
   invited.sort((a, b) => getEpoch(a.deliveredAt, a.updatedAt, a.createdAt) - getEpoch(b.deliveredAt, b.updatedAt, b.createdAt));
 
   return [...joined, ...waitlisted, ...skipped, ...invited];
+}
+
+export function sortParticipantsByResponseOrder(membersList: any[], filteringMode?: string, waitlistOrderMode: string = 'AUTO'): any[] {
+  return sortMembers(membersList, filteringMode, waitlistOrderMode);
 }

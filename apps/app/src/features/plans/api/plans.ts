@@ -19,12 +19,9 @@ export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]
 
   // Phase 1 - Merge
   const hostedPlanIds = (hostedData || []).map(p => p.id);
-  const participantPlanIds = (partData || [])
-    .filter(p => p.rsvp_status !== "SKIPPED")
-    .map(p => p.plan_id);
+  const participantPlanIds = (partData || []).map(p => p.plan_id);
 
   const allPlanIds = Array.from(new Set([...hostedPlanIds, ...participantPlanIds])).filter(Boolean);
-
 
   if (allPlanIds.length === 0) {
     return [];

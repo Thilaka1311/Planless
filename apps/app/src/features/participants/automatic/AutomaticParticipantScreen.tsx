@@ -187,17 +187,25 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           />
         )}
         {activeTab === 'waitlist' && hasWaitlistTab && (
-          <WaitlistSection
-            waitlist={displayWaitlist}
-            onItemTap={isHostUser ? (item) => handleItemTap(item, 'waitlist') : undefined}
-            onAddFriends={onAddFriends}
-            reorderable={false}
-            showIndex={true}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#8E8E93', textTransform: 'uppercase' }}>
+              WAITLISTED
+            </span>
+            <WaitlistSection
+              waitlist={displayWaitlist}
+              onItemTap={isHostUser ? (item) => handleItemTap(item, 'waitlist') : undefined}
+              onAddFriends={onAddFriends}
+              reorderable={false}
+              showIndex={true}
+            />
+          </div>
         )}
         {activeTab === 'invited' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-            {(mode === 'wizard' ? selectedFriends : displayInvited).map((item) => (
+            {(mode === 'wizard'
+              ? [...(hostItem ? [hostItem] : []), ...selectedFriends]
+              : displayInvited
+            ).map((item) => (
               <StackingFriends
                 key={item.id}
                 item={item}

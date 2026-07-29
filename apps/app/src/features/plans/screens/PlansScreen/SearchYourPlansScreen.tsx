@@ -19,7 +19,7 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
   onBack,
   setSelectedPlanId,
 }) => {
-  const { plans } = usePlansStore();
+  const { plans, dbPlanParticipants } = usePlansStore();
   const { userProfile } = useProfileStore();
   const { circles } = useCirclesStore();
 
@@ -30,9 +30,11 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
   // Get all plans where the user is a member
   const involvedPlans = useMemo(() => {
     return plans.filter((p) => {
-      return p.members.some((m) => m.userUuid && m.userUuid === userUuid);
+      const isMember = p.members.some((m) => m.userUuid && m.userUuid === userUuid);
+      const isDbParticipant = dbPlanParticipants.some((pp) => pp.plan_id === p.id && pp.user_id === userUuid);
+      return isMember || isDbParticipant;
     });
-  }, [plans, userUuid]);
+  }, [plans, userUuid, dbPlanParticipants]);
 
   // Filter plans based on the search query
   const filteredPlans = useMemo(() => {

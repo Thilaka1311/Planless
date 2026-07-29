@@ -309,7 +309,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             {acceptedWaitlist.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#8E8E93', textTransform: 'uppercase' }}>
-                  Accepted
+                  WAITLISTED
                 </span>
                 <WaitlistSection
                   waitlist={acceptedWaitlist}
@@ -324,7 +324,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             {invitedWaitlist.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#8E8E93', textTransform: 'uppercase' }}>
-                  Invited
+                  INVITED
                 </span>
                 <WaitlistSection
                   waitlist={invitedWaitlist}

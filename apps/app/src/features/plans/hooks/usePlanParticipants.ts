@@ -238,7 +238,8 @@ export function usePlanParticipants({
     const acceptedCount = dbPlanParticipants.filter(
       pp => pp.plan_id === planUuid && pp.rsvp_status === "JOINED"
     ).length;
-    const limit = matchedPlan?.capacity || matchedPlan?.joinLimit || matchedPlan?.maxSpots || 0;
+    const dbPlanObj = dbPlans.find(p => p.id === planUuid || p.public_id === planUuid);
+    const limit = matchedPlan?.capacity || matchedPlan?.joinLimit || matchedPlan?.maxSpots || (dbPlanObj as any)?.max_participants || 0;
     const isWaitlistMode = !!(limit > 0 && acceptedCount >= limit);
 
 
@@ -366,14 +367,11 @@ export function usePlanParticipants({
 
     const existingBefore = dbPlanParticipants.find(p => p.plan_id === planUuid && p.user_id === userUuid);
 
-
-
     // 2. Database Persistence - invoke SECURITY DEFINER RPC
     if (existingBefore) {
       applyParticipantOptimisticUpdate(planUuid, userUuid, {
         role: "PARTICIPANT",
         rsvp_status: "SKIPPED",
-        assigned_group: null,
         responded_at: new Date().toISOString(),
         skip_reason: "LEFT"
       } as any);
@@ -416,28 +414,20 @@ export function usePlanParticipants({
     const existingBefore = dbPlanParticipants.find(p => p.plan_id === planUuid && p.user_id === userUuid);
 
     if (!existingBefore) {
-
-
       return;
     }
 
     const hostUuid = matchedPlan?.hostId;
     const isHost = hostUuid === userUuid;
     if (isHost) {
-
-
       return;
     }
 
     const normStatus = normalizeStatus(existingBefore.rsvp_status);
     const isSkippable = normStatus === "JOINED" || normStatus === "WAITLISTED" || normStatus === "INVITED";
     if (!isSkippable) {
-
-
       return;
     }
-
-
 
     try {
       const wasActive = existingBefore.rsvp_status === "JOINED" || existingBefore.rsvp_status === "WAITLISTED";
@@ -446,7 +436,6 @@ export function usePlanParticipants({
       applyParticipantOptimisticUpdate(planUuid, userUuid, {
         role: "PARTICIPANT",
         rsvp_status: "SKIPPED",
-        assigned_group: null,
         responded_at: new Date().toISOString(),
         skip_reason: targetSkipReason
       } as any);
@@ -1017,9 +1006,7 @@ export function usePlanParticipants({
     const planUuid = matchedPlan?.dbUuid || planId;
     if (!planUuid || orderedUserUuids.length === 0) return;
 
-    const baseTime = new Date(2026, 0, 1).getTime();
-
-    // Optimistically update created_at sequence in local state
+    // Optimistically update waitlist_position sequence in local state
     setDbPlanParticipants(prev => {
       return prev.map(pp => {
         if (pp.plan_id === planUuid || pp.plan_id === planId) {
@@ -1030,7 +1017,7 @@ export function usePlanParticipants({
           if (idx !== -1) {
             return {
               ...pp,
-              created_at: new Date(baseTime + idx * 1000).toISOString()
+              waitlist_position: idx + 1
             };
           }
         }
@@ -1038,13 +1025,19 @@ export function usePlanParticipants({
       });
     });
 
-    // Persist ascending created_at timestamps to database
     try {
+      // 1. Switch plan waitlist_order_mode to CUSTOM
+      await (supabase as any)
+        .from("plans")
+        .update({ waitlist_order_mode: "CUSTOM" })
+        .eq("id", planUuid);
+
+      // 2. Persist 1-indexed waitlist_position to plan_participants
       for (let i = 0; i < orderedUserUuids.length; i++) {
         const userUuid = resolveUserUuid(orderedUserUuids[i]);
         await (supabase as any)
           .from("plan_participants")
-          .update({ created_at: new Date(baseTime + i * 1000).toISOString() })
+          .update({ waitlist_position: i + 1 })
           .eq("plan_id", planUuid)
           .eq("user_id", userUuid);
       }

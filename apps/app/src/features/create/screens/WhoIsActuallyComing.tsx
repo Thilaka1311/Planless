@@ -28,16 +28,22 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
   selectedCategory = 'custom',
 }) => {
   const selectedFriends: Friend[] = React.useMemo(() => {
-    const raw: Friend[] = form.selectedFriends || [];
+    const raw: Friend[] = (form.selectedFriends || []).filter((f: Friend) => !f.isHost);
     const priorityIds: string[] = form.priorityGuestIds || [];
-    if (priorityIds.length === 0) return raw;
 
-    const orderMap = new Map(priorityIds.map((id, index) => [id, index]));
-    return [...raw].sort((a, b) => {
-      const aIdx = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
-      const bIdx = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
-      return aIdx - bIdx;
-    });
+    if (priorityIds.length > 0) {
+      const orderMap = new Map(priorityIds.map((id, index) => [id, index]));
+      return [...raw].sort((a, b) => {
+        const aIdx = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+        const bIdx = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+        if (aIdx !== bIdx) return aIdx - bIdx;
+        return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+      });
+    }
+
+    return [...raw].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+    );
   }, [form.selectedFriends, form.priorityGuestIds]);
 
   const capacity: number = form.totalCapacity || 2;
