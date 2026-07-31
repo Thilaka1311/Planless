@@ -1,5 +1,5 @@
 import React from "react";
-import { Home, Calendar, Plus, Users, Wallet } from "lucide-react";
+import { Home, Calendar, Plus, MessageSquare, Wallet } from "lucide-react";
 
 interface NavigationFooterProps {
   activeTab: string;
@@ -53,12 +53,12 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
       </button>
 
       <button
-        id="nav_item_circles"
-        onClick={() => { setActiveTab("circles"); }}
-        className={`flex flex-col items-center justify-center w-12 h-12 transition-all cursor-pointer ${activeTab === "circles" ? "text-[#ff8b66]" : "text-zinc-500 hover:text-zinc-300"}`}
+        id="nav_item_chats"
+        onClick={() => { setActiveTab("chats"); }}
+        className={`flex flex-col items-center justify-center w-12 h-12 transition-all cursor-pointer ${activeTab === "chats" ? "text-[#ff8b66]" : "text-zinc-500 hover:text-zinc-300"}`}
       >
-        <Users className="w-4.5 h-4.5" />
-        <span className="text-[9px] font-sans tracking-wide mt-1 font-medium">Circle</span>
+        <MessageSquare className="w-4.5 h-4.5" />
+        <span className="text-[9px] font-sans tracking-wide mt-1 font-medium">Chats</span>
       </button>
 
       <button

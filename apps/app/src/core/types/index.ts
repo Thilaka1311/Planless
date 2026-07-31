@@ -101,15 +101,62 @@ export interface DbPlanParticipant {
   circle_id?: string | null;
 }
 
+export enum SystemMessageType {
+  PLAN_CREATED = "plan_created",
+  PARTICIPANT_JOINED = "participant_joined",
+  PARTICIPANT_LEFT = "participant_left",
+  TITLE_CHANGED = "title_changed",
+  DESCRIPTION_CHANGED = "description_changed",
+  DATE_CHANGED = "date_changed",
+  TIME_CHANGED = "time_changed",
+  VENUE_CHANGED = "venue_changed",
+  PLAN_CANCELLED = "plan_cancelled",
+  PLAN_RESTORED = "plan_restored",
+  PLAN_COMPLETED = "plan_completed",
+}
+
 // 5b. PLAN_MESSAGES TABLE (Stores plan chat messages)
 export interface DbPlanMessage {
   id: string;
   plan_id: string;
   sender_id: string;
-  message_type: 'text' | 'system' | 'image' | string;
+  message_type: 'text' | 'system' | 'poll';
+  system_message_type?: SystemMessageType | null;
   content: string;
   created_at: string;
   updated_at?: string | null;
+}
+
+export type PlanActivityType =
+  | 'plan_created'
+  | 'participant_invited'
+  | 'participant_joined'
+  | 'participant_left'
+  | 'participant_waitlisted'
+  | 'participant_promoted'
+  | 'participant_removed'
+  | 'invitation_accepted'
+  | 'invitation_declined'
+  | 'capacity_changed'
+  | 'title_changed'
+  | 'description_changed'
+  | 'date_changed'
+  | 'time_changed'
+  | 'location_changed'
+  | 'host_transferred'
+  | 'plan_cancelled'
+  | 'plan_restored'
+  | 'plan_completed';
+
+// 5c. PLAN_ACTIVITY TABLE (Append-only historical audit log)
+export interface DbPlanActivity {
+  id: string;
+  plan_id: string;
+  actor_id?: string | null;
+  target_user_id?: string | null;
+  activity_type: PlanActivityType;
+  metadata: Record<string, any>;
+  created_at: string;
 }
 
 // 6. TRANSACTIONS TABLE (Handles spontaneous social splits/obligations)
