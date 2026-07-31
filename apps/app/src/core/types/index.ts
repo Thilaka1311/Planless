@@ -101,6 +101,17 @@ export interface DbPlanParticipant {
   circle_id?: string | null;
 }
 
+// 5b. PLAN_MESSAGES TABLE (Stores plan chat messages)
+export interface DbPlanMessage {
+  id: string;
+  plan_id: string;
+  sender_id: string;
+  message_type: 'text' | 'system' | 'image' | string;
+  content: string;
+  created_at: string;
+  updated_at?: string | null;
+}
+
 // 6. TRANSACTIONS TABLE (Handles spontaneous social splits/obligations)
 export interface DbTransaction {
   id?: string; // UUID primary key

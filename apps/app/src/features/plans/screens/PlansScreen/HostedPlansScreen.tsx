@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { ChevronRight, Crown, Sparkles, Ban } from "lucide-react";
+import { ChevronLeft, ChevronRight, Crown, Sparkles, History, Search } from "lucide-react";
 import { motion } from "motion/react";
 import { Plan, DbPlanParticipant } from "../../../../core/types";
 import { normalizeStatus } from "../../../../../lib/participantStatus";
@@ -12,18 +12,31 @@ import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
 import { CancelledPlans } from "./CancelledPlans";
 
 interface HostedPlansScreenProps {
+  onBack: () => void;
   setSelectedPlanId: (planId: string | null) => void;
+  onTogglePast?: () => void;
+  onToggleSearch?: () => void;
   onScroll?: (y: number) => void;
 }
 
 export const HostedPlansScreen = React.memo(({
+  onBack,
   setSelectedPlanId,
+  onTogglePast,
+  onToggleSearch,
   onScroll,
 }: HostedPlansScreenProps) => {
   const { plans, dbPlanParticipants } = usePlansStore();
   const { userProfile, activeUserId } = useProfileStore();
 
   const userUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId || "";
+
+  const actionButtonClass = (isActive: boolean) =>
+    `w-8 h-8 rounded-full flex items-center justify-center relative cursor-pointer transition-all active:scale-95 ${
+      isActive
+        ? "text-amber-400 bg-amber-500/10 border border-amber-500/20"
+        : "text-zinc-400 hover:text-white hover:bg-white/[0.06]"
+    }`;
 
   const getPlanDateTime = (plan: Plan): Date => {
     const now = new Date();
@@ -228,11 +241,11 @@ export const HostedPlansScreen = React.memo(({
     }
 
     return (
-      <div className="space-y-6 pt-2">
+      <div className="space-y-4 pt-0">
         {activeSections.map((sec) => (
-          <div key={sec.id} className="space-y-3">
+          <div key={sec.id} className="space-y-2.5">
             {/* Section Header */}
-            <div className="flex items-center gap-3 w-full mt-5 mb-2 select-none">
+            <div className="flex items-center gap-3 w-full mt-2 mb-1.5 select-none">
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                 <span className="text-[10px] uppercase font-mono tracking-[0.2em] text-[#8E8E93] font-bold">
@@ -246,7 +259,7 @@ export const HostedPlansScreen = React.memo(({
             </div>
 
             {/* Cards List */}
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {sec.plans.map((plan) => renderPlanRow(plan, sec.id))}
             </div>
           </div>
@@ -267,18 +280,33 @@ export const HostedPlansScreen = React.memo(({
   }
 
   return (
-    <div className="flex-1 flex flex-col relative overflow-hidden h-full bg-[#050505] text-left justify-between">
+    <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none justify-between">
+      {/* Header matching secondary screens (PastPlans & CancelledPlans) */}
+      <div className="bg-black/40 backdrop-blur-xl border-b border-white/10 px-4 py-3.5 flex items-center justify-between flex-shrink-0 pt-[calc(0.875rem+env(safe-area-inset-top,0px))]">
+        <button
+          type="button"
+          onClick={onBack}
+          className="w-9 h-9 rounded-full bg-white/10 border border-white/10 backdrop-blur-sm flex items-center justify-center text-white active:scale-95 transition cursor-pointer"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+        <h1 className="text-base font-bold text-white tracking-wide text-center">
+          Hosted Plans
+        </h1>
+        <div className="w-9" />
+      </div>
+
       {/* Scrollable Content Container */}
       <div
         onScroll={(e) => onScroll?.(e.currentTarget.scrollTop)}
-        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-4 pb-6"
+        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-2 pb-6"
       >
         {renderGroupedPlans(hostedPlans)}
       </div>
 
       {/* Fixed Bottom Footer Action — Only rendered when cancelled plans exist */}
       {cancelledPlansCount > 0 && (
-        <div className="flex-shrink-0 border-t border-white/[0.08] bg-[#050505]/95 backdrop-blur-md px-6 py-3.5 pb-[calc(14px+70px)] z-20">
+        <div className="flex-shrink-0 border-t border-white/[0.08] bg-[#050505]/95 backdrop-blur-md px-6 py-3.5 z-20">
           <button
             type="button"
             onClick={() => setShowCancelledPlans(true)}

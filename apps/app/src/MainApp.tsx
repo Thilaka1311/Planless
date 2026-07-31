@@ -463,20 +463,13 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
 
         {/* TAB 2: PLANS — PREMIUM ACTIVITY HUB & HOSTED DESTINATION */}
         {activeTab === "plans" && (
-          showHostedPlansScreen ? (
-            <HostedPlansScreen
-              setSelectedPlanId={setSelectedPlanId}
-              onScroll={setPlansScrollY}
-            />
-          ) : (
-            <PlansScreen
-              setSelectedPlanId={setSelectedPlanId}
-              skippedByPlanId={skippedByPlanId}
-              plansFilter={plansFilter}
-              setPlansFilter={setPlansFilter}
-              onScroll={setPlansScrollY}
-            />
-          )
+          <PlansScreen
+            setSelectedPlanId={setSelectedPlanId}
+            skippedByPlanId={skippedByPlanId}
+            plansFilter={plansFilter}
+            setPlansFilter={setPlansFilter}
+            onScroll={setPlansScrollY}
+          />
         )}
 
         {/* TAB 3: SPONTANEOUS CREATOR - INSTANT PRODUCTIVITY AESTHETICS */}
@@ -592,6 +585,26 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
             setSelectedPlanId(id);
             setShowPastPlansScreen(false);
           }}
+        />
+      )}
+
+      {/* ---------------- 👑 HOSTED PLANS SCREEN ---------------- */}
+      {showHostedPlansScreen && (
+        <HostedPlansScreen
+          onBack={() => setShowHostedPlansScreen(false)}
+          setSelectedPlanId={(id) => {
+            setSelectedPlanId(id);
+            setShowHostedPlansScreen(false);
+          }}
+          onTogglePast={() => {
+            setShowHostedPlansScreen(false);
+            setShowPastPlansScreen(true);
+          }}
+          onToggleSearch={() => {
+            setShowHostedPlansScreen(false);
+            setShowPlansSearchScreen(true);
+          }}
+          onScroll={setPlansScrollY}
         />
       )}
 
