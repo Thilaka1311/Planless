@@ -218,11 +218,11 @@ export const CancelledPlans: React.FC<CancelledPlansProps> = React.memo(({
     }
 
     return (
-      <div className="space-y-6 pt-2">
+      <div className="space-y-4 pt-0">
         {activeSections.map((sec) => (
-          <div key={sec.id} className="space-y-3">
+          <div key={sec.id} className="space-y-2.5">
             {/* Section Header */}
-            <div className="flex items-center gap-3 w-full mt-5 mb-2 select-none">
+            <div className="flex items-center gap-3 w-full mt-2 mb-1.5 select-none">
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500/80"></span>
                 <span className="text-[10px] uppercase font-mono tracking-[0.2em] text-[#8E8E93] font-bold">
@@ -236,7 +236,7 @@ export const CancelledPlans: React.FC<CancelledPlansProps> = React.memo(({
             </div>
 
             {/* Cards List */}
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {sec.plans.map((plan) => renderPlanRow(plan))}
             </div>
           </div>
@@ -263,7 +263,7 @@ export const CancelledPlans: React.FC<CancelledPlansProps> = React.memo(({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-4 pb-6">
+      <div className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-2 pb-6">
         {renderGroupedPlans(cancelledPlans)}
       </div>
     </div>

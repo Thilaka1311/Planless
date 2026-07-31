@@ -295,11 +295,11 @@ export const PlansScreen = React.memo(({
     }
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-4">
         {activeSections.map((sec) => (
-          <div key={sec.id} className="space-y-3">
+          <div key={sec.id} className="space-y-2.5">
             {/* Section Header */}
-            <div className="flex items-center gap-3 w-full mt-5 mb-2 select-none">
+            <div className="flex items-center gap-3 w-full mt-2 mb-1.5 select-none">
               <div className="flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
                 <span className="text-[10px] uppercase font-mono tracking-[0.2em] text-[#8E8E93] font-bold">
@@ -313,7 +313,7 @@ export const PlansScreen = React.memo(({
             </div>
 
             {/* Cards List */}
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {sec.plans.map((plan) => renderPlanRow(plan, sec.id))}
             </div>
           </div>

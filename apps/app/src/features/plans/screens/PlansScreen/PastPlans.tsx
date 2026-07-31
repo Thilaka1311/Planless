@@ -28,7 +28,7 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
       </div>
 
       {/* Main Content / Empty State */}
-      <div className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-4 pb-6">
+      <div className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-2 pb-6">
         <EmptyState
           icon={<History className="w-8 h-8 text-zinc-500 stroke-[1.5]" />}
           title="No past plans yet"
