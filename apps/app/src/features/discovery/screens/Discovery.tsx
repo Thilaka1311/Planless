@@ -149,9 +149,12 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             className="h-[100px] rounded-2xl bg-[#111111] hover:bg-[#151515] border border-white/[0.04] hover:border-emerald-500/20 p-4 flex flex-col justify-between text-left transition duration-300 active:scale-97 cursor-pointer group relative overflow-hidden"
           >
             <div className="absolute -right-3 -bottom-3 text-4xl opacity-10 group-hover:scale-110 transition duration-300">⚽</div>
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <motion.div
+              layoutId="subscreen-icon-sports"
+              className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400"
+            >
               <Compass className="w-4 h-4" />
-            </div>
+            </motion.div>
             <div>
               <span className="text-xs font-semibold text-white block tracking-wide">Sports</span>
               <span className="text-[9px] text-zinc-500 block font-normal">Turfs & Courts</span>
@@ -171,9 +174,12 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             className="h-[100px] rounded-2xl bg-[#111111] hover:bg-[#151515] border border-white/[0.04] hover:border-violet-500/20 p-4 flex flex-col justify-between text-left transition duration-300 active:scale-97 cursor-pointer group relative overflow-hidden"
           >
             <div className="absolute -right-3 -bottom-3 text-4xl opacity-10 group-hover:scale-110 transition duration-300">🎬</div>
-            <div className="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
+            <motion.div
+              layoutId="subscreen-icon-movies"
+              className="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400"
+            >
               <Film className="w-4 h-4" />
-            </div>
+            </motion.div>
             <div>
               <span className="text-xs font-semibold text-white block tracking-wide">Movies</span>
               <span className="text-[9px] text-zinc-500 block font-normal">Trending Premieres</span>
@@ -193,9 +199,12 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             className="h-[100px] rounded-2xl bg-[#111111] hover:bg-[#151515] border border-white/[0.04] hover:border-rose-500/20 p-4 flex flex-col justify-between text-left transition duration-300 active:scale-97 cursor-pointer group relative overflow-hidden"
           >
             <div className="absolute -right-3 -bottom-3 text-4xl opacity-10 group-hover:scale-110 transition duration-300">🍝</div>
-            <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+            <motion.div
+              layoutId="subscreen-icon-dining"
+              className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400"
+            >
               <UtensilsCrossed className="w-4 h-4" />
-            </div>
+            </motion.div>
             <div>
               <span className="text-xs font-semibold text-white block tracking-wide">Dining</span>
               <span className="text-[9px] text-zinc-500 block font-normal">Popular Cafes</span>
