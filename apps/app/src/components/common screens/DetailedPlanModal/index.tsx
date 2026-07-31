@@ -1,5 +1,5 @@
 import React from "react";
-import { PlansDetailsScreen, PlansDetailsScreenProps } from "../../../features/plans/screens/PlansScreen/PlansPreviewScreen";
+import { PlansDetailsScreen, PlansDetailsScreenProps } from "../../../features/plans/screens/PlansScreen/PlansPreview/PlansPreviewScreen";
 import { PlansPreviewScreen as HomePlansPreviewScreen } from "../../../features/home/screens/HomePlansPreview/HomePlansPreviewScreen";
 
 interface DetailedPlanModalProps extends Omit<PlansDetailsScreenProps, "planId"> {

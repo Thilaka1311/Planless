@@ -38,7 +38,7 @@ function dataURLtoBlob(dataurl: string): Blob {
 interface CreatePlanScreenProps {
   setActiveTab: (tab: "home" | "plans" | "create" | "circles" | "wallet" | "profile") => void;
   onToggleBottomNav?: (hidden: boolean) => void;
-  setPlansFilter?: (filter: 'going' | 'waitlist' | 'passed' | 'hosted') => void;
+  setPlansFilter?: (filter: 'JOINED' | 'WAITLISTED' | 'SKIPPED') => void;
   setSelectedCircle?: (circle: any) => void;
 }
 
@@ -774,7 +774,6 @@ export const CreatePlanScreen = ({
             type="button"
             onClick={() => {
               handleResetAll();
-              setPlansFilter?.('hosted');
               setActiveTab('plans');
             }}
             className="w-full bg-transparent border border-white/10 text-zinc-400 hover:text-white hover:border-white/20 py-4 rounded-2xl font-bold text-[11px] tracking-widest uppercase flex items-center justify-center transition-colors cursor-pointer select-none"

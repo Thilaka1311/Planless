@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronLeft, Edit, MoreVertical } from "lucide-react";
+import { ChevronLeft, Edit, MoreVertical, Settings } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 
 interface OverflowMenuItem {
@@ -31,6 +31,7 @@ interface HeroHeaderProps {
   isHost?: boolean;
   onEdit?: () => void;
   onEditTitle?: (newTitle: string) => Promise<void> | void;
+  onOpenSettings?: () => void;
   /** Items to show in the ⋮ overflow menu */
   overflowMenuItems?: OverflowMenuItem[];
 }
@@ -45,6 +46,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   isHost = false,
   onEdit,
   onEditTitle,
+  onOpenSettings,
   overflowMenuItems = [],
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -126,8 +128,17 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
 
         {/* Right action buttons */}
         <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto">
-          {/* ⋮ overflow menu */}
-          {showOverflow && (
+          {onOpenSettings ? (
+            <button
+              id="immersive-plan-settings-btn"
+              type="button"
+              onClick={onOpenSettings}
+              className="w-9 h-9 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white hover:bg-white/20 active:scale-95 transition duration-200 cursor-pointer"
+              title="Plan Settings"
+            >
+              <Settings className="w-4.5 h-4.5" />
+            </button>
+          ) : showOverflow ? (
             <div ref={menuRef} className="relative">
               <button
                 id="immersive-plan-overflow-btn"
@@ -168,7 +179,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                 </div>
               )}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Centered Title */}

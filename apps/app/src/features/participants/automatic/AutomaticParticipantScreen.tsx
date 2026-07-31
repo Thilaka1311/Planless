@@ -237,6 +237,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         userProfile={userProfile}
         onClose={closeSheet}
         onShowConfirmRemove={setShowConfirmRemove}
+        onMoveToGoing={onMoveToGoing}
         onPromoteHost={onPromoteHost}
         onDemoteHost={onDemoteHost}
         onRemoveParticipant={onRemoveParticipant || (() => {})}

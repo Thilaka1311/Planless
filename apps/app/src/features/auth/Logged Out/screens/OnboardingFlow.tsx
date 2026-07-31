@@ -34,9 +34,6 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
 
   const { uploading: uploadImageInProgress, uploadError, uploadImage } = useProfileUpload();
 
-  useEffect(() => {
-    console.log("[Onboarding] Avatar state updated:", avatar);
-  }, [avatar]);
 
   // Handle Email submission (sends OTP)
   const handleEmailSubmit = async (e: React.FormEvent) => {
@@ -122,11 +119,6 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
     setErrorMessage("");
     setCheckingUser(true);
 
-    console.log("[Onboarding] Submitting profile", {
-        avatar,
-        profile_photo_path: avatar,
-    });
-
     try {
       const payload = {
         full_name: profileName.trim(),
@@ -134,7 +126,6 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
         profile_photo_path: avatar || null,
         profile_completed: true
       };
-      console.log("[Users Update Payload]", payload);
 
       // Update the authenticated user's row in public.users using id = session.user.id
       const { data: updatedProfile, error: updateError } = await supabase
@@ -186,7 +177,6 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
 
       // Perform background upload
       const storagePath = await uploadImage(file, tempUserId);
-      console.log("[Onboarding] uploadImage returned:", storagePath);
       if (storagePath) {
         setAvatar(storagePath);
       } else {

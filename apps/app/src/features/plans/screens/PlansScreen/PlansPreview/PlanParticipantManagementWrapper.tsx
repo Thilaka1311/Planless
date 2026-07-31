@@ -1,13 +1,14 @@
-import React, { useCallback, useState, useMemo, useEffect } from 'react';
-import { ParticipantManagementScreen, Friend } from '../../../participants/screens/ParticipantManagementScreen';
-import { Plan, UserProfile } from '../../../../core/types';
-import { normalizeStatus } from '../../../../../lib/participantStatus';
-import { useToast } from '../../../../shared/contexts/ToastContext';
-import { WhoIsComingScreen } from '../../../create/screens/WhoIsComingScreen';
-import { useCirclesStore } from '../../../circles/state/CirclesContext';
-import { useFriendshipStore } from '../../../friendships/state/FriendshipContext';
-import { supabase } from '../../../../../lib/supabaseClient';
+import React, { useCallback, useState, useMemo, useEffect, useRef } from 'react';
+import { ParticipantManagementScreen, Friend } from '../../../../participants/screens/ParticipantManagementScreen';
+import { Plan, UserProfile } from '../../../../../core/types';
+import { normalizeStatus } from '../../../../../../lib/participantStatus';
+import { useToast } from '../../../../../shared/contexts/ToastContext';
+import { WhoIsComingScreen } from '../../../../create/screens/WhoIsComingScreen';
+import { useCirclesStore } from '../../../../circles/state/CirclesContext';
+import { useFriendshipStore } from '../../../../friendships/state/FriendshipContext';
+import { supabase } from '../../../../../../lib/supabaseClient';
 import { X } from 'lucide-react';
+import { PlanSizeSlider } from '../../../../create/components/PlanSizeSlider';
 
 
 interface PlanParticipantManagementWrapperProps {
@@ -240,9 +241,9 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         );
       },
       waitlistEnabled: false,
-      setWaitlistEnabled: () => {},
+      setWaitlistEnabled: () => { },
       totalCapacity: 0,
-      setTotalCapacity: () => {},
+      setTotalCapacity: () => { },
       totalInvitedCount: pickerSelectedFriends.length,
       handleRemoveSelectedItem: (item: any) => {
         setIndividuallySelectedFriendIds((prev) => prev.filter((id) => id !== item.id));
@@ -255,7 +256,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       },
       activeUserId: activeUserId,
       isHostSelected: false,
-      setIsHostSelected: () => {},
+      setIsHostSelected: () => { },
       localTitle: plan.title,
       localLocation: plan.location || "",
       eventDateTime: plan.datetime ? new Date(plan.datetime) : new Date(),
@@ -377,19 +378,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       const availableSlots = Math.max(0, capacity - currentGoingCount);
 
       if (friendIds.length > availableSlots) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.log(`========================================`);
-          console.log(`Plan Capacity Decision`);
-          console.log(`========================================`);
-          console.log(`Plan ID:\n${plan.id}`);
-          console.log(`Current Capacity:\n${capacity}`);
-          console.log(`Current Going Count:\n${currentGoingCount}`);
-          console.log(`Available Slots:\n${availableSlots}`);
-          console.log(`Selected Invitees:\n${friendIds.length}`);
-          console.log(`Selected Action:\nPROMPT_DIALOG`);
-          console.log(`========================================`);
-        }
-
         setPendingCapacityInvite({
           friendIds,
           circleIds: selectedCircles,
@@ -417,21 +405,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     const { friendIds, circleIds, currentGoingCount } = pendingCapacityInvite;
     const newCapacity = currentGoingCount + friendIds.length;
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`========================================`);
-      console.log(`Plan Capacity Decision`);
-      console.log(`========================================`);
-      console.log(`Plan ID:\n${plan.id}`);
-      console.log(`Current Capacity:\n${capacity}`);
-      console.log(`Current Going Count:\n${currentGoingCount}`);
-      console.log(`Available Slots:\n${pendingCapacityInvite.availableSlots}`);
-      console.log(`Selected Invitees:\n${friendIds.length}`);
-      console.log(`Selected Action:\nINCREASE_CAPACITY`);
-      console.log(`New Capacity:\n${newCapacity}`);
-      console.log(`Invitees Added To:\nGOING`);
-      console.log(`========================================`);
-    }
-
     try {
       if (onUpdatePlanCapacity) {
         await onUpdatePlanCapacity(plan.id, newCapacity);
@@ -448,21 +421,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     if (!pendingCapacityInvite) return;
     const { friendIds, circleIds, currentGoingCount } = pendingCapacityInvite;
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`========================================`);
-      console.log(`Plan Capacity Decision`);
-      console.log(`========================================`);
-      console.log(`Plan ID:\n${plan.id}`);
-      console.log(`Current Capacity:\n${capacity}`);
-      console.log(`Current Going Count:\n${currentGoingCount}`);
-      console.log(`Available Slots:\n${pendingCapacityInvite.availableSlots}`);
-      console.log(`Selected Invitees:\n${friendIds.length}`);
-      console.log(`Selected Action:\nADD_TO_WAITLIST`);
-      console.log(`Capacity Unchanged`);
-      console.log(`Invitees Added To:\nWAITLIST`);
-      console.log(`========================================`);
-    }
-
     try {
       setPendingCapacityInvite(null);
       await executeInviteFlow(friendIds, circleIds, 'WAITLIST');
@@ -473,18 +431,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   };
 
   const handleCancelCapacityDialog = () => {
-    if (process.env.NODE_ENV !== 'production' && pendingCapacityInvite) {
-      console.log(`========================================`);
-      console.log(`Plan Capacity Decision`);
-      console.log(`========================================`);
-      console.log(`Plan ID:\n${plan.id}`);
-      console.log(`Current Capacity:\n${capacity}`);
-      console.log(`Current Going Count:\n${pendingCapacityInvite.currentGoingCount}`);
-      console.log(`Available Slots:\n${pendingCapacityInvite.availableSlots}`);
-      console.log(`Selected Invitees:\n${pendingCapacityInvite.selectedCount}`);
-      console.log(`Selected Action:\nCANCEL`);
-      console.log(`========================================`);
-    }
     setPendingCapacityInvite(null);
   };
 
@@ -572,11 +518,8 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
   const waitlistList: Friend[] = useMemo(() => {
     const rawList = waitlistMembers.map((m) => memberToFriend(m, hostId, activeUserId));
-    if (waitlistMode === 'automatic') {
-      return sortByWaitlistOrder(rawList);
-    }
-    return rawList;
-  }, [waitlistMembers, hostId, activeUserId, waitlistMode, sortByWaitlistOrder]);
+    return sortByWaitlistOrder(rawList);
+  }, [waitlistMembers, hostId, activeUserId, sortByWaitlistOrder]);
 
   // Determine which tab to show by default: the one containing the current user
   const initialTab: 'going' | 'waitlist' | 'invited' = useMemo(() => {
@@ -606,6 +549,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     : undefined;
 
   // ── Callbacks bridging to plan store ──
+  // Direct move (used in assigned mode)
   const handleMoveToGoing = useCallback(
     async (friend: Friend) => {
       setLocalGoingList(null);
@@ -622,6 +566,55 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       }
     },
     [plan.id, onMoveToGoing, showToast],
+  );
+
+  // Pending state for automatic waitlist "Move to Going" capacity flow
+  const [pendingPromoteToGoing, setPendingPromoteToGoing] = useState<Friend | null>(null);
+  const [pendingCapacityTemp, setPendingCapacityTemp] = useState<number>(capacity);
+
+  // In automatic mode, open the +1 capacity dialog instead of immediately promoting
+  const handleMoveToGoingAutomatic = useCallback(
+    (friend: Friend) => {
+      setPendingPromoteToGoing(friend);
+      setPendingCapacityTemp(capacity + 1);
+    },
+    [capacity],
+  );
+
+  const handleCancelPendingPromote = useCallback(() => {
+    setPendingPromoteToGoing(null);
+  }, []);
+
+  const handleConfirmPendingPromote = useCallback(
+    async () => {
+      if (!pendingPromoteToGoing) return;
+      const friend = pendingPromoteToGoing;
+      const newCap = pendingCapacityTemp;
+      setPendingPromoteToGoing(null);
+      // 1. Increase capacity — call onUpdatePlanCapacity directly (handleAdjustCapacity is defined later)
+      const clampedVal = Math.min(maxCapacity, Math.max(2, newCap));
+      if (clampedVal !== capacity && onUpdatePlanCapacity) {
+        try {
+          await onUpdatePlanCapacity(plan.id, clampedVal);
+        } catch (err: any) {
+          showToast(err?.message || 'Failed to update capacity');
+          return; // abort promotion if capacity update fails
+        }
+      }
+      // 2. Promote the participant
+      setLocalGoingList(null);
+      setLocalWaitlist(null);
+      try {
+        await onMoveToGoing(plan.id, friend.dbUuid || friend.id);
+      } catch (err: any) {
+        console.error("[handleConfirmPendingPromote] error:", err);
+        showToast(err?.message || 'Failed to move participant');
+      } finally {
+        setLocalGoingList(null);
+        setLocalWaitlist(null);
+      }
+    },
+    [pendingPromoteToGoing, pendingCapacityTemp, capacity, maxCapacity, onUpdatePlanCapacity, plan.id, onMoveToGoing, showToast],
   );
 
   const handleMoveToWaitlist = useCallback(
@@ -774,7 +767,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         initialTab={initialTab}
         onBack={onBack}
         onAdjustCapacity={isHost ? handleAdjustCapacity : undefined}
-        onMoveToGoing={isHost ? handleMoveToGoing : undefined}
+        onMoveToGoing={isHost ? (waitlistMode === 'automatic' ? handleMoveToGoingAutomatic : handleMoveToGoing) : undefined}
         onMoveToWaitlist={isHost ? handleMoveToWaitlist : undefined}
         onRemoveParticipant={isHost ? handleRemoveParticipant : undefined}
         onPromoteHost={onPromoteToHost ? handlePromoteHost : undefined}
@@ -844,6 +837,81 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
                 className="w-full py-2.5 px-4 rounded-xl text-zinc-400 font-medium text-sm hover:text-white transition-colors"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Move to Going capacity dialog — automatic waitlist mode */}
+      {pendingPromoteToGoing && (
+        <div
+          onClick={handleCancelPendingPromote}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 70,
+            background: 'rgba(0,0,0,0.75)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            animation: 'fadeIn 0.2s ease-out',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 480,
+              background: '#1C1C1E',
+              borderTopLeftRadius: 24, borderTopRightRadius: 24,
+              padding: '24px 24px 40px',
+              boxShadow: '0 -8px 32px rgba(0,0,0,0.4)',
+              animation: 'slideUp 0.28s cubic-bezier(0.25,1,0.5,1)',
+            }}
+          >
+            {/* Drag handle */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+              <div style={{ width: 36, height: 5, borderRadius: 2.5, background: 'rgba(255,255,255,0.15)' }} />
+            </div>
+
+            <h3 style={{ fontSize: 17, fontWeight: 700, color: '#FFFFFF', marginBottom: 6, fontFamily: 'Inter, sans-serif' }}>
+              Increase Plan Capacity
+            </h3>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 24, fontFamily: 'Inter, sans-serif', lineHeight: 1.5 }}>
+              Moving <strong style={{ color: '#FFFFFF' }}>{pendingPromoteToGoing.name}</strong> to Going will increase the plan size from&nbsp;
+              <strong style={{ color: '#FFFFFF' }}>{capacity}</strong> to <strong style={{ color: '#FFFFFF' }}>{pendingCapacityTemp}</strong>.
+            </p>
+
+            {/* Slider */}
+            <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'center' }}>
+              <PlanSizeSlider
+                value={pendingCapacityTemp}
+                onChange={setPendingCapacityTemp}
+                hasError={false}
+                min={capacity + 1}
+                max={maxCapacity}
+              />
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button
+                type="button"
+                onClick={handleCancelPendingPromote}
+                style={{
+                  flex: 1, padding: '13px', background: 'rgba(255,255,255,0.08)',
+                  border: 'none', borderRadius: 12, color: '#FFFFFF',
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPendingPromote}
+                style={{
+                  flex: 1, padding: '13px', background: '#FF6B2C',
+                  border: 'none', borderRadius: 12, color: '#FFFFFF',
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                }}
+              >
+                Confirm
               </button>
             </div>
           </div>

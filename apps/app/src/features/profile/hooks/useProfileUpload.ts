@@ -35,13 +35,6 @@ export function useProfileUpload(): UseProfileUploadResult {
         data: { user },
       } = await supabase.auth.getUser();
 
-      console.log("[Avatar Upload Debug]", {
-        authUserId: user?.id,
-        uploadUserId: userId,
-        bucket: bucketName,
-        objectKey,
-        fullStoragePath: `${bucketName}/${objectKey}`,
-      });
 
       const { data, error: uploadErr } = await supabase.storage
         .from(bucketName)
@@ -50,10 +43,6 @@ export function useProfileUpload(): UseProfileUploadResult {
           upsert: true,
         });
 
-      console.log("[Avatar Upload Response]", {
-        data,
-        error: uploadErr,
-      });
 
       if (uploadErr) {
         console.error("[Avatar Upload Error]", uploadErr);
@@ -67,7 +56,6 @@ export function useProfileUpload(): UseProfileUploadResult {
         throw new Error(uploadErr?.message || "Upload failed");
       }
 
-      console.log("[Avatar Upload] Returning storage path:", `${bucketName}/${objectKey}`);
       // Return the full storage path format: <bucket>/<object_key>
       return `${bucketName}/${objectKey}`;
     } catch (err: any) {

@@ -30,6 +30,9 @@ import { HomeHeader } from "./components/HomeHeader";
 
 import { useLivePlan } from "./features/plans/hooks/useLivePlan";
 import { SearchYourPlansScreen } from "./features/plans/screens/PlansScreen/SearchYourPlansScreen";
+import { HostedPlansScreen } from "./features/plans/screens/PlansScreen/HostedPlansScreen";
+import { PastPlans } from "./features/plans/screens/PlansScreen/PastPlans";
+
 interface MainAppProps {
   userProfile: UserProfile;
   onLogout: () => void;
@@ -59,8 +62,6 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const { showToast } = useToast();
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
 
-
-
   React.useEffect(() => {
     setChildrenWantBottomNavHidden(false);
   }, [activeTab]);
@@ -76,11 +77,21 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const [showPaymentSuccessId, setShowPaymentSuccessId] = useState<string | null>(null);
   const [showWaitlistSuccessId, setShowWaitlistSuccessId] = useState<string | null>(null);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
-  const [plansFilter, setPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted'>('JOINED');
+  const [plansFilter, setPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED'>('JOINED');
+  const [showHostedPlansScreen, setShowHostedPlansScreen] = useState(false);
+  const [showPastPlansScreen, setShowPastPlansScreen] = useState(false);
   const [plansScrollY, setPlansScrollY] = useState(0);
   const [showPlansSearchScreen, setShowPlansSearchScreen] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
+
+  // Reset hosted & past subscreen when changing tabs
+  React.useEffect(() => {
+    if (activeTab !== "plans") {
+      setShowHostedPlansScreen(false);
+      setShowPastPlansScreen(false);
+    }
+  }, [activeTab]);
 
   // Circle Navigation helpers
   const [circleCreateStep, setCircleCreateStep] = useState<"members" | "details" | null>(null);
@@ -408,7 +419,13 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           pendingMemoryCount={pendingMemoryCount}
           showSearch={true}
           onToggleSearch={() => setShowPlansSearchScreen(true)}
-          title="Plans"
+          showHostedIcon={true}
+          onToggleHosted={() => setShowHostedPlansScreen(prev => !prev)}
+          isHostedActive={showHostedPlansScreen}
+          showPastIcon={true}
+          onTogglePast={() => setShowPastPlansScreen(true)}
+          isPastActive={showPastPlansScreen}
+          title={showHostedPlansScreen ? "Hosted Plans" : "Plans"}
           scrollY={plansScrollY}
           hideNotificationsIcon={true}
         />
@@ -444,15 +461,22 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           />
         )}
 
-        {/* TAB 2: PLANS — PREMIUM ACTIVITY HUB */}
+        {/* TAB 2: PLANS — PREMIUM ACTIVITY HUB & HOSTED DESTINATION */}
         {activeTab === "plans" && (
-          <PlansScreen
-            setSelectedPlanId={setSelectedPlanId}
-            skippedByPlanId={skippedByPlanId}
-            plansFilter={plansFilter}
-            setPlansFilter={setPlansFilter}
-            onScroll={setPlansScrollY}
-          />
+          showHostedPlansScreen ? (
+            <HostedPlansScreen
+              setSelectedPlanId={setSelectedPlanId}
+              onScroll={setPlansScrollY}
+            />
+          ) : (
+            <PlansScreen
+              setSelectedPlanId={setSelectedPlanId}
+              skippedByPlanId={skippedByPlanId}
+              plansFilter={plansFilter}
+              setPlansFilter={setPlansFilter}
+              onScroll={setPlansScrollY}
+            />
+          )
         )}
 
         {/* TAB 3: SPONTANEOUS CREATOR - INSTANT PRODUCTIVITY AESTHETICS */}
@@ -558,6 +582,17 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
             }}
           />
         </div>
+      )}
+
+      {/* ---------------- 📜 PAST PLANS SCREEN ---------------- */}
+      {showPastPlansScreen && (
+        <PastPlans
+          onBack={() => setShowPastPlansScreen(false)}
+          setSelectedPlanId={(id) => {
+            setSelectedPlanId(id);
+            setShowPastPlansScreen(false);
+          }}
+        />
       )}
 
 

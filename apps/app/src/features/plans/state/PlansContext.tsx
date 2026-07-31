@@ -197,23 +197,13 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const shouldFetchAll = !tablesToUse;
 
       if (shouldFetchAll || tablesToUse.includes("plans") || tablesToUse.includes("plan_participants")) {
-        console.log("[PLANS_CONTEXT refreshPlans]", { userId, reason });
         const joinedPlans = await api.getCurrentUserPlans(userId);
-        
-        console.log("[AUDIT] joinedPlans:", joinedPlans);
-        console.log("[AUDIT] joinedPlans.length:", joinedPlans.length);
-
-        if (joinedPlans.length > 0) {
-          console.log("[AUDIT] first joined plan:", joinedPlans[0]);
-        }
 
         const plansList: DbPlan[] = [];
         const participantsList: DbPlanParticipant[] = [];
 
         joinedPlans.forEach((p: any) => {
           const { plan_participants, ...planFields } = p;
-          console.log("[AUDIT] raw plan:", p);
-          console.log("[AUDIT] extracted planFields:", planFields);
           plansList.push(planFields);
 
           if (plan_participants) {
@@ -223,11 +213,6 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         });
 
-        console.log("[AUDIT] plansList:", plansList);
-        console.log("[AUDIT] plansList.length:", plansList.length);
-        console.log("[AUDIT] participantsList.length:", participantsList.length);
-
-        console.log("[AUDIT] setting dbPlans:", plansList);
         setDbPlans(plansList);
         setDbPlanParticipants(participantsList);
       }
@@ -552,18 +537,9 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [dbPlanParticipants, dbUsers, setDbUsers]);
 
-  React.useEffect(() => {
-    console.log("[AUDIT] dbPlans state updated:", dbPlans);
-    console.log("[AUDIT] dbPlans.length:", dbPlans.length);
-  }, [dbPlans]);
-
   // Consolidated Derived plans mapping pipeline — pure projection, no effect needed
   const plans = useMemo(() => {
-    console.log("[AUDIT] dbPlans input to mapPlansToLegacyPlans:", dbPlans);
-    console.log("[AUDIT] dbPlanParticipants input to mapPlansToLegacyPlans:", dbPlanParticipants);
     const mapped = mapPlansToLegacyPlans(dbPlans, dbPlanParticipants, planUsers, userId, dbCircles);
-    console.log("[AUDIT] mapped plans:", mapped);
-    console.log("[AUDIT] mapped plans length:", mapped.length);
     return mapped;
   }, [dbPlans, dbPlanParticipants, planUsers, userId, dbCircles]);
 
@@ -918,6 +894,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const autoJoinedUuids = new Set<string>();
+    let waitlistQueueCounter = 1;
     uniqueInviteeUuids.forEach((inviteeUuid) => {
       inviteeUuids.push(inviteeUuid);
       let shouldAutoJoin = false;
@@ -940,6 +917,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         role: "PARTICIPANT",
         rsvp_status: shouldAutoJoin ? "JOINED" : "INVITED",
         assigned_group: assignedGroup,
+        join_queue: assignedGroup === "WAITLIST" ? waitlistQueueCounter++ : null,
         responded_at: shouldAutoJoin ? new Date().toISOString() : null,
         circle_id: cId
       });
