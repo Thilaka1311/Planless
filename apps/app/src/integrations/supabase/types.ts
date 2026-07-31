@@ -518,6 +518,106 @@ export type Database = {
           },
         ]
       }
+      plan_activity: {
+        Row: {
+          activity_type: Database["public"]["Enums"]["plan_activity_type"]
+          actor_id: string | null
+          created_at: string
+          id: string
+          metadata: Json
+          plan_id: string
+          target_user_id: string | null
+        }
+        Insert: {
+          activity_type: Database["public"]["Enums"]["plan_activity_type"]
+          actor_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          plan_id: string
+          target_user_id?: string | null
+        }
+        Update: {
+          activity_type?: Database["public"]["Enums"]["plan_activity_type"]
+          actor_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json
+          plan_id?: string
+          target_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_activity_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plan_activity_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plan_activity_target_user_id_fkey"
+            columns: ["target_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plan_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          message_type: Database["public"]["Enums"]["message_type"]
+          plan_id: string
+          sender_id: string
+          system_message_type: Database["public"]["Enums"]["system_message_type"] | null
+          updated_at: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          message_type?: Database["public"]["Enums"]["message_type"]
+          plan_id: string
+          sender_id: string
+          system_message_type?: Database["public"]["Enums"]["system_message_type"] | null
+          updated_at?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          message_type?: Database["public"]["Enums"]["message_type"]
+          plan_id?: string
+          sender_id?: string
+          system_message_type?: Database["public"]["Enums"]["system_message_type"] | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_messages_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plan_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       plan_participants: {
         Row: {
           circle_id: string | null
@@ -1191,6 +1291,20 @@ export const Constants = {
 
       friendship_status: ["PENDING", "ACCEPTED"],
       message_status: ["SENT", "DELIVERED"],
+      message_type: ["text", "system", "poll"],
+      system_message_type: [
+        "plan_created",
+        "participant_joined",
+        "participant_left",
+        "title_changed",
+        "description_changed",
+        "date_changed",
+        "time_changed",
+        "venue_changed",
+        "plan_cancelled",
+        "plan_restored",
+        "plan_completed",
+      ],
       movie_genre: [
         "ACTION",
         "COMEDY",
@@ -1216,6 +1330,27 @@ export const Constants = {
         "MEMORY_GENERATED",
       ],
       participant_role: ["HOST", "CO_HOST", "PARTICIPANT"],
+      plan_activity_type: [
+        "plan_created",
+        "participant_invited",
+        "participant_joined",
+        "participant_left",
+        "participant_waitlisted",
+        "participant_promoted",
+        "participant_removed",
+        "invitation_accepted",
+        "invitation_declined",
+        "capacity_changed",
+        "title_changed",
+        "description_changed",
+        "date_changed",
+        "time_changed",
+        "location_changed",
+        "host_transferred",
+        "plan_cancelled",
+        "plan_restored",
+        "plan_completed",
+      ],
       plan_status: ["LIVE", "COMPLETED", "CANCELLED"],
       rsvp_status: ["INVITED", "JOINED", "SKIPPED", "WAITLISTED"],
       skip_reason: ["LEFT", "REMOVED"],

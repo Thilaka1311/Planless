@@ -465,16 +465,29 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     });
 
   const prioritizeCurrentUserAndSort = (list: Friend[]) => {
-    const currentUserEntry = list.find(
+    const isAccepted = (f: Friend) => f.rsvpStatus === 'JOINED' || f.isAccepted;
+
+    const accepted = list.filter(isAccepted);
+    const nonAccepted = list.filter((f) => !isAccepted(f));
+
+    const currentUserEntry = accepted.find(
       (f) => f.name === 'You' || (activeUserId && (f.dbUuid === activeUserId || f.id === activeUserId))
     );
-    const remaining = list.filter((f) => f !== currentUserEntry);
-    const sortedRemaining = sortByWaitlistOrder(remaining);
+    const remainingAccepted = accepted.filter((f) => f !== currentUserEntry);
 
-    if (currentUserEntry) {
-      return [{ ...currentUserEntry, name: 'You' }, ...sortedRemaining];
-    }
-    return sortedRemaining;
+    const sortAlphabetically = (arr: Friend[]) =>
+      [...arr].sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+      );
+
+    const sortedAccepted = sortAlphabetically(remainingAccepted);
+    const sortedNonAccepted = sortAlphabetically(nonAccepted);
+
+    const finalAccepted = currentUserEntry
+      ? [{ ...currentUserEntry, name: 'You' }, ...sortedAccepted]
+      : sortedAccepted;
+
+    return [...finalAccepted, ...sortedNonAccepted];
   };
 
   const invitedList: Friend[] = useMemo(() => {
@@ -710,7 +723,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   );
 
   const managementMode: "host" | "invite_only" = isHost ? "host" : "invite_only";
-  const canInvite = isHost || plan.allowParticipantInvites === true;
+  const canInvite = isHost || plan.allowParticipantInvites === true || (plan as any).allow_participant_invites === true;
   const [localGoingList, setLocalGoingList] = useState<Friend[] | null>(null);
   const [localWaitlist, setLocalWaitlist] = useState<Friend[] | null>(null);
 

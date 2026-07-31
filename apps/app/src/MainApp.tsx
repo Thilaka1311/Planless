@@ -32,6 +32,8 @@ import { useLivePlan } from "./features/plans/hooks/useLivePlan";
 import { SearchYourPlansScreen } from "./features/plans/screens/PlansScreen/SearchYourPlansScreen";
 import { HostedPlansScreen } from "./features/plans/screens/PlansScreen/HostedPlansScreen";
 import { PastPlans } from "./features/plans/screens/PlansScreen/PastPlans";
+import { ChatsScreen } from "./features/chats/screens/ChatsScreen";
+import { PlanChatScreen } from "./features/chats/screens/PlanChatScreen";
 
 interface MainAppProps {
   userProfile: UserProfile;
@@ -84,12 +86,16 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const [showPlansSearchScreen, setShowPlansSearchScreen] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
+  const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
 
-  // Reset hosted & past subscreen when changing tabs
+  // Reset sub-screens when changing tabs
   React.useEffect(() => {
     if (activeTab !== "plans") {
       setShowHostedPlansScreen(false);
       setShowPastPlansScreen(false);
+    }
+    if (activeTab !== "chats" && activeTab !== "circles") {
+      setSelectedChatPlanId(null);
     }
   }, [activeTab]);
 
@@ -482,32 +488,14 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           />
         )}
 
-        {/* TAB 4: CIRCLES / BUDDY GROUPS THREAD */}
-        {activeTab === "circles" && (
-          <CirclesScreen
-            circleCreateStep={circleCreateStep}
-            setCircleCreateStep={setCircleCreateStep}
-            circles={circles}
-            selectedCircle={selectedCircle}
-            setSelectedCircle={setSelectedCircle}
-            activeUserId={activeUserId}
-            userProfile={userProfile}
-            dbCircleMembers={dbCircleMembers}
-            setDbCircleMembers={setDbCircleMembers}
-            upcomingCirclePlans={upcomingCirclePlans}
-            expandedCircleIds={expandedCircleIds}
-            setExpandedCircleIds={setExpandedCircleIds}
-            isInvitingFriends={isInvitingFriends}
-            setIsInvitingFriends={setIsInvitingFriends}
+        {/* TAB 4: CHATS — PLAN CONVERSATIONS */}
+        {(activeTab === "chats" || activeTab === "circles") && (
+          <ChatsScreen
             setActiveTab={setActiveTab}
-            dbUsers={dbUsers}
-            setCircles={setCircles}
-            plans={plans}
-            setPaymentConfirmationPlanId={setPaymentConfirmationPlanId}
-            handleToggleJoin={handleToggleJoin}
-            setSelectedPlanId={setSelectedPlanId}
-            handleCreateCircle={handleCreateCircle}
-            onToggleBottomNav={setChildrenWantBottomNavHidden}
+            onSelectChatPlan={(planId) => {
+              setSelectedChatPlanId(planId);
+            }}
+            onScroll={setPlansScrollY}
           />
         )}
 
@@ -605,6 +593,19 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
             setShowPlansSearchScreen(true);
           }}
           onScroll={setPlansScrollY}
+        />
+      )}
+
+      {/* ---------------- 💬 PLAN CHAT SCREEN ---------------- */}
+      {selectedChatPlanId && (
+        <PlanChatScreen
+          planId={selectedChatPlanId}
+          onBack={() => setSelectedChatPlanId(null)}
+          onOpenPlanDetails={() => {
+            const planId = selectedChatPlanId;
+            setSelectedChatPlanId(null);
+            setSelectedPlanId(planId);
+          }}
         />
       )}
 

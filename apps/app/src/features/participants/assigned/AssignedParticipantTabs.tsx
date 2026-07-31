@@ -93,26 +93,28 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
           );
         })}
 
-        <div style={{ display: 'flex', alignItems: 'center', height: '100%', zIndex: 2 }}>
-          <button
-            onClick={onAddFriends}
-            title="Invite People"
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: '50%',
-              background: 'transparent',
-              border: 'none',
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <Plus size={16} />
-          </button>
-        </div>
+        {onAddFriends && (
+          <div style={{ display: 'flex', alignItems: 'center', height: '100%', zIndex: 2 }}>
+            <button
+              onClick={onAddFriends}
+              title="Invite People"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                background: 'transparent',
+                border: 'none',
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
