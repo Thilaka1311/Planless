@@ -19,29 +19,37 @@ import {
   ChevronDown,
   Check
 } from "lucide-react";
-import { UserProfile, Plan } from "../../../../core/types";
-import { usePlansStore } from "../../state/PlansContext";
-import { useLivePlan } from "../../hooks/useLivePlan";
-import { useToast } from "../../../../shared/contexts/ToastContext";
-import { supabase } from "../../../../../lib/supabaseClient";
-import { normalizeStatus } from "../../../../../lib/participantStatus";
-import { getPlanCover } from "../../config/planCoverImages";
-import { formatPlanDate } from "../../../../../lib/mappers";
-import { UserAvatar } from "../../../../IMGfromDB/UserAvatar";
-import { CostBreakdownPopover } from "../../components/CostBreakdownPopover";
-import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
-import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
-import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
-import { ParticipantToggleBar } from "../../../home/components/PlanDetailsCard";
-import { useLiveCountdown, formatDeadlineFull, rsvpUrgencyStyles } from "../../../home/components/PlanCard";
-import { useRSVPDeadline } from "../../utils/rsvpFormatter";
-import { HeroHeader } from "../../components/HeroHeader";
-import { HeroMetadataCard } from "../../components/HeroMetadataCard";
-import { useGooglePlacesAutocomplete } from "../../../../shared/hooks/useGooglePlacesAutocomplete";
+import { UserProfile, Plan } from "../../../../../core/types";
+import { usePlansStore } from "../../../state/PlansContext";
+import { useLivePlan } from "../../../hooks/useLivePlan";
+import { useToast } from "../../../../../shared/contexts/ToastContext";
+import { supabase } from "../../../../../../lib/supabaseClient";
+import { normalizeStatus } from "../../../../../../lib/participantStatus";
+import { getPlanCover } from "../../../config/planCoverImages";
+import { formatPlanDate } from "../../../../../../lib/mappers";
+import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
+import { CostBreakdownPopover } from "../../../components/CostBreakdownPopover";
+import { DiscoveryImages } from "../../../../../IMGfromDB/PlanImages";
+import TeamOrganizerModal from "../../../../../shared/modals/TeamOrganizerModal";
+import PlanCompletionModal from "../../../../../shared/modals/PlanCompletionModal";
+import { ParticipantToggleBar } from "../../../../home/components/PlanDetailsCard";
+import { useLiveCountdown, formatDeadlineFull, rsvpUrgencyStyles } from "../../../../home/components/PlanCard";
+import { useRSVPDeadline } from "../../../utils/rsvpFormatter";
+import { HeroHeader } from "../../../components/HeroHeader";
+import { HeroMetadataCard } from "../../../components/HeroMetadataCard";
+import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGooglePlacesAutocomplete";
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
-import { InlineParticipantView } from "../../components/InlineParticipantView";
+import { InlineParticipantView } from "../../../components/InlineParticipantView";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";
-import { RSVPCard } from "../../components/RSVPCard";
+import { RSVPCard } from "../../../components/RSVPCard";
+import {
+  LeavePlanBottomSheet,
+  CancelPlanBottomSheet,
+  RestorePlanBottomSheet,
+  EditDateTimeBottomSheet,
+  EditCostBottomSheet,
+  EditDetailsBottomSheet,
+} from "../../../components/BottomSheets";
 
 // ==========================================
 // UTILITIES & CONSTANTS
@@ -816,6 +824,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [showInfoPopup, setShowInfoPopup] = useState(false);
   const [showLeavePlanConfirm, setShowLeavePlanConfirm] = useState(false);
   const [showCancelPlanConfirm, setShowCancelPlanConfirm] = useState(false);
+  const [showRestorePlanConfirm, setShowRestorePlanConfirm] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(false);
   const rsvp = useRSVPDeadline(selectedPlan?.response_deadline_at);
   const urgencyColor = rsvp.color;
@@ -840,6 +850,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const isHost = myParticipantRecord
     ? (myParticipantRecord.role === "HOST")
     : (selectedPlan?.members ? selectedPlan.members.some(m => (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid) && m.isHost) : false);
+
+  const isCancelled = Boolean((selectedPlan?.status || "").toUpperCase() === "CANCELLED");
 
   const isCreatorHost = isHost;
 
@@ -878,8 +890,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const participantManagementMode = isHost
     ? "host"
     : selectedPlan?.allowParticipantInvites
-    ? "invite_only"
-    : "participant";
+      ? "invite_only"
+      : "participant";
 
   const isParticipant = useMemo(() => {
     return isHost || normalizeStatus(myParticipantRecord?.rsvp_status) === "JOINED";
@@ -1132,6 +1144,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onRemoveParticipant={async (userId) => {
           await removeParticipant(selectedPlan.id, userId);
         }}
+        onPromoteToHost={async (userId) => {
+          await promoteParticipantToHost(selectedPlan.id, userId);
+        }}
       />
     );
   }
@@ -1170,48 +1185,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               hosts={allHosts}
               viewerId={resolvedUserUuid}
               onClose={onClose}
-              isHost={isHost}
-              onEditTitle={async (newTitle) => {
+              isHost={isHost && !isCancelled}
+              onEditTitle={!isCancelled ? async (newTitle) => {
                 try {
                   await updatePlanDetails(selectedPlan.id, { title: newTitle });
                   showToast("✓ Title updated");
                 } catch {
                   showToast("Failed to update title");
                 }
-              }}
-              overflowMenuItems={
-                isCreatorHost
-                  ? [
-                      {
-                        label: "Plan Settings",
-                        onClick: () => setShowPlanSettingsScreen(true),
-                      },
-                      {
-                        label: "Cancel Plan",
-                        destructive: true,
-                        onClick: () => setShowCancelPlanConfirm(true),
-                      },
-                    ]
-                  : isHost
-                  ? [
-                      {
-                        label: "Plan Settings",
-                        onClick: () => setShowPlanSettingsScreen(true),
-                      },
-                      ...(!alreadySkipped
-                        ? [
-                            {
-                              label: "Leave Plan",
-                              destructive: true,
-                              onClick: () => setShowLeavePlanConfirm(true),
-                            },
-                          ]
-                        : []),
-                    ]
-                  : !alreadySkipped
-                  ? [{ label: "Leave Plan", destructive: true, onClick: () => setShowLeavePlanConfirm(true) }]
-                  : []
-              }
+              } : undefined}
+              onOpenSettings={(isHost && !isCancelled) ? () => setShowPlanSettingsScreen(true) : undefined}
             />
 
             {isEditingLocationInline && (
@@ -1232,8 +1215,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   {/* 1. Date & Time (Row 1) */}
                   <button
                     type="button"
-                    disabled={!isHost}
+                    disabled={!isHost || isCancelled}
                     onClick={() => {
+                      if (isCancelled) return;
                       const planDate = new Date(selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt);
                       const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : new Date(planDate.getTime() - 12 * 60 * 60 * 1000);
                       setTempDate(getLocalDateString(planDate));
@@ -1252,14 +1236,14 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
                   {/* 2. Location (Row 2) – inline autocomplete */}
                   <InlineLocationEditor
-                    isHost={isHost}
+                    isHost={isHost && !isCancelled}
                     currentLocation={selectedPlan.location || ""}
                     isEditing={isEditingLocationInline}
                     isSaving={isSavingLocation}
                     locationQuery={locationQuery}
                     inputRef={locationInputRef}
                     onStartEditing={() => {
-                      if (isHost) {
+                      if (isHost && !isCancelled) {
                         setLocationQuery(selectedPlan.location || "");
                         setIsEditingLocationInline(true);
                         setTimeout(() => {
@@ -1288,8 +1272,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     {/* Left part: RSVP */}
                     <button
                       type="button"
-                      disabled={!isHost}
+                      disabled={!isHost || isCancelled}
                       onClick={() => {
+                        if (isCancelled) return;
                         const planDate = new Date(selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt);
                         const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : new Date(planDate.getTime() - 12 * 60 * 60 * 1000);
                         setTempDate(getLocalDateString(planDate));
@@ -1323,8 +1308,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                         maxParticipants={rawDbPlan?.max_participants}
                         isOpen={isCostPopoverOpen}
                         onClose={() => setIsCostPopoverOpen(false)}
-                        isHost={isHost}
+                        isHost={isHost && !isCancelled}
                         onEditCost={() => {
+                          if (isCancelled) return;
                           const currentCost = rawDbPlan?.total_cost;
                           setEditTotalCostInput(currentCost && Number(currentCost) > 0 ? String(currentCost) : "");
                           setIsEditingCostSheetOpen(true);
@@ -1342,7 +1328,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
         <div id="immersive-plan-scroll-content" className="px-6 pt-[80px] space-y-7">
           {selectedPlan && (
-            (isHost || Boolean(selectedPlan.allowParticipantInvites || (selectedPlan as any).allow_participant_invites)) ? (
+            (!isCancelled && (isHost || Boolean(selectedPlan.allowParticipantInvites || (selectedPlan as any).allow_participant_invites))) ? (
               <ParticipantsSection
                 plan={selectedPlan}
                 userProfile={userProfile}
@@ -1355,7 +1341,17 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           )}
           <RSVPCard
             myParticipantRecord={myParticipantRecord}
+            isCancelled={isCancelled}
             className={myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" ? "!bottom-24" : ""}
+            onClick={
+              isHost && isCancelled
+                ? () => setShowRestorePlanConfirm(true)
+                : isHost
+                  ? () => setShowCancelPlanConfirm(true)
+                  : myParticipantRecord?.rsvp_status === "JOINED" && !alreadySkipped
+                    ? () => setShowLeavePlanConfirm(true)
+                    : undefined
+            }
           />
           {myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" && (
             <div className="fixed bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black via-black/90 to-transparent z-40">
@@ -1404,7 +1400,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
       {/* ── Participant Management full-screen overlay ── */}
       <AnimatePresence>
-        {showParticipantManagement && (
+        {showParticipantManagement && !isCancelled && (
           <motion.div
             key="participant-management"
             initial={{ opacity: 0, x: 40 }}
@@ -1468,549 +1464,108 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       </AnimatePresence>
 
       {/* ---------------- 🚪 LEAVE PLAN CONFIRMATION SHEET ---------------- */}
-      <AnimatePresence>
-        {showLeavePlanConfirm && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowLeavePlanConfirm(false)}
-              className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
-            />
-
-            {/* Sheet */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 28, stiffness: 260 }}
-              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
-              style={{
-                background: "#1C1C1E",
-                borderTopLeftRadius: 20,
-                borderTopRightRadius: 20,
-                paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
-              }}
-            >
-              {/* Drag handle */}
-              <div className="flex justify-center pt-3 pb-4">
-                <div className="w-9 h-1 rounded-full bg-white/20" />
-              </div>
-
-              <div className="px-5 pb-2 text-left">
-                <h2 className="text-[18px] font-bold text-white mb-2">Leave this plan?</h2>
-                <p className="text-[14px] text-white/55 leading-[1.55]">
-                  You will no longer be part of this plan. The host can invite you again later if you'd like to rejoin.
-                </p>
-              </div>
-
-              <div className="px-4 pt-5 flex flex-col gap-2.5">
-                {/* Leave Plan — destructive */}
-                <button
-                  id="leave_plan_confirm_btn"
-                  type="button"
-                  disabled={isSkipping}
-                  onClick={async () => {
-                    setShowLeavePlanConfirm(false);
-                    await handleSkip();
-                  }}
-                  className="w-full py-4 rounded-2xl text-[15px] font-semibold text-red-400 active:scale-[0.98] transition-transform disabled:opacity-50"
-                  style={{ background: "rgba(255,59,48,0.12)", border: "1px solid rgba(255,59,48,0.2)" }}
-                >
-                  {isSkipping ? "Leaving…" : "Leave Plan"}
-                </button>
-
-                {/* Cancel */}
-                <button
-                  id="leave_plan_cancel_btn"
-                  type="button"
-                  onClick={() => setShowLeavePlanConfirm(false)}
-                  className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform"
-                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <LeavePlanBottomSheet
+        isOpen={showLeavePlanConfirm}
+        isSkipping={isSkipping}
+        onConfirm={async () => {
+          setShowLeavePlanConfirm(false);
+          await handleSkip();
+        }}
+        onClose={() => setShowLeavePlanConfirm(false)}
+      />
 
       {/* ---------------- 🚫 CANCEL PLAN CONFIRMATION SHEET ---------------- */}
-      <AnimatePresence>
-        {showCancelPlanConfirm && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowCancelPlanConfirm(false)}
-              className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
-            />
+      <CancelPlanBottomSheet
+        isOpen={showCancelPlanConfirm}
+        onConfirm={async () => {
+          setShowCancelPlanConfirm(false);
+          try {
+            await cancelPlan(selectedPlan.id);
+            showToast("✓ Plan cancelled");
+            onClose();
+          } catch (err: any) {
+            showToast("Failed to cancel plan");
+          }
+        }}
+        onClose={() => setShowCancelPlanConfirm(false)}
+      />
 
-            {/* Sheet */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 28, stiffness: 260 }}
-              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
-              style={{
-                background: "#1C1C1E",
-                borderTopLeftRadius: 20,
-                borderTopRightRadius: 20,
-                paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
-              }}
-            >
-              {/* Drag handle */}
-              <div className="flex justify-center pt-3 pb-4">
-                <div className="w-9 h-1 rounded-full bg-white/20" />
-              </div>
-
-              <div className="px-5 pb-2 text-left">
-                <h2 className="text-[18px] font-bold text-white mb-2">Cancel Plan?</h2>
-                <p className="text-[14px] text-white/55 leading-[1.55]">
-                  This will cancel the plan for everyone. Participants will no longer be able to join or interact with this plan. This action cannot be undone.
-                </p>
-              </div>
-
-              <div className="px-4 pt-5 flex flex-col gap-2.5">
-                {/* Cancel Plan — destructive */}
-                <button
-                  id="cancel_plan_confirm_btn"
-                  type="button"
-                  onClick={async () => {
-                    setShowCancelPlanConfirm(false);
-                    try {
-                      await cancelPlan(selectedPlan.id);
-                      showToast("✓ Plan cancelled");
-                      onClose();
-                    } catch (err: any) {
-                      showToast("Failed to cancel plan");
-                    }
-                  }}
-                  className="w-full py-4 rounded-2xl text-[15px] font-semibold text-red-400 active:scale-[0.98] transition-transform"
-                  style={{ background: "rgba(255,59,48,0.12)", border: "1px solid rgba(255,59,48,0.2)" }}
-                >
-                  Cancel Plan
-                </button>
-
-                {/* Keep Plan */}
-                <button
-                  id="cancel_plan_keep_btn"
-                  type="button"
-                  onClick={() => setShowCancelPlanConfirm(false)}
-                  className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform"
-                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
-                >
-                  Keep Plan
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* ---------------- ↺ RESTORE PLAN CONFIRMATION SHEET ---------------- */}
+      <RestorePlanBottomSheet
+        isOpen={showRestorePlanConfirm}
+        isRestoring={isRestoring}
+        onConfirm={async () => {
+          setIsRestoring(true);
+          try {
+            await updatePlanDetails(selectedPlan.id, { status: "LIVE" });
+            showToast("✓ Plan restored");
+            setShowRestorePlanConfirm(false);
+          } catch (err: any) {
+            console.error("Failed to restore plan:", err);
+            showToast("Failed to restore plan");
+          } finally {
+            setIsRestoring(false);
+          }
+        }}
+        onClose={() => setShowRestorePlanConfirm(false)}
+      />
 
       {/* ---------------- 📅 EDIT DATE & TIME BOTTOM SHEET ---------------- */}
-      <AnimatePresence>
-        {isEditingDateTimeSheetOpen && (
-          <>
-            {/* Backdrop Dimmer */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsEditingDateTimeSheetOpen(false)}
-              className="fixed inset-0 bg-black/60 z-60 pointer-events-auto"
-            />
-
-            {/* Bottom Sheet Panel */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 220 }}
-              style={{
-                position: 'fixed',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                maxHeight: '85vh',
-                background: '#1C1C1E',
-                borderTopLeftRadius: 20,
-                borderTopRightRadius: 20,
-                zIndex: 65,
-                padding: '16px 20px calc(32px + env(safe-area-inset-bottom, 0px))',
-                color: '#FFFFFF',
-                boxShadow: '0 -8px 24px rgba(0, 0, 0, 0.3)',
-                display: 'flex',
-                flexDirection: 'column',
-                pointerEvents: 'auto'
-              }}
-            >
-              {/* Drag handle */}
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-                <div style={{ width: 36, height: 5, borderRadius: 2.5, background: 'rgba(255, 255, 255, 0.15)' }} />
-              </div>
-
-              {/* Title / Header */}
-              <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 20, textAlign: 'left' }}>
-                <span style={{ fontSize: 16, fontWeight: 600 }}>Edit Date & Time</span>
-              </div>
-
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* Event Timing Section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255, 255, 255, 0.3)', letterSpacing: '0.05em', textTransform: 'uppercase', textAlign: 'left', paddingLeft: 4 }}>Event Timing</span>
-                  <div style={{ background: 'rgba(255, 255, 255, 0.05)', borderRadius: 12, overflow: 'hidden' }}>
-                    {/* Date Row */}
-                    <div style={{ position: 'relative', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-                      <input
-                        type="date"
-                        value={tempDate}
-                        onChange={(e) => setTempDate(e.target.value)}
-                        style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', zIndex: 10 }}
-                      />
-                      <span style={{ fontSize: 14, fontWeight: 500, color: '#FFFFFF' }}>Date</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 14, color: 'rgba(255, 255, 255, 0.45)', fontWeight: 500 }}>{formatDateFriendly(tempDate) || "Select Date"}</span>
-                        <ChevronRight className="w-4 h-4 text-white/20" />
-                      </div>
-                    </div>
-                    {/* Separator */}
-                    <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.04)', marginLeft: 16 }} />
-                    {/* Time Row */}
-                    <div style={{ position: 'relative', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-                      <input
-                        type="time"
-                        value={tempTime}
-                        onChange={(e) => setTempTime(e.target.value)}
-                        style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', zIndex: 10 }}
-                      />
-                      <span style={{ fontSize: 14, fontWeight: 500, color: '#FFFFFF' }}>Time</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 14, color: 'rgba(255, 255, 255, 0.45)', fontWeight: 500 }}>{formatTimeFriendly(tempTime) || "Select Time"}</span>
-                        <ChevronRight className="w-4 h-4 text-white/20" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* RSVP Deadline Section */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255, 255, 255, 0.3)', letterSpacing: '0.05em', textTransform: 'uppercase', textAlign: 'left', paddingLeft: 4 }}>RSVP Deadline</span>
-                  <div style={{ background: 'rgba(255, 255, 255, 0.05)', borderRadius: 12, overflow: 'hidden' }}>
-                    {/* RSVP Date Row */}
-                    <div style={{ position: 'relative', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-                      <input
-                        type="date"
-                        value={tempRSVPDate}
-                        onChange={(e) => setTempRSVPDate(e.target.value)}
-                        style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', zIndex: 10 }}
-                      />
-                      <span style={{ fontSize: 14, fontWeight: 500, color: '#FFFFFF' }}>Deadline Date</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 14, color: 'rgba(255, 255, 255, 0.45)', fontWeight: 500 }}>{formatDateFriendly(tempRSVPDate) || "Select RSVP Date"}</span>
-                        <ChevronRight className="w-4 h-4 text-white/20" />
-                      </div>
-                    </div>
-                    {/* Separator */}
-                    <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.04)', marginLeft: 16 }} />
-                    {/* RSVP Time Row */}
-                    <div style={{ position: 'relative', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-                      <input
-                        type="time"
-                        value={tempRSVPTime}
-                        onChange={(e) => setTempRSVPTime(e.target.value)}
-                        style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', zIndex: 10 }}
-                      />
-                      <span style={{ fontSize: 14, fontWeight: 500, color: '#FFFFFF' }}>Deadline Time</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 14, color: 'rgba(255, 255, 255, 0.45)', fontWeight: 500 }}>{formatTimeFriendly(tempRSVPTime) || "Select RSVP Time"}</span>
-                        <ChevronRight className="w-4 h-4 text-white/20" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-                <button
-                  type="button"
-                  onClick={() => setIsEditingDateTimeSheetOpen(false)}
-                  style={{ flex: 1, padding: '14px', background: 'rgba(255, 255, 255, 0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'center' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveDateTime}
-                  style={{ flex: 1, padding: '14px', background: '#FF5E3A', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'center' }}
-                >
-                  Save
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <EditDateTimeBottomSheet
+        isOpen={isEditingDateTimeSheetOpen}
+        tempDate={tempDate}
+        tempTime={tempTime}
+        tempRSVPDate={tempRSVPDate}
+        tempRSVPTime={tempRSVPTime}
+        onTempDateChange={setTempDate}
+        onTempTimeChange={setTempTime}
+        onTempRSVPDateChange={setTempRSVPDate}
+        onTempRSVPTimeChange={setTempRSVPTime}
+        onSave={handleSaveDateTime}
+        onClose={() => setIsEditingDateTimeSheetOpen(false)}
+      />
 
       {/* ---------------- 💰 EDIT COST BOTTOM SHEET ---------------- */}
-      <AnimatePresence>
-        {isEditingCostSheetOpen && (
-          <>
-            {/* Backdrop Dimmer */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsEditingCostSheetOpen(false)}
-              className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
-            />
-
-            {/* Bottom Sheet Panel */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 28, stiffness: 260 }}
-              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto select-none"
-              style={{
-                background: "#1C1C1E",
-                borderTopLeftRadius: 20,
-                borderTopRightRadius: 20,
-                paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
-              }}
-            >
-              {/* Drag handle */}
-              <div className="flex justify-center pt-3 pb-4">
-                <div className="w-9 h-1 rounded-full bg-white/20" />
-              </div>
-
-              <div className="px-5 pb-2 text-left">
-                <h2 className="text-[18px] font-bold text-white mb-1">Edit Cost</h2>
-              </div>
-
-              <div className="px-5 pt-3 pb-4 flex flex-col gap-4">
-                <div className="flex flex-col gap-1.5 text-left">
-                  <label className="text-[12px] font-semibold text-white/60">
-                    Total Plan Cost
-                  </label>
-                  <div className="flex items-center bg-[#2C2C2E] border border-white/10 rounded-2xl px-4 py-3.5 focus-within:border-amber-500/50 transition">
-                    <span className="text-white/40 text-base font-semibold mr-2">₹</span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      value={editTotalCostInput}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === "" || Number(val) >= 0) {
-                          setEditTotalCostInput(val);
-                        }
-                      }}
-                      placeholder="0 (Free)"
-                      className="bg-transparent border-none text-white text-base font-semibold focus:outline-none w-full"
-                    />
-                  </div>
-                </div>
-
-                {/* Minimal Typographic Live Cost Preview */}
-                {(() => {
-                  const currentCapacity = Number(
-                    rawDbPlan?.max_participants ||
-                      selectedPlan?.joinLimit ||
-                      selectedPlan?.capacity ||
-                      selectedPlan?.maxSpots ||
-                      0
-                  );
-                  const parsedInput = parseFloat(editTotalCostInput);
-                  const isCostSet = editTotalCostInput.trim() !== "" && !isNaN(parsedInput) && parsedInput > 0;
-
-                  let mainDisplay = "Free";
-                  let subDisplay = "No cost has been set.";
-
-                  if (isCostSet) {
-                    if (currentCapacity > 0) {
-                      const perPersonVal = Math.round((parsedInput / currentCapacity) * 100) / 100;
-                      const formattedVal = perPersonVal.toLocaleString("en-IN");
-                      mainDisplay = `₹${formattedVal} each`;
-                      subDisplay = `${currentCapacity} ${currentCapacity === 1 ? "participant" : "participants"}`;
-                    } else {
-                      mainDisplay = "Unable to calculate";
-                      subDisplay = "Invalid participant capacity";
-                    }
-                  }
-
-                  return (
-                    <div className="flex flex-col gap-0.5 text-left py-0.5">
-                      <span className="text-[22px] font-bold text-white tracking-tight">
-                        {mainDisplay}
-                      </span>
-                      <span className="text-[13px] text-white/40 font-medium">
-                        {subDisplay}
-                      </span>
-                    </div>
-                  );
-                })()}
-
-                {/* Action Buttons: Cancel & Save */}
-                <div className="flex items-center gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingCostSheetOpen(false)}
-                    className="flex-1 py-3.5 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform cursor-pointer"
-                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setIsEditingCostSheetOpen(false);
-                      const parsedCost = editTotalCostInput.trim() === "" ? 0 : Math.max(0, parseFloat(editTotalCostInput) || 0);
-                      try {
-                        await updatePlanDetails(selectedPlan.id, { total_cost: parsedCost });
-                        showToast(parsedCost > 0 ? "✓ Cost updated" : "✓ Plan updated to Free");
-                      } catch {
-                        showToast("Failed to update cost");
-                      }
-                    }}
-                    className="flex-1 py-3.5 rounded-2xl text-[15px] font-semibold text-white active:scale-[0.98] transition-transform cursor-pointer"
-                    style={{ background: "#FF5E3A" }}
-                  >
-                    Save
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </>
+      <EditCostBottomSheet
+        isOpen={isEditingCostSheetOpen}
+        costInput={editTotalCostInput}
+        capacity={Number(
+          rawDbPlan?.max_participants ||
+          selectedPlan?.joinLimit ||
+          selectedPlan?.capacity ||
+          selectedPlan?.maxSpots ||
+          0
         )}
-      </AnimatePresence>
+        onCostInputChange={setEditTotalCostInput}
+        onSave={async () => {
+          setIsEditingCostSheetOpen(false);
+          const parsedCost = editTotalCostInput.trim() === "" ? 0 : Math.max(0, parseFloat(editTotalCostInput) || 0);
+          try {
+            await updatePlanDetails(selectedPlan.id, { total_cost: parsedCost });
+            showToast(parsedCost > 0 ? "✓ Cost updated" : "✓ Plan updated to Free");
+          } catch {
+            showToast("Failed to update cost");
+          }
+        }}
+        onClose={() => setIsEditingCostSheetOpen(false)}
+      />
 
-      <AnimatePresence>
-        {isEditingDetailsSheetOpen && (
-          <>
-            {/* Backdrop */}
-            <div
-              className="fixed inset-0 z-45 bg-[#000000]/60 backdrop-blur-[4px] animate-fade-in"
-              onClick={() => !isSavingDetails && setIsEditingDetailsSheetOpen(false)}
-            />
-            {/* Bottom Sheet */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 220 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-[#0c0c0c] border-t border-white/[0.06] rounded-t-[32px] p-6 max-h-[85vh] flex flex-col pointer-events-auto"
-            >
-              {/* Drag Handle Indicator */}
-              <div className="w-12 h-1 bg-white/10 rounded-full mx-auto mb-5" />
-
-              <div className="text-center mb-4">
-                <h3 className="text-[17px] font-semibold text-white/95 font-sans">Edit Plan Details</h3>
-              </div>
-
-              <div className="flex-1 overflow-y-auto space-y-5 py-2 pr-1 no-scrollbar">
-                {/* 1. Title Input */}
-                <div className="space-y-2 text-left">
-                  <label className="text-[10px] font-sans font-bold tracking-[0.1em] text-zinc-500 uppercase">Plan Title</label>
-                  <input
-                    type="text"
-                    maxLength={50}
-                    value={tempTitle}
-                    onChange={(e) => setTempTitle(e.target.value.slice(0, 50))}
-                    className="w-full bg-zinc-900/30 border border-white/[0.04] rounded-2xl px-4 py-3 text-white text-sm font-semibold focus:outline-none focus:border-white/10"
-                    placeholder="Enter plan title"
-                  />
-                </div>
-
-                {/* 2. Description Input */}
-                <div className="space-y-2 text-left">
-                  <label className="text-[10px] font-sans font-bold tracking-[0.1em] text-zinc-500 uppercase">Description</label>
-                  <textarea
-                    value={tempDescription}
-                    onChange={(e) => setTempDescription(e.target.value)}
-                    className="w-full bg-zinc-900/30 border border-white/[0.04] rounded-2xl px-4 py-3 text-white text-sm font-semibold focus:outline-none focus:border-white/10 min-h-[80px] resize-none"
-                    placeholder="Add a description..."
-                  />
-                </div>
-
-                {/* 3. Capacity Input */}
-                <div className="space-y-2 text-left">
-                  <label className="text-[10px] font-sans font-bold tracking-[0.1em] text-zinc-500 uppercase">Capacity (Limit)</label>
-                  <input
-                    type="number"
-                    value={tempCapacity}
-                    onChange={(e) => setTempCapacity(e.target.value === "" ? "" : Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full bg-zinc-900/30 border border-white/[0.04] rounded-2xl px-4 py-3 text-white text-sm font-semibold focus:outline-none focus:border-white/10"
-                    placeholder="Unlimited"
-                  />
-                </div>
-
-                {/* 4. Cover Image Picker */}
-                <div className="space-y-2 text-left">
-                  <label className="text-[10px] font-sans font-bold tracking-[0.1em] text-zinc-500 uppercase">Cover Image</label>
-                  <div className="flex flex-col items-center gap-3 p-4 bg-zinc-900/20 border border-white/[0.02] rounded-2xl">
-                    <img
-                      src={tempCoverImage || ""}
-                      alt="Plan Cover"
-                      className="w-full h-[120px] object-cover rounded-xl border border-white/10"
-                    />
-                    <input
-                      ref={detailsFileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => {
-                            setTempCoverImage(reader.result as string);
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => detailsFileInputRef.current?.click()}
-                      className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/90 font-semibold text-xs rounded-xl transition cursor-pointer"
-                    >
-                      Change Cover Photo
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-3 mt-6 pt-3 border-t border-white/[0.04]">
-                <button
-                  type="button"
-                  disabled={isSavingDetails}
-                  onClick={() => setIsEditingDetailsSheetOpen(false)}
-                  className="flex-1 bg-zinc-900 hover:bg-zinc-850 active:bg-zinc-800 text-zinc-400 font-semibold text-sm py-3.5 rounded-2xl transition cursor-pointer disabled:opacity-40"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isSavingDetails}
-                  onClick={handleSaveDetails}
-                  className="flex-1 bg-[#ff5e3a] hover:bg-[#ff7252] active:bg-[#e24c2a] text-white font-semibold text-sm py-3.5 rounded-2xl transition cursor-pointer shadow-lg shadow-brand-orange/20 disabled:opacity-40 flex items-center justify-center gap-2"
-                >
-                  {isSavingDetails ? "Saving..." : "Save"}
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      {/* ---------------- 📝 EDIT DETAILS BOTTOM SHEET ---------------- */}
+      <EditDetailsBottomSheet
+        isOpen={isEditingDetailsSheetOpen}
+        isSaving={isSavingDetails}
+        tempTitle={tempTitle}
+        tempDescription={tempDescription}
+        tempCapacity={tempCapacity}
+        tempCoverImage={tempCoverImage}
+        fileInputRef={detailsFileInputRef}
+        onTitleChange={setTempTitle}
+        onDescriptionChange={setTempDescription}
+        onCapacityChange={setTempCapacity}
+        onCoverImageChange={setTempCoverImage}
+        onSave={handleSaveDetails}
+        onClose={() => setIsEditingDetailsSheetOpen(false)}
+      />
 
       {/* Location bottom sheet removed – location editing is now inline */}
     </motion.div>

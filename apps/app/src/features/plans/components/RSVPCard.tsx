@@ -5,10 +5,12 @@ import { normalizeStatus } from "../../../../lib/participantStatus";
 interface RSVPCardProps {
   myParticipantRecord?: any;
   className?: string;
+  onClick?: () => void;
+  isCancelled?: boolean;
 }
 
-export const RSVPCard: React.FC<RSVPCardProps> = ({ myParticipantRecord, className = "" }) => {
-  if (!myParticipantRecord) return null;
+export const RSVPCard: React.FC<RSVPCardProps> = ({ myParticipantRecord, className = "", onClick, isCancelled = false }) => {
+  if (!myParticipantRecord && !isCancelled) return null;
 
   const status = normalizeStatus(myParticipantRecord.rsvp_status);
   const skipReason = myParticipantRecord.skip_reason;
@@ -21,7 +23,25 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({ myParticipantRecord, classNa
     textColor: 'text-zinc-200',
   };
 
-  if (status === 'INVITED') {
+  const isHostRole = Boolean(myParticipantRecord?.role === "HOST" || myParticipantRecord?.isHost === true);
+
+  if (isCancelled) {
+    text = "Plan Cancelled";
+    dotColor = 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]';
+    glassStyle = {
+      backgroundColor: 'rgba(136, 19, 55, 0.28)',
+      borderColor: 'rgba(244, 63, 94, 0.25)',
+      textColor: 'text-rose-200',
+    };
+  } else if (isHostRole) {
+    text = "You're Hosting";
+    dotColor = 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.6)]';
+    glassStyle = {
+      backgroundColor: 'rgba(24, 24, 27, 0.65)',
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      textColor: 'text-zinc-200',
+    };
+  } else if (status === 'INVITED') {
     text = "You're Invited";
     dotColor = 'bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.6)]';
     glassStyle = {
@@ -67,17 +87,22 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({ myParticipantRecord, classNa
     return null;
   }
 
+  const isInteractive = Boolean(onClick);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 10 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
+      whileTap={isInteractive ? { scale: 0.96 } : undefined}
+      onClick={onClick}
+      role={isInteractive ? 'button' : undefined}
       style={{
         backgroundColor: glassStyle.backgroundColor,
         borderColor: glassStyle.borderColor,
       }}
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 rounded-full border backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.45)] flex items-center gap-2.5 max-w-[90vw] select-none pointer-events-none transition-all duration-300 ${className}`}
+      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 rounded-full border backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.45)] flex items-center gap-2.5 max-w-[90vw] select-none transition-all duration-300 ${isInteractive ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none'} ${className}`}
     >
       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor} transition-colors duration-300`} />
       <AnimatePresence mode="wait">
@@ -92,6 +117,7 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({ myParticipantRecord, classNa
           {text}
         </motion.span>
       </AnimatePresence>
+      {isInteractive && null}
     </motion.div>
   );
 };

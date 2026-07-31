@@ -1,5 +1,5 @@
 import React from "react";
-import { Bell, Search, X } from "lucide-react";
+import { Bell, Search, Crown, History, X } from "lucide-react";
 import { UserProfile, NotificationItem } from "../core/types";
 
 import { UserAvatar } from "../IMGfromDB/UserAvatar";
@@ -10,6 +10,12 @@ interface HomeHeaderProps {
   pendingMemoryCount: number;
   showSearch?: boolean;
   onToggleSearch?: () => void;
+  showHostedIcon?: boolean;
+  onToggleHosted?: () => void;
+  isHostedActive?: boolean;
+  showPastIcon?: boolean;
+  onTogglePast?: () => void;
+  isPastActive?: boolean;
   title?: string;
   scrollY?: number;
   hideNotificationsIcon?: boolean;
@@ -21,16 +27,30 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
   pendingMemoryCount,
   showSearch = false,
   onToggleSearch,
+  showHostedIcon = false,
+  onToggleHosted,
+  isHostedActive = false,
+  showPastIcon = false,
+  onTogglePast,
+  isPastActive = false,
   title = "PLANLESS",
   scrollY = 0,
   hideNotificationsIcon = false,
 }) => {
+  const actionButtonClass = (isActive: boolean) =>
+    `w-8 h-8 rounded-full flex items-center justify-center relative cursor-pointer transition-all active:scale-95 ${
+      isActive
+        ? "text-amber-400 bg-amber-500/10 border border-amber-500/20"
+        : "text-zinc-400 hover:text-white hover:bg-white/[0.06]"
+    }`;
+
   return (
     <header
       id="figma_coordinate_header"
-      className="h-14 shrink-0 border-b border-zinc-950 bg-[#09090b]/99 backdrop-blur-md flex items-center justify-between px-4 z-30 select-none relative"
+      className="h-14 shrink-0 bg-[#09090b]/99 backdrop-blur-md flex items-center justify-between px-4 z-30 select-none relative"
     >
-      <div className="flex items-center gap-1.5 z-10">
+      {/* Left Column: Avatar */}
+      <div className="flex-1 flex items-center justify-start z-10">
         <button
           onClick={() => {
             setActiveTab("profile");
@@ -47,7 +67,8 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
         </button>
       </div>
 
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
+      {/* Center Column: Title */}
+      <div className="flex-shrink-0 flex items-center justify-center z-10">
         {title === "PLANLESS" || title === "Plans" || title === "PLANS" ? (
           <h1 className="text-stone-100 font-sans font-black text-xl tracking-[0.25em] leading-none text-center">
             {title.toUpperCase()}
@@ -59,16 +80,39 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
         )}
       </div>
 
-      <div className="flex items-center gap-1.5 z-10">
-        {showSearch && onToggleSearch && (
-          <button
-            onClick={onToggleSearch}
-            className="w-9 h-9 rounded-full flex items-center justify-center relative cursor-pointer text-zinc-400 hover:text-white transition-all active:scale-95"
-          >
-            <Search className="w-4.5 h-4.5" />
-          </button>
-        )}
+      {/* Right Column: Compact Action Utility Group */}
+      <div className="flex-1 flex items-center justify-end z-10">
+        <div className="flex items-center gap-0 bg-white/[0.03] border border-white/[0.06] p-0.5 rounded-full">
+          {showPastIcon && onTogglePast && (
+            <button
+              onClick={onTogglePast}
+              aria-label="Past Plans"
+              className={actionButtonClass(isPastActive)}
+            >
+              <History className="w-4 h-4 stroke-[2]" />
+            </button>
+          )}
+          {showHostedIcon && onToggleHosted && (
+            <button
+              onClick={onToggleHosted}
+              aria-label="Hosted Plans"
+              className={actionButtonClass(isHostedActive)}
+            >
+              <Crown className="w-4 h-4 stroke-[2]" />
+            </button>
+          )}
+          {showSearch && onToggleSearch && (
+            <button
+              onClick={onToggleSearch}
+              aria-label="Search Plans"
+              className={actionButtonClass(false)}
+            >
+              <Search className="w-4 h-4 stroke-[2]" />
+            </button>
+          )}
+        </div>
       </div>
     </header>
   );
 };
+

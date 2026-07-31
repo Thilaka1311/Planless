@@ -107,17 +107,17 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
                 Move to Waitlist
               </button>
             )}
-            {onMoveToGoing && sheetType === 'waitlist' && (mode === 'wizard' || waitlistMode === 'assigned') && (
+            {onMoveToGoing && sheetType === 'waitlist' && (
               <button
-                onClick={() => onMoveToGoing(selectedItem)}
+                onClick={() => executeActionWithImmediateDismiss(() => onMoveToGoing!(selectedItem))}
                 style={{ width: '100%', padding: '14px', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
               >
                 Move to Going
               </button>
             )}
 
-            {/* Make Host — only when participant has accepted (rsvpStatus === 'JOINED') */}
-            {onPromoteHost && (selectedItem.rsvpStatus === 'JOINED' || selectedItem.isAccepted === true) && !selectedItem.isHost && (
+            {/* Make Host — only when participant has accepted (rsvpStatus === 'JOINED') and not in waitlist */}
+            {onPromoteHost && sheetType !== 'waitlist' && (selectedItem.rsvpStatus === 'JOINED' || selectedItem.isAccepted === true) && !selectedItem.isHost && (
               <button
                 onClick={() => {
                   executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));

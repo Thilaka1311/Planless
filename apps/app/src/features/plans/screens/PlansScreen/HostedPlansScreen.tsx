@@ -1,39 +1,27 @@
-import React, { useState, useMemo } from "react";
-import { ChevronRight, Check, X, CreditCard, Inbox, CalendarCheck, Hourglass, Coffee, Sparkles } from "lucide-react";
+import React, { useMemo } from "react";
+import { ChevronRight, Crown, Sparkles, Ban } from "lucide-react";
 import { motion } from "motion/react";
 import { Plan, DbPlanParticipant } from "../../../../core/types";
 import { normalizeStatus } from "../../../../../lib/participantStatus";
 import { formatPlanDate } from "../../../../../lib/mappers";
 import { usePlansStore } from "../../state/PlansContext";
 import { useProfileStore } from "../../../profile/state/ProfileContext";
-import { useCirclesStore } from "../../../circles/state/CirclesContext";
 import { EmptyState } from "../../../home/components/EmptyState";
 import { getPlanCover } from "../../config/planCoverImages";
 import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
-import { PlansDivider } from "../../components/PlansDivider";
+import { CancelledPlans } from "./CancelledPlans";
 
-interface PlansScreenProps {
+interface HostedPlansScreenProps {
   setSelectedPlanId: (planId: string | null) => void;
-  skippedByPlanId?: Record<string, string[]>;
-  plansFilter?: 'JOINED' | 'WAITLISTED' | 'SKIPPED';
-  setPlansFilter?: (filter: 'JOINED' | 'WAITLISTED' | 'SKIPPED') => void;
   onScroll?: (y: number) => void;
 }
 
-export const PlansScreen = React.memo(({
+export const HostedPlansScreen = React.memo(({
   setSelectedPlanId,
-  skippedByPlanId = {},
-  plansFilter: propPlansFilter,
-  setPlansFilter: propSetPlansFilter,
   onScroll,
-}: PlansScreenProps) => {
+}: HostedPlansScreenProps) => {
   const { plans, dbPlanParticipants } = usePlansStore();
   const { userProfile, activeUserId } = useProfileStore();
-  const { circles } = useCirclesStore();
-
-  const [localPlansFilter, setLocalPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED'>('JOINED');
-  const plansFilter = propPlansFilter !== undefined ? propPlansFilter : localPlansFilter;
-  const setPlansFilter = propSetPlansFilter !== undefined ? propSetPlansFilter : setLocalPlansFilter;
 
   const userUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId || "";
 
@@ -126,15 +114,6 @@ export const PlansScreen = React.memo(({
     return groups;
   };
 
-  const getGroupedPlansCount = (plansList: Plan[], showPastOnly: boolean) => {
-    const groups = groupPlansByDate(plansList);
-    if (showPastOnly) {
-      return groups.past.length;
-    } else {
-      return groups.today.length + groups.tomorrow.length + groups.thisWeek.length + groups.later.length;
-    }
-  };
-
   const allMyUserIds = useMemo(() => {
     const ids = new Set<string>();
     if (userUuid) ids.add(userUuid);
@@ -145,7 +124,6 @@ export const PlansScreen = React.memo(({
     return ids;
   }, [userUuid, activeUserId, userProfile]);
 
-  // 2. Build efficient O(1) participant lookup for current user: planId -> DbPlanParticipant
   const participantMap = useMemo(() => {
     const map = new Map<string, DbPlanParticipant>();
     (dbPlanParticipants || []).forEach(pp => {
@@ -156,61 +134,28 @@ export const PlansScreen = React.memo(({
     return map;
   }, [dbPlanParticipants, allMyUserIds]);
 
-  const involvedPlans = useMemo(() => {
-    return plans.filter(p => {
-      const isDbParticipant = participantMap.has(p.id) || Boolean(p.dbUuid && participantMap.has(p.dbUuid));
-      return isDbParticipant;
-    });
-  }, [plans, participantMap]);
-
-  // Helper filter function for status match
-  const filterByStatus = (statusFilter: 'all' | 'JOINED' | 'WAITLISTED' | 'SKIPPED') => {
-    return involvedPlans.filter((p) => {
-      // Cancelled plans should never appear in participant plan lists (Going, Waitlisted, Skipped, etc.)
-      if ((p.status || "").toUpperCase() === "CANCELLED") {
-        return false;
-      }
-
+  const hostedPlans = useMemo(() => {
+    return plans.filter((p) => {
+      if ((p.status || "").toUpperCase() === "CANCELLED") return false;
       const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
-
-      if (!myParticipant) {
-        console.warn(`[PlansScreen Warning] No plan_participants row found for plan ${p.id}`);
-      }
-
-      // plan_participants is the canonical single source of truth
       const rsvpStatus = normalizeStatus(myParticipant?.rsvp_status);
-
-      // Strict categorisation based on plan_participants.rsvp_status
-      const isSkipped = rsvpStatus === "SKIPPED";
       const isJoined = rsvpStatus === "JOINED";
-      const isWaitlisted = rsvpStatus === "WAITLISTED";
-
-      const isHostRole = myParticipant?.role === "HOST";
-
-      if (statusFilter === "all") return isJoined || isWaitlisted || isSkipped;
-      if (statusFilter === "JOINED") return isJoined;
-      if (statusFilter === "WAITLISTED") return isWaitlisted;
-      if (statusFilter === "SKIPPED") return isSkipped;
-
-      return false;
+      const isHostRole = myParticipant?.role === "HOST" || p.hostId === userUuid || p.creatorId === userUuid;
+      return isHostRole && isJoined;
     });
-  };
+  }, [plans, participantMap, userUuid]);
 
-  const allPlans = useMemo(() => filterByStatus('all'), [involvedPlans, participantMap]);
-  const joinedPlans = useMemo(() => filterByStatus('JOINED'), [involvedPlans, participantMap]);
-  const waitlistedPlans = useMemo(() => filterByStatus('WAITLISTED'), [involvedPlans, participantMap]);
-  const skippedPlans = useMemo(() => filterByStatus('SKIPPED'), [involvedPlans, participantMap]);
+  const cancelledPlansCount = useMemo(() => {
+    return plans.filter((p) => {
+      if ((p.status || "").toUpperCase() !== "CANCELLED") return false;
+      const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
+      const isHostRole = myParticipant?.role === "HOST" || p.hostId === userUuid || p.creatorId === userUuid;
+      return isHostRole;
+    }).length;
+  }, [plans, participantMap, userUuid]);
 
-  const joinedCount = joinedPlans.length;
-  const waitlistedCount = waitlistedPlans.length;
-  const skippedCount = skippedPlans.length;
-
-  const getPlanTimeLabel = (plan: Plan, section: 'today' | 'tomorrow' | 'thisWeek' | 'later' | 'past'): string => {
-    return formatPlanDate(plan.datetime || plan.createdAt);
-  };
-
-  const renderPlanRow = (plan: Plan, section: 'today' | 'tomorrow' | 'thisWeek' | 'later' | 'past') => {
-    const timeLabel = getPlanTimeLabel(plan, section);
+  const renderPlanRow = (plan: Plan, section: string) => {
+    const timeLabel = formatPlanDate(plan.datetime || plan.createdAt);
 
     return (
       <motion.div
@@ -224,7 +169,7 @@ export const PlansScreen = React.memo(({
       >
         <div className="flex items-center gap-3.5 min-w-0 flex-1">
           {/* Thumbnail circle avatar */}
-          <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.06] shadow-md flex-shrink-0 relative bg-zinc-955">
+          <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-amber-500/20 shadow-md flex-shrink-0 relative bg-zinc-955">
             <div className="absolute inset-0 bg-black/40 z-10" />
             <DiscoveryImages
               src={plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory)}
@@ -234,11 +179,16 @@ export const PlansScreen = React.memo(({
             />
           </div>
 
-          {/* Content details side-by-side */}
+          {/* Content details */}
           <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-            <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate">
-              {plan.title}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate">
+                {plan.title}
+              </h3>
+              <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300">
+                <Crown className="w-2.5 h-2.5" /> HOST
+              </span>
+            </div>
             <span className="text-[11px] text-[#8E8E93] font-sans font-medium">
               {timeLabel}
             </span>
@@ -256,52 +206,35 @@ export const PlansScreen = React.memo(({
   const renderGroupedPlans = (plansList: Plan[]) => {
     const groups = groupPlansByDate(plansList);
 
-    // If viewing SKIPPED, ensure plans that fell into groups.past are still included (e.g. under TODAY)
-    const todayPlans = plansFilter === 'SKIPPED' ? [...groups.today, ...groups.past] : groups.today;
-
     const sectionsToRender = [
-      { id: 'today' as const, label: 'TODAY', plans: todayPlans },
+      { id: 'today' as const, label: 'TODAY', plans: groups.today },
       { id: 'tomorrow' as const, label: 'TOMORROW', plans: groups.tomorrow },
       { id: 'thisWeek' as const, label: 'THIS WEEK', plans: groups.thisWeek },
       { id: 'later' as const, label: 'LATER', plans: groups.later },
-      ...(plansFilter !== 'SKIPPED' ? [{ id: 'past' as const, label: 'PAST', plans: groups.past }] : []),
+      { id: 'past' as const, label: 'PAST', plans: groups.past },
     ];
 
     const activeSections = sectionsToRender.filter(s => s.plans.length > 0);
 
     if (activeSections.length === 0) {
-      let emptyIcon = <CalendarCheck className="w-8 h-8 text-emerald-400 stroke-[1.5]" />;
-      let emptyTitle = "No joined plans yet";
-      let emptyDesc = "Join a plan to see it here";
-
-      if (plansFilter === 'WAITLISTED') {
-        emptyIcon = <Hourglass className="w-8 h-8 text-amber-400 stroke-[1.5]" />;
-        emptyTitle = "No waitlisted plans";
-        emptyDesc = "Plans with a waiting list appear here";
-      } else if (plansFilter === 'SKIPPED') {
-        emptyIcon = <Coffee className="w-8 h-8 text-rose-400 stroke-[1.5]" />;
-        emptyTitle = "Nothing skipped";
-        emptyDesc = "Plans you've chosen to skip are kept here";
-      }
-
       return (
         <EmptyState
-          icon={emptyIcon}
-          title={emptyTitle}
-          description={emptyDesc}
-          py="py-0"
+          icon={<Sparkles className="w-8 h-8 text-amber-400 stroke-[1.5]" />}
+          title="You haven't hosted a plan yet"
+          description="Host a plan to see it here"
+          py="py-12"
         />
       );
     }
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 pt-2">
         {activeSections.map((sec) => (
           <div key={sec.id} className="space-y-3">
             {/* Section Header */}
             <div className="flex items-center gap-3 w-full mt-5 mb-2 select-none">
               <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                 <span className="text-[10px] uppercase font-mono tracking-[0.2em] text-[#8E8E93] font-bold">
                   {sec.label}
                 </span>
@@ -322,34 +255,40 @@ export const PlansScreen = React.memo(({
     );
   };
 
+  const [showCancelledPlans, setShowCancelledPlans] = React.useState(false);
+
+  if (showCancelledPlans) {
+    return (
+      <CancelledPlans
+        onBack={() => setShowCancelledPlans(false)}
+        setSelectedPlanId={setSelectedPlanId}
+      />
+    );
+  }
+
   return (
-    <div className="flex-1 flex flex-col relative overflow-hidden h-full bg-[#050505] text-left">
-      {/* Scrollable Container */}
+    <div className="flex-1 flex flex-col relative overflow-hidden h-full bg-[#050505] text-left justify-between">
+      {/* Scrollable Content Container */}
       <div
         onScroll={(e) => onScroll?.(e.currentTarget.scrollTop)}
-        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-6"
+        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-4 pb-6"
       >
-
-        <PlansDivider
-          selected={plansFilter}
-          counts={{
-            joined: joinedCount,
-            waitlisted: waitlistedCount,
-            skipped: skippedCount,
-          }}
-          onSelect={setPlansFilter}
-        />
-
-        {/* Active Tab Screen Area */}
-        <div className="flex-1 flex flex-col">
-          {plansFilter === 'JOINED' && renderGroupedPlans(joinedPlans)}
-
-          {plansFilter === 'WAITLISTED' && renderGroupedPlans(waitlistedPlans)}
-
-          {plansFilter === 'SKIPPED' && renderGroupedPlans(skippedPlans)}
-        </div>
-
+        {renderGroupedPlans(hostedPlans)}
       </div>
+
+      {/* Fixed Bottom Footer Action — Only rendered when cancelled plans exist */}
+      {cancelledPlansCount > 0 && (
+        <div className="flex-shrink-0 border-t border-white/[0.08] bg-[#050505]/95 backdrop-blur-md px-6 py-3.5 pb-[calc(14px+70px)] z-20">
+          <button
+            type="button"
+            onClick={() => setShowCancelledPlans(true)}
+            className="w-full group flex items-center justify-between py-1 text-[13px] font-sans font-medium text-white/50 hover:text-white/80 active:text-white transition-colors cursor-pointer select-none text-left"
+          >
+            <span>View Cancelled Plans</span>
+            <ChevronRight className="w-4 h-4 text-white/40 group-hover:text-white/70 group-hover:translate-x-0.5 transition-all" />
+          </button>
+        </div>
+      )}
     </div>
   );
 });

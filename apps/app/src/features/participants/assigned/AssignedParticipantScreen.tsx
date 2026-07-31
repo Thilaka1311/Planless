@@ -268,33 +268,20 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       <div style={{ display: 'flex', flexDirection: 'column', padding: '16px 20px 100px', gap: 16, flex: 1, overflowY: 'auto' }}>
         {activeTab === 'going' && (
           <>
-            {acceptedGoing.length > 0 && (
+            {displayGoing.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#8E8E93', textTransform: 'uppercase' }}>
-                  Accepted
+                  ACCEPTED
                 </span>
                 <GoingSection
-                  goingList={acceptedGoing}
+                  goingList={displayGoing}
                   onItemTap={isHostUser ? (item) => handleItemTap(item, 'going') : undefined}
                   onReorder={mode === 'editor' ? onReorderGoing : undefined}
                   reorderable={mode === 'editor' && isHostUser && Boolean(onReorderGoing)}
                   showIndex={false}
                 />
               </div>
-            )}
-            {invitedGoing.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#8E8E93', textTransform: 'uppercase' }}>
-                  Invited
-                </span>
-                <GoingSection
-                  goingList={invitedGoing}
-                  onItemTap={isHostUser ? (item) => handleItemTap(item, 'going') : undefined}
-                  showIndex={false}
-                />
-              </div>
-            )}
-            {acceptedGoing.length === 0 && invitedGoing.length === 0 && (
+            ) : (
               <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
                 <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', textAlign: 'center' }}>
                   No participants in Going.
@@ -306,13 +293,13 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
         {activeTab === 'waitlist' && (
           <>
-            {acceptedWaitlist.length > 0 && (
+            {displayWaitlist.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#8E8E93', textTransform: 'uppercase' }}>
                   WAITLISTED
                 </span>
                 <WaitlistSection
-                  waitlist={acceptedWaitlist}
+                  waitlist={displayWaitlist}
                   onItemTap={isHostUser ? (item) => handleItemTap(item, 'waitlist') : undefined}
                   onAddFriends={onAddFriends}
                   onReorder={mode === 'wizard' ? (newWait) => setInternalWaitlist(newWait) : onReorderWaitlist}
@@ -320,21 +307,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
                   showIndex={true}
                 />
               </div>
-            )}
-            {invitedWaitlist.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#8E8E93', textTransform: 'uppercase' }}>
-                  INVITED
-                </span>
-                <WaitlistSection
-                  waitlist={invitedWaitlist}
-                  onItemTap={isHostUser ? (item) => handleItemTap(item, 'waitlist') : undefined}
-                  reorderable={false}
-                  showIndex={false}
-                />
-              </div>
-            )}
-            {acceptedWaitlist.length === 0 && invitedWaitlist.length === 0 && (
+            ) : (
               <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
                 <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', textAlign: 'center' }}>
                   No participants in Waitlist.

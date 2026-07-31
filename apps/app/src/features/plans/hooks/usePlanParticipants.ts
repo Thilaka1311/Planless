@@ -81,6 +81,77 @@ export function usePlanParticipants({
     });
   }, [setDbPlanParticipants]);
 
+  const renumberWaitlistPositions = useCallback(async (planUuid: string) => {
+    const matchedPlan = plans.find(p => p.id === planUuid || p.dbUuid === planUuid);
+    const orderMode = matchedPlan?.waitlistOrderMode || (matchedPlan as any)?.waitlist_order_mode || 'AUTO';
+
+    // Fetch fresh plan participants from state / DB
+    const { data: freshParts } = await (supabase as any)
+      .from("plan_participants")
+      .select("*")
+      .eq("plan_id", planUuid);
+
+    const participants = freshParts || dbPlanParticipants.filter(pp => pp.plan_id === planUuid);
+
+    // Filter waitlist participants (assigned_group == 'WAITLIST' or default waitlisted)
+    const waitlistParts = participants.filter(pp => {
+      if (pp.rsvp_status === 'SKIPPED') return false;
+      const group = (pp as any).assigned_group || (pp as any).assignedGroup;
+      return group === 'WAITLIST' || (!group && pp.rsvp_status === 'WAITLISTED');
+    });
+
+    // Sort using canonical waitlist ordering mechanism
+    const sortedWaitlist = [...waitlistParts].sort((a, b) => {
+      if (orderMode === 'CUSTOM') {
+        const posA = a.waitlist_position ?? Number.MAX_SAFE_INTEGER;
+        const posB = b.waitlist_position ?? Number.MAX_SAFE_INTEGER;
+        if (posA !== posB) return posA - posB;
+      }
+      const qA = a.join_queue ?? Number.MAX_SAFE_INTEGER;
+      const qB = b.join_queue ?? Number.MAX_SAFE_INTEGER;
+      if (qA !== qB) return qA - qB;
+
+      const timeA = a.joined_queue_at ? new Date(a.joined_queue_at).getTime() : (a.created_at ? new Date(a.created_at).getTime() : Number.MAX_SAFE_INTEGER);
+      const timeB = b.joined_queue_at ? new Date(b.joined_queue_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : Number.MAX_SAFE_INTEGER);
+      return timeA - timeB;
+    });
+
+    // Optimistically update local state with contiguous positions 1..N
+    setDbPlanParticipants(prev => {
+      return prev.map(pp => {
+        if (pp.plan_id === planUuid) {
+          const group = (pp as any).assigned_group || (pp as any).assignedGroup;
+          const isWaitlist = group === 'WAITLIST' || (!group && pp.rsvp_status === 'WAITLISTED');
+          if (!isWaitlist) {
+            return { ...pp, waitlist_position: null };
+          }
+          const idx = sortedWaitlist.findIndex(w => w.user_id === pp.user_id);
+          if (idx !== -1) {
+            return { ...pp, waitlist_position: idx + 1 };
+          }
+        }
+        return pp;
+      });
+    });
+
+    // Persist 1..N to DB for waitlist participants
+    for (let i = 0; i < sortedWaitlist.length; i++) {
+      const part = sortedWaitlist[i];
+      await (supabase as any)
+        .from("plan_participants")
+        .update({ waitlist_position: i + 1 })
+        .eq("plan_id", planUuid)
+        .eq("user_id", part.user_id);
+    }
+
+    // Guarantee any SKIPPED or GOING participant has waitlist_position = null in DB
+    await (supabase as any)
+      .from("plan_participants")
+      .update({ waitlist_position: null })
+      .eq("plan_id", planUuid)
+      .or("rsvp_status.eq.SKIPPED,assigned_group.eq.GOING");
+  }, [plans, dbPlanParticipants, setDbPlanParticipants]);
+
   const handleParticipantStatusChange = useCallback(async (
     planUuid: string,
     participantUserUuid: string,
@@ -185,6 +256,8 @@ export function usePlanParticipants({
         updates.push({
           id: pToPromote.id,
           rsvp_status: "JOINED",
+          assigned_group: "GOING",
+          waitlist_position: null,
           responded_at: new Date().toISOString(),
           skip_reason: null
         });
@@ -283,10 +356,24 @@ export function usePlanParticipants({
         targetDbState = isWaitlistMode ? "WAITLISTED" : "JOINED";
       }
 
+      // Calculate new waitlist position if joining/rejoining waitlist
+      let newWaitlistPos: number | null = null;
+      if (targetDbState === "WAITLISTED") {
+        const currentWaitlist = dbPlanParticipants.filter(pp => {
+          if (pp.plan_id !== planUuid) return false;
+          if (pp.rsvp_status === 'SKIPPED') return false;
+          const group = (pp as any).assigned_group || (pp as any).assignedGroup;
+          return group === 'WAITLIST' || (!group && pp.rsvp_status === 'WAITLISTED');
+        });
+        const maxPos = currentWaitlist.reduce((max, p) => Math.max(max, p.waitlist_position || 0), 0);
+        newWaitlistPos = maxPos + 1;
+      }
+
       // Optimistic Update
       const optimisticRecord = existingBefore ? {
         ...existingBefore,
         rsvp_status: targetDbState as any,
+        waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
         responded_at: new Date().toISOString(),
         skip_reason: null,
         circle_id: circleId
@@ -295,6 +382,7 @@ export function usePlanParticipants({
         user_id: userUuid,
         role: "PARTICIPANT" as const,
         rsvp_status: targetDbState as any,
+        waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
         responded_at: new Date().toISOString(),
         skip_reason: null,
         circle_id: circleId
@@ -304,10 +392,20 @@ export function usePlanParticipants({
 
       if (existingBefore) {
         try {
-          const res = await updateParticipantStatus(planUuid, userUuid, targetDbState as any, undefined, new Date().toISOString(), null, circleId);
-          if (res) {
+          const res = await (supabase as any)
+            .from("plan_participants")
+            .update({
+              rsvp_status: targetDbState,
+              waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
+              responded_at: new Date().toISOString(),
+              skip_reason: null,
+              circle_id: circleId,
+              updated_at: new Date().toISOString()
+            })
+            .eq("plan_id", planUuid)
+            .eq("user_id", userUuid);
 
-          } else {
+          if (!res) {
             console.error("[WAITLIST WRITE] FAILED (returned null)");
           }
         } catch (err) {
@@ -318,6 +416,7 @@ export function usePlanParticipants({
           plan_id: planUuid,
           user_id: userUuid,
           rsvp_status: targetDbState as any,
+          waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
           role: "PARTICIPANT" as const,
           responded_at: new Date().toISOString(),
           skip_reason: null,
@@ -326,9 +425,7 @@ export function usePlanParticipants({
 
         try {
           const res = await insertParticipant(payload);
-          if (res) {
-
-          } else {
+          if (!res) {
             console.error("[WAITLIST WRITE] FAILED (returned null)");
           }
         } catch (err) {
@@ -338,6 +435,7 @@ export function usePlanParticipants({
       await handleParticipantStatusChange(planUuid, userUuid, existingBefore?.rsvp_status, targetDbState);
       await syncUserStats(userUuid, "join_plan");
       await promoteWaitlistIfSpotsAvailable(planUuid);
+      await renumberWaitlistPositions(planUuid);
       // Recalculate wallet expenses after participant writes are fully committed
       try {
         await recalculateWalletExpenses(planUuid);
@@ -386,6 +484,8 @@ export function usePlanParticipants({
 
         await handleParticipantStatusChange(planUuid, userUuid, existingBefore.rsvp_status, "SKIPPED");
         await unassignTeam(planUuid, userUuid);
+        await promoteWaitlistIfSpotsAvailable(planUuid);
+        await renumberWaitlistPositions(planUuid);
       } catch (err) {
         console.error(`[PlansContext] leavePlan DB write failed:`, err);
         throw err;
@@ -436,6 +536,7 @@ export function usePlanParticipants({
       applyParticipantOptimisticUpdate(planUuid, userUuid, {
         role: "PARTICIPANT",
         rsvp_status: "SKIPPED",
+        waitlist_position: null,
         responded_at: new Date().toISOString(),
         skip_reason: targetSkipReason
       } as any);
@@ -452,6 +553,8 @@ export function usePlanParticipants({
 
       await handleParticipantStatusChange(planUuid, userUuid, existingBefore.rsvp_status, "SKIPPED");
       await unassignTeam(planUuid, userUuid);
+      await promoteWaitlistIfSpotsAvailable(planUuid);
+      await renumberWaitlistPositions(planUuid);
     } catch (error) {
       console.error(`[PlansContext] skipPlan DB write failed:`, error);
 
@@ -559,6 +662,9 @@ export function usePlanParticipants({
     // 3. Promote waitlist if spots available
     await promoteWaitlistIfSpotsAvailable(planUuid);
 
+    // 4. Renumber remaining waitlist positions contiguously 1..N
+    await renumberWaitlistPositions(planUuid);
+
     // Recalculate wallet expenses for this plan
     recalculateWalletExpenses(planUuid).catch(err =>
       console.error("[removeParticipant] recalculateWalletExpenses failed:", err)
@@ -627,47 +733,35 @@ export function usePlanParticipants({
       blockReason = 'PLAN_ALREADY_STARTED';
     }
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`========================================`);
-      console.log(`Participant Invite Validation`);
-      console.log(`========================================`);
-      console.log(`Plan ID:\n${planUuid}`);
-      console.log(`Current Time:\n${currentTimeIso}`);
-      console.log(`Plan Start Time:\n${planStartTimeStr || 'N/A'}`);
-      console.log(`RSVP Deadline:\n${rsvpDeadlineStr || 'N/A'}`);
-      console.log(`Selected Invitees:\n${inviteeUuids.length}`);
-      console.log(`Invitee UUIDs:\n${JSON.stringify(inviteeUuids)}`);
-      console.log(`RSVP Deadline Passed:\n${isRsvpDeadlinePassed}`);
-      console.log(`Plan Started:\n${isPlanStarted}`);
-      console.log(`Validation Result:\n${validationResult}`);
-      console.log(`Reason:\n${blockReason}`);
-      console.log(`========================================`);
-    }
-
     if (isRsvpDeadlinePassed) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`❌ Invite blocked.\nReason:\nRSVP deadline has passed.`);
-      }
       throw new Error("This plan is no longer accepting new participants because the RSVP deadline has already passed.");
     }
 
     if (isPlanStarted) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`❌ Invite blocked.\nReason:\nPlan has already started.`);
-      }
       throw new Error("You can't invite new participants after the plan has started.");
     }
 
 
 
-    // 1. Optimistic updates
+    // 1. Calculate base max waitlist position if assigned to WAITLIST
+    const currentWaitlist = dbPlanParticipants.filter(pp => {
+      if (pp.plan_id !== planUuid) return false;
+      if (pp.rsvp_status === 'SKIPPED') return false;
+      const group = (pp as any).assigned_group || (pp as any).assignedGroup;
+      return group === 'WAITLIST' || (!group && pp.rsvp_status === 'WAITLISTED');
+    });
+    let maxWaitlistPos = currentWaitlist.reduce((max, p) => Math.max(max, p.waitlist_position || 0), 0);
+
+    // Optimistic updates
     inviteeUuids.forEach((inviteeUuid) => {
+      const waitlistPos = effectiveAssignedGroup === 'WAITLIST' ? ++maxWaitlistPos : null;
       applyParticipantOptimisticUpdate(planUuid, inviteeUuid, {
         plan_id: planUuid,
         user_id: inviteeUuid,
         role: "PARTICIPANT",
         rsvp_status: "INVITED",
         assigned_group: effectiveAssignedGroup,
+        waitlist_position: waitlistPos,
         responded_at: null,
         skip_reason: null,
       } as any);
@@ -675,6 +769,9 @@ export function usePlanParticipants({
 
     // 2. Persist via trusted SECURITY DEFINER RPC
     await api.inviteParticipantsRPC(planUuid, inviteeUuids, effectiveAssignedGroup);
+
+    // 3. Ensure contiguous renumbering 1..N
+    await renumberWaitlistPositions(planUuid);
 
     await refreshPlans();
   }, [plans, dbPlans, dbPlanParticipants, refreshPlans, applyParticipantOptimisticUpdate]);
@@ -705,6 +802,8 @@ export function usePlanParticipants({
 
     applyParticipantOptimisticUpdate(planUuid, resolvedUserUuid, {
       rsvp_status: "JOINED",
+      assigned_group: "GOING",
+      waitlist_position: null,
       responded_at: new Date().toISOString()
     });
 
@@ -713,6 +812,8 @@ export function usePlanParticipants({
       plan_id: planUuid,
       user_id: resolvedUserUuid,
       rsvp_status: "JOINED",
+      assigned_group: "GOING",
+      waitlist_position: null,
       responded_at: new Date().toISOString()
     });
 
@@ -731,6 +832,7 @@ export function usePlanParticipants({
       console.error("[promoteWaitlistParticipant] recalculateWalletExpenses failed:", err)
     );
 
+    await renumberWaitlistPositions(planUuid);
     await refreshPlans();
   }, [plans, dbPlanParticipants, resolveUserUuid, refreshPlans, getAvailableCapacity, applyParticipantOptimisticUpdate]);
 
@@ -851,13 +953,14 @@ export function usePlanParticipants({
       }
     }
 
-    // Optimistic state update: update assigned_group to GOING
+    // Optimistic state update: update assigned_group to GOING and clear waitlist_position
     setDbPlanParticipants(prev => prev.map(pp => {
       if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedUserUuid || pp.user_id === participantUserUuid)) {
         const nextStatus = pp.rsvp_status === 'WAITLISTED' ? 'JOINED' : pp.rsvp_status;
         return {
           ...pp,
           assigned_group: 'GOING' as const,
+          waitlist_position: null,
           rsvp_status: nextStatus,
           responded_at: pp.responded_at || new Date().toISOString()
         };
@@ -875,6 +978,7 @@ export function usePlanParticipants({
         .from("plan_participants")
         .update({
           assigned_group: "GOING",
+          waitlist_position: null,
           rsvp_status: nextRsvp,
           skip_reason: null,
           updated_at: new Date().toISOString()
@@ -885,6 +989,7 @@ export function usePlanParticipants({
       if (updateErr) {
         throw updateErr;
       }
+      await renumberWaitlistPositions(planUuid);
       await refreshPlans();
     } catch (err) {
       await refreshPlans(); // Rollback on failure
@@ -908,13 +1013,23 @@ export function usePlanParticipants({
       throw new Error("Manual queue movement is not allowed on Automatic plans.");
     }
 
-    // Optimistic state update: update assigned_group to WAITLIST
+    // Calculate next waitlist position (MAX + 1)
+    const currentWaitlist = dbPlanParticipants.filter(pp => {
+      if (pp.plan_id !== planUuid) return false;
+      if (pp.rsvp_status === 'SKIPPED') return false;
+      const group = (pp as any).assigned_group || (pp as any).assignedGroup;
+      return group === 'WAITLIST' || (!group && pp.rsvp_status === 'WAITLISTED');
+    });
+    const nextWaitlistPos = currentWaitlist.reduce((max, p) => Math.max(max, p.waitlist_position || 0), 0) + 1;
+
+    // Optimistic state update: update assigned_group to WAITLIST and set waitlist_position
     setDbPlanParticipants(prev => prev.map(pp => {
       if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedUserUuid || pp.user_id === participantUserUuid)) {
         const nextStatus = pp.rsvp_status === 'JOINED' ? 'WAITLISTED' : pp.rsvp_status;
         return {
           ...pp,
           assigned_group: "WAITLIST" as const,
+          waitlist_position: nextWaitlistPos,
           rsvp_status: nextStatus,
           responded_at: pp.responded_at || new Date().toISOString()
         };
@@ -932,6 +1047,7 @@ export function usePlanParticipants({
         .from("plan_participants")
         .update({
           assigned_group: "WAITLIST",
+          waitlist_position: nextWaitlistPos,
           rsvp_status: nextRsvp,
           skip_reason: null,
           updated_at: new Date().toISOString()
@@ -942,6 +1058,7 @@ export function usePlanParticipants({
       if (updateError) {
         throw new Error("Failed to update status to waitlist");
       }
+      await renumberWaitlistPositions(planUuid);
       await refreshPlans();
     } catch (err) {
       await refreshPlans(); // Rollback on failure
@@ -1001,15 +1118,22 @@ export function usePlanParticipants({
     }
   }, [plans, dbPlanParticipants, resolveUserUuid, refreshPlans, setDbPlanParticipants]);
 
-  const reorderWaitlist = useCallback(async (planId: string, orderedUserUuids: string[]) => {
+  const reorderDebounceTimersRef = React.useRef<Map<string, NodeJS.Timeout>>(new Map());
+
+  const reorderWaitlist = useCallback((planId: string, orderedUserUuids: string[]) => {
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
     if (!planUuid || orderedUserUuids.length === 0) return;
 
-    // Optimistically update waitlist_position sequence in local state
+    // 1. Immediately update local cache (state) for instant UI re-render and smooth dragging
     setDbPlanParticipants(prev => {
       return prev.map(pp => {
         if (pp.plan_id === planUuid || pp.plan_id === planId) {
+          const group = (pp as any).assigned_group || (pp as any).assignedGroup;
+          const isWaitlist = group === 'WAITLIST' || (!group && pp.rsvp_status === 'WAITLISTED');
+          if (!isWaitlist) {
+            return { ...pp, waitlist_position: null };
+          }
           const idx = orderedUserUuids.findIndex(uId => {
             const resolved = resolveUserUuid(uId);
             return resolved === pp.user_id || uId === pp.user_id;
@@ -1025,27 +1149,47 @@ export function usePlanParticipants({
       });
     });
 
-    try {
-      // 1. Switch plan waitlist_order_mode to CUSTOM
-      await (supabase as any)
-        .from("plans")
-        .update({ waitlist_order_mode: "CUSTOM" })
-        .eq("id", planUuid);
+    // 2. Clear any existing debounce timer for this plan
+    const existingTimer = reorderDebounceTimersRef.current.get(planUuid);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
 
-      // 2. Persist 1-indexed waitlist_position to plan_participants
-      for (let i = 0; i < orderedUserUuids.length; i++) {
-        const userUuid = resolveUserUuid(orderedUserUuids[i]);
+    // 3. Set a new 3-second debounce timer before writing final order to DB
+    const timer = setTimeout(async () => {
+      reorderDebounceTimersRef.current.delete(planUuid);
+      try {
+        // Switch plan waitlist_order_mode to CUSTOM
+        await (supabase as any)
+          .from("plans")
+          .update({ waitlist_order_mode: "CUSTOM" })
+          .eq("id", planUuid);
+
+        // Persist 1-indexed waitlist_position to plan_participants for waitlist participants
+        for (let i = 0; i < orderedUserUuids.length; i++) {
+          const userUuid = resolveUserUuid(orderedUserUuids[i]);
+          await (supabase as any)
+            .from("plan_participants")
+            .update({ waitlist_position: i + 1 })
+            .eq("plan_id", planUuid)
+            .eq("user_id", userUuid);
+        }
+
+        // Guarantee any participant assigned to GOING has waitlist_position = null in DB
         await (supabase as any)
           .from("plan_participants")
-          .update({ waitlist_position: i + 1 })
+          .update({ waitlist_position: null })
           .eq("plan_id", planUuid)
-          .eq("user_id", userUuid);
+          .eq("assigned_group", "GOING");
+
+        await refreshPlans();
+      } catch (err) {
+        console.error("[reorderWaitlist] Failed to persist new order to DB after 3s debounce:", err);
+        await refreshPlans(); // Revert/sync to current DB state if save fails
       }
-      await refreshPlans();
-    } catch (err) {
-      console.error("[reorderWaitlist] Failed to persist new order to DB:", err);
-      await refreshPlans();
-    }
+    }, 3000);
+
+    reorderDebounceTimersRef.current.set(planUuid, timer);
   }, [plans, resolveUserUuid, setDbPlanParticipants, refreshPlans]);
 
   return {

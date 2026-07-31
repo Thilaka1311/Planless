@@ -29,7 +29,6 @@ export function usePlanOutcomes(deps: PlanOutcomesDeps) {
     existingId?: string
   ) => {
     // Plan Outcomes not implemented yet: bypass DB write
-    console.log("[usePlanOutcomes] submitReview bypassed");
   }, []);
 
   // ─── submitStats ─────────────────────────────────────────────────────────────
@@ -43,7 +42,6 @@ export function usePlanOutcomes(deps: PlanOutcomesDeps) {
     userUuid: string
   ) => {
     // Plan Outcomes not implemented yet: bypass DB write
-    console.log("[usePlanOutcomes] submitStats bypassed");
   }, []);
 
   // ─── submitMvp ───────────────────────────────────────────────────────────────
@@ -55,7 +53,6 @@ export function usePlanOutcomes(deps: PlanOutcomesDeps) {
     mvpUuid: string
   ) => {
     // Plan Outcomes not implemented yet: bypass DB write
-    console.log("[usePlanOutcomes] submitMvp bypassed");
   }, []);
 
   return {

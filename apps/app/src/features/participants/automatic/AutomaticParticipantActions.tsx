@@ -10,6 +10,7 @@ interface AutomaticParticipantActionsProps {
   userProfile?: any;
   onClose: () => void;
   onShowConfirmRemove: (show: boolean) => void;
+  onMoveToGoing?: (item: Friend) => void;
   onPromoteHost?: (item: Friend) => void;
   onDemoteHost?: (item: Friend) => void;
   onRemoveParticipant: (item: Friend) => void;
@@ -23,6 +24,7 @@ export const AutomaticParticipantActions: React.FC<AutomaticParticipantActionsPr
   userProfile,
   onClose,
   onShowConfirmRemove,
+  onMoveToGoing,
   onPromoteHost,
   onDemoteHost,
   onRemoveParticipant,
@@ -88,10 +90,13 @@ export const AutomaticParticipantActions: React.FC<AutomaticParticipantActionsPr
 
         {!showConfirmRemove ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {onPromoteHost && (selectedItem.rsvpStatus === 'JOINED' || selectedItem.isAccepted === true) && !selectedItem.isHost && (
+
+
+            {/* Make Host — only for going/invited participants, never for waitlist */}
+            {onPromoteHost && sheetType !== 'waitlist' && (selectedItem.rsvpStatus === 'JOINED' || selectedItem.isAccepted === true) && !selectedItem.isHost && (
               <button
                 onClick={() => {
-                  executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));
+                  executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem!));
                 }}
                 style={{ width: '100%', padding: '14px', background: 'rgba(245,158,11,0.08)', border: 'none', borderRadius: 12, color: '#F59E0B', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
               >

@@ -17,7 +17,7 @@ import { useHoldToAccept } from "../../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "../../components/HoldToAccept";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
 import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
-import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlanSettingsScreen";
+import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
 
 export interface PlansPreviewScreenProps {
   planId: string;
@@ -175,11 +175,11 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     handleToggleJoin: handleToggleJoinCallback,
     setShowPaymentSuccess: handlePaymentSuccess,
     setShowWaitlistSuccess: handleWaitlistSuccess,
-    setNotifications: () => {},
+    setNotifications: () => { },
     activeCardId: planId,
-    handleSnoozePlan: () => {},
+    handleSnoozePlan: () => { },
     isExpanded: false,
-    setIsExpanded: () => {},
+    setIsExpanded: () => { },
   });
 
   const formattedDateAndTime = useMemo(() => {
@@ -371,12 +371,12 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
             {isJoiningDirect
               ? "Joining…"
               : isWaitlist
-              ? "Waitlisted"
-              : isFull
-              ? "Join Waitlist"
-              : alreadySkipped
-              ? "Rejoin Plan"
-              : "Join Plan"}
+                ? "Waitlisted"
+                : isFull
+                  ? "Join Waitlist"
+                  : alreadySkipped
+                    ? "Rejoin Plan"
+                    : "Join Plan"}
           </button>
 
           {/* Secondary Action Link: Skip */}

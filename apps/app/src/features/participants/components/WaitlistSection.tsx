@@ -17,6 +17,7 @@ interface WaitlistSectionProps {
   onReorder?: (newWaitlist: Friend[]) => void;
   reorderable?: boolean;
   showIndex?: boolean;
+  indexOffset?: number;
 }
 
 export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
@@ -26,6 +27,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
   onReorder,
   reorderable = true,
   showIndex = true,
+  indexOffset = 1,
 }) => {
   if (waitlist.length === 0 && !onAddFriends) {
     return (
@@ -62,7 +64,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
             >
               <StackingFriends
                 item={item}
-                index={idx + 1}
+                index={idx + indexOffset}
                 showIndex={showIndex}
                 onClick={onItemTap ? () => onItemTap(item) : undefined}
               />
@@ -74,7 +76,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
           <StackingFriends
             key={item.id}
             item={item}
-            index={idx + 1}
+            index={idx + indexOffset}
             showIndex={showIndex}
             onClick={onItemTap ? () => onItemTap(item) : undefined}
           />

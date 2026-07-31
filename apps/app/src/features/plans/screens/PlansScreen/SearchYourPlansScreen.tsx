@@ -27,9 +27,10 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
 
   const userUuid = userProfile?.dbUuid || "";
 
-  // Get all plans where the user is a member
+  // Get all active (non-cancelled) plans where the user is a member
   const involvedPlans = useMemo(() => {
     return plans.filter((p) => {
+      if ((p.status || "").toUpperCase() === "CANCELLED") return false;
       const isMember = p.members.some((m) => m.userUuid && m.userUuid === userUuid);
       const isDbParticipant = dbPlanParticipants.some((pp) => pp.plan_id === p.id && pp.user_id === userUuid);
       return isMember || isDbParticipant;
