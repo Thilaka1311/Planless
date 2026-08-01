@@ -715,8 +715,8 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         try {
           await onUpdatePlanCapacity(plan.id, clampedVal);
         } catch (err: any) {
-          console.error("[handleAdjustCapacity] Error updating capacity:", err);
-          const msg = err?.message || 'Failed to update capacity';
+          const msg = typeof err === 'string' ? err : err?.message || err?.error_description || err?.details || 'Failed to update capacity';
+          console.error("[handleAdjustCapacity] Error updating capacity:", msg, err);
           showToast(msg);
         }
       }

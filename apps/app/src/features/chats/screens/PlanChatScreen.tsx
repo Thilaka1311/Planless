@@ -123,7 +123,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       if (error) {
         console.error("Error fetching plan_messages:", error);
       } else if (data) {
-        console.log("Fetched plan_messages:", data.length);
         setMessages(data as ChatMessage[]);
       }
     } catch (err) {

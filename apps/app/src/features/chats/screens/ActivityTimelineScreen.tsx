@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   ChevronLeft,
   CheckCircle2,
@@ -21,49 +21,21 @@ import {
 import { motion } from "motion/react";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
-import { normalizeStatus } from "../../../../lib/participantStatus";
-
-export type ActivityEventType =
-  | "plan_created"
-  | "title_changed"
-  | "description_changed"
-  | "date_changed"
-  | "time_changed"
-  | "location_changed"
-  | "capacity_changed"
-  | "host_transferred"
-  | "plan_cancelled"
-  | "plan_restored"
-  | "plan_completed"
-  | "participant_invited"
-  | "participant_joined"
-  | "participant_left"
-  | "joined_waitlist"
-  | "promoted_from_waitlist"
-  | "removed_by_host"
-  | "invited"
-  | "invitation_accepted"
-  | "invitation_declined";
+import { supabase } from "../../../../lib/supabaseClient";
+import { DbPlanActivity, PlanActivityType } from "../../../core/types";
 
 export interface ActivityEvent {
   id: string;
-  type: ActivityEventType;
+  type: PlanActivityType;
   description: string;
   timestamp: string; // e.g. "10:42 AM"
   dateGroup: string; // e.g. "Today", "Yesterday", "July 29"
   rawDate: Date;
-  metadata?: {
-    userName?: string;
-    targetUserName?: string;
-    previousCapacity?: number;
-    newCapacity?: number;
-  };
 }
 
 interface ActivityTimelineScreenProps {
   planId?: string;
   planTitle?: string;
-  events?: ActivityEvent[];
   onBack?: () => void;
 }
 
@@ -89,9 +61,9 @@ const formatEventTime = (d: Date): string => {
   });
 };
 
-const EventIcon: React.FC<{ type: ActivityEventType }> = ({ type }) => {
+const EventIcon: React.FC<{ type: PlanActivityType }> = ({ type }) => {
   switch (type) {
-    // ── PLAN EVENTS (Event/Plan Oriented Icons) ──
+    // ── PLAN EVENTS ──
     case "plan_created":
       return <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />;
     case "capacity_changed":
@@ -113,20 +85,21 @@ const EventIcon: React.FC<{ type: ActivityEventType }> = ({ type }) => {
     case "plan_completed":
       return <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
 
-    // ── PARTICIPANT EVENTS (People Oriented Icons) ──
+    // ── PARTICIPANT EVENTS ──
     case "participant_joined":
     case "invitation_accepted":
       return <UserCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
     case "participant_left":
     case "invitation_declined":
       return <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />;
-    case "joined_waitlist":
+    case "participant_waitlisted":
+    case "participant_moved_to_waitlist":
       return <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />;
-    case "promoted_from_waitlist":
+    case "participant_promoted":
+    case "participant_moved_to_going":
       return <ArrowUpRight className="w-4 h-4 text-sky-400 flex-shrink-0" />;
-    case "removed_by_host":
+    case "participant_removed":
       return <UserX className="w-4 h-4 text-rose-400 flex-shrink-0" />;
-    case "invited":
     case "participant_invited":
       return <UserPlus className="w-4 h-4 text-purple-400 flex-shrink-0" />;
     default:
@@ -155,149 +128,225 @@ const ActivityRow: React.FC<{ event: ActivityEvent }> = ({ event }) => {
 export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
   planId,
   planTitle: propPlanTitle,
-  events: propEvents,
   onBack,
 }) => {
-  const { plans, dbPlanParticipants } = usePlansStore();
+  const { plans } = usePlansStore();
   const { userProfile, activeUserId, dbUsers } = useProfileStore();
 
-  const plan = React.useMemo(() => {
+  const [rawActivities, setRawActivities] = useState<DbPlanActivity[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const plan = useMemo(() => {
     if (!planId) return undefined;
     return plans.find((p) => p.id === planId || p.dbUuid === planId);
   }, [plans, planId]);
 
   const targetPlanTitle = propPlanTitle || plan?.title || "Plan Activity";
+  const targetPlanId = plan?.dbUuid || plan?.id || planId;
 
-  // Derive real ActivityEvent[] from DB records if propEvents is not passed
-  const derivedEvents = React.useMemo<ActivityEvent[]>(() => {
-    if (propEvents) return propEvents;
-    if (!plan) return [];
+  // Helper to resolve user display name by UUID or public_id
+  const resolveUserName = useCallback(
+    (userId?: string | null, isTargetUser: boolean = false): string => {
+      if (!userId) return "";
 
-    const targetPlanId = plan.dbUuid || plan.id;
-    const items: ActivityEvent[] = [];
-
-    // Helper to resolve user display name
-    const getUserName = (userId: string): string => {
       const matchUser = dbUsers.find(
         (u) => u.id === userId || u.public_id === userId
       );
       if (matchUser?.full_name) return matchUser.full_name;
 
-      const matchMember = (plan.members || []).find(
-        (m) => m.userId === userId || m.userUuid === userId
-      );
-      if (matchMember?.name) return matchMember.name;
+      if (plan?.members) {
+        const matchMember = plan.members.find(
+          (m) => m.userId === userId || m.userUuid === userId
+        );
+        if (matchMember?.name) return matchMember.name;
+      }
 
       if (
         userId === userProfile?.dbUuid ||
         userId === (userProfile as any)?.id ||
         userId === activeUserId
       ) {
-        return userProfile?.name || "You";
+        return isTargetUser ? (userProfile?.name || "You") : (userProfile?.name || "You");
       }
 
       return "Someone";
-    };
+    },
+    [dbUsers, userProfile, activeUserId, plan]
+  );
 
-    // 1. Plan Events
-    if (plan.createdAt) {
-      const createdDate = new Date(plan.createdAt);
-      if (!isNaN(createdDate.getTime())) {
-        let hostName = (plan.creatorName || "").trim();
-        if (!hostName) {
-          hostName = getUserName(plan.hostId || plan.creatorId);
-        }
-        items.push({
-          id: `act-created-${targetPlanId}`,
-          type: "plan_created",
-          description: `${hostName || "Host"} created ${plan.title}`,
-          timestamp: formatEventTime(createdDate),
-          dateGroup: formatDateGroup(createdDate),
-          rawDate: createdDate,
-          metadata: { userName: hostName },
-        });
-      }
+  // Fetch activities directly from plan_activity table in Supabase
+  const fetchActivities = useCallback(async () => {
+    if (!targetPlanId) {
+      setLoading(false);
+      return;
     }
 
-    // 2. Participant Events from dbPlanParticipants
-    const targetParticipants = dbPlanParticipants.filter(
-      (pp) => pp.plan_id === targetPlanId || pp.plan_id === plan.id
-    );
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("plan_activity")
+        .select("*")
+        .eq("plan_id", targetPlanId)
+        .order("created_at", { ascending: false });
 
-    targetParticipants.forEach((pp) => {
-      const status = normalizeStatus(pp.rsvp_status);
-      const isHostRole =
-        pp.role === "HOST" ||
-        pp.user_id === plan.hostId ||
-        pp.user_id === plan.creatorId;
-
-      const rawTimeStr = pp.responded_at || pp.created_at || pp.joined_queue_at || plan.createdAt;
-      const eventDate = rawTimeStr ? new Date(rawTimeStr) : new Date();
-      const validDate = isNaN(eventDate.getTime()) ? new Date() : eventDate;
-
-      const name = getUserName(pp.user_id);
-
-      if (status === "JOINED" && !isHostRole) {
-        items.push({
-          id: `act-joined-${pp.id}`,
-          type: "participant_joined",
-          description: `${name} joined the plan`,
-          timestamp: formatEventTime(validDate),
-          dateGroup: formatDateGroup(validDate),
-          rawDate: validDate,
-          metadata: { userName: name },
-        });
-      } else if (status === "WAITLISTED") {
-        items.push({
-          id: `act-waitlist-${pp.id}`,
-          type: "joined_waitlist",
-          description: `${name} joined the waitlist`,
-          timestamp: formatEventTime(validDate),
-          dateGroup: formatDateGroup(validDate),
-          rawDate: validDate,
-          metadata: { userName: name },
-        });
-      } else if (status === "INVITED" && !isHostRole) {
-        items.push({
-          id: `act-invited-${pp.id}`,
-          type: "invited",
-          description: `${name} was invited`,
-          timestamp: formatEventTime(validDate),
-          dateGroup: formatDateGroup(validDate),
-          rawDate: validDate,
-          metadata: { userName: name },
-        });
-      } else if (status === "SKIPPED") {
-        const isRemoved = pp.skip_reason === "REMOVED";
-        items.push({
-          id: `act-left-${pp.id}`,
-          type: isRemoved ? "removed_by_host" : "participant_left",
-          description: isRemoved
-            ? `${name} was removed by host`
-            : `${name} left the plan`,
-          timestamp: formatEventTime(validDate),
-          dateGroup: formatDateGroup(validDate),
-          rawDate: validDate,
-          metadata: { userName: name },
-        });
+      if (error) {
+        console.error("[ActivityTimelineScreen] Error fetching plan_activity:", error);
+      } else if (data) {
+        setRawActivities(data as DbPlanActivity[]);
       }
+    } catch (err) {
+      console.error("[ActivityTimelineScreen] Exception fetching plan_activity:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [targetPlanId]);
+
+  useEffect(() => {
+    fetchActivities();
+
+    if (!targetPlanId) return;
+
+    // Realtime subscription to plan_activity inserts for this plan
+    const channel = supabase
+      .channel(`plan_activity:${targetPlanId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "plan_activity",
+          filter: `plan_id=eq.${targetPlanId}`,
+        },
+        (payload) => {
+          const newRow = payload.new as DbPlanActivity;
+          setRawActivities((prev) => [newRow, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [targetPlanId, fetchActivities]);
+
+  // Format description strings from DbPlanActivity rows
+  const activities = useMemo<ActivityEvent[]>(() => {
+    return rawActivities.map((act) => {
+      const actorName = act.actor_id ? resolveUserName(act.actor_id, false) : "";
+      const targetName = act.target_user_id ? resolveUserName(act.target_user_id, true) : "";
+      const meta = act.metadata || {};
+
+      let description = "";
+
+      switch (act.activity_type) {
+        case "plan_created":
+          description = `${actorName || "Host"} created ${meta.title || plan?.title || "the plan"}`;
+          break;
+        case "participant_invited":
+          description = targetName ? `${targetName} was invited` : `${actorName || "Host"} invited a participant`;
+          break;
+        case "participant_joined":
+          description = `${targetName || actorName || "Someone"} joined the plan`;
+          break;
+        case "participant_left":
+          description = `${targetName || actorName || "Someone"} left the plan`;
+          break;
+        case "participant_waitlisted":
+          description = `${targetName || actorName || "Someone"} joined the waitlist`;
+          break;
+        case "participant_moved_to_waitlist":
+          description = actorName && targetName
+            ? `${actorName} moved ${targetName} to the waitlist`
+            : targetName
+            ? `Moved ${targetName} to the waitlist`
+            : "Participant moved to the waitlist";
+          break;
+        case "participant_moved_to_going":
+          description = actorName && targetName
+            ? `${actorName} moved ${targetName} to Going`
+            : targetName
+            ? `Moved ${targetName} to Going`
+            : "Participant moved to Going";
+          break;
+        case "participant_promoted":
+          description = targetName ? `${targetName} moved from the waitlist` : `${actorName || "Host"} promoted a participant`;
+          break;
+        case "participant_removed":
+          description = targetName && actorName
+            ? `${targetName} was removed by ${actorName}`
+            : targetName
+            ? `${targetName} was removed by host`
+            : "Participant was removed";
+          break;
+        case "invitation_accepted":
+          description = `${targetName || actorName || "Someone"} accepted the invitation`;
+          break;
+        case "invitation_declined":
+          description = `${targetName || actorName || "Someone"} declined the invitation`;
+          break;
+        case "capacity_changed":
+          if (meta.old_capacity !== undefined && meta.new_capacity !== undefined) {
+            const verb = meta.new_capacity > meta.old_capacity ? "increased" : "decreased";
+            description = `Capacity ${verb} from ${meta.old_capacity} → ${meta.new_capacity}`;
+          } else {
+            description = `Plan capacity changed`;
+          }
+          break;
+        case "title_changed":
+          description = meta.new_title ? `Title changed to "${meta.new_title}"` : `Plan title updated`;
+          break;
+        case "description_changed":
+          description = `Plan description updated`;
+          break;
+        case "date_changed":
+        case "time_changed":
+          description = `Plan schedule updated`;
+          break;
+        case "location_changed":
+          description = meta.new_location ? `Location changed to ${meta.new_location}` : `Plan location updated`;
+          break;
+        case "host_transferred":
+          description = targetName ? `${targetName} became the host` : `Host transferred`;
+          break;
+        case "plan_cancelled":
+          description = `Plan was cancelled`;
+          break;
+        case "plan_restored":
+          description = `Plan was restored`;
+          break;
+        case "plan_completed":
+          description = `Plan was completed`;
+          break;
+        default:
+          description = `Plan activity updated`;
+          break;
+      }
+
+      const rawDate = act.created_at ? new Date(act.created_at) : new Date();
+      const validDate = isNaN(rawDate.getTime()) ? new Date() : rawDate;
+
+      return {
+        id: act.id,
+        type: act.activity_type,
+        description,
+        timestamp: formatEventTime(validDate),
+        dateGroup: formatDateGroup(validDate),
+        rawDate: validDate,
+      };
     });
+  }, [rawActivities, resolveUserName, plan]);
 
-    // Sort descending by rawDate (newest first)
-    return items.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
-  }, [propEvents, plan, dbPlanParticipants, dbUsers, userProfile, activeUserId]);
-
-  // Group events chronologically by dateGroup
-  const groupedEvents = React.useMemo(() => {
+  // Group activities chronologically by dateGroup
+  const groupedEvents = useMemo(() => {
     const groups: { [date: string]: ActivityEvent[] } = {};
-    derivedEvents.forEach((evt) => {
+    activities.forEach((evt) => {
       if (!groups[evt.dateGroup]) {
         groups[evt.dateGroup] = [];
       }
       groups[evt.dateGroup].push(evt);
     });
     return groups;
-  }, [derivedEvents]);
+  }, [activities]);
 
   const dateGroups = Object.keys(groupedEvents);
 
@@ -331,9 +380,18 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
         </div>
       </div>
 
-      {/* Timeline Content / Empty State */}
+      {/* Timeline Content / Loading / Empty State */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-        {derivedEvents.length === 0 ? (
+        {loading ? (
+          <div className="space-y-3 pt-2">
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="h-12 w-full rounded-xl bg-zinc-900/60 border border-white/[0.04] animate-pulse"
+              />
+            ))}
+          </div>
+        ) : activities.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 my-auto">
             <div className="w-12 h-12 rounded-full bg-zinc-900 border border-white/10 flex items-center justify-center mb-3">
               <Activity className="w-6 h-6 text-zinc-500" />
@@ -342,7 +400,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
               No activity yet
             </h3>
             <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">
-              Participant activity and important changes will appear here.
+              Activity will appear here as people join, leave, get invited, and as the host manages the plan.
             </p>
           </div>
         ) : (
@@ -365,3 +423,4 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
     </motion.div>
   );
 };
+
