@@ -21,6 +21,8 @@ interface DiscoveryProps {
   setActiveTab: (tab: any) => void;
   onSelectDiscoveryItem: (item: DiscoveryItem) => void;
   onSelectCustomPlan: () => void;
+  initialSubScreen?: "sports" | "movies" | "dining" | null;
+  onSubScreenChange?: (subScreen: "sports" | "movies" | "dining" | null) => void;
 }
 
 // ─── Main Discovery Screen ────────────────────────────────────────────────────
@@ -30,6 +32,8 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
   setActiveTab,
   onSelectDiscoveryItem,
   onSelectCustomPlan,
+  initialSubScreen = null,
+  onSubScreenChange,
 }) => {
   const { isAdmin, userProfile: storeUserProfile } = useProfileStore();
   const userProfile = propUserProfile || storeUserProfile;
@@ -42,7 +46,12 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     return !getCachedSections();
   });
   const [discoveryVersion, setDiscoveryVersion] = useState(0);
-  const [activeSubScreen, setActiveSubScreen] = useState<"sports" | "movies" | "dining" | null>(null);
+  const [activeSubScreen, setActiveSubScreen] = useState<"sports" | "movies" | "dining" | null>(initialSubScreen);
+
+  const handleSubScreenChange = (screen: "sports" | "movies" | "dining" | null) => {
+    setActiveSubScreen(screen);
+    onSubScreenChange?.(screen);
+  };
 
   // Admin overlay state
   type ContextTarget = { item: any; config: ContentConfig } | null;
@@ -138,7 +147,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
         <div className="grid grid-cols-2 gap-3">
 
           <button
-            onClick={() => setActiveSubScreen("sports")}
+            onClick={() => handleSubScreenChange("sports")}
             {...useLongPress(() => {
               if (isAdmin) {
                 const sec = sections.find((s) => s.category?.toUpperCase() === "SPORTS");
@@ -163,7 +172,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveSubScreen("movies")}
+            onClick={() => handleSubScreenChange("movies")}
             {...useLongPress(() => {
               if (isAdmin) {
                 const sec = sections.find((s) => s.category?.toUpperCase() === "MOVIES");
@@ -188,7 +197,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveSubScreen("dining")}
+            onClick={() => handleSubScreenChange("dining")}
             {...useLongPress(() => {
               if (isAdmin) {
                 const sec = sections.find((s) => s.category?.toUpperCase() === "DINING");
@@ -373,7 +382,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           <DiscoverSports
             sections={sections}
             isAdmin={isAdmin}
-            onBack={() => setActiveSubScreen(null)}
+            onBack={() => handleSubScreenChange(null)}
             onSelectDiscoveryItem={onSelectDiscoveryItem}
             onLongPressAdmin={(item, section) => {
               const config = getAdminConfig(section);
@@ -388,7 +397,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           <DiscoverMovies
             sections={sections}
             isAdmin={isAdmin}
-            onBack={() => setActiveSubScreen(null)}
+            onBack={() => handleSubScreenChange(null)}
             onSelectDiscoveryItem={onSelectDiscoveryItem}
             onLongPressAdmin={(item, section) => {
               const config = getAdminConfig(section);
@@ -403,7 +412,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           <DiscoverDining
             sections={sections}
             isAdmin={isAdmin}
-            onBack={() => setActiveSubScreen(null)}
+            onBack={() => handleSubScreenChange(null)}
             onSelectDiscoveryItem={onSelectDiscoveryItem}
             onLongPressAdmin={(item, section) => {
               const config = getAdminConfig(section);

@@ -150,42 +150,44 @@ const SwipableCard: React.FC<SwipableCardProps> = ({
         y: 0,
         scale: 1,
         opacity: 1,
-        transition: { type: "spring", stiffness: 350, damping: 25 }
+        transition: { type: "spring", stiffness: 450, damping: 30 }
       });
     } else {
+      x.set(0);
       controls.start({
         x: 0,
         y: index * 14,
         scale: 1 - index * 0.05,
-        opacity: index === 1 ? 0.8 : index === 2 ? 0.4 : 0,
-        transition: { type: "spring", stiffness: 220, damping: 22 }
+        opacity: index <= 2 ? 1 : 0,
+        transition: { type: "spring", stiffness: 400, damping: 30 }
       });
     }
-  }, [index, controls]);
+  }, [index, controls, x]);
 
   const handleDragEnd = async (event: any, info: any) => {
-    const swipeThreshold = 130;
-    if (isSwipable && info.offset.x > swipeThreshold) {
-      await controls.start({
-        x: 350,
+    const swipeThreshold = 40;
+    const velocityThreshold = 200;
+    if (isSwipable && (info.offset.x > swipeThreshold || info.velocity.x > velocityThreshold)) {
+      controls.start({
+        x: 380,
         opacity: 0,
         rotate: 20,
-        transition: { duration: 0.18, ease: "easeOut" }
+        transition: { duration: 0.15, ease: "easeOut" }
       });
-      onSwipe("right");
-    } else if (isSwipable && info.offset.x < -swipeThreshold) {
-      await controls.start({
-        x: -350,
+      setTimeout(() => onSwipe("right"), 140);
+    } else if (isSwipable && (info.offset.x < -swipeThreshold || info.velocity.x < -velocityThreshold)) {
+      controls.start({
+        x: -380,
         opacity: 0,
         rotate: -20,
-        transition: { duration: 0.18, ease: "easeOut" }
+        transition: { duration: 0.15, ease: "easeOut" }
       });
-      onSwipe("left");
+      setTimeout(() => onSwipe("left"), 140);
     } else {
       controls.start({
         x: 0,
         rotate: 0,
-        transition: { type: "spring", stiffness: 350, damping: 20 }
+        transition: { type: "spring", stiffness: 400, damping: 25 }
       });
     }
   };
@@ -193,15 +195,41 @@ const SwipableCard: React.FC<SwipableCardProps> = ({
   return (
     <motion.div
       animate={controls}
-      style={isTop ? { x, rotate, opacity } : { pointerEvents: "none" }}
+      initial={{
+        x: 0,
+        y: index * 14,
+        scale: 1 - index * 0.05,
+        opacity: index <= 2 ? 1 : 0,
+      }}
+      style={{
+        x,
+        rotate,
+        opacity: isTop ? opacity : undefined,
+        pointerEvents: isTop ? "auto" : "none",
+        touchAction: "pan-y"
+      }}
       drag={isTop ? "x" : false}
       dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.7}
       onDragEnd={handleDragEnd}
-      className={`absolute w-[290px] h-[370px] rounded-3xl overflow-hidden bg-[#09090b] border border-white/[0.06] shadow-2xl flex flex-col justify-between p-5 transition-shadow duration-300 ${
-        isTop ? "cursor-grab active:cursor-grabbing hover:shadow-white/[0.01]" : ""
-      }`}
+      onTap={() => {
+        if (isTop && Math.abs(x.get()) < 10) {
+          onTap();
+        }
+      }}
+      whileTap={isTop ? { scale: 0.98 } : undefined}
+      className={`absolute w-[290px] h-[370px] rounded-3xl overflow-hidden bg-[#09090b] border border-white/[0.06] shadow-2xl flex flex-col justify-end p-6 transition-colors duration-200 ${isTop ? "cursor-pointer hover:border-white/[0.16]" : ""
+        }`}
     >
       <div className="absolute inset-0 bg-[#09090b]" />
+
+      {/* Dimming overlay for stacked background cards to prevent visual bleed-through */}
+      {index > 0 && (
+        <div
+          className="absolute inset-0 bg-black z-20 pointer-events-none transition-opacity duration-300"
+          style={{ opacity: index === 1 ? 0.35 : 0.7 }}
+        />
+      )}
 
       <DiscoveryImages
         src={item.cover_image_url}
@@ -209,44 +237,20 @@ const SwipableCard: React.FC<SwipableCardProps> = ({
         alt={item.title}
         className="absolute inset-0 w-full h-full object-cover opacity-60"
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-black/90" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/90" />
 
-      <div className="z-10 flex items-center justify-between w-full">
-        <div className="flex items-center gap-1.5 px-3 py-1 bg-black/60 backdrop-blur-md rounded-full border border-white/[0.08]">
-          <Sparkles className="w-3 h-3 text-violet-400 animate-pulse" />
-          <span className="text-[9.5px] font-sans font-bold text-white tracking-wide uppercase">
-            {item.featured ? "Recommended" : "Hot Show"}
+      {/* Content details at bottom, no buttons or badges */}
+      <div className="z-10 flex flex-col items-center w-full text-center pb-2">
+        <h4 className="text-lg font-extrabold text-white leading-snug tracking-wide line-clamp-1">
+          {item.title}
+        </h4>
+        <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-300 mt-1">
+          <span className="font-semibold text-violet-400">
+            {(0.8 + (item.display_order % 3) * 2.2).toFixed(1)}km
           </span>
+          <span className="text-zinc-600">•</span>
+          <span className="truncate max-w-[170px]">{item.location || "Bangalore"}</span>
         </div>
-      </div>
-
-      <div className="z-10 flex flex-col items-center w-full text-center space-y-3.5 mt-auto">
-        <div className="space-y-1">
-          <h4 className="text-base font-bold text-white leading-snug tracking-wide line-clamp-1">
-            {item.title}
-          </h4>
-          <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-400">
-            <span className="font-semibold text-violet-450">
-              {(0.8 + (item.display_order % 3) * 2.2).toFixed(1)}km
-            </span>
-            <span className="text-zinc-650">•</span>
-            <span className="truncate max-w-[170px]">{item.location || "Bangalore"}</span>
-          </div>
-          <div className="inline-flex items-center gap-1 mt-1 text-[9px] font-mono font-bold text-violet-450 uppercase tracking-widest">
-            🍿 Filling Fast
-          </div>
-        </div>
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onTap();
-          }}
-          className="px-4 py-2 bg-white/10 hover:bg-white/15 backdrop-blur-md border border-white/[0.08] text-white font-sans font-bold text-xs rounded-full transition active:scale-[0.97] cursor-pointer flex items-center gap-1"
-        >
-          Make plan
-          <ChevronRight className="w-3.5 h-3.5" />
-        </button>
       </div>
     </motion.div>
   );
@@ -287,28 +291,32 @@ const MoviesCategorySection: React.FC<MoviesCategorySectionProps> = ({
         <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
           {title} ({items.length})
         </h4>
-      </div>
-
-      {isExpanded ? (
-        <div className="flex overflow-x-auto gap-4 py-2 px-1 no-scrollbar scroll-smooth">
+      </div>      {isExpanded ? (
+        <div className="grid grid-rows-2 grid-flow-col gap-3.5 overflow-x-auto py-2 px-1 no-scrollbar scroll-smooth">
           {items.map((item) => (
             <div
               key={item.id}
               onClick={() => onSelect(item)}
-              className="relative shrink-0 w-[230px] h-[310px] rounded-3xl overflow-hidden bg-[#09090b] border border-white/[0.06] flex flex-col justify-end p-4 cursor-pointer hover:border-white/12 hover:scale-[1.01] transition-all duration-300 group"
+              className="relative shrink-0 w-[135px] h-[175px] rounded-2xl overflow-hidden bg-[#09090b] border border-white/[0.06] shadow-lg flex flex-col justify-end p-3 cursor-pointer hover:border-white/[0.16] hover:scale-[1.01] transition-all duration-300 group"
             >
+              <div className="absolute inset-0 bg-[#09090b]" />
               <DiscoveryImages
                 src={item.cover_image_url}
                 category={item.category}
                 alt={item.title}
                 className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
-              <div className="z-10 space-y-1.5 text-left w-full">
-                <h4 className="text-sm font-bold text-white truncate">{item.title}</h4>
-                <div className="flex items-center gap-1 text-[10px] text-zinc-400">
-                  <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                  <span className="truncate">{item.location || "Bangalore"}</span>
+              <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/90" />
+              <div className="z-10 flex flex-col w-full text-left">
+                <h4 className="text-xs font-bold text-white leading-tight line-clamp-1">
+                  {item.title}
+                </h4>
+                <div className="flex items-center gap-1 text-[9px] text-zinc-300 mt-0.5">
+                  <span className="font-semibold text-violet-400">
+                    {(0.8 + (item.display_order % 3) * 2.2).toFixed(1)}km
+                  </span>
+                  <span className="text-zinc-500">•</span>
+                  <span className="truncate max-w-[70px]">{item.location || "Bangalore"}</span>
                 </div>
               </div>
             </div>
@@ -378,6 +386,13 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
     return list.length > 0 ? list : defaultScreenings;
   }, [allMoviesItems]);
 
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
   return (
     <div
       className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-24 text-left select-none"
@@ -394,12 +409,11 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
           >
             <ChevronLeft className="w-6 h-6" />
           </button>
-          <motion.div
-            layoutId="subscreen-icon-movies"
+          <div
             className="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 mr-3 shrink-0"
           >
             <Film className="w-4 h-4" />
-          </motion.div>
+          </div>
           <h2 className="text-base font-bold text-white tracking-tight">Movies Plan</h2>
         </div>
         <button
@@ -410,25 +424,54 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
         </button>
       </div>
 
+      {/* Index Navigation Bar */}
+      <div className="w-full shrink-0 px-6 py-2.5 bg-[#000000] border-b border-white/[0.04] flex gap-2 overflow-x-auto no-scrollbar scroll-smooth">
+        <button
+          onClick={() => scrollToSection("movies-section-cinemas")}
+          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
+        >
+          🎭 Luxury Cinemas
+        </button>
+        <button
+          onClick={() => scrollToSection("movies-section-premieres")}
+          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
+        >
+          🎬 Premieres
+        </button>
+        <button
+          onClick={() => scrollToSection("movies-section-screenings")}
+          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
+        >
+          🎥 Special Screenings
+        </button>
+      </div>
+
+      {/* Categories Content */}
       <div className="px-6 py-6 flex-1 space-y-8">
-        <MoviesCategorySection
-          title="Theaters & Luxury Cinemas"
-          items={cinemas}
-          isExpanded={isExpanded}
-          onSelect={onSelectDiscoveryItem}
-        />
-        <MoviesCategorySection
-          title="Trending Movies"
-          items={premieres}
-          isExpanded={isExpanded}
-          onSelect={onSelectDiscoveryItem}
-        />
-        <MoviesCategorySection
-          title="Special Screenings"
-          items={screenings}
-          isExpanded={isExpanded}
-          onSelect={onSelectDiscoveryItem}
-        />
+        <div id="movies-section-cinemas">
+          <MoviesCategorySection
+            title="Theaters & Luxury Cinemas"
+            items={cinemas}
+            isExpanded={isExpanded}
+            onSelect={onSelectDiscoveryItem}
+          />
+        </div>
+        <div id="movies-section-premieres">
+          <MoviesCategorySection
+            title="Trending Movies"
+            items={premieres}
+            isExpanded={isExpanded}
+            onSelect={onSelectDiscoveryItem}
+          />
+        </div>
+        <div id="movies-section-screenings">
+          <MoviesCategorySection
+            title="Special Screenings"
+            items={screenings}
+            isExpanded={isExpanded}
+            onSelect={onSelectDiscoveryItem}
+          />
+        </div>
       </div>
     </div>
   );

@@ -35,6 +35,7 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
   const [showSportsTooltip, setShowSportsTooltip] = useState(false);
   const [setupCompleted, setSetupCompleted] = useState(() => isAlreadySetup);
   const [planSizeErrorText, setPlanSizeErrorText] = useState<string | null>(null);
+  const [showBranchMenu, setShowBranchMenu] = useState(false);
 
   // Keep a ref so click-outside handler always reads the latest capacity
   const totalCapacityRef = React.useRef(form.totalCapacity);
@@ -97,6 +98,14 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
       return () => clearTimeout(timer);
     }
   }, [showSportsTooltip]);
+
+  // Auto-set branch default for Paris Panini
+  useEffect(() => {
+    const currentTitleValue = form.localTitle || defaultTitleFallback;
+    if (currentTitleValue === "Paris Panini" && !["New BEL", "Koramangala", "MG Road"].includes(form.localLocation)) {
+      form.setLocalLocation("New BEL");
+    }
+  }, [form.localTitle, form.localLocation, defaultTitleFallback]);
 
   // Document level click handler to dismiss tooltip when clicking elsewhere
   useEffect(() => {
@@ -614,6 +623,47 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
               </h1>
             );
           })()}
+
+          {/* Branch Dropdown for Paris Panini */}
+          {(form.localTitle || defaultTitleFallback) === "Paris Panini" && (
+            <div className="relative z-30 mt-1 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setShowBranchMenu(!showBranchMenu)}
+                className="text-white/60 hover:text-white/80 text-[13px] font-semibold flex items-center gap-1 cursor-pointer transition-colors bg-white/5 px-2.5 py-0.5 rounded-full border border-white/10 hover:bg-white/10"
+                style={{ fontFamily: 'Inter, sans-serif' }}
+              >
+                <span>{form.localLocation || "New BEL"}</span>
+                <svg className="w-3 h-3 opacity-60" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+              {showBranchMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowBranchMenu(false)} />
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-36 bg-zinc-950/95 border border-white/[0.08] rounded-xl shadow-2xl overflow-hidden py-1 z-50 backdrop-blur-md">
+                    {["New BEL", "Koramangala", "MG Road"].map((branch) => (
+                      <button
+                        key={branch}
+                        type="button"
+                        onClick={() => {
+                          form.setLocalLocation(branch);
+                          setShowBranchMenu(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-xs transition-colors ${
+                          form.localLocation === branch
+                            ? "bg-white/10 text-white font-semibold"
+                            : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                        }`}
+                      >
+                        {branch}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Date and Time (Single line, secondary visual focus) */}
           <h2

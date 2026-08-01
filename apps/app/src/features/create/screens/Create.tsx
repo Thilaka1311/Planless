@@ -53,6 +53,7 @@ export const CreatePlanScreen = ({
 
   // Flow states
   const [createPhase, setCreatePhase] = useState<'category' | 'when' | 'who' | 'who-actually' | 'sports_select' | 'customizer' | 'review' | 'confirmation'>('category');
+  const [lastSubScreen, setLastSubScreen] = useState<"sports" | "movies" | "dining" | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [postedPlanUuid, setPostedPlanUuid] = useState<string | null>(null);
   const [isCopying, setIsCopying] = useState(false);
@@ -787,12 +788,12 @@ export const CreatePlanScreen = ({
     );
   }
 
-
-
   return (
     <BrowseExperiencesStep
       userProfile={form.userProfile}
       setActiveTab={setActiveTab}
+      initialSubScreen={lastSubScreen}
+      onSubScreenChange={setLastSubScreen}
 
       onSelectDiscoveryItem={(item) => {
         // 1. Reset any previous form inputs
