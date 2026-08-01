@@ -30,6 +30,7 @@ interface PlanParticipantManagementWrapperProps {
   onAddParticipants?: (planId: string, userIds: string[], circleIds: string[], targetGroup?: 'GOING' | 'WAITLIST') => Promise<void>;
   onReorderWaitlist?: (planId: string, orderedUserUuids: string[]) => Promise<void>;
   onOpenSettings?: () => void;
+  onOpenActivity?: () => void;
 }
 
 /** Maps a plan member to the shared Friend shape */
@@ -72,6 +73,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   onAddParticipants,
   onReorderWaitlist,
   onOpenSettings,
+  onOpenActivity,
 }) => {
   const { circles } = useCirclesStore();
 
@@ -790,6 +792,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           setShowAddFriendsPicker(true);
         } : undefined}
         onOpenSettings={onOpenSettings}
+        onOpenActivity={onOpenActivity}
         onReorderGoing={isHost && waitlistMode === 'assigned' ? handleReorderGoing : undefined}
         onReorderWaitlist={isHost && waitlistMode === 'assigned' ? handleReorderWaitlist : undefined}
       />

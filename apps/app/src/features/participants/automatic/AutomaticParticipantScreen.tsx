@@ -41,6 +41,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   onPromoteHost,
   onDemoteHost,
   onOpenSettings,
+  onOpenActivity,
   initialTab,
   waitlistMode = 'automatic',
   onWaitlistModeChange,
@@ -148,6 +149,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         isHostUser={isHostUser}
         onBack={onBack}
         onOpenSettings={onOpenSettings}
+        onOpenActivity={onOpenActivity}
       />
 
       <PlanSizeCard

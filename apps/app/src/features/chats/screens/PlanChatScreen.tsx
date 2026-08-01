@@ -478,6 +478,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 })
               }
               onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
+              onOpenActivity={() => setShowActivityScreen(true)}
             />
           </motion.div>
         )}

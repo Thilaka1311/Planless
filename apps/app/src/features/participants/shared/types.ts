@@ -40,6 +40,7 @@ export interface SharedParticipantScreenProps {
   onPromoteHost?: (friend: Friend) => Promise<void> | void;
   onDemoteHost?: (friend: Friend) => Promise<void> | void;
   onOpenSettings?: () => void;
+  onOpenActivity?: () => void;
   initialTab?: ParticipantTab;
   waitlistMode?: 'automatic' | 'assigned';
   onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;

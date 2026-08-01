@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronLeft, Edit, MoreVertical, Settings, Users, Activity } from "lucide-react";
+import { ChevronLeft, Edit, MoreVertical, Settings, Users } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 
@@ -44,8 +44,6 @@ interface HeroHeaderProps {
   onHeaderPress?: () => void;
   /** Called when the user taps the participants icon in the chat header */
   onOpenParticipants?: () => void;
-  /** Called when the user taps the activity icon in the chat header */
-  onOpenActivity?: () => void;
 }
 
 export const HeroHeader: React.FC<HeroHeaderProps> = ({
@@ -65,7 +63,6 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   hideHostAttribution = false,
   onHeaderPress,
   onOpenParticipants,
-  onOpenActivity,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
@@ -185,20 +182,6 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                 {title}
               </h1>
             </button>
-
-            {/* Activity icon button */}
-            {onOpenActivity && (
-              <button
-                id="immersive-plan-activity-btn"
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenActivity(); }}
-                className="p-2 flex items-center justify-center text-white/80 active:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
-                style={{ minWidth: "44px", minHeight: "44px" }}
-                title="Activity"
-              >
-                <Activity className="w-5 h-5" />
-              </button>
-            )}
 
             {/* Participants icon button — right side, isolated from onHeaderPress */}
             {onOpenParticipants && (

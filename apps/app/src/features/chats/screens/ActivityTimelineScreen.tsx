@@ -11,6 +11,12 @@ import {
   TrendingUp,
   Crown,
   Activity,
+  Sparkles,
+  Calendar,
+  MapPin,
+  AlertCircle,
+  RefreshCw,
+  FileText,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { usePlansStore } from "../../plans/state/PlansContext";
@@ -19,6 +25,17 @@ import { normalizeStatus } from "../../../../lib/participantStatus";
 
 export type ActivityEventType =
   | "plan_created"
+  | "title_changed"
+  | "description_changed"
+  | "date_changed"
+  | "time_changed"
+  | "location_changed"
+  | "capacity_changed"
+  | "host_transferred"
+  | "plan_cancelled"
+  | "plan_restored"
+  | "plan_completed"
+  | "participant_invited"
   | "participant_joined"
   | "participant_left"
   | "joined_waitlist"
@@ -26,9 +43,7 @@ export type ActivityEventType =
   | "removed_by_host"
   | "invited"
   | "invitation_accepted"
-  | "invitation_declined"
-  | "capacity_changed"
-  | "host_transferred";
+  | "invitation_declined";
 
 export interface ActivityEvent {
   id: string;
@@ -76,10 +91,32 @@ const formatEventTime = (d: Date): string => {
 
 const EventIcon: React.FC<{ type: ActivityEventType }> = ({ type }) => {
   switch (type) {
+    // ── PLAN EVENTS (Event/Plan Oriented Icons) ──
     case "plan_created":
+      return <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />;
+    case "capacity_changed":
+      return <TrendingUp className="w-4 h-4 text-indigo-400 flex-shrink-0" />;
+    case "host_transferred":
+      return <Crown className="w-4 h-4 text-amber-300 flex-shrink-0" />;
+    case "date_changed":
+    case "time_changed":
+      return <Calendar className="w-4 h-4 text-blue-400 flex-shrink-0" />;
+    case "location_changed":
+      return <MapPin className="w-4 h-4 text-rose-400 flex-shrink-0" />;
+    case "title_changed":
+    case "description_changed":
+      return <FileText className="w-4 h-4 text-zinc-300 flex-shrink-0" />;
+    case "plan_cancelled":
+      return <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />;
+    case "plan_restored":
+      return <RefreshCw className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
+    case "plan_completed":
+      return <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
+
+    // ── PARTICIPANT EVENTS (People Oriented Icons) ──
     case "participant_joined":
     case "invitation_accepted":
-      return <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
+      return <UserCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
     case "participant_left":
     case "invitation_declined":
       return <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />;
@@ -90,13 +127,10 @@ const EventIcon: React.FC<{ type: ActivityEventType }> = ({ type }) => {
     case "removed_by_host":
       return <UserX className="w-4 h-4 text-rose-400 flex-shrink-0" />;
     case "invited":
+    case "participant_invited":
       return <UserPlus className="w-4 h-4 text-purple-400 flex-shrink-0" />;
-    case "capacity_changed":
-      return <TrendingUp className="w-4 h-4 text-indigo-400 flex-shrink-0" />;
-    case "host_transferred":
-      return <Crown className="w-4 h-4 text-amber-300 flex-shrink-0" />;
     default:
-      return <UserCheck className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
+      return <Activity className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
   }
 };
 
@@ -126,9 +160,6 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
 }) => {
   const { plans, dbPlanParticipants } = usePlansStore();
   const { userProfile, activeUserId, dbUsers } = useProfileStore();
-  const [loading, setLoading] = React.useState(!propEvents);
-
-  const [activeSegment, setActiveSegment] = React.useState<"participants" | "plans">("participants");
 
   const plan = React.useMemo(() => {
     if (!planId) return undefined;
@@ -256,32 +287,17 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
     return items.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
   }, [propEvents, plan, dbPlanParticipants, dbUsers, userProfile, activeUserId]);
 
-  // Filter events based on active segment tab
-  const filteredEvents = React.useMemo(() => {
-    const isPlanEvent = (type: ActivityEventType) =>
-      type === "plan_created" ||
-      type === "capacity_changed" ||
-      type === "host_transferred";
-
-    return derivedEvents.filter((evt) => {
-      if (activeSegment === "plans") {
-        return isPlanEvent(evt.type);
-      }
-      return !isPlanEvent(evt.type);
-    });
-  }, [derivedEvents, activeSegment]);
-
-  // Group filtered events chronologically by dateGroup
+  // Group events chronologically by dateGroup
   const groupedEvents = React.useMemo(() => {
     const groups: { [date: string]: ActivityEvent[] } = {};
-    filteredEvents.forEach((evt) => {
+    derivedEvents.forEach((evt) => {
       if (!groups[evt.dateGroup]) {
         groups[evt.dateGroup] = [];
       }
       groups[evt.dateGroup].push(evt);
     });
     return groups;
-  }, [filteredEvents]);
+  }, [derivedEvents]);
 
   const dateGroups = Object.keys(groupedEvents);
 
@@ -291,7 +307,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none"
+      className="fixed inset-0 z-[70] bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none"
     >
       {/* Standard Header */}
       <div className="relative z-30 bg-black/40 backdrop-blur-xl border-b border-white/10 shadow-lg py-3 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] px-4 flex-shrink-0">
@@ -313,53 +329,20 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
             </p>
           </div>
         </div>
-
-        {/* Segmented Control: Plans | Participants */}
-        <div className="mt-3 relative flex items-center bg-white/[0.05] border border-white/[0.08] p-1 rounded-2xl h-10">
-          <div
-            className="absolute top-1 bottom-1 rounded-xl bg-white/15 border border-white/10 shadow-md transition-all duration-250 ease-out"
-            style={{
-              width: "calc(50% - 4px)",
-              left: activeSegment === "plans" ? "4px" : "calc(50% + 0px)",
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => setActiveSegment("plans")}
-            className={`flex-1 z-10 text-[12px] font-medium transition-colors text-center cursor-pointer ${
-              activeSegment === "plans" ? "text-white font-semibold" : "text-zinc-400"
-            }`}
-          >
-            Plans
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveSegment("participants")}
-            className={`flex-1 z-10 text-[12px] font-medium transition-colors text-center cursor-pointer ${
-              activeSegment === "participants" ? "text-white font-semibold" : "text-zinc-400"
-            }`}
-          >
-            Participants
-          </button>
-        </div>
       </div>
 
-      {/* Timeline Content / Contextual Empty State */}
+      {/* Timeline Content / Empty State */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-        {filteredEvents.length === 0 ? (
+        {derivedEvents.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 my-auto">
             <div className="w-12 h-12 rounded-full bg-zinc-900 border border-white/10 flex items-center justify-center mb-3">
               <Activity className="w-6 h-6 text-zinc-500" />
             </div>
             <h3 className="text-sm font-semibold text-white mb-1">
-              {activeSegment === "plans"
-                ? "No plan activity yet"
-                : "No participant activity yet"}
+              No activity yet
             </h3>
             <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">
-              {activeSegment === "plans"
-                ? "Plan updates and changes will appear here."
-                : "Participant joins and invitations will appear here."}
+              Participant activity and important changes will appear here.
             </p>
           </div>
         ) : (

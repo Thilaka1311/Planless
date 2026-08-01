@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Plus } from 'lucide-react';
+import { Settings, Plus, Activity } from 'lucide-react';
 
 interface ParticipantHeaderProps {
   title: string;
@@ -7,6 +7,7 @@ interface ParticipantHeaderProps {
   isHostUser?: boolean;
   onBack: () => void;
   onOpenSettings?: () => void;
+  onOpenActivity?: () => void;
 }
 
 export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
@@ -15,6 +16,7 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
   isHostUser,
   onBack,
   onOpenSettings,
+  onOpenActivity,
 }) => {
   return (
     <div
@@ -50,15 +52,30 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
         )}
       </div>
 
-      {isHostUser && onOpenSettings && (
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-white active:scale-95 transition cursor-pointer"
-        >
-          <Settings className="w-4 h-4 text-zinc-300" />
-        </button>
-      )}
+      <div className="flex items-center gap-2">
+        {onOpenActivity && (
+          <button
+            id="immersive-participants-activity-btn"
+            type="button"
+            onClick={onOpenActivity}
+            className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-white active:scale-95 transition cursor-pointer"
+            title="Activity"
+          >
+            <Activity className="w-4 h-4 text-zinc-300" />
+          </button>
+        )}
+
+        {isHostUser && onOpenSettings && (
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-white active:scale-95 transition cursor-pointer"
+            title="Settings"
+          >
+            <Settings className="w-4 h-4 text-zinc-300" />
+          </button>
+        )}
+      </div>
     </div>
   );
 };

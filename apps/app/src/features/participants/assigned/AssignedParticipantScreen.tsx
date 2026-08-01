@@ -46,6 +46,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onPromoteHost,
   onDemoteHost,
   onOpenSettings,
+  onOpenActivity,
   onReorderGoing,
   onReorderWaitlist,
   initialTab,
@@ -237,6 +238,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         isHostUser={isHostUser}
         onBack={onBack}
         onOpenSettings={onOpenSettings}
+        onOpenActivity={onOpenActivity}
       />
 
       <PlanSizeCard
