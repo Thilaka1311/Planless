@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Search, Compass, Film, UtensilsCrossed, CalendarDays, Star, MapPin } from "lucide-react";
+import { motion } from "motion/react";
 import { getSectionsByCategory, getCachedSections } from "../services/discoveryService";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { HomeHeader } from "../../../components/HomeHeader";
