@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Send, MessageSquare } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence, useMotionValue, animate } from "motion/react";
 import { Plan } from "../../../core/types";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
@@ -32,6 +32,12 @@ interface ChatMessage {
   updated_at?: string | null;
 }
 
+const PAGE_NAMES: { [key: number]: string } = {
+  0: "Participants",
+  1: "Chat",
+  2: "Activity",
+};
+
 export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   planId,
   onBack,
@@ -50,8 +56,82 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [showSettingsScreen, setShowSettingsScreen] = useState(false);
-  const [showParticipantsScreen, setShowParticipantsScreen] = useState(false);
-  const [showActivityScreen, setShowActivityScreen] = useState(false);
+
+  // ── Instagram-Style Native Motion Pager State ──
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageX = useMotionValue(-1 * (typeof window !== "undefined" ? window.innerWidth : 375));
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // ── Floating Temporary Page Indicator State ──
+  const [overlayPage, setOverlayPage] = useState<number | null>(null);
+  const overlayTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerOverlay = (pageIndex: number) => {
+    if (overlayTimerRef.current) {
+      clearTimeout(overlayTimerRef.current);
+    }
+    setOverlayPage(pageIndex);
+    overlayTimerRef.current = setTimeout(() => {
+      setOverlayPage(null);
+      overlayTimerRef.current = null;
+    }, 800);
+  };
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (overlayTimerRef.current) {
+        clearTimeout(overlayTimerRef.current);
+      }
+    };
+  }, []);
+
+  // ── Keyboard Visibility Detection & Dismissal ──
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const handleResize = () => {
+      setKeyboardOpen(vv.height < window.innerHeight * 0.78);
+    };
+    vv.addEventListener("resize", handleResize);
+    return () => vv.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Synchronize MotionValue with screen width & active page index
+  const goToPage = (pageIndex: number, showOverlay: boolean = true) => {
+    if (keyboardOpen) {
+      // Dismiss keyboard before completing transition if active
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    }
+
+    const width = containerRef.current?.offsetWidth || window.innerWidth;
+    const isChange = pageIndex !== currentPage;
+    setCurrentPage(pageIndex);
+
+    if (isChange && showOverlay) {
+      triggerOverlay(pageIndex);
+    }
+
+    animate(pageX, -pageIndex * width, {
+      type: "spring",
+      stiffness: 350,
+      damping: 32,
+      mass: 0.8,
+    });
+  };
+
+  // Recalculate width on resize
+  useEffect(() => {
+    const handleWindowResize = () => {
+      const width = containerRef.current?.offsetWidth || window.innerWidth;
+      pageX.set(-currentPage * width);
+    };
+    window.addEventListener("resize", handleWindowResize);
+    return () => window.removeEventListener("resize", handleWindowResize);
+  }, [currentPage, pageX]);
 
   // Derive host status & all hosts for HeroHeader
   const planUuid = plan ? (plan.dbUuid || plan.id) : "";
@@ -295,9 +375,9 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none"
+      className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none relative"
     >
-      {/* MORPHIC HERO HEADER: Reused directly from Plan Details screen with Chat Header refinement */}
+      {/* MORPHIC HERO HEADER */}
       {plan && (
         <HeroHeader
           title={plan.title}
@@ -311,8 +391,8 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           category={plan.category}
           hideHostAttribution={true}
           onHeaderPress={onOpenPlanDetails}
-          onOpenParticipants={() => setShowParticipantsScreen(true)}
-          onOpenActivity={() => setShowActivityScreen(true)}
+          onOpenParticipants={() => goToPage(0)}
+          onOpenActivity={() => goToPage(2)}
           onEditTitle={!isCancelled ? async (newTitle) => {
             try {
               await updatePlanDetails(plan.id, { title: newTitle });
@@ -324,85 +404,183 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         />
       )}
 
-      {/* MESSAGES BODY / UNIFIED TIMELINE / EMPTY STATE */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col space-y-3">
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center text-zinc-500 text-xs">
-            Loading messages...
-          </div>
-        ) : timelineItems.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
-            <EmptyState
-              icon={<MessageSquare className="w-8 h-8 text-zinc-500 stroke-[1.5]" />}
-              title="No messages yet"
-              description="Start planning by sending the first message."
-              py="py-12"
-            />
-          </div>
-        ) : (
-          timelineItems.map((item) => {
-            if (item.isSystem) {
-              return (
-                <div
-                  key={item.id}
-                  className="w-full flex items-center justify-center py-1.5 my-1"
-                >
-                  <span className="text-[12px] font-medium text-zinc-500 bg-zinc-900/60 border border-white/[0.04] px-3 py-1 rounded-full text-center tracking-wide">
-                    {item.content}
-                  </span>
-                </div>
-              );
+      {/* FLOATING TEMPORARY PAGE INDICATOR OVERLAY */}
+      <AnimatePresence>
+        {overlayPage !== null && (
+          <motion.div
+            key={`page-overlay-${overlayPage}`}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="absolute top-[28%] left-1/2 -translate-x-1/2 z-40 pointer-events-none"
+          >
+            <div className="px-4 py-2 rounded-full bg-zinc-900/80 backdrop-blur-md border border-white/10 shadow-2xl text-white text-xs font-medium tracking-wide">
+              {PAGE_NAMES[overlayPage]}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* HORIZONTAL SWIPE PAGER STRIP — INSTAGRAM-STYLE NATIVE MOTION PAGER */}
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-hidden relative w-full touch-pan-y select-none"
+        style={{ touchAction: "pan-y" }}
+      >
+        <motion.div
+          drag="x"
+          dragDirectionLock={true}
+          dragConstraints={{
+            left: -2 * (containerRef.current?.offsetWidth || (typeof window !== "undefined" ? window.innerWidth : 375)),
+            right: 0,
+          }}
+          dragElastic={0.05}
+          dragMomentum={false}
+          style={{ x: pageX, touchAction: "pan-y" }}
+          onDragEnd={(_, info) => {
+            const width = containerRef.current?.offsetWidth || window.innerWidth;
+            const offset = info.offset.x;
+            const velocity = info.velocity.x;
+
+            let targetPage = currentPage;
+
+            // Highly responsive Instagram-style snapping threshold: 40px drag or 200px/s velocity flick
+            if ((offset < -40 || velocity < -200) && currentPage < 2) {
+              targetPage = currentPage + 1;
+            } else if ((offset > 40 || velocity > 200) && currentPage > 0) {
+              targetPage = currentPage - 1;
             }
 
-            const isMe = item.senderId === currentUserId;
-            const timeStr = new Date(item.createdAt).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            });
-
-            return (
-              <div
-                key={item.id}
-                className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
-              >
-                <div
-                  className={`max-w-[75%] px-3.5 py-2 rounded-2xl text-[13px] leading-relaxed break-words ${
-                    isMe
-                      ? "bg-amber-500 text-black font-medium rounded-br-xs"
-                      : "bg-zinc-800 text-white rounded-bl-xs border border-white/5"
-                  }`}
-                >
-                  {item.content}
-                </div>
-                <span className="text-[10px] text-zinc-500 mt-1 px-1">
-                  {timeStr}
-                </span>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* MESSAGE COMPOSER */}
-      <form
-        onSubmit={handleSendMessage}
-        className="border-t border-white/10 bg-[#0A0A0C] px-4 py-3 flex items-center gap-2 flex-shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
-      >
-        <input
-          type="text"
-          placeholder="Send a message..."
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          className="flex-1 h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700 transition"
-        />
-        <button
-          type="submit"
-          disabled={!inputText.trim() || sending}
-          className="w-10 h-10 rounded-xl bg-amber-500 text-black flex items-center justify-center active:scale-95 disabled:opacity-40 disabled:active:scale-100 transition cursor-pointer flex-shrink-0"
+            goToPage(targetPage, true);
+          }}
+          className="flex h-full w-[300%]"
         >
-          <Send className="w-4 h-4 fill-current stroke-[2.5]" />
-        </button>
-      </form>
+          {/* PAGE 0: PARTICIPANTS */}
+          <div className="w-1/3 h-full overflow-hidden flex flex-col flex-shrink-0">
+            {plan && userProfile && (
+              <PlanParticipantManagementWrapper
+                plan={plan}
+                userProfile={userProfile}
+                activeUserId={currentUserId}
+                isHost={isHost}
+                isCreatorHost={isHost}
+                onBack={() => goToPage(1)}
+                onMoveToGoing={(pId, uId) => moveParticipantToGoing(pId, uId)}
+                onMoveToWaitlist={(pId, uId) => moveParticipantToWaitlist(pId, uId)}
+                onMoveToInvited={(pId, uId) => moveParticipantToInvited(pId, uId)}
+                onRemoveParticipant={(pId, uId) => removeParticipant(pId, uId)}
+                onPromoteToHost={(pId, uId) => promoteParticipantToHost(pId, uId)}
+                onDemoteFromHost={(pId, uId) => demoteHostToParticipant(pId, uId)}
+                onUpdatePlanCapacity={(pId, capacity) => updatePlanDetails(pId, { max_participants: capacity })}
+                onAddParticipants={(pId, userIds, circleIds, assignedGroup) =>
+                  addParticipantsToPlan({
+                    planId: pId,
+                    inviteeUuids: userIds,
+                    userProfile,
+                    planTitle: plan.title || "",
+                    assignedGroup,
+                  })
+                }
+                onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
+                onOpenActivity={() => goToPage(2)}
+              />
+            )}
+          </div>
+
+          {/* PAGE 1: CHAT (DEFAULT) */}
+          <div className="w-1/3 h-full overflow-hidden flex flex-col flex-shrink-0">
+            <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col space-y-3">
+              {loading ? (
+                <div className="flex-1 flex items-center justify-center text-zinc-500 text-xs">
+                  Loading messages...
+                </div>
+              ) : timelineItems.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <EmptyState
+                    icon={<MessageSquare className="w-8 h-8 text-zinc-500 stroke-[1.5]" />}
+                    title="No messages yet"
+                    description="Start planning by sending the first message."
+                    py="py-12"
+                  />
+                </div>
+              ) : (
+                timelineItems.map((item) => {
+                  if (item.isSystem) {
+                    return (
+                      <div
+                        key={item.id}
+                        className="w-full flex items-center justify-center py-1.5 my-1"
+                      >
+                        <span className="text-[12px] font-medium text-zinc-500 bg-zinc-900/60 border border-white/[0.04] px-3 py-1 rounded-full text-center tracking-wide">
+                          {item.content}
+                        </span>
+                      </div>
+                    );
+                  }
+
+                  const isMe = item.senderId === currentUserId;
+                  const timeStr = new Date(item.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+                    >
+                      <div
+                        className={`max-w-[75%] px-3.5 py-2 rounded-2xl text-[13px] leading-relaxed break-words ${
+                          isMe
+                            ? "bg-amber-500 text-black font-medium rounded-br-xs"
+                            : "bg-zinc-800 text-white rounded-bl-xs border border-white/5"
+                        }`}
+                      >
+                        {item.content}
+                      </div>
+                      <span className="text-[10px] text-zinc-500 mt-1 px-1">
+                        {timeStr}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* MESSAGE COMPOSER */}
+            <form
+              onSubmit={handleSendMessage}
+              className="border-t border-white/10 bg-[#0A0A0C] px-4 py-3 flex items-center gap-2 flex-shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
+            >
+              <input
+                type="text"
+                placeholder="Send a message..."
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                className="flex-1 h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700 transition"
+              />
+              <button
+                type="submit"
+                disabled={!inputText.trim() || sending}
+                className="w-10 h-10 rounded-xl bg-amber-500 text-black flex items-center justify-center active:scale-95 disabled:opacity-40 disabled:active:scale-100 transition cursor-pointer flex-shrink-0"
+              >
+                <Send className="w-4 h-4 fill-current stroke-[2.5]" />
+              </button>
+            </form>
+          </div>
+
+          {/* PAGE 2: ACTIVITY */}
+          <div className="w-1/3 h-full overflow-hidden flex flex-col flex-shrink-0">
+            <ActivityTimelineScreen
+              planId={planId}
+              planTitle={plan?.title || "Plan Activity"}
+              onBack={() => goToPage(1)}
+              embedded={true}
+            />
+          </div>
+        </motion.div>
+      </div>
 
       {/* PLAN SETTINGS SCREEN OVERLAY */}
       {showSettingsScreen && plan && userProfile && (
@@ -441,58 +619,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           }}
         />
       )}
-
-      {/* PARTICIPANTS SCREEN OVERLAY — reuses existing PlanParticipantManagementWrapper */}
-      <AnimatePresence>
-        {showParticipantsScreen && plan && userProfile && (
-          <motion.div
-            key="chat-participant-management"
-            initial={{ opacity: 0, x: 40 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 40 }}
-            transition={{ duration: 0.22, ease: "easeOut" }}
-            className="fixed inset-0 z-[60] bg-[#000000] flex flex-col"
-          >
-            <PlanParticipantManagementWrapper
-              plan={plan}
-              userProfile={userProfile}
-              activeUserId={currentUserId}
-              isHost={isHost}
-              isCreatorHost={isHost}
-              onBack={() => setShowParticipantsScreen(false)}
-              onMoveToGoing={(pId, uId) => moveParticipantToGoing(pId, uId)}
-              onMoveToWaitlist={(pId, uId) => moveParticipantToWaitlist(pId, uId)}
-              onMoveToInvited={(pId, uId) => moveParticipantToInvited(pId, uId)}
-              onRemoveParticipant={(pId, uId) => removeParticipant(pId, uId)}
-              onPromoteToHost={(pId, uId) => promoteParticipantToHost(pId, uId)}
-              onDemoteFromHost={(pId, uId) => demoteHostToParticipant(pId, uId)}
-              onUpdatePlanCapacity={(pId, capacity) => updatePlanDetails(pId, { max_participants: capacity })}
-              onAddParticipants={(pId, userIds, circleIds, assignedGroup) =>
-                addParticipantsToPlan({
-                  planId: pId,
-                  inviteeUuids: userIds,
-                  userProfile,
-                  planTitle: plan.title || "",
-                  assignedGroup,
-                })
-              }
-              onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
-              onOpenActivity={() => setShowActivityScreen(true)}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ACTIVITY TIMELINE SCREEN OVERLAY */}
-      <AnimatePresence>
-        {showActivityScreen && (
-          <ActivityTimelineScreen
-            planId={planId}
-            planTitle={plan?.title || "Plan Activity"}
-            onBack={() => setShowActivityScreen(false)}
-          />
-        )}
-      </AnimatePresence>
     </motion.div>
   );
 };
