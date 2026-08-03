@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Search, Compass, Film, UtensilsCrossed, CalendarDays, Star, MapPin } from "lucide-react";
+import { motion } from "motion/react";
 import { getSectionsByCategory, getCachedSections } from "../services/discoveryService";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { HomeHeader } from "../../../components/HomeHeader";
@@ -20,6 +21,8 @@ interface DiscoveryProps {
   setActiveTab: (tab: any) => void;
   onSelectDiscoveryItem: (item: DiscoveryItem) => void;
   onSelectCustomPlan: () => void;
+  initialSubScreen?: "sports" | "movies" | "dining" | null;
+  onSubScreenChange?: (subScreen: "sports" | "movies" | "dining" | null) => void;
 }
 
 // ─── Main Discovery Screen ────────────────────────────────────────────────────
@@ -29,6 +32,8 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
   setActiveTab,
   onSelectDiscoveryItem,
   onSelectCustomPlan,
+  initialSubScreen = null,
+  onSubScreenChange,
 }) => {
   const { isAdmin, userProfile: storeUserProfile } = useProfileStore();
   const userProfile = propUserProfile || storeUserProfile;
@@ -41,7 +46,12 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     return !getCachedSections();
   });
   const [discoveryVersion, setDiscoveryVersion] = useState(0);
-  const [activeSubScreen, setActiveSubScreen] = useState<"sports" | "movies" | "dining" | null>(null);
+  const [activeSubScreen, setActiveSubScreen] = useState<"sports" | "movies" | "dining" | null>(initialSubScreen);
+
+  const handleSubScreenChange = (screen: "sports" | "movies" | "dining" | null) => {
+    setActiveSubScreen(screen);
+    onSubScreenChange?.(screen);
+  };
 
   // Admin overlay state
   type ContextTarget = { item: any; config: ContentConfig } | null;
@@ -137,7 +147,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
         <div className="grid grid-cols-2 gap-3">
 
           <button
-            onClick={() => setActiveSubScreen("sports")}
+            onClick={() => handleSubScreenChange("sports")}
             {...useLongPress(() => {
               if (isAdmin) {
                 const sec = sections.find((s) => s.category?.toUpperCase() === "SPORTS");
@@ -149,9 +159,12 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             className="h-[100px] rounded-2xl bg-[#111111] hover:bg-[#151515] border border-white/[0.04] hover:border-emerald-500/20 p-4 flex flex-col justify-between text-left transition duration-300 active:scale-97 cursor-pointer group relative overflow-hidden"
           >
             <div className="absolute -right-3 -bottom-3 text-4xl opacity-10 group-hover:scale-110 transition duration-300">⚽</div>
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <motion.div
+              layoutId="subscreen-icon-sports"
+              className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400"
+            >
               <Compass className="w-4 h-4" />
-            </div>
+            </motion.div>
             <div>
               <span className="text-xs font-semibold text-white block tracking-wide">Sports</span>
               <span className="text-[9px] text-zinc-500 block font-normal">Turfs & Courts</span>
@@ -159,7 +172,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveSubScreen("movies")}
+            onClick={() => handleSubScreenChange("movies")}
             {...useLongPress(() => {
               if (isAdmin) {
                 const sec = sections.find((s) => s.category?.toUpperCase() === "MOVIES");
@@ -171,9 +184,12 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             className="h-[100px] rounded-2xl bg-[#111111] hover:bg-[#151515] border border-white/[0.04] hover:border-violet-500/20 p-4 flex flex-col justify-between text-left transition duration-300 active:scale-97 cursor-pointer group relative overflow-hidden"
           >
             <div className="absolute -right-3 -bottom-3 text-4xl opacity-10 group-hover:scale-110 transition duration-300">🎬</div>
-            <div className="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
+            <motion.div
+              layoutId="subscreen-icon-movies"
+              className="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400"
+            >
               <Film className="w-4 h-4" />
-            </div>
+            </motion.div>
             <div>
               <span className="text-xs font-semibold text-white block tracking-wide">Movies</span>
               <span className="text-[9px] text-zinc-500 block font-normal">Trending Premieres</span>
@@ -181,7 +197,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveSubScreen("dining")}
+            onClick={() => handleSubScreenChange("dining")}
             {...useLongPress(() => {
               if (isAdmin) {
                 const sec = sections.find((s) => s.category?.toUpperCase() === "DINING");
@@ -193,9 +209,12 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             className="h-[100px] rounded-2xl bg-[#111111] hover:bg-[#151515] border border-white/[0.04] hover:border-rose-500/20 p-4 flex flex-col justify-between text-left transition duration-300 active:scale-97 cursor-pointer group relative overflow-hidden"
           >
             <div className="absolute -right-3 -bottom-3 text-4xl opacity-10 group-hover:scale-110 transition duration-300">🍝</div>
-            <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+            <motion.div
+              layoutId="subscreen-icon-dining"
+              className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400"
+            >
               <UtensilsCrossed className="w-4 h-4" />
-            </div>
+            </motion.div>
             <div>
               <span className="text-xs font-semibold text-white block tracking-wide">Dining</span>
               <span className="text-[9px] text-zinc-500 block font-normal">Popular Cafes</span>
@@ -363,7 +382,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           <DiscoverSports
             sections={sections}
             isAdmin={isAdmin}
-            onBack={() => setActiveSubScreen(null)}
+            onBack={() => handleSubScreenChange(null)}
             onSelectDiscoveryItem={onSelectDiscoveryItem}
             onLongPressAdmin={(item, section) => {
               const config = getAdminConfig(section);
@@ -378,7 +397,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           <DiscoverMovies
             sections={sections}
             isAdmin={isAdmin}
-            onBack={() => setActiveSubScreen(null)}
+            onBack={() => handleSubScreenChange(null)}
             onSelectDiscoveryItem={onSelectDiscoveryItem}
             onLongPressAdmin={(item, section) => {
               const config = getAdminConfig(section);
@@ -393,7 +412,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           <DiscoverDining
             sections={sections}
             isAdmin={isAdmin}
-            onBack={() => setActiveSubScreen(null)}
+            onBack={() => handleSubScreenChange(null)}
             onSelectDiscoveryItem={onSelectDiscoveryItem}
             onLongPressAdmin={(item, section) => {
               const config = getAdminConfig(section);

@@ -52,6 +52,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
 
   // ParticipantToggleBar state
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showBranchMenu, setShowBranchMenu] = useState(false);
 
   // Cost splitting states
   const [addCost, setAddCost] = useState(form.costAmount > 0);
@@ -477,19 +478,59 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
                 <MapPin className="w-4 h-4 text-[#FF6B2C] shrink-0 mt-0.5" />
                 <div className="flex-grow min-w-0">
                   <span className="text-[9px] text-white/40 uppercase font-extrabold tracking-wider leading-none block mb-1">Venue Location</span>
-                  <LocationAutocompleteInput
-                    value={form.localLocation || ""}
-                    onChange={(val) => form.setLocalLocation(val)}
-                    placeholder="Search venue address..."
-                    className="w-full bg-transparent border-none text-white text-[13px] font-semibold leading-snug p-0 focus:outline-none placeholder-white/20"
-                    onSelectPlace={(place) => {
-                      form.setLocalLocation(place.name);
-                      if (form.setPlaceId) form.setPlaceId(place.place_id);
-                      if (form.setPlaceAddress) form.setPlaceAddress(place.formatted_address);
-                      if (form.setLatitude) form.setLatitude(place.latitude);
-                      if (form.setLongitude) form.setLongitude(place.longitude);
-                    }}
-                  />
+                  {form.localTitle === "Paris Panini" ? (
+                    <div className="relative z-30">
+                      <button
+                        type="button"
+                        onClick={() => setShowBranchMenu(!showBranchMenu)}
+                        className="text-white text-[13px] font-semibold flex items-center gap-1 cursor-pointer transition-colors bg-white/5 px-2.5 py-0.5 rounded-full border border-white/10 hover:bg-white/10 mt-0.5"
+                        style={{ fontFamily: 'Inter, sans-serif' }}
+                      >
+                        <span>{form.localLocation || "New BEL"}</span>
+                        <svg className="w-3 h-3 opacity-60" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                      {showBranchMenu && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowBranchMenu(false)} />
+                          <div className="absolute top-full left-0 mt-1 w-36 bg-zinc-950/95 border border-white/[0.08] rounded-xl shadow-2xl overflow-hidden py-1 z-50 backdrop-blur-md">
+                            {["New BEL", "Koramangala", "MG Road"].map((branch) => (
+                              <button
+                                key={branch}
+                                type="button"
+                                onClick={() => {
+                                  form.setLocalLocation(branch);
+                                  setShowBranchMenu(false);
+                                }}
+                                className={`w-full text-left px-4 py-2 text-xs transition-colors ${
+                                  form.localLocation === branch
+                                    ? "bg-white/10 text-white font-semibold"
+                                    : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                                }`}
+                              >
+                                {branch}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <LocationAutocompleteInput
+                      value={form.localLocation || ""}
+                      onChange={(val) => form.setLocalLocation(val)}
+                      placeholder="Search venue address..."
+                      className="w-full bg-transparent border-none text-white text-[13px] font-semibold leading-snug p-0 focus:outline-none placeholder-white/20"
+                      onSelectPlace={(place) => {
+                        form.setLocalLocation(place.name);
+                        if (form.setPlaceId) form.setPlaceId(place.place_id);
+                        if (form.setPlaceAddress) form.setPlaceAddress(place.formatted_address);
+                        if (form.setLatitude) form.setLatitude(place.latitude);
+                        if (form.setLongitude) form.setLongitude(place.longitude);
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             </div>
