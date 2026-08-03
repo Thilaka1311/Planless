@@ -41,11 +41,6 @@ export const mapPlansToLegacyPlans = (
   activeUserId: string = "",
   circlesList: DbCircle[] = []
 ): Plan[] => {
-  console.log("[MAPPERS RUNTIME]", {
-    plansListLength: plansList.length,
-    participantsLength: participants.length,
-    activeUserId
-  });
   const activeUserObj = usersList.find(u => u.user_id === activeUserId || (u as any).id === activeUserId);
   const activeUuid = activeUserObj ? (activeUserObj as any).id : activeUserId;
   const activeShortId = activeUserObj ? activeUserObj.user_id : activeUserId;

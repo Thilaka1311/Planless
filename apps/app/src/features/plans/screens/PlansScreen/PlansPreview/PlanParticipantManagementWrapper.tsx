@@ -18,6 +18,7 @@ interface PlanParticipantManagementWrapperProps {
   isHost: boolean;
   isCreatorHost?: boolean;
   onBack: () => void;
+  displayMode?: 'standalone' | 'embedded';
   // Store actions passed in so this wrapper stays store-agnostic
   onMoveToGoing: (planId: string, userId: string) => Promise<void>;
   onMoveToWaitlist: (planId: string, userId: string) => Promise<void>;
@@ -30,6 +31,7 @@ interface PlanParticipantManagementWrapperProps {
   onAddParticipants?: (planId: string, userIds: string[], circleIds: string[], targetGroup?: 'GOING' | 'WAITLIST') => Promise<void>;
   onReorderWaitlist?: (planId: string, orderedUserUuids: string[]) => Promise<void>;
   onOpenSettings?: () => void;
+  onOpenActivity?: () => void;
 }
 
 /** Maps a plan member to the shared Friend shape */
@@ -72,6 +74,8 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   onAddParticipants,
   onReorderWaitlist,
   onOpenSettings,
+  onOpenActivity,
+  displayMode = 'standalone',
 }) => {
   const { circles } = useCirclesStore();
 
@@ -713,8 +717,8 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         try {
           await onUpdatePlanCapacity(plan.id, clampedVal);
         } catch (err: any) {
-          console.error("[handleAdjustCapacity] Error updating capacity:", err);
-          const msg = err?.message || 'Failed to update capacity';
+          const msg = typeof err === 'string' ? err : err?.message || err?.error_description || err?.details || 'Failed to update capacity';
+          console.error("[handleAdjustCapacity] Error updating capacity:", msg, err);
           showToast(msg);
         }
       }
@@ -764,7 +768,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     <>
       <ParticipantManagementScreen
         title="Participants"
-        subtitle={plan.title}
         category={plan.category || 'custom'}
         eventDate={formattedDate}
         eventTime={formattedTime}
@@ -789,7 +792,9 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           setAddFriendsTargetTab(targetTab === 'waitlist' ? 'WAITLIST' : 'GOING');
           setShowAddFriendsPicker(true);
         } : undefined}
+        displayMode={displayMode}
         onOpenSettings={onOpenSettings}
+        onOpenActivity={onOpenActivity}
         onReorderGoing={isHost && waitlistMode === 'assigned' ? handleReorderGoing : undefined}
         onReorderWaitlist={isHost && waitlistMode === 'assigned' ? handleReorderWaitlist : undefined}
       />

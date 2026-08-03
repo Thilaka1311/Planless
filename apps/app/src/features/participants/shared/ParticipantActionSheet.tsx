@@ -107,7 +107,7 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
                 Move to Waitlist
               </button>
             )}
-            {onMoveToGoing && sheetType === 'waitlist' && (
+            {onMoveToGoing && sheetType === 'waitlist' && (mode === 'wizard' || waitlistMode === 'assigned') && (
               <button
                 onClick={() => executeActionWithImmediateDismiss(() => onMoveToGoing!(selectedItem))}
                 style={{ width: '100%', padding: '14px', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}

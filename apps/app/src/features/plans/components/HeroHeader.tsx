@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronLeft, Edit, MoreVertical, Settings, Users, Activity } from "lucide-react";
+import { ChevronLeft, Edit, MoreVertical, Settings, Users } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 
@@ -44,8 +44,6 @@ interface HeroHeaderProps {
   onHeaderPress?: () => void;
   /** Called when the user taps the participants icon in the chat header */
   onOpenParticipants?: () => void;
-  /** Called when the user taps the activity icon in the chat header */
-  onOpenActivity?: () => void;
 }
 
 export const HeroHeader: React.FC<HeroHeaderProps> = ({
@@ -65,7 +63,6 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   hideHostAttribution = false,
   onHeaderPress,
   onOpenParticipants,
-  onOpenActivity,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
@@ -186,31 +183,17 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               </h1>
             </button>
 
-            {/* Activity icon button */}
-            {onOpenActivity && (
+            {/* Settings icon button — right side, isolated from onHeaderPress */}
+            {onOpenSettings && (
               <button
-                id="immersive-plan-activity-btn"
+                id="immersive-plan-settings-btn"
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenActivity(); }}
-                className="p-2 flex items-center justify-center text-white/80 active:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
+                onClick={(e) => { e.stopPropagation(); onOpenSettings(); }}
+                className="p-2 -mr-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
                 style={{ minWidth: "44px", minHeight: "44px" }}
-                title="Activity"
+                title="Settings"
               >
-                <Activity className="w-5 h-5" />
-              </button>
-            )}
-
-            {/* Participants icon button — right side, isolated from onHeaderPress */}
-            {onOpenParticipants && (
-              <button
-                id="immersive-plan-participants-btn"
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenParticipants(); }}
-                className="p-2 -mr-2 flex items-center justify-center text-white/80 active:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
-                style={{ minWidth: "44px", minHeight: "44px" }}
-                title="Participants"
-              >
-                <Users className="w-5 h-5" />
+                <Settings className="w-5 h-5" />
               </button>
             )}
           </div>
@@ -222,9 +205,9 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   return (
     <div
       id="immersive-plan-glass-header"
-      className="absolute top-0 left-0 right-0 z-30 bg-black/30 backdrop-blur-xl border-b border-white/10 shadow-lg pb-3 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] rounded-b-2xl"
+      className="absolute top-0 left-0 right-0 z-30 bg-black/30 backdrop-blur-xl border-b border-white/10 shadow-lg pb-3 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] rounded-b-2xl pointer-events-none"
     >
-      <div className="w-full flex flex-col items-center relative px-4">
+      <div className="w-full flex flex-col items-center relative px-4 pointer-events-none">
         {/* Back button — top-left */}
         <button
           id="immersive-plan-back-btn"
@@ -291,66 +274,21 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           ) : null}
         </div>
 
-        {/* Circular Plan Avatar (Chat Mode) */}
-        {coverImage && (
-          <div className="w-9 h-9 rounded-full overflow-hidden border border-white/15 bg-zinc-800 flex-shrink-0 mb-1">
-            <img
-              src={coverImage}
-              alt={title}
-              className="w-full h-full object-cover"
-            />
-          </div>
-        )}
+        {/* Circular Plan Avatar & Centered Title */}
+        <div
+          onClick={onHeaderPress}
+          className={`flex flex-col items-center max-w-full ${onHeaderPress ? "cursor-pointer pointer-events-auto" : "pointer-events-none"}`}
+        >
+          {coverImage && (
+            <div className="w-9 h-9 rounded-full overflow-hidden border border-white/15 bg-zinc-800 flex-shrink-0 mb-1">
+              <img
+                src={coverImage}
+                alt={title}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
 
-        {/* Centered Title */}
-        {isEditingTitle ? (
-          <div className="flex flex-col items-center w-full max-w-[calc(100%-6.5rem)] px-2 z-40 pointer-events-auto">
-            <input
-              ref={titleInputRef}
-              type="text"
-              maxLength={50}
-              value={tempTitle}
-              onChange={(e) => setTempTitle(e.target.value.slice(0, 50))}
-              onBlur={handleSaveTitle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  titleInputRef.current?.blur();
-                } else if (e.key === "Escape") {
-                  setIsEditingTitle(false);
-                  setTempTitle(title);
-                }
-              }}
-              className="w-full bg-transparent border-b border-[#FF6B2C] text-[17px] font-bold text-white tracking-[0.08em] leading-tight text-center focus:outline-none py-0.5"
-            />
-            <span className="text-[10px] text-white/40 font-mono mt-0.5">
-              {tempTitle.length} / 50
-            </span>
-          </div>
-        ) : isHost && onEditTitle ? (
-          <button
-            type="button"
-            onClick={() => {
-              setTempTitle(title);
-              setIsEditingTitle(true);
-            }}
-            className="group flex items-center justify-center gap-1.5 px-3 py-0.5 rounded-lg hover:bg-white/[0.06] active:bg-white/10 transition cursor-pointer max-w-[calc(100%-6.5rem)] pointer-events-auto"
-            title="Tap to edit title"
-          >
-            <h1
-              className="text-[17px] font-bold text-white tracking-[0.08em] leading-tight text-center line-clamp-2 break-words"
-              style={{
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              }}
-            >
-              {title}
-            </h1>
-            <Edit className="w-3.5 h-3.5 text-white/30 group-hover:text-white/60 transition-colors flex-shrink-0 self-center" />
-          </button>
-        ) : (
           <h1
             className="text-[17px] font-bold text-white tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full line-clamp-2 break-words"
             style={{
@@ -362,7 +300,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           >
             {title}
           </h1>
-        )}
+        </div>
 
         {/* Centered Hosted By with Overlapping Avatars (Plan Details Mode) */}
         {!hideHostAttribution && (

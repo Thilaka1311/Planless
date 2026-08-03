@@ -989,6 +989,20 @@ export function usePlanParticipants({
       if (updateErr) {
         throw updateErr;
       }
+
+      // Log host management activity event (Host moved participant to Going)
+      if (userId) {
+        await (supabase as any)
+          .from("plan_activity")
+          .insert({
+            plan_id: planUuid,
+            actor_id: userId,
+            target_user_id: resolvedUserUuid,
+            activity_type: "participant_moved_to_going",
+            metadata: {}
+          });
+      }
+
       await renumberWaitlistPositions(planUuid);
       await refreshPlans();
     } catch (err) {
@@ -1058,6 +1072,20 @@ export function usePlanParticipants({
       if (updateError) {
         throw new Error("Failed to update status to waitlist");
       }
+
+      // Log host management activity event (Host moved participant to Waitlist)
+      if (userId) {
+        await (supabase as any)
+          .from("plan_activity")
+          .insert({
+            plan_id: planUuid,
+            actor_id: userId,
+            target_user_id: resolvedUserUuid,
+            activity_type: "participant_moved_to_waitlist",
+            metadata: {}
+          });
+      }
+
       await renumberWaitlistPositions(planUuid);
       await refreshPlans();
     } catch (err) {

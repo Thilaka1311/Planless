@@ -10,7 +10,6 @@ interface AutomaticParticipantTabsProps {
   waitlistCount: number;
   invitedCount: number;
   onTabChange: (tab: ParticipantTab) => void;
-  onAddFriends?: () => void;
 }
 
 export const AutomaticParticipantTabs: React.FC<AutomaticParticipantTabsProps> = ({
@@ -21,7 +20,6 @@ export const AutomaticParticipantTabs: React.FC<AutomaticParticipantTabsProps> =
   waitlistCount,
   invitedCount,
   onTabChange,
-  onAddFriends,
 }) => {
   const tabCount = visibleTabs.length;
   const activeTabIndex = Math.max(0, visibleTabs.indexOf(activeTab));
@@ -93,31 +91,6 @@ export const AutomaticParticipantTabs: React.FC<AutomaticParticipantTabsProps> =
             </button>
           );
         })}
-
-        {onAddFriends && (
-          <div style={{ display: 'flex', alignItems: 'center', height: '100%', zIndex: 2 }}>
-            <button
-              onClick={onAddFriends}
-              title="Invite People"
-              style={{
-                height: '100%',
-                background: 'transparent',
-                border: 'none',
-                color: '#FFFFFF',
-                fontSize: 16,
-                fontWeight: 300,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'opacity 0.2s ease',
-              }}
-              className="w-9 opacity-100 flex items-center justify-center"
-            >
-              <Plus className="w-4 h-4 text-white" />
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

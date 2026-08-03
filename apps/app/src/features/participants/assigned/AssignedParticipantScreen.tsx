@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { UserPlus } from 'lucide-react';
 import { SharedParticipantScreenProps, Friend, ParticipantTab } from '../shared/types';
 import { ParticipantHeader } from '../shared/ParticipantHeader';
 import { PlanSizeCard } from '../shared/PlanSizeCard';
@@ -46,12 +47,16 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onPromoteHost,
   onDemoteHost,
   onOpenSettings,
+  onOpenActivity,
   onReorderGoing,
   onReorderWaitlist,
   initialTab,
   waitlistMode = 'assigned',
   onWaitlistModeChange,
+  displayMode = 'standalone',
 }) => {
+  const isStandalone = displayMode === 'standalone';
+
   // ── Wizard mode internal state ──
   const hostItem: Friend | null = isHostSelected
     ? {
@@ -231,21 +236,27 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       className="flex-1 flex flex-col h-full bg-[#000000] text-left relative"
       style={{ fontFamily: 'Inter, sans-serif', width: '100%', color: '#FFFFFF' }}
     >
-      <ParticipantHeader
-        title={title}
-        subtitle={subtitle}
-        isHostUser={isHostUser}
-        onBack={onBack}
-        onOpenSettings={onOpenSettings}
-      />
+      {isStandalone && (
+        <ParticipantHeader
+          title={title}
+          subtitle={subtitle}
+          isHostUser={isHostUser}
+          onBack={onBack}
+          onOpenSettings={onOpenSettings}
+          onOpenActivity={onOpenActivity}
+          displayMode={displayMode}
+        />
+      )}
 
-      <PlanSizeCard
-        capacity={capacity}
-        maxCapacity={maxCapacity}
-        isHostUser={isHostUser}
-        isInviteOnly={isInviteOnly}
-        onConfirmAdjustCapacity={handleApplyCapacityChange}
-      />
+      <div className={displayMode === 'embedded' ? "pt-4" : ""}>
+        <PlanSizeCard
+          capacity={capacity}
+          maxCapacity={maxCapacity}
+          isHostUser={isHostUser}
+          isInviteOnly={isInviteOnly}
+          onConfirmAdjustCapacity={handleApplyCapacityChange}
+        />
+      </div>
 
       <WaitlistModeSelector
         waitlistMode={waitlistMode}
@@ -261,26 +272,51 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         capacity={capacity}
         waitlistCount={displayWaitlist.length}
         onTabChange={setActiveTab}
-        onAddFriends={onAddFriends ? () => onAddFriends(activeTab) : undefined}
       />
 
-      {/* List content — Assigned Mode with Section 1 (Accepted) and Section 2 (Invited) */}
-      <div style={{ display: 'flex', flexDirection: 'column', padding: '16px 20px 100px', gap: 16, flex: 1, overflowY: 'auto' }}>
+      {/* Action Button Below Segmented Control — Assigned Mode */}
+      {onAddFriends && (
+        <div style={{ padding: '0 20px', margin: '4px 0 12px' }}>
+          <button
+            type="button"
+            onClick={() => onAddFriends(activeTab)}
+            style={{
+              width: '100%',
+              padding: '11px 16px',
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: 14,
+              color: '#FFFFFF',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              fontFamily: 'Inter, sans-serif',
+              transition: 'background 0.15s, border-color 0.15s',
+            }}
+            className="hover:bg-white/[0.12] active:scale-[0.99]"
+          >
+            <UserPlus className="w-4 h-4 text-white" />
+            <span>{activeTab === 'going' ? 'Add to Going' : 'Add to Waitlist'}</span>
+          </button>
+        </div>
+      )}
+
+      {/* List content — Assigned Mode */}
+      <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 16, flex: 1, overflowY: 'auto' }}>
         {activeTab === 'going' && (
           <>
             {displayGoing.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#8E8E93', textTransform: 'uppercase' }}>
-                  ACCEPTED
-                </span>
-                <GoingSection
-                  goingList={displayGoing}
-                  onItemTap={isHostUser ? (item) => handleItemTap(item, 'going') : undefined}
-                  onReorder={mode === 'editor' ? onReorderGoing : undefined}
-                  reorderable={mode === 'editor' && isHostUser && Boolean(onReorderGoing)}
-                  showIndex={false}
-                />
-              </div>
+              <GoingSection
+                goingList={displayGoing}
+                onItemTap={isHostUser ? (item) => handleItemTap(item, 'going') : undefined}
+                onReorder={mode === 'editor' ? onReorderGoing : undefined}
+                reorderable={mode === 'editor' && isHostUser && Boolean(onReorderGoing)}
+                showIndex={false}
+              />
             ) : (
               <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
                 <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', textAlign: 'center' }}>
@@ -294,19 +330,14 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         {activeTab === 'waitlist' && (
           <>
             {displayWaitlist.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#8E8E93', textTransform: 'uppercase' }}>
-                  WAITLISTED
-                </span>
-                <WaitlistSection
-                  waitlist={displayWaitlist}
-                  onItemTap={isHostUser ? (item) => handleItemTap(item, 'waitlist') : undefined}
-                  onAddFriends={onAddFriends}
-                  onReorder={mode === 'wizard' ? (newWait) => setInternalWaitlist(newWait) : onReorderWaitlist}
-                  reorderable={mode === 'wizard' || (isHostUser && Boolean(onReorderWaitlist))}
-                  showIndex={true}
-                />
-              </div>
+              <WaitlistSection
+                waitlist={displayWaitlist}
+                onItemTap={isHostUser ? (item) => handleItemTap(item, 'waitlist') : undefined}
+                onAddFriends={onAddFriends}
+                onReorder={mode === 'wizard' ? (newWait) => setInternalWaitlist(newWait) : onReorderWaitlist}
+                reorderable={mode === 'wizard' || (isHostUser && Boolean(onReorderWaitlist))}
+                showIndex={true}
+              />
             ) : (
               <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
                 <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', textAlign: 'center' }}>

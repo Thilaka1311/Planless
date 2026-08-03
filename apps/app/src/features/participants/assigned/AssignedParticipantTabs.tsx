@@ -9,7 +9,6 @@ interface AssignedParticipantTabsProps {
   capacity: number;
   waitlistCount: number;
   onTabChange: (tab: ParticipantTab) => void;
-  onAddFriends?: () => void;
 }
 
 export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = ({
@@ -19,7 +18,6 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
   capacity,
   waitlistCount,
   onTabChange,
-  onAddFriends,
 }) => {
   // Filter visible tabs to strictly exclude 'invited'
   const filteredTabs = visibleTabs.filter((t) => t !== 'invited');
@@ -92,29 +90,6 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
             </button>
           );
         })}
-
-        {onAddFriends && (
-          <div style={{ display: 'flex', alignItems: 'center', height: '100%', zIndex: 2 }}>
-            <button
-              onClick={onAddFriends}
-              title="Invite People"
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: '50%',
-                background: 'transparent',
-                border: 'none',
-                color: '#FFFFFF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <Plus size={16} />
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

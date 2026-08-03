@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { UserPlus } from 'lucide-react';
 import { PlanSizeSlider } from '../../create/components/PlanSizeSlider';
 
 interface PlanSizeCardProps {
@@ -41,8 +42,9 @@ export const PlanSizeCard: React.FC<PlanSizeCardProps> = ({
         <div
           style={{
             display: 'flex',
-            justify: 'space-between',
+            justifyContent: 'space-between',
             alignItems: 'center',
+            gap: 16,
             padding: '14px 16px',
             background: '#111111',
             border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -50,10 +52,13 @@ export const PlanSizeCard: React.FC<PlanSizeCardProps> = ({
             boxSizing: 'border-box',
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
-              Plan Size
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <UserPlus className="w-4 h-4 text-[#FF6B2C] flex-shrink-0" />
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
+                Plan Size
+              </span>
+            </div>
             <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)', fontFamily: 'Inter, sans-serif' }}>
               Maximum {capacity} {capacity === 1 ? 'participant' : 'participants'}
             </span>
@@ -71,6 +76,7 @@ export const PlanSizeCard: React.FC<PlanSizeCardProps> = ({
               fontWeight: 600,
               cursor: 'pointer',
               fontFamily: 'Inter, sans-serif',
+              flexShrink: 0,
             }}
           >
             Edit
@@ -90,9 +96,12 @@ export const PlanSizeCard: React.FC<PlanSizeCardProps> = ({
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
-              Plan Size
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <UserPlus className="w-4 h-4 text-[#FF6B2C] flex-shrink-0" />
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
+                Plan Size
+              </span>
+            </div>
             <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)', fontFamily: 'Inter, sans-serif' }}>
               Maximum {tempCapacity} {tempCapacity === 1 ? 'participant' : 'participants'}
             </span>
