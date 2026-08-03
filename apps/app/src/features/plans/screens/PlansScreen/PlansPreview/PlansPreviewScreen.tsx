@@ -1138,6 +1138,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onUpdateSettings={async (newSettings) => {
           await updatePlanSettings(selectedPlan.id, newSettings);
         }}
+        onUpdatePlanDetails={async (updates) => {
+          await updatePlanDetails(selectedPlan.id, updates);
+        }}
         onDemoteHost={async (userId) => {
           await demoteHostToParticipant(selectedPlan.id, userId);
         }}

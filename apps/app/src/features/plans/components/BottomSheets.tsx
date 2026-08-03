@@ -1,6 +1,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, TrendingUp, Hourglass, Check } from "lucide-react";
+import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { HostInfo } from "./HeroHeader";
 
 // Helper functions for date/time formatting inside EditDateTimeBottomSheet
@@ -712,5 +713,308 @@ export const EditDetailsBottomSheet: React.FC<EditDetailsBottomSheetProps> = ({
         </>
       )}
     </AnimatePresence>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 9. PLAN IS FULL BOTTOM SHEET
+// ----------------------------------------------------------------------
+interface PlanIsFullBottomSheetProps {
+  isOpen: boolean;
+  pickerSelectedFriends: any[];
+  onIncreaseCapacity: () => void;
+  onInviteToWaitlist: () => void;
+  onClose: () => void;
+}
+
+export const PlanIsFullBottomSheet: React.FC<PlanIsFullBottomSheetProps> = ({
+  isOpen,
+  pickerSelectedFriends,
+  onIncreaseCapacity,
+  onInviteToWaitlist,
+  onClose,
+}) => {
+  if (!isOpen) return null;
+
+  const selectedCount = pickerSelectedFriends.length;
+  const isSingle = selectedCount === 1;
+  const singleFriend = isSingle ? pickerSelectedFriends[0] : null;
+  const visibleAvatars = pickerSelectedFriends.slice(0, 3);
+  const overflowCount = selectedCount > 3 ? selectedCount - 3 : 0;
+
+  const descriptionText = isSingle
+    ? `Adding ${singleFriend?.name || "this participant"} exceeds this plan's capacity.`
+    : "Adding these participants exceeds this plan's capacity.";
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.6)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'flex-end',
+        animation: 'fadeIn 0.2s ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          background: '#1C1C1E',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: '16px 20px 32px',
+          color: '#FFFFFF',
+          boxShadow: '0 -8px 24px rgba(0, 0, 0, 0.3)',
+          animation: 'slideUp 0.28s cubic-bezier(0.25, 1, 0.5, 1)',
+        }}
+        className="select-none font-sans text-left"
+      >
+        {/* Drag handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <div style={{ width: 36, height: 5, borderRadius: 2.5, background: 'rgba(255, 255, 255, 0.15)' }} />
+        </div>
+
+        {/* Personalized Header Section */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20 }}>
+          <div style={{ flexShrink: 0 }}>
+            {isSingle ? (
+              <div className="w-12 h-12 rounded-full border-2 border-white/20 overflow-hidden bg-[#1A1A1A] flex items-center justify-center">
+                <UserAvatar src={singleFriend?.avatar} alt={singleFriend?.name || "Participant"} size="w-full h-full" />
+              </div>
+            ) : (
+              <div className="flex items-center -space-x-3 pt-1">
+                {visibleAvatars.map((friend, idx) => (
+                  <div
+                    key={friend.id || idx}
+                    className="w-11 h-11 rounded-full border-2 border-[#1C1C1E] bg-[#1A1A1A] overflow-hidden flex items-center justify-center"
+                    style={{ zIndex: 3 - idx }}
+                  >
+                    <UserAvatar src={friend.avatar} alt={friend.name || "Participant"} size="w-full h-full" />
+                  </div>
+                ))}
+                {overflowCount > 0 && (
+                  <div className="w-11 h-11 rounded-full border-2 border-[#1C1C1E] bg-[#2A2A2D] flex items-center justify-center text-xs font-bold text-white z-0">
+                    +{overflowCount}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.01em' }}>Plan is Full</span>
+            <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 2, lineHeight: 1.4 }}>
+              {descriptionText}
+            </span>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Option 1: Increase Plan Size */}
+          <button
+            type="button"
+            onClick={onIncreaseCapacity}
+            style={{
+              width: '100%',
+              padding: '14px 16px',
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: 14,
+              color: '#FFFFFF',
+              textAlign: 'left',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
+            <div className="w-10 h-10 rounded-xl bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] flex-shrink-0">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Increase Plan Size</span>
+              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 1 }}>
+                Expand the plan and add them to Going.
+              </span>
+            </div>
+          </button>
+
+          {/* Option 2: Add to Waitlist */}
+          <button
+            type="button"
+            onClick={onInviteToWaitlist}
+            style={{
+              width: '100%',
+              padding: '14px 16px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: 14,
+              color: '#FFFFFF',
+              textAlign: 'left',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">
+              <Hourglass className="w-5 h-5" />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Add to Waitlist</span>
+              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 1 }}>
+                Keep the limit and add them to the Waitlist.
+              </span>
+            </div>
+          </button>
+
+          {/* Cancel Button */}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: '100%',
+              padding: '14px',
+              background: 'none',
+              border: 'none',
+              borderRadius: 12,
+              color: 'rgba(255, 255, 255, 0.4)',
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+              textAlign: 'center',
+              marginTop: 6,
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 10. MOVE TO GOING CAPACITY BOTTOM SHEET
+// ----------------------------------------------------------------------
+interface MoveToGoingCapacityBottomSheetProps {
+  isOpen: boolean;
+  participant: { name: string; avatar?: string } | null;
+  onIncreaseCapacity: () => void;
+  onClose: () => void;
+}
+
+export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomSheetProps> = ({
+  isOpen,
+  participant,
+  onIncreaseCapacity,
+  onClose,
+}) => {
+  if (!isOpen || !participant) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.6)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'flex-end',
+        animation: 'fadeIn 0.2s ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          background: '#1C1C1E',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: '16px 20px 32px',
+          color: '#FFFFFF',
+          boxShadow: '0 -8px 24px rgba(0, 0, 0, 0.3)',
+          animation: 'slideUp 0.28s cubic-bezier(0.25, 1, 0.5, 1)',
+        }}
+        className="select-none font-sans text-left"
+      >
+        {/* Drag handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <div style={{ width: 36, height: 5, borderRadius: 2.5, background: 'rgba(255, 255, 255, 0.15)' }} />
+        </div>
+
+        {/* Personalized Participant Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20 }}>
+          <div style={{ flexShrink: 0 }}>
+            <div className="w-12 h-12 rounded-full border-2 border-white/20 overflow-hidden bg-[#1A1A1A] flex items-center justify-center">
+              <UserAvatar src={participant.avatar} alt={participant.name} size="w-full h-full" />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.01em' }}>Move to Going</span>
+            <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 2, lineHeight: 1.4 }}>
+              Increase the plan size to move {participant.name} to Going.
+            </span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Primary Action: Increase Plan Size */}
+          <button
+            type="button"
+            onClick={onIncreaseCapacity}
+            style={{
+              width: '100%',
+              padding: '14px 16px',
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: 14,
+              color: '#FFFFFF',
+              textAlign: 'left',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
+            <div className="w-10 h-10 rounded-xl bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] flex-shrink-0">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Increase Plan Size</span>
+            </div>
+          </button>
+
+          {/* Cancel Button */}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: '100%',
+              padding: '14px',
+              background: 'none',
+              border: 'none',
+              borderRadius: 12,
+              color: 'rgba(255, 255, 255, 0.4)',
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+              textAlign: 'center',
+              marginTop: 6,
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };

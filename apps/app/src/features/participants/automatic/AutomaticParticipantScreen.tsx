@@ -46,6 +46,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   initialTab,
   waitlistMode = 'automatic',
   onWaitlistModeChange,
+  onPlanSizeEditingChange,
   displayMode = 'standalone',
 }) => {
   const isStandalone = displayMode === 'standalone';
@@ -126,11 +127,12 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   const [selectedItem, setSelectedItem] = useState<Friend | null>(null);
   const [sheetType, setSheetType] = useState<ParticipantTab | null>(null);
   const [showConfirmRemove, setShowConfirmRemove] = useState(false);
+  const [isPlanSizeEditing, setIsPlanSizeEditing] = useState(false);
 
   const isInviteOnly = managementMode === 'invite_only' || (!isHostUser && managementMode !== 'host');
 
   const handleItemTap = (item: Friend, type: ParticipantTab) => {
-    if (isInviteOnly) return;
+    if (isInviteOnly || isPlanSizeEditing) return;
     setSelectedItem(item);
     setSheetType(type);
     setShowConfirmRemove(false);
@@ -166,6 +168,10 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           isHostUser={isHostUser}
           isInviteOnly={isInviteOnly}
           onConfirmAdjustCapacity={onAdjustCapacity}
+          onEditingChange={(editing) => {
+            setIsPlanSizeEditing(editing);
+            if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
+          }}
         />
       </div>
 

@@ -70,6 +70,8 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     return () => vv.removeEventListener("resize", handleResize);
   }, []);
 
+  const [isEditingPlanSize, setIsEditingPlanSize] = useState(false);
+
   // ── Horizontal Motion Pager Hook ──
   const {
     currentPage,
@@ -82,6 +84,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     initialPage: 1,
     totalPages: 3,
     keyboardOpen,
+    disabled: isEditingPlanSize,
   });
 
   // Derive host status & all hosts for HeroHeader
@@ -478,6 +481,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 }
                 onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
                 onOpenActivity={() => goToPage(2)}
+                onPlanSizeEditingChange={setIsEditingPlanSize}
               />
             )}
           </div>
@@ -617,6 +621,13 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               await updatePlanSettings(plan.id, settings);
             } catch (err) {
               console.error("Failed to update plan settings:", err);
+            }
+          }}
+          onUpdatePlanDetails={async (updates) => {
+            try {
+              await updatePlanDetails(plan.id, updates as any);
+            } catch (err) {
+              console.error("Failed to update plan details:", err);
             }
           }}
           onDemoteHost={async (uId) => {
