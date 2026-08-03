@@ -244,13 +244,13 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       if (plan.createdAt) {
         let hostName = (plan.creatorName || "").trim();
         if (!hostName) {
-          const matchUser = dbUsers.find(
+          const matchUser = (dbUsers || []).find(
             (u) => u.id === plan.hostId || u.public_id === plan.hostId || u.id === plan.creatorId
           );
           if (matchUser?.full_name) {
             hostName = matchUser.full_name;
           } else {
-            const hostMember = plan.members.find(
+            const hostMember = (plan.members || []).find(
               (m) => m.role === "HOST" || m.isHost || m.userId === plan.hostId
             );
             if (hostMember?.name) {
@@ -293,13 +293,13 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       targetParticipants.forEach((pp) => {
         // Resolve participant user name from dbUsers, plan.members, or userProfile
         let participantName = "";
-        const matchUser = dbUsers.find(
+        const matchUser = (dbUsers || []).find(
           (u) => u.id === pp.user_id || u.public_id === pp.user_id
         );
         if (matchUser?.full_name) {
           participantName = matchUser.full_name;
         } else {
-          const matchMember = plan.members.find(
+          const matchMember = (plan.members || []).find(
             (m) => m.userId === pp.user_id || m.userUuid === pp.user_id
           );
           if (matchMember?.name) {
@@ -394,7 +394,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     >
       {/* 1. INDEPENDENT FIXED HERO HEADER OVERLAY — Completely isolated from pager flex/resize */}
       {plan && (
-        <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none">
+        <div className="fixed top-0 left-0 right-0 z-50 pointer-events-auto">
           <HeroHeader
             title={plan.title}
             creatorName={isHost ? "You" : plan.creatorName}
@@ -605,10 +605,11 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       </div>
 
       {/* PLAN SETTINGS SCREEN OVERLAY */}
-      {showSettingsScreen && plan && userProfile && (
+      {showSettingsScreen && plan && (
         <PlanSettingsScreen
           plan={plan}
-          userProfile={userProfile}
+          userProfile={userProfile || ({ id: currentUserId, dbUuid: currentUserId, name: "You" } as any)}
+          mode={isHost ? "host" : "participant"}
           isCreatorHost={isHost}
           onBack={() => setShowSettingsScreen(false)}
           onUpdateSettings={async (settings) => {

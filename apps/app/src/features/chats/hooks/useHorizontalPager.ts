@@ -98,8 +98,11 @@ export function useHorizontalPager(options: UseHorizontalPagerOptions = {}) {
     drag: "x" as const,
     dragDirectionLock: true,
     dragPropagation: false,
-    dragConstraints: containerRef,
-    dragElastic: 0,
+    dragConstraints: {
+      left: typeof window !== "undefined" ? -2 * window.innerWidth : -750,
+      right: 0,
+    },
+    dragElastic: { left: 0.2, right: 0.2 },
     dragMomentum: false,
     onDragEnd: handleDragEnd,
   };

@@ -205,15 +205,15 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   return (
     <div
       id="immersive-plan-glass-header"
-      className="absolute top-0 left-0 right-0 z-30 bg-black/30 backdrop-blur-xl border-b border-white/10 shadow-lg pb-3 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] rounded-b-2xl pointer-events-none"
+      className="absolute top-0 left-0 right-0 z-30 bg-black/30 backdrop-blur-xl border-b border-white/10 shadow-lg pb-3 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] rounded-b-2xl"
     >
-      <div className="w-full flex flex-col items-center relative px-4 pointer-events-none">
+      <div className="w-full flex flex-col items-center relative px-4">
         {/* Back button — top-left */}
         <button
           id="immersive-plan-back-btn"
           type="button"
           onClick={onClose}
-          className="absolute left-4 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white active:scale-95 transition-transform cursor-pointer pointer-events-auto"
+          className="absolute left-4 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-white active:scale-95 transition-transform cursor-pointer pointer-events-auto"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
@@ -225,7 +225,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               id="immersive-plan-settings-btn"
               type="button"
               onClick={onOpenSettings}
-              className="w-9 h-9 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white hover:bg-white/20 active:scale-95 transition duration-200 cursor-pointer"
+              className="w-9 h-9 flex items-center justify-center text-white active:scale-95 transition duration-200 cursor-pointer"
               title="Plan Settings"
             >
               <Settings className="w-4.5 h-4.5" />
@@ -236,11 +236,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                 id="immersive-plan-overflow-btn"
                 type="button"
                 onClick={() => setMenuOpen(v => !v)}
-                className={`w-9 h-9 rounded-full backdrop-blur-sm border flex items-center justify-center active:scale-95 transition duration-200 cursor-pointer ${
-                  menuOpen
-                    ? "bg-white/20 border-white/20 text-white"
-                    : "bg-white/10 border-white/10 text-white hover:bg-white/20"
-                }`}
+                className="w-9 h-9 flex items-center justify-center text-white active:scale-95 transition duration-200 cursor-pointer"
               >
                 <MoreVertical className="w-4.5 h-4.5" />
               </button>

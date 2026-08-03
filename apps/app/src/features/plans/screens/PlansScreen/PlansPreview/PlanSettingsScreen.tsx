@@ -263,7 +263,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none">
+    <div className="fixed inset-0 z-[70] bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none">
       <input
         type="file"
         ref={imageInputRef}
