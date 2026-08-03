@@ -1166,7 +1166,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 15 }}
       transition={{ duration: 0.18, ease: 'easeOut' }}
-      className="fixed inset-0 bg-[#050505] z-50 flex flex-col h-full overflow-hidden text-left"
+      className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left"
     >
       <div id="immersive-plan-scroll-container" className="flex-1 overflow-y-auto scrollbar-none pb-20">
         <div id="immersive-plan-hero-wrapper" className="w-full">

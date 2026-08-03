@@ -59,6 +59,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(() => {
     return localStorage.getItem("planless_selected_plan_id");
   });
+  const [selectedPlanSource, setSelectedPlanSource] = useState<"list" | "chat" | "deep_link" | string>("list");
 
   const [isTrackerExpanded, setIsTrackerExpanded] = useState(false);
   const { showToast } = useToast();
@@ -522,8 +523,16 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       {selectedPlanId && isInitialLoadComplete && (
         <DetailedPlanModal
           planId={selectedPlanId}
-          activeTab={activeTab}
-          onClose={() => setSelectedPlanId(null)}
+          activeTab={selectedPlanSource === "chat" ? "chat" : activeTab}
+          onClose={() => {
+            setSelectedPlanId(null);
+            if (selectedPlanSource === "chat" && selectedChatPlanId) {
+              // Stay in same Plan Chat screen when returning from Plan Preview
+              setSelectedPlanSource("list");
+            } else {
+              setSelectedPlanSource("list");
+            }
+          }}
           userProfile={userProfile}
           activeUserId={activeUserId}
           setShowPaymentSuccess={setShowPaymentSuccessId}
@@ -558,6 +567,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           <SearchYourPlansScreen
             onBack={() => setShowPlansSearchScreen(false)}
             setSelectedPlanId={(id) => {
+              setSelectedPlanSource("list");
               setSelectedPlanId(id);
               setShowPlansSearchScreen(false);
             }}
@@ -570,6 +580,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
         <PastPlans
           onBack={() => setShowPastPlansScreen(false)}
           setSelectedPlanId={(id) => {
+            setSelectedPlanSource("list");
             setSelectedPlanId(id);
             setShowPastPlansScreen(false);
           }}
@@ -581,6 +592,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
         <HostedPlansScreen
           onBack={() => setShowHostedPlansScreen(false)}
           setSelectedPlanId={(id) => {
+            setSelectedPlanSource("list");
             setSelectedPlanId(id);
             setShowHostedPlansScreen(false);
           }}
@@ -603,7 +615,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           onBack={() => setSelectedChatPlanId(null)}
           onOpenPlanDetails={() => {
             const planId = selectedChatPlanId;
-            setSelectedChatPlanId(null);
+            setSelectedPlanSource("chat");
             setSelectedPlanId(planId);
           }}
         />

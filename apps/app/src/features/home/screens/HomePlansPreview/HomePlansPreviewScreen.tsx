@@ -265,7 +265,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       onPointerUp={stopHolding}
       onPointerLeave={cancelHolding}
       onPointerCancel={cancelHolding}
-      className="fixed inset-0 bg-[#050505] z-50 flex flex-col h-full overflow-hidden text-left select-none"
+      className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left select-none"
     >
       <div id="immersive-plan-scroll-container" className="flex-1 overflow-y-auto scrollbar-none pb-24">
         <div id="immersive-plan-hero-wrapper" className="w-full">
