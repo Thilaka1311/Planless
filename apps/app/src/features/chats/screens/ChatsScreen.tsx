@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { MessageSquare, Search, X, Inbox } from "lucide-react";
 import { motion } from "motion/react";
 import { Plan, DbPlanParticipant } from "../../../core/types";
@@ -10,6 +10,7 @@ import { EmptyState } from "../../home/components/EmptyState";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
+import { supabase } from "../../../../lib/supabaseClient";
 
 interface ChatsScreenProps {
   onSelectChatPlan: (planId: string) => void;
@@ -123,7 +124,158 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
     );
   }, [userPlanChats, searchQuery]);
 
+  const { dbUsers } = useProfileStore();
+
+  // State to hold latest user text message preview per plan_id
+  const [latestMessages, setLatestMessages] = useState<Record<string, { senderName: string; isCurrentUser: boolean; content: string }>>({});
+
+  // Fetch the latest user text message for all involved plans
+  useEffect(() => {
+    if (userPlanChats.length === 0) return;
+
+    const planIds = userPlanChats.map((p) => p.id).filter(Boolean);
+    if (planIds.length === 0) return;
+
+    const fetchLatestMessages = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("plan_messages")
+          .select("id, plan_id, sender_id, message_type, content, created_at")
+          .in("plan_id", planIds)
+          .eq("message_type", "text")
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          console.error("Error fetching latest plan messages:", error);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          const map: Record<string, { senderName: string; isCurrentUser: boolean; content: string }> = {};
+
+          // Data is sorted DESC, so first hit per plan_id is the most recent text message
+          for (const msg of data) {
+            if (!map[msg.plan_id]) {
+              const isMe = Boolean(userUuid && (msg.sender_id === userUuid || allMyUserIds.has(msg.sender_id)));
+              let senderName = "User";
+
+              if (isMe) {
+                senderName = "You";
+              } else {
+                const foundUser = (dbUsers || []).find(
+                  (u) => u.id === msg.sender_id || u.user_id === msg.sender_id
+                );
+                if (foundUser) {
+                  senderName = foundUser.full_name || foundUser.username || "User";
+                }
+              }
+
+              map[msg.plan_id] = {
+                senderName,
+                isCurrentUser: isMe,
+                content: msg.content || "",
+              };
+            }
+          }
+
+          setLatestMessages(map);
+        }
+      } catch (err) {
+        console.error("Exception fetching latest plan messages:", err);
+      }
+    };
+
+    fetchLatestMessages();
+
+    // Subscribe to Realtime updates for plan_messages
+    const channel = supabase
+      .channel("public:plan_messages_chats_preview")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "plan_messages",
+        },
+        (payload) => {
+          const newMsg = payload.new as any;
+          if (newMsg && newMsg.message_type === "text" && newMsg.plan_id) {
+            const isMe = Boolean(userUuid && (newMsg.sender_id === userUuid || allMyUserIds.has(newMsg.sender_id)));
+            let senderName = "User";
+
+            if (isMe) {
+              senderName = "You";
+            } else {
+              const foundUser = (dbUsers || []).find(
+                (u) => u.id === newMsg.sender_id || u.user_id === newMsg.sender_id
+              );
+              if (foundUser) {
+                senderName = foundUser.full_name || foundUser.username || "User";
+              }
+            }
+
+            setLatestMessages((prev) => ({
+              ...prev,
+              [newMsg.plan_id]: {
+                senderName,
+                isCurrentUser: isMe,
+                content: newMsg.content || "",
+              },
+            }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userPlanChats, userUuid, allMyUserIds, dbUsers]);
+
+  // Helper to determine host display name for fallback subtitle
+  const getHostDisplayName = (plan: Plan): string => {
+    if (plan.creatorId && allMyUserIds.has(plan.creatorId)) {
+      return "You";
+    }
+    if (plan.hostId && allMyUserIds.has(plan.hostId)) {
+      return "You";
+    }
+
+    if (plan.creatorName) return plan.creatorName;
+
+    // Check host member record
+    const hostMember = (plan.members || []).find(
+      (m) => (m as any).role === "HOST" || m.isHost === true
+    );
+    if (hostMember) {
+      const mId = hostMember.userId || hostMember.userUuid || (hostMember as any).user_id;
+      if (mId && allMyUserIds.has(mId)) return "You";
+      if (hostMember.name) return hostMember.name;
+    }
+
+    // Check dbUsers lookup by hostId or creatorId
+    const targetHostId = plan.hostId || plan.creatorId;
+    if (targetHostId) {
+      const foundUser = (dbUsers || []).find(
+        (u) => u.id === targetHostId || u.user_id === targetHostId
+      );
+      if (foundUser) return foundUser.full_name || foundUser.username || "Host";
+    }
+
+    return "Host";
+  };
+
   const renderChatCard = (plan: Plan) => {
+    const latestMsg = latestMessages[plan.id];
+    let subtitleText = "";
+
+    if (latestMsg) {
+      subtitleText = `${latestMsg.senderName}: ${latestMsg.content}`;
+    } else {
+      const hostName = getHostDisplayName(plan);
+      subtitleText = `Hosted by ${hostName}`;
+    }
+
     return (
       <motion.div
         key={plan.id}
@@ -146,11 +298,14 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
             />
           </div>
 
-          {/* Vertically Centered Title */}
-          <div className="min-w-0 flex-1 flex items-center h-full">
+          {/* Title & Subtitle Container */}
+          <div className="min-w-0 flex-1 flex flex-col justify-center h-full space-y-0.5">
             <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate leading-snug">
               {plan.title}
             </h3>
+            <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+              {subtitleText}
+            </p>
           </div>
         </div>
       </motion.div>

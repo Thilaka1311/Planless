@@ -19,12 +19,13 @@ import {
   IndianRupee,
   Sparkles,
 } from "lucide-react";
-import { motion, useMotionValue, useTransform, animate } from "motion/react";
+import { motion } from "motion/react";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { supabase } from "../../../../lib/supabaseClient";
 import { DbPlanActivity, PlanActivityType } from "../../../core/types";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
+import { useTimestampReveal } from "../hooks/useTimestampReveal";
 
 export interface ActivityEvent {
   id: string;
@@ -44,6 +45,7 @@ interface ActivityTimelineScreenProps {
   planTitle?: string;
   onBack?: () => void;
   embedded?: boolean;
+  dragX?: any;
 }
 
 const formatExactTime = (d: Date): string => {
@@ -105,95 +107,69 @@ const EventIcon: React.FC<{ type: ActivityEvent["type"] }> = ({ type }) => {
     case "cost_changed":
       return <IndianRupee className="w-4 h-4 text-green-500 flex-shrink-0" />;
     case "plan_cancelled":
-      return <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />;
+      return <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />;
     case "plan_restored":
-      return <RefreshCw className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
+      return <RefreshCw className="w-4 h-4 text-green-400 flex-shrink-0" />;
     case "plan_completed":
-      return <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
+      return <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />;
 
     // ── PARTICIPANT EVENTS ──
+    case "participant_invited":
+      return <UserPlus className="w-4 h-4 text-blue-400 flex-shrink-0" />;
     case "participant_joined":
-    case "invitation_accepted":
-      return <UserCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />;
+      return <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
     case "participant_left":
-    case "invitation_declined":
-      return <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />;
+      return <UserX className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
     case "participant_waitlisted":
+      return <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />;
     case "participant_moved_to_waitlist":
       return <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />;
-    case "participant_promoted":
     case "participant_moved_to_going":
-      return <ArrowUpRight className="w-4 h-4 text-sky-400 flex-shrink-0" />;
+      return <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
+    case "participant_promoted":
+      return <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
     case "participant_removed":
-      return <UserX className="w-4 h-4 text-rose-400 flex-shrink-0" />;
-    case "participant_invited":
-      return <UserPlus className="w-4 h-4 text-purple-400 flex-shrink-0" />;
+      return <UserX className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
+
     default:
       return <Activity className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
   }
 };
 
-const getAccentColor = (type: ActivityEvent["type"]): string | null => {
-  switch (type) {
-    case "participant_moved_to_going":
-    case "participant_promoted":
-      return "#22C55E"; // emerald green
-    case "participant_moved_to_waitlist":
-    case "participant_waitlisted":
-      return "#FBBF24"; // amber yellow
-    case "participant_removed":
-    case "participant_skipped" as any:
-      return "#EF4444"; // red
-    default:
-      return null;
-  }
-};
-
 const ActivityRow: React.FC<{ event: ActivityEvent; opacity: any }> = ({ event, opacity }) => {
-  const accentColor = getAccentColor(event.type);
-
   return (
-    <div className="relative rounded-xl w-full overflow-visible">
-      {/* Stationary Timestamp Gutter — positioned right of the card with a 16px gap */}
-      {/* right-[-74px] = 58px gutter width + 16px gap from card edge */}
-      <div className="absolute inset-y-0 right-[-74px] flex items-center w-[58px] pointer-events-none z-0">
+    <div className="flex items-center gap-3 w-full relative group">
+      {/* Right-aligned sliding timestamp column — revealed during swipe */}
+      <div className="absolute left-[100%] ml-4 top-1/2 -translate-y-1/2 flex flex-col items-start w-[58px] pointer-events-none select-none flex-shrink-0">
         <motion.span
           style={{ opacity }}
-          className="text-[11px] font-mono text-zinc-400 tracking-tight whitespace-nowrap w-full text-left"
+          className="text-[11px] font-mono font-semibold text-zinc-300 leading-tight whitespace-nowrap"
         >
           {event.timeText}
         </motion.span>
       </div>
 
-      {/* Activity Card */}
-      <div className="flex items-start gap-3 py-2.5 px-3.5 rounded-xl bg-zinc-900/40 border border-white/[0.04] hover:bg-zinc-900/80 transition duration-150 select-none bg-[#050505] shadow-sm relative z-10 w-full overflow-hidden">
-        {/* Colored accent strip — left edge, full card height, rounded-left corners */}
-        {accentColor && (
-          <div
-            className="absolute inset-y-0 left-0 w-[3px] rounded-l-xl"
-            style={{ backgroundColor: accentColor }}
-            aria-hidden="true"
-          />
-        )}
-
-        {/* Leading Icon / Avatar Container */}
-        <div className="flex-shrink-0 mt-0.5">
-          {event.isUserEvent ? (
+      {/* Main Activity Card */}
+      <div className="flex-1 bg-zinc-900/80 border border-white/[0.06] rounded-2xl p-3.5 flex items-start gap-3 shadow-md hover:border-white/10 transition-colors">
+        {/* Left Avatar / Icon indicator */}
+        <div className="mt-0.5 flex-shrink-0">
+          {event.isUserEvent && event.userAvatarSrc !== undefined ? (
             <UserAvatar
               src={event.userAvatarSrc}
               alt={event.primaryTitle}
-              size="w-9 h-9"
-              className="border border-white/10 shadow-sm"
+              size="w-7 h-7"
+              className="rounded-full border border-white/10"
             />
           ) : (
-            <div className="p-2.5 rounded-lg bg-zinc-800/80 border border-white/5 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center">
               <EventIcon type={event.type} />
             </div>
           )}
         </div>
 
-        <div className="flex-1 min-w-0 py-0.5">
-          {/* Primary Title: Person or Event Name */}
+        {/* Text details */}
+        <div className="flex-1 min-w-0">
+          {/* Primary Title: Person / Entity Name - Single Line */}
           <h4 className="text-[14px] font-sans font-semibold text-white/95 leading-snug whitespace-nowrap overflow-hidden truncate">
             {event.primaryTitle}
           </h4>
@@ -213,6 +189,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
   planTitle: propPlanTitle,
   onBack,
   embedded = false,
+  dragX: externalDragX,
 }) => {
   const { plans } = usePlansStore();
   const { userProfile, activeUserId, dbUsers } = useProfileStore();
@@ -220,46 +197,11 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
   const [rawActivities, setRawActivities] = useState<DbPlanActivity[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Single shared MotionValue controlling raw drag translation across the entire timeline
-  const dragX = useMotionValue(0);
-
-  // Reveal distance: 74px = 58px gutter width + 16px gap on each side (card→ts + ts→screen edge)
-  const MAX_REVEAL_DISTANCE = 74;
-
-  // Clamped display translation: hard-stop at -74px
-  const displayX = useTransform(dragX, (val) => {
-    if (val >= 0) return 0; // Left pull only
-    return Math.max(-MAX_REVEAL_DISTANCE, val);
+  // Use dedicated useTimestampReveal hook for gesture interaction & derived transforms
+  const { displayX, timestampOpacity, dragProps } = useTimestampReveal({
+    embedded,
+    externalDragX,
   });
-
-  // Derived timestamp column opacity mapped directly from MotionValue (0 re-renders)
-  const timestampOpacity = useTransform(displayX, (x) => {
-    const visualDisplacement = Math.abs(x);
-    if (visualDisplacement < 5) return 0;
-    return Math.min(1, (visualDisplacement - 5) / 35);
-  });
-
-  // Single-fire haptic feedback reference
-  const hapticFiredRef = useRef(false);
-
-  // Evaluate haptics via MotionValue change listener without re-rendering component
-  useEffect(() => {
-    const unsubscribe = displayX.on("change", (latestX) => {
-      const visualDisplacement = Math.abs(latestX);
-      if (visualDisplacement >= 52 && !hapticFiredRef.current) {
-        hapticFiredRef.current = true;
-        if (typeof window !== "undefined" && window.navigator && "vibrate" in window.navigator) {
-          try {
-            window.navigator.vibrate(10);
-          } catch {}
-        }
-      } else if (visualDisplacement < 20) {
-        hapticFiredRef.current = false;
-      }
-    });
-
-    return () => unsubscribe();
-  }, [displayX]);
 
   const plan = useMemo(() => {
     if (!planId) return undefined;
@@ -441,12 +383,18 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           isUserEvent = true;
           userAvatarSrc = targetDetails.avatar;
           break;
-        case "participant_removed":
-          primaryTitle = targetDetails.name || "Participant";
-          secondaryDescription = actorDetails.name ? `Removed from the plan by ${actorDetails.name}` : "Removed from the plan";
+        case "participant_removed": {
+          const isSelfRemoval = !act.actor_id || act.actor_id === act.target_user_id;
+          primaryTitle = targetDetails.name || actorDetails.name || "Participant";
+          if (isSelfRemoval) {
+            secondaryDescription = "Left the plan";
+          } else {
+            secondaryDescription = actorDetails.name ? `Removed from the plan by ${actorDetails.name}` : "Removed from the plan";
+          }
           isUserEvent = true;
-          userAvatarSrc = targetDetails.avatar;
+          userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
           break;
+        }
         case "invitation_accepted":
           primaryTitle = targetDetails.name || actorDetails.name || "Someone";
           secondaryDescription = "Accepted the invitation";
@@ -618,7 +566,10 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
   const dateGroups = Object.keys(groupedEvents);
 
   const content = (
-    <div className="flex-1 overflow-y-auto px-4 pb-6 touch-pan-y relative" style={{ overflowX: "clip" }}>
+    <div
+      className="flex-1 overflow-y-auto px-4 pb-6 touch-pan-y relative select-none"
+      style={{ overflowX: "clip" }}
+    >
       {loading ? (
         <div className="space-y-3 pt-3">
           {[1, 2, 3, 4].map((i) => (
@@ -651,40 +602,16 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
                 </span>
               </div>
 
-              {/* Cards for this section — slide left/right with swipe gesture when standalone */}
-              {embedded ? (
-                <div className="relative z-10 w-full space-y-2 pt-2 overflow-visible">
-                  {groupedEvents[dateGroup].map((event) => (
-                    <ActivityRow key={event.id} event={event} opacity={timestampOpacity} />
-                  ))}
-                </div>
-              ) : (
-                <motion.div
-                  drag="x"
-                  dragConstraints={{ left: -74, right: 0 }}
-                  dragElastic={0}
-                  dragMomentum={false}
-                  onDrag={(_, info) => {
-                    dragX.set(info.offset.x);
-                  }}
-                  onDragEnd={(_, info) => {
-                    const releaseVelocity = info.velocity.x;
-                    animate(dragX, 0, {
-                      type: "spring",
-                      stiffness: 500,
-                      damping: 28,
-                      mass: 0.7,
-                      velocity: releaseVelocity,
-                    });
-                  }}
-                  style={{ x: displayX, willChange: "transform" }}
-                  className="relative z-10 w-full space-y-2 pt-2 overflow-visible"
-                >
-                  {groupedEvents[dateGroup].map((event) => (
-                    <ActivityRow key={event.id} event={event} opacity={timestampOpacity} />
-                  ))}
-                </motion.div>
-              )}
+              {/* Cards for this section — immediate native left-drag swipe to reveal timestamps */}
+              <motion.div
+                {...dragProps}
+                style={{ x: displayX, willChange: "transform", touchAction: "pan-y" }}
+                className="relative z-10 w-full space-y-2 pt-2 overflow-visible"
+              >
+                {groupedEvents[dateGroup].map((event) => (
+                  <ActivityRow key={event.id} event={event} opacity={timestampOpacity} />
+                ))}
+              </motion.div>
             </div>
           ))}
         </div>

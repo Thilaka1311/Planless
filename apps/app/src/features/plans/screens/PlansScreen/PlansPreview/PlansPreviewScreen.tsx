@@ -1147,6 +1147,14 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onPromoteToHost={async (userId) => {
           await promoteParticipantToHost(selectedPlan.id, userId);
         }}
+        onEditTitle={async (newTitle) => {
+          await updatePlanDetails(selectedPlan.id, { title: newTitle });
+        }}
+        onEditCoverImage={async (newCoverUrl) => {
+          await updatePlanDetails(selectedPlan.id, { cover_image: newCoverUrl });
+        }}
+        onLeavePlan={handleSkip}
+        onCancelPlan={handleDitchConfirm}
       />
     );
   }
@@ -1186,15 +1194,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               viewerId={resolvedUserUuid}
               onClose={onClose}
               isHost={isHost && !isCancelled}
-              onEditTitle={!isCancelled ? async (newTitle) => {
-                try {
-                  await updatePlanDetails(selectedPlan.id, { title: newTitle });
-                  showToast("✓ Title updated");
-                } catch {
-                  showToast("Failed to update title");
-                }
-              } : undefined}
-              onOpenSettings={(isHost && !isCancelled) ? () => setShowPlanSettingsScreen(true) : undefined}
+              onOpenSettings={!isCancelled ? () => setShowPlanSettingsScreen(true) : undefined}
             />
 
             {isEditingLocationInline && (

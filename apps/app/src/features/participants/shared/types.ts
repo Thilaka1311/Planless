@@ -43,6 +43,7 @@ export interface SharedParticipantScreenProps {
   onOpenActivity?: () => void;
   initialTab?: ParticipantTab;
   waitlistMode?: 'automatic' | 'assigned';
+  displayMode?: 'standalone' | 'embedded';
   onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;
   isHostSelected?: boolean;
   selectedFriends?: Friend[];

@@ -18,6 +18,7 @@ interface PlanParticipantManagementWrapperProps {
   isHost: boolean;
   isCreatorHost?: boolean;
   onBack: () => void;
+  displayMode?: 'standalone' | 'embedded';
   // Store actions passed in so this wrapper stays store-agnostic
   onMoveToGoing: (planId: string, userId: string) => Promise<void>;
   onMoveToWaitlist: (planId: string, userId: string) => Promise<void>;
@@ -74,6 +75,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   onReorderWaitlist,
   onOpenSettings,
   onOpenActivity,
+  displayMode = 'standalone',
 }) => {
   const { circles } = useCirclesStore();
 
@@ -766,7 +768,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     <>
       <ParticipantManagementScreen
         title="Participants"
-        subtitle={plan.title}
         category={plan.category || 'custom'}
         eventDate={formattedDate}
         eventTime={formattedTime}
@@ -791,6 +792,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           setAddFriendsTargetTab(targetTab === 'waitlist' ? 'WAITLIST' : 'GOING');
           setShowAddFriendsPicker(true);
         } : undefined}
+        displayMode={displayMode}
         onOpenSettings={onOpenSettings}
         onOpenActivity={onOpenActivity}
         onReorderGoing={isHost && waitlistMode === 'assigned' ? handleReorderGoing : undefined}

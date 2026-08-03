@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, Send, MessageSquare } from "lucide-react";
-import { motion, AnimatePresence, useMotionValue, animate } from "motion/react";
+import { ArrowLeft, Send, MessageSquare, ChevronDown } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import { Plan } from "../../../core/types";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
@@ -13,6 +13,7 @@ import { PlanSettingsScreen } from "../../plans/screens/PlansScreen/PlansPreview
 import { PlanParticipantManagementWrapper } from "../../plans/screens/PlansScreen/PlansPreview/PlanParticipantManagementWrapper";
 import { ActivityTimelineScreen } from "./ActivityTimelineScreen";
 import { getPlanCover } from "../../plans/config/planCoverImages";
+import { useHorizontalPager } from "../hooks/useHorizontalPager";
 
 interface PlanChatScreenProps {
   planId: string;
@@ -32,7 +33,7 @@ interface ChatMessage {
   updated_at?: string | null;
 }
 
-const PAGE_NAMES: { [key: number]: string } = {
+const PAGE_NAMES: Record<number, string> = {
   0: "Participants",
   1: "Chat",
   2: "Activity",
@@ -43,10 +44,10 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, updatePlanDetails, updatePlanSettings, promoteParticipantToHost, demoteHostToParticipant, removeParticipant, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, addParticipantsToPlan, reorderWaitlist } = usePlansStore();
-  const { userProfile, activeUserId, dbUsers } = useProfileStore();
+  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, updatePlanDetails, updatePlanSettings } = usePlansStore();
+  const { profile: userProfile } = useProfileStore();
 
-  const currentUserId = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId || "";
+  const currentUserId = userProfile?.dbUuid || activeUserId || "";
 
   // Find target plan
   const plan = plans.find((p) => p.id === planId || p.dbUuid === planId);
@@ -56,35 +57,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [showSettingsScreen, setShowSettingsScreen] = useState(false);
-
-  // ── Instagram-Style Native Motion Pager State ──
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const pageX = useMotionValue(-1 * (typeof window !== "undefined" ? window.innerWidth : 375));
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // ── Floating Temporary Page Indicator State ──
-  const [overlayPage, setOverlayPage] = useState<number | null>(null);
-  const overlayTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const triggerOverlay = (pageIndex: number) => {
-    if (overlayTimerRef.current) {
-      clearTimeout(overlayTimerRef.current);
-    }
-    setOverlayPage(pageIndex);
-    overlayTimerRef.current = setTimeout(() => {
-      setOverlayPage(null);
-      overlayTimerRef.current = null;
-    }, 800);
-  };
-
-  // Clean up timer on unmount
-  useEffect(() => {
-    return () => {
-      if (overlayTimerRef.current) {
-        clearTimeout(overlayTimerRef.current);
-      }
-    };
-  }, []);
 
   // ── Keyboard Visibility Detection & Dismissal ──
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -98,40 +70,19 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     return () => vv.removeEventListener("resize", handleResize);
   }, []);
 
-  // Synchronize MotionValue with screen width & active page index
-  const goToPage = (pageIndex: number, showOverlay: boolean = true) => {
-    if (keyboardOpen) {
-      // Dismiss keyboard before completing transition if active
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
-    }
-
-    const width = containerRef.current?.offsetWidth || window.innerWidth;
-    const isChange = pageIndex !== currentPage;
-    setCurrentPage(pageIndex);
-
-    if (isChange && showOverlay) {
-      triggerOverlay(pageIndex);
-    }
-
-    animate(pageX, -pageIndex * width, {
-      type: "spring",
-      stiffness: 350,
-      damping: 32,
-      mass: 0.8,
-    });
-  };
-
-  // Recalculate width on resize
-  useEffect(() => {
-    const handleWindowResize = () => {
-      const width = containerRef.current?.offsetWidth || window.innerWidth;
-      pageX.set(-currentPage * width);
-    };
-    window.addEventListener("resize", handleWindowResize);
-    return () => window.removeEventListener("resize", handleWindowResize);
-  }, [currentPage, pageX]);
+  // ── Horizontal Motion Pager Hook ──
+  const {
+    currentPage,
+    overlayPage,
+    pageX,
+    containerRef,
+    goToPage,
+    pagerProps,
+  } = useHorizontalPager({
+    initialPage: 1,
+    totalPages: 3,
+    keyboardOpen,
+  });
 
   // Derive host status & all hosts for HeroHeader
   const planUuid = plan ? (plan.dbUuid || plan.id) : "";
@@ -149,13 +100,22 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     );
   }, [dbPlanParticipants, plan, planUuid, activeUserId, currentUserId, userProfile]);
 
-  const isHost = myParticipantRecord
-    ? myParticipantRecord.role === "HOST"
-    : plan?.members
-    ? plan.members.some(
-        (m) => (m.userId === currentUserId || m.userUuid === currentUserId) && m.isHost
-      )
-    : false;
+  const isHost = useMemo(() => {
+    if (!plan) return false;
+    const myId = currentUserId || activeUserId || userProfile?.dbUuid || (userProfile as any)?.id;
+    if (myId && (plan.hostId === myId || plan.creatorId === myId || (plan as any).creator_id === myId)) {
+      return true;
+    }
+    if (myParticipantRecord) {
+      return myParticipantRecord.role === "HOST";
+    }
+    if (plan.members) {
+      return plan.members.some(
+        (m) => (m.userId === myId || m.userUuid === myId || (m as any).id === myId) && m.isHost
+      );
+    }
+    return false;
+  }, [plan, currentUserId, activeUserId, userProfile, myParticipantRecord]);
 
   const isCancelled = Boolean((plan?.status || "").toUpperCase() === "CANCELLED");
 
@@ -242,6 +202,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       } else if (data) {
         setMessages((prev) => [...prev, data as ChatMessage]);
         setInputText("");
+        setTimeout(() => scrollToBottom(true), 50);
       }
     } catch (err) {
       console.error("Error inserting plan_message:", err);
@@ -369,6 +330,60 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     );
   }, [messages, plan, dbPlanParticipants, dbUsers, userProfile, activeUserId]);
 
+  // Ref to chat message scroll container & intelligent scroll state
+  const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const [hasNewUnreadMessages, setHasNewUnreadMessages] = useState(false);
+  const prevItemsLengthRef = useRef(timelineItems.length);
+
+  const scrollToBottom = (smooth = true) => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTo({
+        top: chatMessagesRef.current.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+      setIsScrolledUp(false);
+      setHasNewUnreadMessages(false);
+    }
+  };
+
+  const handleChatScroll = () => {
+    if (!chatMessagesRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = chatMessagesRef.current;
+    // Consider scrolled up if more than 120px from bottom
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+    const scrolledAway = distanceFromBottom > 120;
+    setIsScrolledUp(scrolledAway);
+    if (!scrolledAway) {
+      setHasNewUnreadMessages(false);
+    }
+  };
+
+  // Intelligent auto-scroll effect
+  useEffect(() => {
+    if (loading || timelineItems.length === 0) return;
+
+    const prevLength = prevItemsLengthRef.current;
+    const isNewItemAdded = timelineItems.length > prevLength;
+    prevItemsLengthRef.current = timelineItems.length;
+
+    if (prevLength === 0) {
+      // Initial load: scroll to bottom instantly
+      scrollToBottom(false);
+    } else if (isNewItemAdded) {
+      const latestItem = timelineItems[timelineItems.length - 1];
+      const isSentByMe = latestItem?.senderId === currentUserId;
+
+      if (isSentByMe || !isScrolledUp) {
+        // User sent message or was already near bottom: scroll to bottom
+        scrollToBottom(true);
+      } else {
+        // User is reading history: preserve scroll position and show indicator
+        setHasNewUnreadMessages(true);
+      }
+    }
+  }, [loading, timelineItems, currentUserId, isScrolledUp]);
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -377,31 +392,32 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
       className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none relative"
     >
-      {/* MORPHIC HERO HEADER */}
+      {/* 1. INDEPENDENT FIXED HERO HEADER OVERLAY — Completely isolated from pager flex/resize */}
       {plan && (
-        <HeroHeader
-          title={plan.title}
-          creatorName={isHost ? "You" : plan.creatorName}
-          creatorAvatar={isHost ? userProfile?.avatar : plan.creatorAvatar}
-          hosts={allHosts}
-          viewerId={currentUserId}
-          onClose={onBack}
-          isHost={isHost && !isCancelled}
-          coverImage={plan.coverImage || plan.customCoverUrl || getPlanCover(plan.category, (plan as any).subcategory || (plan as any).sports_type)}
-          category={plan.category}
-          hideHostAttribution={true}
-          onHeaderPress={onOpenPlanDetails}
-          onOpenParticipants={() => goToPage(0)}
-          onOpenActivity={() => goToPage(2)}
-          onEditTitle={!isCancelled ? async (newTitle) => {
-            try {
-              await updatePlanDetails(plan.id, { title: newTitle });
-            } catch (err) {
-              console.error("Failed to update title:", err);
-            }
-          } : undefined}
-          onOpenSettings={isHost && !isCancelled ? () => setShowSettingsScreen(true) : undefined}
-        />
+        <div className="fixed top-0 left-0 right-0 z-50 pointer-events-none">
+          <HeroHeader
+            title={plan.title}
+            creatorName={isHost ? "You" : plan.creatorName}
+            creatorAvatar={isHost ? userProfile?.avatar : plan.creatorAvatar}
+            hosts={allHosts}
+            viewerId={currentUserId}
+            onClose={onBack}
+            isHost={isHost && !isCancelled}
+            coverImage={plan.coverImage || plan.customCoverUrl || getPlanCover(plan.category, (plan as any).subcategory || (plan as any).sports_type)}
+            category={plan.category}
+            hideHostAttribution={true}
+            onHeaderPress={onOpenPlanDetails}
+            onOpenActivity={() => goToPage(2)}
+            onEditTitle={!isCancelled ? async (newTitle) => {
+              try {
+                await updatePlanDetails(plan.id, { title: newTitle });
+              } catch (err) {
+                console.error("Failed to update title:", err);
+              }
+            } : undefined}
+            onOpenSettings={!isCancelled ? () => setShowSettingsScreen(true) : undefined}
+          />
+        </div>
       )}
 
       {/* FLOATING TEMPORARY PAGE INDICATOR OVERLAY */}
@@ -422,49 +438,27 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         )}
       </AnimatePresence>
 
-      {/* HORIZONTAL SWIPE PAGER STRIP — INSTAGRAM-STYLE NATIVE MOTION PAGER */}
+      {/* 2. DEDICATED RESIZABLE PAGER CONTAINER — Only this area resizes when keyboard opens */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden relative w-full touch-pan-y select-none"
+        className="flex-1 overflow-hidden relative w-full touch-pan-y select-none pt-[64px]"
         style={{ touchAction: "pan-y" }}
       >
         <motion.div
-          drag="x"
-          dragDirectionLock={true}
-          dragConstraints={{
-            left: -2 * (containerRef.current?.offsetWidth || (typeof window !== "undefined" ? window.innerWidth : 375)),
-            right: 0,
-          }}
-          dragElastic={0.05}
-          dragMomentum={false}
+          {...pagerProps}
           style={{ x: pageX, touchAction: "pan-y" }}
-          onDragEnd={(_, info) => {
-            const width = containerRef.current?.offsetWidth || window.innerWidth;
-            const offset = info.offset.x;
-            const velocity = info.velocity.x;
-
-            let targetPage = currentPage;
-
-            // Highly responsive Instagram-style snapping threshold: 40px drag or 200px/s velocity flick
-            if ((offset < -40 || velocity < -200) && currentPage < 2) {
-              targetPage = currentPage + 1;
-            } else if ((offset > 40 || velocity > 200) && currentPage > 0) {
-              targetPage = currentPage - 1;
-            }
-
-            goToPage(targetPage, true);
-          }}
           className="flex h-full w-[300%]"
         >
           {/* PAGE 0: PARTICIPANTS */}
           <div className="w-1/3 h-full overflow-hidden flex flex-col flex-shrink-0">
-            {plan && userProfile && (
+            {plan && (
               <PlanParticipantManagementWrapper
                 plan={plan}
-                userProfile={userProfile}
+                userProfile={userProfile || { id: currentUserId, dbUuid: currentUserId, name: "You" } as any}
                 activeUserId={currentUserId}
                 isHost={isHost}
                 isCreatorHost={isHost}
+                displayMode="embedded"
                 onBack={() => goToPage(1)}
                 onMoveToGoing={(pId, uId) => moveParticipantToGoing(pId, uId)}
                 onMoveToWaitlist={(pId, uId) => moveParticipantToWaitlist(pId, uId)}
@@ -489,8 +483,12 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           </div>
 
           {/* PAGE 1: CHAT (DEFAULT) */}
-          <div className="w-1/3 h-full overflow-hidden flex flex-col flex-shrink-0">
-            <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col space-y-3">
+          <div className="w-1/3 h-full overflow-hidden flex flex-col flex-shrink-0 relative">
+            <div
+              ref={chatMessagesRef}
+              onScroll={handleChatScroll}
+              className="flex-1 overflow-y-auto touch-pan-y px-4 py-4 flex flex-col space-y-3"
+            >
               {loading ? (
                 <div className="flex-1 flex items-center justify-center text-zinc-500 text-xs">
                   Loading messages...
@@ -548,25 +546,48 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               )}
             </div>
 
+            {/* FLOATING "NEW MESSAGES" / SCROLL-TO-BOTTOM INDICATOR BUTTON */}
+            <AnimatePresence>
+              {(isScrolledUp || hasNewUnreadMessages) && (
+                <motion.button
+                  type="button"
+                  initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                  transition={{ duration: 0.15 }}
+                  onClick={() => scrollToBottom(true)}
+                  className="absolute bottom-20 right-5 z-30 flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-zinc-900/90 border border-white/15 shadow-2xl text-white text-xs font-semibold backdrop-blur-md active:scale-95 transition cursor-pointer hover:bg-zinc-800"
+                >
+                  {hasNewUnreadMessages && (
+                    <span className="w-2 h-2 rounded-full bg-[#FF6B2C] animate-pulse" />
+                  )}
+                  <span>{hasNewUnreadMessages ? "New Messages" : "Latest"}</span>
+                  <ChevronDown className="w-4 h-4 text-zinc-400" />
+                </motion.button>
+              )}
+            </AnimatePresence>
+
             {/* MESSAGE COMPOSER */}
             <form
               onSubmit={handleSendMessage}
-              className="border-t border-white/10 bg-[#0A0A0C] px-4 py-3 flex items-center gap-2 flex-shrink-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
+              className="bg-black/90 px-4 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] flex items-center flex-shrink-0"
             >
-              <input
-                type="text"
-                placeholder="Send a message..."
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                className="flex-1 h-10 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700 transition"
-              />
-              <button
-                type="submit"
-                disabled={!inputText.trim() || sending}
-                className="w-10 h-10 rounded-xl bg-amber-500 text-black flex items-center justify-center active:scale-95 disabled:opacity-40 disabled:active:scale-100 transition cursor-pointer flex-shrink-0"
-              >
-                <Send className="w-4 h-4 fill-current stroke-[2.5]" />
-              </button>
+              <div className="relative w-full flex items-center h-[56px] bg-zinc-900/90 border border-white/[0.08] rounded-full px-5 focus-within:border-white/20 transition-all shadow-lg">
+                <input
+                  type="text"
+                  placeholder="Send a message..."
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  className="w-full h-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none pr-12 font-sans"
+                />
+                <button
+                  type="submit"
+                  disabled={!inputText.trim() || sending}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-[#FF6B2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
+                >
+                  <Send className="w-4 h-4 text-white fill-current stroke-[2.5]" />
+                </button>
+              </div>
             </form>
           </div>
 
@@ -577,6 +598,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               planTitle={plan?.title || "Plan Activity"}
               onBack={() => goToPage(1)}
               embedded={true}
+              dragX={pageX}
             />
           </div>
         </motion.div>
@@ -610,11 +632,43 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               console.error("Failed to promote to host:", err);
             }
           }}
+          onEditTitle={async (newTitle) => {
+            try {
+              await updatePlanDetails(plan.id, { title: newTitle });
+            } catch (err) {
+              console.error("Failed to edit plan title:", err);
+            }
+          }}
+          onEditCoverImage={async (newCoverUrl) => {
+            try {
+              await updatePlanDetails(plan.id, { cover_image: newCoverUrl });
+            } catch (err) {
+              console.error("Failed to edit plan cover image:", err);
+            }
+          }}
           onRemoveParticipant={async (uId) => {
             try {
               await removeParticipant(plan.id, uId);
             } catch (err) {
               console.error("Failed to remove participant:", err);
+            }
+          }}
+          onLeavePlan={async () => {
+            try {
+              await removeParticipant(plan.id, currentUserId);
+              setShowSettingsScreen(false);
+              onBack();
+            } catch (err) {
+              console.error("Failed to leave plan:", err);
+            }
+          }}
+          onCancelPlan={async () => {
+            try {
+              await updatePlanDetails(plan.id, { status: "CANCELLED" });
+              setShowSettingsScreen(false);
+              onBack();
+            } catch (err) {
+              console.error("Failed to cancel plan:", err);
             }
           }}
         />
