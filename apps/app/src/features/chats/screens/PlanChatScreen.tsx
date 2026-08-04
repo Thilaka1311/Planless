@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { ArrowLeft, Send, MessageSquare, ChevronDown, CheckCheck } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plan } from "../../../core/types";
@@ -410,26 +410,42 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     }
   };
 
-  // Instant auto-scroll effect for timeline messages
-  useEffect(() => {
+  // Track initial scroll completion per plan
+  const hasInitiallyScrolledRef = useRef<string | null>(null);
+
+  // Sync scroll to bottom before DOM paint when entering chat or receiving new messages
+  useLayoutEffect(() => {
     if (loading || timelineItems.length === 0) return;
 
+    const isNewPlanEntry = hasInitiallyScrolledRef.current !== targetPlanUuid;
     const prevLength = prevItemsLengthRef.current;
     const isNewItemAdded = timelineItems.length > prevLength;
     prevItemsLengthRef.current = timelineItems.length;
 
-    if (prevLength === 0 || isNewItemAdded) {
+    if (isNewPlanEntry) {
+      hasInitiallyScrolledRef.current = targetPlanUuid;
+      scrollToBottom(false);
+      // Double frame fallback to handle layout calculation after initial render
+      requestAnimationFrame(() => {
+        scrollToBottom(false);
+        requestAnimationFrame(() => {
+          scrollToBottom(false);
+        });
+      });
+      return;
+    }
+
+    if (isNewItemAdded) {
       const latestItem = timelineItems[timelineItems.length - 1];
       const isSentByMe = latestItem?.senderId === currentUserId;
 
-      if (prevLength === 0 || isSentByMe || !isScrolledUp) {
-        // Instant scroll to bottom on message load or send
+      if (isSentByMe || !isScrolledUp) {
         scrollToBottom(false);
       } else {
         setHasNewUnreadMessages(true);
       }
     }
-  }, [loading, timelineItems, currentUserId, isScrolledUp]);
+  }, [loading, timelineItems, targetPlanUuid, currentUserId, isScrolledUp]);
 
   // Instant scroll to latest message when keyboard opens / viewport resizes
   useEffect(() => {
