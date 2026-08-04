@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, Send, MessageSquare, ChevronDown } from "lucide-react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { ArrowLeft, Send, MessageSquare, ChevronDown, CheckCheck } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plan } from "../../../core/types";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { EmptyState } from "../../home/components/EmptyState";
+import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { supabase } from "../../../../lib/supabaseClient";
 import { normalizeStatus } from "../../../../lib/participantStatus";
 import { SystemMessageType } from "../../../core/types";
@@ -45,9 +46,18 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onOpenPlanDetails,
 }) => {
   const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, updatePlanDetails, updatePlanSettings } = usePlansStore();
-  const { profile: userProfile } = useProfileStore();
+  const { profile: userProfile, activeUserUuid } = useProfileStore();
 
-  const currentUserId = userProfile?.dbUuid || activeUserId || "";
+  // Robust sender UUID resolution across all possible user state sources
+  const senderUuid =
+    userProfile?.dbUuid ||
+    activeUserUuid ||
+    (userProfile as any)?.id ||
+    (userProfile as any)?.user_id ||
+    activeUserId ||
+    "";
+
+  const currentUserId = senderUuid;
 
   // Find target plan
   const plan = plans.find((p) => p.id === planId || p.dbUuid === planId);
@@ -58,16 +68,28 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const [sending, setSending] = useState(false);
   const [showSettingsScreen, setShowSettingsScreen] = useState(false);
 
-  // ── Keyboard Visibility Detection & Dismissal ──
+  // ── Keyboard Visibility State (Used to lock pager gestures & bound Chat Page height) ──
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+
   useEffect(() => {
     if (typeof window === "undefined" || !window.visualViewport) return;
     const vv = window.visualViewport;
-    const handleResize = () => {
-      setKeyboardOpen(vv.height < window.innerHeight * 0.78);
+
+    const handleViewportChange = () => {
+      const isKeyboardActive = vv.height < window.innerHeight * 0.85;
+      setKeyboardOpen(isKeyboardActive);
+      setViewportHeight(vv.height);
     };
-    vv.addEventListener("resize", handleResize);
-    return () => vv.removeEventListener("resize", handleResize);
+
+    vv.addEventListener("resize", handleViewportChange);
+    vv.addEventListener("scroll", handleViewportChange);
+    handleViewportChange();
+
+    return () => {
+      vv.removeEventListener("resize", handleViewportChange);
+      vv.removeEventListener("scroll", handleViewportChange);
+    };
   }, []);
 
   const [isEditingPlanSize, setIsEditingPlanSize] = useState(false);
@@ -153,43 +175,142 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     return [...(currentUserHost ? [currentUserHost] : []), ...remainingHosts];
   }, [plan, currentUserId]);
 
+  // Resolved target database UUID for plan (must be a valid UUID)
+  const targetPlanUuid = useMemo(() => {
+    if (plan?.dbUuid) return plan.dbUuid;
+    if (planId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(planId)) {
+      return planId;
+    }
+    return plan?.id || planId;
+  }, [plan, planId]);
+
   // Fetch messages from plan_messages ordered by created_at ASC
-  const fetchMessages = async () => {
-    if (!planId) return;
+  const fetchMessages = useCallback(async () => {
+    if (!targetPlanUuid) return;
     try {
       const { data, error } = await supabase
         .from("plan_messages")
         .select("*")
-        .eq("plan_id", planId)
+        .eq("plan_id", targetPlanUuid)
         .order("created_at", { ascending: true });
 
       if (error) {
-        console.error("Error fetching plan_messages:", error);
+        console.error("[PlanChatScreen] Error fetching plan_messages:", error);
       } else if (data) {
         setMessages(data as ChatMessage[]);
       }
     } catch (err) {
-      console.error("Exception fetching plan_messages:", err);
+      console.error("[PlanChatScreen] Exception fetching plan_messages:", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [targetPlanUuid]);
 
+  // Realtime subscription for plan_messages with INSERT, UPDATE, and DELETE event handlers
   useEffect(() => {
     fetchMessages();
-  }, [planId]);
 
-  // Send message implementation
+    if (!targetPlanUuid) return;
+
+    const channel = supabase.channel(`plan_messages_room:${targetPlanUuid}`);
+
+    channel
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "plan_messages",
+        },
+        (payload) => {
+          const eventType = payload.eventType;
+
+          if (eventType === "INSERT") {
+            const newMsg = payload.new as ChatMessage;
+            if (newMsg.plan_id !== targetPlanUuid) return;
+
+            setMessages((prev) => {
+              // Deduplicate if optimistic update or existing event already inserted
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
+          } else if (eventType === "UPDATE") {
+            const updatedMsg = payload.new as ChatMessage;
+            if (updatedMsg.plan_id !== targetPlanUuid) return;
+
+            setMessages((prev) =>
+              prev.map((m) => (m.id === updatedMsg.id ? updatedMsg : m))
+            );
+          } else if (eventType === "DELETE") {
+            const oldMsg = payload.old as { id?: string };
+            if (!oldMsg.id) return;
+
+            setMessages((prev) => prev.filter((m) => m.id !== oldMsg.id));
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === "CHANNEL_ERROR") {
+          console.error("[PlanChatScreen] Channel error occurred during subscription:", err || "");
+          fetchMessages();
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [targetPlanUuid, fetchMessages]);
+
+  // Send message implementation with optimistic UI update
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const trimmed = inputText.trim();
-    if (!trimmed || sending || !currentUserId || !planId) return;
+
+    let effectiveSenderUuid = senderUuid;
+    if (!effectiveSenderUuid) {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user?.id) {
+          effectiveSenderUuid = authData.user.id;
+        }
+      } catch (err) {
+        console.error("Failed async auth user fallback:", err);
+      }
+    }
+
+    if (!effectiveSenderUuid) {
+      console.error("[PlanChatScreen Diagnostics] Cannot send message: senderUuid is empty after auth fallback.", {
+        userProfile,
+        activeUserId,
+        activeUserUuid,
+        resolvedSenderUuid: effectiveSenderUuid,
+        planId,
+        targetPlanUuid,
+      });
+      return;
+    }
 
     setSending(true);
+
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg: ChatMessage = {
+      id: tempId,
+      plan_id: targetPlanUuid,
+      sender_id: effectiveSenderUuid,
+      message_type: "text",
+      content: trimmed,
+      created_at: new Date().toISOString(),
+    };
+
+    // Optimistically update UI & clear input
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setInputText("");
+    scrollToBottom(false);
+
     try {
       const newMessagePayload = {
-        plan_id: planId,
-        sender_id: currentUserId,
+        plan_id: targetPlanUuid,
+        sender_id: effectiveSenderUuid,
         content: trimmed,
         message_type: "text",
       };
@@ -201,14 +322,21 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         .single();
 
       if (error) {
-        console.error("Failed to send plan_message:", error);
+        console.error("[PlanChatScreen] Failed to insert plan_message:", error);
+        // Rollback optimistic message & restore input text on error
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setInputText(trimmed);
       } else if (data) {
-        setMessages((prev) => [...prev, data as ChatMessage]);
-        setInputText("");
-        setTimeout(() => scrollToBottom(true), 50);
+        // Replace temp message with actual inserted row
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? (data as ChatMessage) : m))
+        );
+        scrollToBottom(false);
       }
     } catch (err) {
-      console.error("Error inserting plan_message:", err);
+      console.error("[PlanChatScreen] Exception inserting plan_message:", err);
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setInputText(trimmed);
     } finally {
       setSending(false);
     }
@@ -339,7 +467,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const [hasNewUnreadMessages, setHasNewUnreadMessages] = useState(false);
   const prevItemsLengthRef = useRef(timelineItems.length);
 
-  const scrollToBottom = (smooth = true) => {
+  const scrollToBottom = (smooth = false) => {
     if (chatMessagesRef.current) {
       chatMessagesRef.current.scrollTo({
         top: chatMessagesRef.current.scrollHeight,
@@ -362,7 +490,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     }
   };
 
-  // Intelligent auto-scroll effect
+  // Instant auto-scroll effect for timeline messages
   useEffect(() => {
     if (loading || timelineItems.length === 0) return;
 
@@ -370,22 +498,29 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     const isNewItemAdded = timelineItems.length > prevLength;
     prevItemsLengthRef.current = timelineItems.length;
 
-    if (prevLength === 0) {
-      // Initial load: scroll to bottom instantly
-      scrollToBottom(false);
-    } else if (isNewItemAdded) {
+    if (prevLength === 0 || isNewItemAdded) {
       const latestItem = timelineItems[timelineItems.length - 1];
       const isSentByMe = latestItem?.senderId === currentUserId;
 
-      if (isSentByMe || !isScrolledUp) {
-        // User sent message or was already near bottom: scroll to bottom
-        scrollToBottom(true);
+      if (prevLength === 0 || isSentByMe || !isScrolledUp) {
+        // Instant scroll to bottom on message load or send
+        scrollToBottom(false);
       } else {
-        // User is reading history: preserve scroll position and show indicator
         setHasNewUnreadMessages(true);
       }
     }
   }, [loading, timelineItems, currentUserId, isScrolledUp]);
+
+  // Instant scroll to latest message when keyboard opens / viewport resizes
+  useEffect(() => {
+    if (keyboardOpen) {
+      scrollToBottom(false);
+      const timer = setTimeout(() => {
+        scrollToBottom(false);
+      }, 30);
+      return () => clearTimeout(timer);
+    }
+  }, [keyboardOpen, viewportHeight]);
 
   return (
     <motion.div
@@ -393,11 +528,11 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none relative"
+      className="fixed inset-0 z-50 bg-[#050505] flex flex-col w-full h-[100dvh] overflow-hidden text-left font-sans select-none"
     >
       {/* 1. INDEPENDENT FIXED HERO HEADER OVERLAY — Completely isolated from pager flex/resize */}
       {plan && (
-        <div className="fixed top-0 left-0 right-0 z-50 pointer-events-auto">
+        <div className="absolute top-0 left-0 right-0 z-50 pointer-events-auto">
           <HeroHeader
             title={plan.title}
             creatorName={isHost ? "You" : plan.creatorName}
@@ -487,11 +622,16 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           </div>
 
           {/* PAGE 1: CHAT (DEFAULT) */}
-          <div className="w-1/3 h-full overflow-hidden flex flex-col flex-shrink-0 relative">
+          <div
+            className="w-1/3 h-full overflow-hidden flex flex-col justify-between flex-shrink-0 relative"
+            style={{
+              height: keyboardOpen && viewportHeight ? `${viewportHeight - 64}px` : "100%",
+            }}
+          >
             <div
               ref={chatMessagesRef}
               onScroll={handleChatScroll}
-              className="flex-1 overflow-y-auto touch-pan-y px-4 py-4 flex flex-col space-y-3"
+              className="flex-1 overflow-y-auto touch-pan-y px-4 pt-4 pb-3 flex flex-col"
             >
               {loading ? (
                 <div className="flex-1 flex items-center justify-center text-zinc-500 text-xs">
@@ -507,7 +647,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   />
                 </div>
               ) : (
-                timelineItems.map((item) => {
+                timelineItems.map((item, index) => {
                   if (item.isSystem) {
                     return (
                       <div
@@ -522,74 +662,177 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   }
 
                   const isMe = item.senderId === currentUserId;
-                  const timeStr = new Date(item.createdAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
+                  const date = new Date(item.createdAt);
+                  const hours = date.getHours();
+                  const minutes = date.getMinutes().toString().padStart(2, "0");
+                  const timeStr = `${hours}:${minutes}`;
+
+                  // Group position flags: check both previous AND next message in timeline
+                  const prevItem = index > 0 ? timelineItems[index - 1] : null;
+                  const nextItem = index < timelineItems.length - 1 ? timelineItems[index + 1] : null;
+
+                  const timeGapMsPrev =
+                    prevItem && prevItem.createdAt && item.createdAt
+                      ? new Date(item.createdAt).getTime() - new Date(prevItem.createdAt).getTime()
+                      : 0;
+                  const isTimeGapLargePrev = timeGapMsPrev > 10 * 60 * 1000;
+
+                  const isPrevSameSender = Boolean(
+                    prevItem &&
+                      !prevItem.isSystem &&
+                      prevItem.senderId === item.senderId &&
+                      !isTimeGapLargePrev
+                  );
+
+                  const timeGapMsNext =
+                    nextItem && nextItem.createdAt && item.createdAt
+                      ? new Date(nextItem.createdAt).getTime() - new Date(item.createdAt).getTime()
+                      : 0;
+                  const isTimeGapLargeNext = timeGapMsNext > 10 * 60 * 1000;
+
+                  const isNextSameSender = Boolean(
+                    nextItem &&
+                      !nextItem.isSystem &&
+                      nextItem.senderId === item.senderId &&
+                      !isTimeGapLargeNext
+                  );
+
+                  const isFirstInGroup = !isPrevSameSender && isNextSameSender;
+                  const isMiddleInGroup = isPrevSameSender && isNextSameSender;
+                  const isLastInGroup = isPrevSameSender && !isNextSameSender;
+                  const isSingleInGroup = !isPrevSameSender && !isNextSameSender;
+
+                  const showAvatar = !isMe && (isFirstInGroup || isSingleInGroup);
+
+                  // Resolve sender profile, name, and avatar from plan.members or dbUsers
+                  let senderName = "";
+                  let senderAvatarSrc = "";
+                  if (!isMe && item.senderId && plan) {
+                    const memberMatch = (plan.members || []).find((m) => {
+                      const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
+                      return mId === item.senderId;
+                    });
+                    if (memberMatch) {
+                      senderName = memberMatch.name || "";
+                      senderAvatarSrc = memberMatch.avatar || "";
+                    } else {
+                      const userMatch = (dbUsers || []).find(
+                        (u) => u.id === item.senderId || u.public_id === item.senderId
+                      );
+                      if (userMatch) {
+                        senderName = userMatch.full_name || userMatch.name || "";
+                        senderAvatarSrc = userMatch.avatar_url || "";
+                      }
+                    }
+                  }
+                  if (!senderName) senderName = "Member";
+
+                  // Group spacing: 1px hairline gap (mt-[1px]) inside same sender group, 14px (mt-3.5) between different senders / time gaps
+                  const topMarginClass = isPrevSameSender ? "mt-[1px]" : "mt-3.5";
+
+                  // Border Radius Matrix for WhatsApp-style chat bubble vs stacked capsule appearance
+                  let outgoingBorderRadiusClass = "rounded-2xl rounded-br-xs"; // single
+                  if (isFirstInGroup) outgoingBorderRadiusClass = "rounded-2xl rounded-br-xs";
+                  else if (isMiddleInGroup) outgoingBorderRadiusClass = "rounded-xl rounded-mr-xs";
+                  else if (isLastInGroup) outgoingBorderRadiusClass = "rounded-xl rounded-br-2xl";
+
+                  let incomingBorderRadiusClass = "rounded-2xl rounded-bl-xs"; // single
+                  if (isFirstInGroup) incomingBorderRadiusClass = "rounded-2xl rounded-bl-xs";
+                  else if (isMiddleInGroup) incomingBorderRadiusClass = "rounded-xl";
+                  else if (isLastInGroup) incomingBorderRadiusClass = "rounded-xl rounded-bl-2xl";
 
                   return (
                     <div
                       key={item.id}
-                      className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+                      className={`flex flex-col ${isMe ? "items-end" : "items-start"} ${topMarginClass}`}
                     >
-                      <div
-                        className={`max-w-[75%] px-3.5 py-2 rounded-2xl text-[13px] leading-relaxed break-words ${
-                          isMe
-                            ? "bg-amber-500 text-black font-medium rounded-br-xs"
-                            : "bg-zinc-800 text-white rounded-bl-xs border border-white/5"
-                        }`}
-                      >
-                        {item.content}
-                      </div>
-                      <span className="text-[10px] text-zinc-500 mt-1 px-1">
-                        {timeStr}
-                      </span>
+                      {isMe ? (
+                        /* Outgoing message (Right-aligned, no avatar, no name) */
+                        <div
+                          className={`max-w-[78%] px-3.5 pt-2 pb-1.5 text-[13.5px] leading-[1.4] break-words relative flex flex-col bg-[#005c4b] text-white ${outgoingBorderRadiusClass}`}
+                        >
+                          <div className="font-normal pr-10 pb-1.5 whitespace-pre-wrap">
+                            {item.content}
+                          </div>
+                          <div
+                            className="absolute bottom-1.5 right-3.5 flex items-center gap-1 select-none pointer-events-none text-white/60"
+                            style={{ fontSize: "11px", fontWeight: 400 }}
+                          >
+                            <span className="whitespace-nowrap">{timeStr}</span>
+                            <span className="w-0 inline-block" />
+                          </div>
+                        </div>
+                      ) : (
+                        /* Incoming message (Left-aligned) */
+                        <div className="flex flex-col max-w-[85%]">
+                          {/* Sender Name: Rendered directly above the first bubble of a message group */}
+                          {showAvatar && (
+                            <span className="text-[12px] font-medium text-[#FF7A45] mb-1 pl-10.5 tracking-wide select-none">
+                              {senderName}
+                            </span>
+                          )}
+
+                          {/* Row container: Avatar + Message Bubble */}
+                          <div className="flex items-start gap-2">
+                            {/* Avatar Column: Fixed 34px width */}
+                            <div className="w-[34px] h-[34px] flex-shrink-0">
+                              {showAvatar ? (
+                                <div className="w-[34px] h-[34px] rounded-full border border-white/10 overflow-hidden bg-zinc-800 flex items-center justify-center">
+                                  <UserAvatar src={senderAvatarSrc} alt={senderName} size="w-full h-full" />
+                                </div>
+                              ) : (
+                                /* Empty spacer so follow-up bubbles align perfectly under the first bubble */
+                                <div className="w-[34px] h-[34px]" />
+                              )}
+                            </div>
+
+                            {/* Message Bubble: Distinct styling for primary speech bubble vs stacked capsule messages */}
+                            <div
+                              className={`flex-1 px-3.5 pt-2 pb-1.5 text-[13.5px] leading-[1.4] break-words relative flex flex-col bg-[#202c33] text-white border border-white/5 min-w-0 ${incomingBorderRadiusClass}`}
+                            >
+                              <div className="font-normal pr-10 pb-1.5 whitespace-pre-wrap">
+                                {item.content}
+                              </div>
+                              <div
+                                className="absolute bottom-1.5 right-3.5 flex items-center gap-1 select-none pointer-events-none text-white/50"
+                                style={{ fontSize: "11px", fontWeight: 400 }}
+                              >
+                                <span className="whitespace-nowrap">{timeStr}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })
               )}
             </div>
 
-            {/* FLOATING "NEW MESSAGES" / SCROLL-TO-BOTTOM INDICATOR BUTTON */}
-            <AnimatePresence>
-              {(isScrolledUp || hasNewUnreadMessages) && (
-                <motion.button
-                  type="button"
-                  initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                  transition={{ duration: 0.15 }}
-                  onClick={() => scrollToBottom(true)}
-                  className="absolute bottom-20 right-5 z-30 flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-zinc-900/90 border border-white/15 shadow-2xl text-white text-xs font-semibold backdrop-blur-md active:scale-95 transition cursor-pointer hover:bg-zinc-800"
-                >
-                  {hasNewUnreadMessages && (
-                    <span className="w-2 h-2 rounded-full bg-[#FF6B2C] animate-pulse" />
-                  )}
-                  <span>{hasNewUnreadMessages ? "New Messages" : "Latest"}</span>
-                  <ChevronDown className="w-4 h-4 text-zinc-400" />
-                </motion.button>
-              )}
-            </AnimatePresence>
-
             {/* MESSAGE COMPOSER */}
             <form
               onSubmit={handleSendMessage}
-              className="bg-black/90 px-4 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] flex items-center flex-shrink-0"
+              className={`bg-black/90 px-4 pt-1.5 ${
+                keyboardOpen ? "pb-1.5" : "pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
+              } flex items-center flex-shrink-0`}
             >
-              <div className="relative w-full flex items-center h-[56px] bg-zinc-900/90 border border-white/[0.08] rounded-full px-5 focus-within:border-white/20 transition-all shadow-lg">
+              <div className="relative w-full flex items-center h-[46px] bg-zinc-900/90 border border-white/[0.08] rounded-full px-5 focus-within:border-white/20 transition-all shadow-lg">
                 <input
                   type="text"
                   placeholder="Send a message..."
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  className="w-full h-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none pr-12 font-sans"
+                  onFocus={() => {
+                    scrollToBottom(false);
+                  }}
+                  className="w-full h-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none pr-10 font-sans"
                 />
                 <button
                   type="submit"
                   disabled={!inputText.trim() || sending}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-[#FF6B2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#FF6B2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
                 >
-                  <Send className="w-4 h-4 text-white fill-current stroke-[2.5]" />
+                  <Send className="w-3.5 h-3.5 text-white fill-current stroke-[2.5]" />
                 </button>
               </div>
             </form>
