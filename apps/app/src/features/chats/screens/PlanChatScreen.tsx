@@ -15,23 +15,13 @@ import { PlanParticipantManagementWrapper } from "../../plans/screens/PlansScree
 import { ActivityTimelineScreen } from "./ActivityTimelineScreen";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { useHorizontalPager } from "../hooks/useHorizontalPager";
+import { useChatCache, ChatMessage } from "../hooks/useChatCache";
 
 interface PlanChatScreenProps {
   planId: string;
   onBack: () => void;
   /** Optional: called when the user taps the header to open the Plan Details screen */
   onOpenPlanDetails?: () => void;
-}
-
-interface ChatMessage {
-  id: string;
-  plan_id: string;
-  sender_id: string;
-  message_type: "text" | "system" | "poll";
-  system_message_type?: SystemMessageType | null;
-  content: string;
-  created_at: string;
-  updated_at?: string | null;
 }
 
 const PAGE_NAMES: Record<number, string> = {
@@ -62,8 +52,24 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   // Find target plan
   const plan = plans.find((p) => p.id === planId || p.dbUuid === planId);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Resolved target database UUID for plan (must be a valid UUID)
+  const targetPlanUuid = useMemo(() => {
+    if (plan?.dbUuid) return plan.dbUuid;
+    if (planId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(planId)) {
+      return planId;
+    }
+    return plan?.id || planId;
+  }, [plan, planId]);
+
+  // Centralized persistent in-memory chat cache hook
+  const {
+    messages,
+    loading,
+    appendOptimisticMessage,
+    removeOptimisticMessage,
+    replaceOptimisticMessage,
+  } = useChatCache(targetPlanUuid);
+
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [showSettingsScreen, setShowSettingsScreen] = useState(false);
@@ -175,92 +181,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     return [...(currentUserHost ? [currentUserHost] : []), ...remainingHosts];
   }, [plan, currentUserId]);
 
-  // Resolved target database UUID for plan (must be a valid UUID)
-  const targetPlanUuid = useMemo(() => {
-    if (plan?.dbUuid) return plan.dbUuid;
-    if (planId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(planId)) {
-      return planId;
-    }
-    return plan?.id || planId;
-  }, [plan, planId]);
-
-  // Fetch messages from plan_messages ordered by created_at ASC
-  const fetchMessages = useCallback(async () => {
-    if (!targetPlanUuid) return;
-    try {
-      const { data, error } = await supabase
-        .from("plan_messages")
-        .select("*")
-        .eq("plan_id", targetPlanUuid)
-        .order("created_at", { ascending: true });
-
-      if (error) {
-        console.error("[PlanChatScreen] Error fetching plan_messages:", error);
-      } else if (data) {
-        setMessages(data as ChatMessage[]);
-      }
-    } catch (err) {
-      console.error("[PlanChatScreen] Exception fetching plan_messages:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [targetPlanUuid]);
-
-  // Realtime subscription for plan_messages with INSERT, UPDATE, and DELETE event handlers
-  useEffect(() => {
-    fetchMessages();
-
-    if (!targetPlanUuid) return;
-
-    const channel = supabase.channel(`plan_messages_room:${targetPlanUuid}`);
-
-    channel
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "plan_messages",
-        },
-        (payload) => {
-          const eventType = payload.eventType;
-
-          if (eventType === "INSERT") {
-            const newMsg = payload.new as ChatMessage;
-            if (newMsg.plan_id !== targetPlanUuid) return;
-
-            setMessages((prev) => {
-              // Deduplicate if optimistic update or existing event already inserted
-              if (prev.some((m) => m.id === newMsg.id)) return prev;
-              return [...prev, newMsg];
-            });
-          } else if (eventType === "UPDATE") {
-            const updatedMsg = payload.new as ChatMessage;
-            if (updatedMsg.plan_id !== targetPlanUuid) return;
-
-            setMessages((prev) =>
-              prev.map((m) => (m.id === updatedMsg.id ? updatedMsg : m))
-            );
-          } else if (eventType === "DELETE") {
-            const oldMsg = payload.old as { id?: string };
-            if (!oldMsg.id) return;
-
-            setMessages((prev) => prev.filter((m) => m.id !== oldMsg.id));
-          }
-        }
-      )
-      .subscribe((status, err) => {
-        if (status === "CHANNEL_ERROR") {
-          console.error("[PlanChatScreen] Channel error occurred during subscription:", err || "");
-          fetchMessages();
-        }
-      });
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [targetPlanUuid, fetchMessages]);
-
   // Send message implementation with optimistic UI update
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -302,8 +222,8 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       created_at: new Date().toISOString(),
     };
 
-    // Optimistically update UI & clear input
-    setMessages((prev) => [...prev, optimisticMsg]);
+    // Optimistically update shared cache & clear input
+    appendOptimisticMessage(optimisticMsg);
     setInputText("");
     scrollToBottom(false);
 
@@ -324,18 +244,16 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       if (error) {
         console.error("[PlanChatScreen] Failed to insert plan_message:", error);
         // Rollback optimistic message & restore input text on error
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        removeOptimisticMessage(tempId);
         setInputText(trimmed);
       } else if (data) {
-        // Replace temp message with actual inserted row
-        setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? (data as ChatMessage) : m))
-        );
+        // Replace temp message with actual inserted row in shared cache
+        replaceOptimisticMessage(tempId, data as ChatMessage);
         scrollToBottom(false);
       }
     } catch (err) {
       console.error("[PlanChatScreen] Exception inserting plan_message:", err);
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      removeOptimisticMessage(tempId);
       setInputText(trimmed);
     } finally {
       setSending(false);

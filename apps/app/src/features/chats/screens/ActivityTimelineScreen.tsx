@@ -26,6 +26,7 @@ import { supabase } from "../../../../lib/supabaseClient";
 import { DbPlanActivity, PlanActivityType } from "../../../core/types";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { useTimestampReveal } from "../hooks/useTimestampReveal";
+import { useActivityCache } from "../hooks/useChatCache";
 
 export interface ActivityEvent {
   id: string;
@@ -194,22 +195,22 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
   const { plans } = usePlansStore();
   const { userProfile, activeUserId, dbUsers } = useProfileStore();
 
-  const [rawActivities, setRawActivities] = useState<DbPlanActivity[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Use dedicated useTimestampReveal hook for gesture interaction & derived transforms
-  const { displayX, timestampOpacity, dragProps } = useTimestampReveal({
-    embedded,
-    externalDragX,
-  });
-
   const plan = useMemo(() => {
     if (!planId) return undefined;
     return plans.find((p) => p.id === planId || p.dbUuid === planId);
   }, [plans, planId]);
 
   const targetPlanTitle = propPlanTitle || plan?.title || "Plan Activity";
-  const targetPlanId = plan?.dbUuid || plan?.id || planId;
+  const targetPlanId = plan?.dbUuid || plan?.id || planId || "";
+
+  // Persistent in-memory Activity Timeline Cache hook
+  const { rawActivities, loading } = useActivityCache(targetPlanId);
+
+  // Use dedicated useTimestampReveal hook for gesture interaction & derived transforms
+  const { displayX, timestampOpacity, dragProps } = useTimestampReveal({
+    embedded,
+    externalDragX,
+  });
 
   // Helper to resolve user details (name & avatar) by UUID or public_id
   const resolveUserDetails = useCallback(
@@ -264,62 +265,6 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
     },
     [dbUsers, userProfile, activeUserId, plan]
   );
-
-  // Fetch activities directly from plan_activity table in Supabase
-  const fetchActivities = useCallback(async () => {
-    if (!targetPlanId) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("plan_activity")
-        .select("*")
-        .eq("plan_id", targetPlanId)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("[ActivityTimelineScreen] Error fetching plan activities:", error);
-        setLoading(false);
-        return;
-      }
-
-      setRawActivities(data || []);
-    } catch (err) {
-      console.error("[ActivityTimelineScreen] Unexpected error fetching activities:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [targetPlanId]);
-
-  useEffect(() => {
-    fetchActivities();
-
-    if (!targetPlanId) return;
-
-    // Realtime subscription to plan_activity inserts for this plan
-    const channel = supabase
-      .channel(`plan_activity:${targetPlanId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "plan_activity",
-          filter: `plan_id=eq.${targetPlanId}`,
-        },
-        () => {
-          fetchActivities();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [targetPlanId, fetchActivities]);
 
   // Format description strings from DbPlanActivity rows & collapse consecutive capacity events
   const activities = useMemo<ActivityEvent[]>(() => {
