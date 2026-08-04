@@ -73,6 +73,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [showSettingsScreen, setShowSettingsScreen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // ── Keyboard Visibility State (Used to lock pager gestures & bound Chat Page height) ──
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -226,6 +227,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     appendOptimisticMessage(optimisticMsg);
     setInputText("");
     scrollToBottom(false);
+    inputRef.current?.focus();
 
     try {
       const newMessagePayload = {
@@ -736,6 +738,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             >
               <div className="relative w-full flex items-center h-[46px] bg-zinc-900/90 border border-white/[0.08] rounded-full px-5 focus-within:border-white/20 transition-all shadow-lg">
                 <input
+                  ref={inputRef}
                   type="text"
                   placeholder="Send a message..."
                   value={inputText}
@@ -748,6 +751,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 <button
                   type="submit"
                   disabled={!inputText.trim() || sending}
+                  onMouseDown={(e) => e.preventDefault()}
                   className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#FF6B2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
                 >
                   <Send className="w-3.5 h-3.5 text-white fill-current stroke-[2.5]" />
