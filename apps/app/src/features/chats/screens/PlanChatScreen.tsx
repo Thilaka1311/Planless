@@ -567,7 +567,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             <div
               ref={chatMessagesRef}
               onScroll={handleChatScroll}
-              className="flex-1 overflow-y-auto touch-pan-y px-4 pt-4 pb-3 flex flex-col"
+              className="flex-1 overflow-y-auto touch-pan-y pl-6 pr-4 pt-4 pb-3 flex flex-col"
             >
               {loading ? (
                 <div className="flex-1 flex items-center justify-center text-zinc-500 text-xs">
@@ -603,34 +603,20 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   const minutes = date.getMinutes().toString().padStart(2, "0");
                   const timeStr = `${hours}:${minutes}`;
 
-                  // Group position flags: check both previous AND next message in timeline
+                  // Sender grouping: pure sender identity match (no time-gap splitting)
                   const prevItem = index > 0 ? timelineItems[index - 1] : null;
                   const nextItem = index < timelineItems.length - 1 ? timelineItems[index + 1] : null;
-
-                  const timeGapMsPrev =
-                    prevItem && prevItem.createdAt && item.createdAt
-                      ? new Date(item.createdAt).getTime() - new Date(prevItem.createdAt).getTime()
-                      : 0;
-                  const isTimeGapLargePrev = timeGapMsPrev > 10 * 60 * 1000;
 
                   const isPrevSameSender = Boolean(
                     prevItem &&
                       !prevItem.isSystem &&
-                      prevItem.senderId === item.senderId &&
-                      !isTimeGapLargePrev
+                      prevItem.senderId === item.senderId
                   );
-
-                  const timeGapMsNext =
-                    nextItem && nextItem.createdAt && item.createdAt
-                      ? new Date(nextItem.createdAt).getTime() - new Date(item.createdAt).getTime()
-                      : 0;
-                  const isTimeGapLargeNext = timeGapMsNext > 10 * 60 * 1000;
 
                   const isNextSameSender = Boolean(
                     nextItem &&
                       !nextItem.isSystem &&
-                      nextItem.senderId === item.senderId &&
-                      !isTimeGapLargeNext
+                      nextItem.senderId === item.senderId
                   );
 
                   const isFirstInGroup = !isPrevSameSender && isNextSameSender;
@@ -663,19 +649,21 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   }
                   if (!senderName) senderName = "Member";
 
-                  // Group spacing: 1px hairline gap (mt-[1px]) inside same sender group, 14px (mt-3.5) between different senders / time gaps
-                  const topMarginClass = isPrevSameSender ? "mt-[1px]" : "mt-3.5";
+                  // Group spacing: 1.5–2px gap between grouped messages from same sender, 14px between different senders
+                  const topMarginClass = isPrevSameSender ? "mt-[2px]" : "mt-3.5";
 
-                  // Border Radius Matrix for WhatsApp-style chat bubble vs stacked capsule appearance
-                  let outgoingBorderRadiusClass = "rounded-2xl rounded-br-xs"; // single
-                  if (isFirstInGroup) outgoingBorderRadiusClass = "rounded-2xl rounded-br-xs";
-                  else if (isMiddleInGroup) outgoingBorderRadiusClass = "rounded-xl rounded-mr-xs";
-                  else if (isLastInGroup) outgoingBorderRadiusClass = "rounded-xl rounded-br-2xl";
+                  // WhatsApp corner radius matrix: speech bubble tail on top-left (incoming) and top-right (outgoing) for first messages
+                  let outgoingBorderRadiusClass = "rounded-2xl rounded-tr-none";
+                  if (isFirstInGroup) outgoingBorderRadiusClass = "rounded-2xl rounded-tr-none";
+                  else if (isMiddleInGroup) outgoingBorderRadiusClass = "rounded-2xl rounded-tr-md rounded-br-md";
+                  else if (isLastInGroup) outgoingBorderRadiusClass = "rounded-2xl rounded-tr-md";
 
-                  let incomingBorderRadiusClass = "rounded-2xl rounded-bl-xs"; // single
-                  if (isFirstInGroup) incomingBorderRadiusClass = "rounded-2xl rounded-bl-xs";
-                  else if (isMiddleInGroup) incomingBorderRadiusClass = "rounded-xl";
-                  else if (isLastInGroup) incomingBorderRadiusClass = "rounded-xl rounded-bl-2xl";
+                  let incomingBorderRadiusClass = "rounded-2xl rounded-tl-none";
+                  if (isFirstInGroup) incomingBorderRadiusClass = "rounded-2xl rounded-tl-none";
+                  else if (isMiddleInGroup) incomingBorderRadiusClass = "rounded-2xl rounded-tl-md rounded-bl-md";
+                  else if (isLastInGroup) incomingBorderRadiusClass = "rounded-2xl rounded-tl-md";
+
+                  const isFirstOutgoing = isMe && (isFirstInGroup || isSingleInGroup);
 
                   return (
                     <div
@@ -683,9 +671,13 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                       className={`flex flex-col ${isMe ? "items-end" : "items-start"} ${topMarginClass}`}
                     >
                       {isMe ? (
-                        /* Outgoing message (Right-aligned, no avatar, no name) */
+                        /* Outgoing Message Bubble */
                         <div
-                          className={`max-w-[78%] px-3.5 pt-2 pb-1.5 text-[13.5px] leading-[1.4] break-words relative flex flex-col bg-[#005c4b] text-white ${outgoingBorderRadiusClass}`}
+                          className={`max-w-[65%] px-3.5 pt-2 pb-1.5 text-[13.5px] leading-[1.4] break-words relative flex flex-col bg-[#005c4b] text-white ${outgoingBorderRadiusClass} ${
+                            isFirstOutgoing
+                              ? "before:content-[''] before:absolute before:top-0 before:-right-[6px] before:w-[6px] before:h-[8px] before:bg-[#005c4b] before:[clip-path:polygon(0_0,100%_0,0_100%)]"
+                              : ""
+                          }`}
                         >
                           <div className="font-normal pr-10 pb-1.5 whitespace-pre-wrap">
                             {item.content}
@@ -699,32 +691,36 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                           </div>
                         </div>
                       ) : (
-                        /* Incoming message (Left-aligned) */
-                        <div className="flex flex-col max-w-[85%]">
-                          {/* Sender Name: Rendered directly above the first bubble of a message group */}
+                        /* Incoming message (Left-aligned, max 70% width) */
+                        <div className="flex flex-col max-w-[70%]">
+                          {/* Sender Name: Rendered ~4px above the first bubble of a sender group */}
                           {showAvatar && (
-                            <span className="text-[12px] font-medium text-[#FF7A45] mb-1 pl-10.5 tracking-wide select-none">
+                            <span className="text-[13px] font-medium text-[#FF7A45]/90 mb-1 pl-[38px] tracking-wide select-none">
                               {senderName}
                             </span>
                           )}
 
-                          {/* Row container: Avatar + Message Bubble */}
-                          <div className="flex items-start gap-2">
-                            {/* Avatar Column: Fixed 34px width */}
-                            <div className="w-[34px] h-[34px] flex-shrink-0">
+                          {/* Row container: Avatar + Message Bubble (Top-aligned with first bubble) */}
+                          <div className="flex items-start gap-1.5">
+                            {/* Avatar Column: Fixed 32px width, top-aligned with first bubble */}
+                            <div className="w-[32px] h-[32px] flex-shrink-0">
                               {showAvatar ? (
-                                <div className="w-[34px] h-[34px] rounded-full border border-white/10 overflow-hidden bg-zinc-800 flex items-center justify-center">
+                                <div className="w-[32px] h-[32px] rounded-full border border-white/10 overflow-hidden bg-zinc-800 flex items-center justify-center">
                                   <UserAvatar src={senderAvatarSrc} alt={senderName} size="w-full h-full" />
                                 </div>
                               ) : (
-                                /* Empty spacer so follow-up bubbles align perfectly under the first bubble */
-                                <div className="w-[34px] h-[34px]" />
+                                /* Empty spacer so follow-up bubbles align under the first bubble */
+                                <div className="w-[32px] h-[32px]" />
                               )}
                             </div>
 
-                            {/* Message Bubble: Distinct styling for primary speech bubble vs stacked capsule messages */}
+                            {/* Incoming Message Bubble */}
                             <div
-                              className={`flex-1 px-3.5 pt-2 pb-1.5 text-[13.5px] leading-[1.4] break-words relative flex flex-col bg-[#202c33] text-white border border-white/5 min-w-0 ${incomingBorderRadiusClass}`}
+                              className={`flex-1 px-3.5 pt-2 pb-1.5 text-[13.5px] leading-[1.4] break-words relative flex flex-col bg-[#202c33] text-white min-w-0 ${incomingBorderRadiusClass} ${
+                                showAvatar
+                                  ? "before:content-[''] before:absolute before:top-0 before:-left-[6px] before:w-[6px] before:h-[8px] before:bg-[#202c33] before:[clip-path:polygon(100%_0,0_0,100%_100%)]"
+                                  : ""
+                              }`}
                             >
                               <div className="font-normal pr-10 pb-1.5 whitespace-pre-wrap">
                                 {item.content}
