@@ -400,7 +400,3 @@ export async function removeParticipantRPC(
   if (error) throw error;
   return data;
 }
-
-
-
-
