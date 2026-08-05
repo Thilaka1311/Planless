@@ -341,7 +341,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         return isTargetPlan && isJoinedStatus && !isHost;
       });
 
-      targetParticipants.forEach((pp) => {
+      targetParticipants.forEach((pp, pIdx) => {
         // Resolve participant user name from dbUsers, plan.members, or userProfile
         let participantName = "";
         const matchUser = (dbUsers || []).find(
@@ -365,8 +365,11 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           }
         }
 
+        const stablePartId = pp.id || (pp as any).dbUuid || pp.user_id || `pIdx-${pIdx}`;
+        const generatedKey = `sys-joined-${stablePartId}`;
+
         items.push({
-          id: `sys-joined-${pp.id}`,
+          id: generatedKey,
           isSystem: true,
           systemType: SystemMessageType.PARTICIPANT_JOINED,
           content: `${participantName} joined`,
@@ -883,18 +886,12 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             }
           }}
           onLeavePlan={async () => {
-            console.group("🔍 [LEAVE_AUDIT] 2. PlanChatScreen onLeavePlan Invoked");
-            console.log("📍 currentUserId:", currentUserId);
-            console.log("📍 plan.id:", plan?.id, "| targetPlanUuid:", targetPlanUuid);
-            console.groupEnd();
             try {
-              console.log("🔍 [LEAVE_AUDIT] Executing store leavePlan()...");
               await leavePlan(plan.id, currentUserId);
-              console.log("✅ [LEAVE_AUDIT] Store leavePlan() completed cleanly!");
               setShowSettingsScreen(false);
               onBack();
             } catch (err) {
-              console.error("❌ [LEAVE_AUDIT] PlanChatScreen onLeavePlan error:", err);
+              console.error("PlanChatScreen onLeavePlan error:", err);
               throw err;
             }
           }}

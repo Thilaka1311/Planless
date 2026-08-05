@@ -665,30 +665,26 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const handlePromoteHost = useCallback(
     async (friend: Friend) => {
       if (!onPromoteToHost) return;
-      const targetStatus = normalizeStatus((friend as any).joinState || (friend as any).rsvp_status || 'JOINED');
+      const targetId = friend.dbUuid || friend.id || (friend as any).user_id || (friend as any).userId || "";
+      if (!targetId) return;
+
+      const memberRecord = members.find(
+        (m: any) => (m.userId || m.userUuid || m.user_id || m.id) === targetId
+      );
+
+      const targetStatus = normalizeStatus((friend as any).joinState || (friend as any).rsvp_status || memberRecord?.joinState || memberRecord?.rsvp_status || 'JOINED');
+      const targetRole = memberRecord?.role || (friend.isHost ? 'HOST' : 'PARTICIPANT');
+
+      const isAlreadyHost = friend.isHost || targetRole === 'HOST';
+      if (isAlreadyHost) return;
+
       if (targetStatus !== 'JOINED') {
         showToast("Only Going participants can be promoted to host");
         return;
       }
 
-      const memberRecord = members.find(
-        (m: any) => (m.userId || m.userUuid || m.user_id || m.id) === friend.dbUuid
-      );
-
-      const isAlreadyHost = friend.isHost || (memberRecord && memberRecord.role === 'HOST');
-      if (isAlreadyHost) {
-        // Participant is already a host — silently ignore per prompt specs
-        return;
-      }
-
-      const rsvp = normalizeStatus(memberRecord?.joinState || memberRecord?.rsvp_status);
-      if (rsvp !== 'JOINED') {
-        showToast("Only Going participants can be promoted to host");
-        return;
-      }
-
       try {
-        await onPromoteToHost(plan.id, friend.dbUuid);
+        await onPromoteToHost(plan.id, targetId);
         showToast(`✓ ${friend.name} is now a host`);
       } catch (err: any) {
         showToast(err?.message || 'Failed to promote host');

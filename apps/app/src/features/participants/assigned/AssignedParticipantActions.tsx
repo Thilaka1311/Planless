@@ -39,9 +39,18 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
     if (isActionProcessingRef.current) return;
     isActionProcessingRef.current = true;
     onClose();
-    Promise.resolve(actionFn()).catch((err) => {
-      console.error('[AssignedParticipantActions] Action error:', err);
-    });
+
+    Promise.resolve()
+      .then(async () => {
+        try {
+          await actionFn();
+        } finally {
+          isActionProcessingRef.current = false;
+        }
+      })
+      .catch((err) => {
+        console.error('[AssignedParticipantActions] Action error:', err);
+      });
   };
 
   const isSelf = Boolean(

@@ -265,21 +265,11 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   const isSoleHost = allHosts.length <= 1 && isHostUser;
 
   const executeLeavePlanFlow = async () => {
-    console.group("🔍 [LEAVE_AUDIT] 1. executeLeavePlanFlow Initiated");
-    console.log("📍 activeUserUuid:", activeUserUuid);
-    console.log("📍 isSoleHost:", isSoleHost, "| isHostUser:", isHostUser);
-    console.log("📍 allHosts:", allHosts);
-    console.log("📍 members count:", members.length);
-    console.groupEnd();
-
     setIsLeaving(true);
     try {
       if (onLeavePlan) {
-        console.log("🔍 [LEAVE_AUDIT] Invoking onLeavePlan() callback...");
         await onLeavePlan();
-        console.log("✅ [LEAVE_AUDIT] onLeavePlan() callback resolved successfully!");
       } else if (onRemoveParticipant) {
-        console.log("🔍 [LEAVE_AUDIT] Fallback: Invoking onRemoveParticipant()...");
         await onRemoveParticipant(activeUserUuid);
         showToast("You left the plan");
         onBack();
@@ -287,7 +277,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         showToast("Leave plan feature coming soon");
       }
     } catch (err) {
-      console.error("❌ [LEAVE_AUDIT] executeLeavePlanFlow failed with error:", err);
       showToast("Failed to leave plan");
     } finally {
       setIsLeaving(false);
@@ -295,24 +284,15 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   };
 
   const handlePromoteAndLeave = async (participantId: string) => {
-    console.group("🔍 [LEAVE_AUDIT] 0. handlePromoteAndLeave Initiated");
-    console.log("📍 Target replacement host ID to promote:", participantId);
-    console.log("📍 Current active user ID (leaving owner):", activeUserUuid);
-    console.groupEnd();
-
     setPromotingToLeaveUserId(participantId);
     try {
       if (onPromoteToHost) {
-        console.log("🔍 [LEAVE_AUDIT] Promoting replacement host via onPromoteToHost...");
         await onPromoteToHost(participantId);
-        console.log("✅ [LEAVE_AUDIT] Promotion of replacement host succeeded!");
         showToast("✓ Promoted to host");
       }
       setShowPromoteHostToLeaveModal(false);
-      console.log("🔍 [LEAVE_AUDIT] Triggering executeLeavePlanFlow after promotion...");
       await executeLeavePlanFlow();
     } catch (err) {
-      console.error("❌ [LEAVE_AUDIT] handlePromoteAndLeave failed with error:", err);
       showToast("Failed to promote participant");
     } finally {
       setPromotingToLeaveUserId(null);
