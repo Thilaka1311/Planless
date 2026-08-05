@@ -576,6 +576,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     getTeamAssignments,
     dbPlanParticipants,
     skipPlan,
+    leavePlan,
     rejoinPlan,
     joinPlan,
     changePlanHost,
@@ -1156,7 +1157,19 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onEditCoverImage={async (newCoverUrl) => {
           await updatePlanDetails(selectedPlan.id, { cover_image: newCoverUrl });
         }}
-        onLeavePlan={handleSkip}
+        onLeavePlan={async () => {
+          try {
+            await leavePlan(selectedPlan.id, activeUserId);
+            if (onLeavePlan) {
+              onLeavePlan();
+            } else {
+              onClose();
+            }
+          } catch (err) {
+            console.error("Failed to leave plan from PlansPreviewScreen:", err);
+            throw err;
+          }
+        }}
         onCancelPlan={handleDitchConfirm}
       />
     );

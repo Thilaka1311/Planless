@@ -458,45 +458,211 @@ export function usePlanParticipants({
     const planUuid = matchedPlan?.dbUuid || planId;
     const userUuid = resolveUserUuid(leaverId);
 
+    console.group("🔥 [DB_LEAVE_AUDIT] leavePlan Database Execution Started");
+    console.log("📍 Input Parameters -> planId:", rawPlanId, "| resolved planUuid:", planUuid);
+    console.log("📍 Input Parameters -> leaverId:", leaverId, "| resolved userUuid:", userUuid);
+    console.log("📍 Local State -> matchedPlan.hostId:", matchedPlan?.hostId);
+
     if (!userUuid || !isUuid(userUuid)) {
-      console.error(`[PlansContext] Cannot leave plan: user UUID is missing or invalid:`, userUuid);
+      console.error("❌ [DB_LEAVE_AUDIT] ABORT: Invalid user UUID:", userUuid);
+      console.groupEnd();
       throw new Error("Invalid user UUID");
     }
 
-    const existingBefore = dbPlanParticipants.find(p => p.plan_id === planUuid && p.user_id === userUuid);
+    // ─── STEP 1: Direct Database Queries Before Any Updates ───────────────────────
+    console.group("📊 [DB_LEAVE_AUDIT] STEP 1: Direct DB Fetch Before Updates");
+    
+    // Fetch plans.host_id directly from PostgreSQL
+    const { data: dbPlanBefore, error: planFetchErrBefore } = await (supabase as any)
+      .from("plans")
+      .select("id, host_id, created_by")
+      .eq("id", planUuid)
+      .maybeSingle();
 
-    // 2. Database Persistence - invoke SECURITY DEFINER RPC
-    if (existingBefore) {
-      applyParticipantOptimisticUpdate(planUuid, userUuid, {
-        role: "PARTICIPANT",
-        rsvp_status: "SKIPPED",
-        responded_at: new Date().toISOString(),
-        skip_reason: "LEFT"
-      } as any);
-      try {
-        const { error: rpcError } = await (supabase as any).rpc("leave_plan", {
-          p_plan_id: planUuid
+    console.log("📥 DB Query: SELECT id, host_id, created_by FROM plans WHERE id =", planUuid, {
+      data: dbPlanBefore,
+      error: planFetchErrBefore
+    });
+
+    // Fetch plan_participants directly from PostgreSQL
+    const { data: dbParticipantsBefore, error: partFetchErrBefore } = await (supabase as any)
+      .from("plan_participants")
+      .select("user_id, role, rsvp_status")
+      .eq("plan_id", planUuid);
+
+    console.log("📥 DB Query: SELECT user_id, role, rsvp_status FROM plan_participants WHERE plan_id =", planUuid, {
+      data: dbParticipantsBefore,
+      error: partFetchErrBefore
+    });
+
+    console.groupEnd();
+
+    const currentOwnerUuid = resolveUserUuid(matchedPlan?.hostId || dbPlanBefore?.host_id || "");
+    const isCurrentOwnerLeaving = currentOwnerUuid === userUuid;
+
+    // ─── STEP 2: Host Ownership Transfer (If Owner Leaving) ─────────────────────
+    if (isCurrentOwnerLeaving) {
+      console.group("🔄 [DB_LEAVE_AUDIT] STEP 2: Updating plans.host_id");
+      console.log("📍 Owner leaving detected. Previous host_id:", currentOwnerUuid);
+
+      // Find replacement host candidate from DB rows or local memory
+      const replacementCandidate = (dbParticipantsBefore || []).find(
+        (pp: any) => pp.user_id !== userUuid && pp.role === "HOST"
+      ) || dbPlanParticipants.find(
+        pp => pp.plan_id === planUuid && pp.user_id !== userUuid && (pp.role === "HOST" || (pp as any).isHost)
+      );
+
+      console.log("📍 Selected replacement host candidate:", replacementCandidate);
+
+      if (replacementCandidate) {
+        const nextHostUuid = resolveUserUuid(replacementCandidate.user_id);
+        console.log("📍 Executing DB Update -> plans.host_id =", nextHostUuid, "WHERE id =", planUuid);
+
+        const { data: hostUpdateData, error: hostUpdateError } = await (supabase as any)
+          .from("plans")
+          .update({ host_id: nextHostUuid })
+          .eq("id", planUuid)
+          .select();
+
+        console.log("📤 DB Update Response (plans.host_id):", {
+          rowsAffected: hostUpdateData ? hostUpdateData.length : 0,
+          returnedData: hostUpdateData,
+          returnedError: hostUpdateError
         });
-        if (rpcError) {
-          console.warn("[leavePlan] RPC leave_plan failed, fallback to direct update:", rpcError);
-          await updateParticipantStatus(planUuid, userUuid, "SKIPPED", undefined, new Date().toISOString(), "LEFT");
+
+        if (hostUpdateError) {
+          console.error("❌ [DB_LEAVE_AUDIT] Host ownership update FAILED:", hostUpdateError);
+          console.groupEnd();
+          console.groupEnd();
+          throw new Error("Failed to transfer host ownership in plans table: " + hostUpdateError.message);
         }
 
-        await handleParticipantStatusChange(planUuid, userUuid, existingBefore.rsvp_status, "SKIPPED");
-        await unassignTeam(planUuid, userUuid);
-        await promoteWaitlistIfSpotsAvailable(planUuid);
-        await renumberWaitlistPositions(planUuid);
-      } catch (err) {
-        console.error(`[PlansContext] leavePlan DB write failed:`, err);
-        throw err;
+        // Immediately query plans table again to verify persistence
+        const { data: dbPlanPostTransfer, error: postTransferErr } = await (supabase as any)
+          .from("plans")
+          .select("id, host_id")
+          .eq("id", planUuid)
+          .maybeSingle();
+
+        console.log("📥 Verification Query: SELECT host_id FROM plans WHERE id =", planUuid, {
+          persistedHostId: dbPlanPostTransfer?.host_id,
+          expectedHostId: nextHostUuid,
+          updatePersistedSuccessfully: dbPlanPostTransfer?.host_id === nextHostUuid,
+          error: postTransferErr
+        });
+      } else {
+        console.warn("⚠️ [DB_LEAVE_AUDIT] No candidate found with role = 'HOST' in participants!");
       }
-    } else {
-      throw new Error("Participant record not found");
+      console.groupEnd();
     }
 
-    // 3. Sync state from DB (handled by realtime)
+    // ─── STEP 3: Update Participant Record ─────────────────────────────────────
+    const leaverParticipantRecord = (dbParticipantsBefore || []).find((p: any) => p.user_id === userUuid)
+      || dbPlanParticipants.find(p => p.plan_id === planUuid && p.user_id === userUuid);
 
-  }, [plans, resolveUserUuid, isUuid, dbPlanParticipants, handleParticipantStatusChange, unassignTeam, applyParticipantOptimisticUpdate]);
+    console.group("📝 [DB_LEAVE_AUDIT] STEP 3: Updating Participant Record");
+    console.log("📍 Leaver user_id:", userUuid);
+    console.log("📍 Old role:", leaverParticipantRecord?.role);
+    console.log("📍 Old RSVP:", leaverParticipantRecord?.rsvp_status);
+
+    applyParticipantOptimisticUpdate(planUuid, userUuid, {
+      role: "PARTICIPANT",
+      rsvp_status: "SKIPPED",
+      responded_at: new Date().toISOString(),
+      skip_reason: "LEFT"
+    } as any);
+
+    // ─── STEP 4: Execute RPC / Fallback Participant Update ──────────────────────
+    console.log("🚀 [DB_LEAVE_AUDIT] STEP 4: Executing RPC leave_plan with input:", { p_plan_id: planUuid });
+
+    let rpcSuccess = false;
+    try {
+      const rpcResult = await (supabase as any).rpc("leave_plan", {
+        p_plan_id: planUuid
+      });
+
+      console.log("📤 RPC leave_plan Response:", {
+        input: { p_plan_id: planUuid },
+        output: rpcResult.data,
+        error: rpcResult.error,
+        fullResponseObject: rpcResult
+      });
+
+      if (rpcResult.error) {
+        console.warn("⚠️ [DB_LEAVE_AUDIT] RPC leave_plan error encountered, executing direct DB fallback update...");
+        const fallbackRes = await updateParticipantStatus(planUuid, userUuid, "SKIPPED", undefined, new Date().toISOString(), "LEFT");
+        console.log("📤 Fallback updateParticipantStatus result:", fallbackRes);
+      } else {
+        rpcSuccess = true;
+      }
+
+      await handleParticipantStatusChange(planUuid, userUuid, leaverParticipantRecord?.rsvp_status, "SKIPPED");
+      await unassignTeam(planUuid, userUuid);
+      await promoteWaitlistIfSpotsAvailable(planUuid);
+      await renumberWaitlistPositions(planUuid);
+
+    } catch (err) {
+      console.error("❌ [DB_LEAVE_AUDIT] Participant update threw exception:", err);
+      console.groupEnd();
+      console.groupEnd();
+      throw err;
+    }
+
+    console.groupEnd();
+
+    // ─── STEP 5: Immediately Fetch Participant Row Again to Verify ──────────────
+    console.group("🔎 [DB_LEAVE_AUDIT] STEP 5: Post-Leave Verification Query (plan_participants)");
+
+    const { data: dbLeaverPostCheck, error: leaverPostErr } = await (supabase as any)
+      .from("plan_participants")
+      .select("role, rsvp_status, skip_reason, responded_at, updated_at")
+      .eq("plan_id", planUuid)
+      .eq("user_id", userUuid)
+      .maybeSingle();
+
+    console.log("📥 Verification Query: SELECT role, rsvp_status, skip_reason, responded_at, updated_at FROM plan_participants:", {
+      data: dbLeaverPostCheck,
+      error: leaverPostErr,
+      roleIsParticipant: dbLeaverPostCheck?.role === "PARTICIPANT",
+      rsvpIsSkipped: dbLeaverPostCheck?.rsvp_status === "SKIPPED",
+      skipReasonIsLeft: dbLeaverPostCheck?.skip_reason === "LEFT"
+    });
+
+    console.groupEnd();
+
+    // ─── STEP 6: Final Verification at the End of leavePlan() ───────────────────
+    console.group("🏁 [DB_LEAVE_AUDIT] STEP 6: Final State Verification at end of leavePlan()");
+
+    const { data: finalPlanDb } = await (supabase as any)
+      .from("plans")
+      .select("id, host_id")
+      .eq("id", planUuid)
+      .maybeSingle();
+
+    const { data: finalParticipantDb } = await (supabase as any)
+      .from("plan_participants")
+      .select("role, rsvp_status, skip_reason")
+      .eq("plan_id", planUuid)
+      .eq("user_id", userUuid)
+      .maybeSingle();
+
+    console.log("📥 Final DB Snapshot -> plans.host_id:", finalPlanDb?.host_id);
+    console.log("📥 Final DB Snapshot -> participant row:", finalParticipantDb);
+
+    if (isCurrentOwnerLeaving && finalPlanDb?.host_id === userUuid) {
+      console.error("🚨 [DB_LEAVE_AUDIT] FAILURE: plans.host_id DID NOT CHANGE! Still references leaving creator:", userUuid);
+    }
+    if (finalParticipantDb?.rsvp_status !== "SKIPPED") {
+      console.error("🚨 [DB_LEAVE_AUDIT] FAILURE: plan_participants.rsvp_status DID NOT CHANGE! Still:", finalParticipantDb?.rsvp_status);
+    }
+    if (finalParticipantDb?.role !== "PARTICIPANT") {
+      console.error("🚨 [DB_LEAVE_AUDIT] FAILURE: plan_participants.role DID NOT CHANGE! Still:", finalParticipantDb?.role);
+    }
+
+    console.log("🎉 [DB_LEAVE_AUDIT] leavePlan finished");
+    console.groupEnd();
+    console.groupEnd();
+  }, [plans, dbPlans, resolveUserUuid, isUuid, dbPlanParticipants, handleParticipantStatusChange, unassignTeam, applyParticipantOptimisticUpdate]);
 
   const skipPlan = useCallback(async (rawPlanId: string, userId: string) => {
     const planId = cleanPlanId(rawPlanId);

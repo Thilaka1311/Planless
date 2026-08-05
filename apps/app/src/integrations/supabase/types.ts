@@ -1067,7 +1067,7 @@ export type Database = {
         | "PAYMENT_RECEIVED"
         | "PAYMENT_REMINDER"
         | "MEMORY_GENERATED"
-      participant_role: "HOST" | "CO_HOST" | "PARTICIPANT"
+      participant_role: "HOST" | "PARTICIPANT"
       plan_status: "LIVE" | "COMPLETED" | "CANCELLED"
       rsvp_status: "INVITED" | "JOINED" | "SKIPPED" | "WAITLISTED"
       skip_reason: "LEFT" | "REMOVED"
@@ -1329,7 +1329,7 @@ export const Constants = {
         "PAYMENT_REMINDER",
         "MEMORY_GENERATED",
       ],
-      participant_role: ["HOST", "CO_HOST", "PARTICIPANT"],
+      participant_role: ["HOST", "PARTICIPANT"],
       plan_activity_type: [
         "plan_created",
         "participant_invited",

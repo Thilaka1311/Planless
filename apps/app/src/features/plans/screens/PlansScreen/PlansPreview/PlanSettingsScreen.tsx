@@ -48,6 +48,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   const { showToast } = useToast();
 
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showPromoteHostToLeaveModal, setShowPromoteHostToLeaveModal] = useState(false);
+  const [promotingToLeaveUserId, setPromotingToLeaveUserId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
 
@@ -185,8 +187,31 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
   const isHostUser = useMemo(() => {
     if (isCreatorHost) return true;
-    return allHosts.some((h) => h.isSelf);
-  }, [isCreatorHost, allHosts]);
+    if (allHosts.some((h) => h.isSelf)) return true;
+
+    // Check if active user has participant_status === "host" and role === "host" in members
+    return members.some((m) => {
+      const uId = m.userId || m.userUuid || (m as any).user_id || m.id || "";
+      const isSelf = Boolean(
+        activeUserUuid &&
+          (uId === activeUserUuid ||
+            m.userUuid === activeUserUuid ||
+            m.userId === activeUserUuid)
+      );
+      if (!isSelf) return false;
+
+      const pStatus = (
+        m.joinState ||
+        m.rsvp_status ||
+        (m as any).participant_status ||
+        (m as any).status ||
+        ""
+      ).toLowerCase();
+      const pRole = (m.role || (m.isHost ? "host" : "")).toLowerCase();
+
+      return (pStatus === "host" || pStatus === "joined") && pRole === "host";
+    });
+  }, [isCreatorHost, allHosts, members, activeUserUuid]);
 
   const mode: "host" | "participant" = propMode || (isHostUser ? "host" : "participant");
   const isHostMode = mode === "host";
@@ -236,6 +261,63 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       })
       .sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
   }, [members, hostIds, activeUserUuid]);
+
+  const isSoleHost = allHosts.length <= 1 && isHostUser;
+
+  const executeLeavePlanFlow = async () => {
+    console.group("🔍 [LEAVE_AUDIT] 1. executeLeavePlanFlow Initiated");
+    console.log("📍 activeUserUuid:", activeUserUuid);
+    console.log("📍 isSoleHost:", isSoleHost, "| isHostUser:", isHostUser);
+    console.log("📍 allHosts:", allHosts);
+    console.log("📍 members count:", members.length);
+    console.groupEnd();
+
+    setIsLeaving(true);
+    try {
+      if (onLeavePlan) {
+        console.log("🔍 [LEAVE_AUDIT] Invoking onLeavePlan() callback...");
+        await onLeavePlan();
+        console.log("✅ [LEAVE_AUDIT] onLeavePlan() callback resolved successfully!");
+      } else if (onRemoveParticipant) {
+        console.log("🔍 [LEAVE_AUDIT] Fallback: Invoking onRemoveParticipant()...");
+        await onRemoveParticipant(activeUserUuid);
+        showToast("You left the plan");
+        onBack();
+      } else {
+        showToast("Leave plan feature coming soon");
+      }
+    } catch (err) {
+      console.error("❌ [LEAVE_AUDIT] executeLeavePlanFlow failed with error:", err);
+      showToast("Failed to leave plan");
+    } finally {
+      setIsLeaving(false);
+    }
+  };
+
+  const handlePromoteAndLeave = async (participantId: string) => {
+    console.group("🔍 [LEAVE_AUDIT] 0. handlePromoteAndLeave Initiated");
+    console.log("📍 Target replacement host ID to promote:", participantId);
+    console.log("📍 Current active user ID (leaving owner):", activeUserUuid);
+    console.groupEnd();
+
+    setPromotingToLeaveUserId(participantId);
+    try {
+      if (onPromoteToHost) {
+        console.log("🔍 [LEAVE_AUDIT] Promoting replacement host via onPromoteToHost...");
+        await onPromoteToHost(participantId);
+        console.log("✅ [LEAVE_AUDIT] Promotion of replacement host succeeded!");
+        showToast("✓ Promoted to host");
+      }
+      setShowPromoteHostToLeaveModal(false);
+      console.log("🔍 [LEAVE_AUDIT] Triggering executeLeavePlanFlow after promotion...");
+      await executeLeavePlanFlow();
+    } catch (err) {
+      console.error("❌ [LEAVE_AUDIT] handlePromoteAndLeave failed with error:", err);
+      showToast("Failed to promote participant");
+    } finally {
+      setPromotingToLeaveUserId(null);
+    }
+  };
 
   const handleToggleInvites = async () => {
     const previousVal = allowInvites;
@@ -570,29 +652,11 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           <button
             type="button"
             disabled={isLeaving}
-            onClick={async () => {
-              if (onLeavePlan) {
-                setIsLeaving(true);
-                try {
-                  await onLeavePlan();
-                } catch {
-                  showToast("Failed to leave plan");
-                } finally {
-                  setIsLeaving(false);
-                }
-              } else if (onRemoveParticipant) {
-                setIsLeaving(true);
-                try {
-                  await onRemoveParticipant(activeUserUuid);
-                  showToast("You left the plan");
-                  onBack();
-                } catch {
-                  showToast("Failed to leave plan");
-                } finally {
-                  setIsLeaving(false);
-                }
+            onClick={() => {
+              if (isSoleHost) {
+                setShowPromoteHostToLeaveModal(true);
               } else {
-                showToast("Leave plan feature coming soon");
+                executeLeavePlanFlow();
               }
             }}
             className="w-full bg-[#111111] hover:bg-red-500/10 active:scale-[0.99] border border-white/[0.08] hover:border-red-500/30 rounded-2xl p-4 flex items-center gap-3.5 transition cursor-pointer group text-left"
@@ -918,6 +982,142 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                 {isCancelling ? "Cancelling..." : "Cancel Plan"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Promote a New Host Before Leaving Modal (Sole Host Guard) */}
+      {showPromoteHostToLeaveModal && (
+        <div
+          onClick={() => setShowPromoteHostToLeaveModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 110,
+            display: 'flex',
+            alignItems: 'flex-end',
+            animation: 'fadeIn 0.2s ease-out',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              background: '#1C1C1E',
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: '16px 0 32px',
+              color: '#FFFFFF',
+              boxShadow: '0 -8px 32px rgba(0,0,0,0.5)',
+              animation: 'slideUp 0.28s cubic-bezier(0.25,1,0.5,1)',
+              maxHeight: '75vh',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            {/* Drag handle */}
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '0 0 16px' }}>
+              <div style={{ width: 36, height: 5, borderRadius: 2.5, background: 'rgba(255,255,255,0.15)' }} />
+            </div>
+
+            {/* Header */}
+            <div style={{ padding: '0 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF', marginBottom: 6, fontFamily: 'Inter, sans-serif', tracking: '-0.02em' }}>
+                Promote a New Host
+              </h3>
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: '1.45', fontFamily: 'Inter, sans-serif' }}>
+                You're the only host. Promote another participant before leaving the plan.
+              </p>
+            </div>
+
+            {/* Content: List or Disabled Notice */}
+            {eligibleGoingParticipants.length > 0 ? (
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {eligibleGoingParticipants.map((p) => {
+                    const isCurrentPromoting = promotingToLeaveUserId === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 12,
+                          padding: '10px 12px',
+                          background: 'rgba(255,255,255,0.04)',
+                          borderRadius: 14,
+                          border: '1px solid rgba(255,255,255,0.06)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
+                          <UserAvatar src={p.avatar} alt={p.name} size="w-10 h-10" className="flex-shrink-0" />
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <span style={{ fontSize: 15, fontWeight: 600, color: '#FFFFFF', display: 'block', truncate: true, fontFamily: 'Inter, sans-serif' }}>
+                              {p.name}
+                            </span>
+                            <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>
+                              Joined
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={Boolean(promotingToLeaveUserId)}
+                          onClick={() => handlePromoteAndLeave(p.id)}
+                          style={{
+                            padding: '8px 16px',
+                            background: '#FF6B2C',
+                            border: 'none',
+                            borderRadius: 10,
+                            color: '#FFFFFF',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: promotingToLeaveUserId ? 'not-allowed' : 'pointer',
+                            opacity: promotingToLeaveUserId && !isCurrentPromoting ? 0.4 : 1,
+                            transition: 'all 0.15s',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {isCurrentPromoting ? "Promoting..." : "Promote"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: '28px 20px 16px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.85)', margin: 0, fontFamily: 'Inter, sans-serif' }}>
+                  No one to promote yet.
+                </p>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: 0, fontFamily: 'Inter, sans-serif' }}>
+                  Wait for someone to join.
+                </p>
+                <div style={{ marginTop: 20, width: '100%' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowPromoteHostToLeaveModal(false)}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      background: 'rgba(255,255,255,0.08)',
+                      border: 'none',
+                      borderRadius: 12,
+                      color: '#FFFFFF',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -43,7 +43,7 @@ export interface DbParticipant {
   id: string;
   plan_id: string;
   user_id: string;
-  role: 'HOST' | 'CO_HOST' | 'PARTICIPANT';
+  role: 'HOST' | 'PARTICIPANT';
   rsvp_status: 'INVITED' | 'JOINED' | 'SKIPPED' | 'WAITLISTED';
   delivery_status?: 'DELIVERED';
   skip_reason?: 'LEFT' | 'REMOVED' | null;

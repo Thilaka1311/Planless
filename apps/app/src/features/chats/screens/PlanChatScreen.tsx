@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
-import { ArrowLeft, Send, MessageSquare, ChevronDown, CheckCheck } from "lucide-react";
+import { ArrowLeft, SendHorizontal, MessageSquare, ChevronDown, CheckCheck } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plan } from "../../../core/types";
 import { usePlansStore } from "../../plans/state/PlansContext";
@@ -35,7 +35,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, updatePlanDetails, updatePlanSettings } = usePlansStore();
+  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost } = usePlansStore();
   const { profile: userProfile, activeUserUuid } = useProfileStore();
 
   // Robust sender UUID resolution across all possible user state sources
@@ -481,6 +481,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             category={plan.category}
             hideHostAttribution={true}
             onHeaderPress={onOpenPlanDetails}
+            onOpenParticipants={() => goToPage(0)}
             onOpenActivity={() => goToPage(2)}
             onEditTitle={!isCancelled ? async (newTitle) => {
               try {
@@ -503,7 +504,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="absolute top-[28%] left-1/2 -translate-x-1/2 z-40 pointer-events-none"
+            className="absolute top-[calc(64px+14px+env(safe-area-inset-top,0px))] left-1/2 -translate-x-1/2 z-40 pointer-events-none"
           >
             <div className="px-4 py-2 rounded-full bg-zinc-900/80 backdrop-blur-md border border-white/10 shadow-2xl text-white text-xs font-medium tracking-wide">
               {PAGE_NAMES[overlayPage]}
@@ -649,21 +650,57 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   }
                   if (!senderName) senderName = "Member";
 
-                  // Group spacing: 1.5–2px gap between grouped messages from same sender, 14px between different senders
-                  const topMarginClass = isPrevSameSender ? "mt-[2px]" : "mt-3.5";
+                  // Group spacing: 1.5–2px gap between grouped messages from same sender, 10px between different senders
+                  const topMarginClass = isPrevSameSender ? "mt-[2px]" : "mt-2.5";
 
-                  // WhatsApp corner radius matrix: speech bubble tail on top-left (incoming) and top-right (outgoing) for first messages
+                  // WhatsApp corner radius matrix: First message has integrated tail corner; subsequent messages are perfectly symmetrical rounded-2xl
                   let outgoingBorderRadiusClass = "rounded-2xl rounded-tr-none";
-                  if (isFirstInGroup) outgoingBorderRadiusClass = "rounded-2xl rounded-tr-none";
-                  else if (isMiddleInGroup) outgoingBorderRadiusClass = "rounded-2xl rounded-tr-md rounded-br-md";
-                  else if (isLastInGroup) outgoingBorderRadiusClass = "rounded-2xl rounded-tr-md";
+                  if (isFirstInGroup || isSingleInGroup) outgoingBorderRadiusClass = "rounded-2xl rounded-tr-none";
+                  else outgoingBorderRadiusClass = "rounded-2xl";
 
                   let incomingBorderRadiusClass = "rounded-2xl rounded-tl-none";
-                  if (isFirstInGroup) incomingBorderRadiusClass = "rounded-2xl rounded-tl-none";
-                  else if (isMiddleInGroup) incomingBorderRadiusClass = "rounded-2xl rounded-tl-md rounded-bl-md";
-                  else if (isLastInGroup) incomingBorderRadiusClass = "rounded-2xl rounded-tl-md";
+                  if (isFirstInGroup || isSingleInGroup) incomingBorderRadiusClass = "rounded-2xl rounded-tl-none";
+                  else incomingBorderRadiusClass = "rounded-2xl";
 
                   const isFirstOutgoing = isMe && (isFirstInGroup || isSingleInGroup);
+
+                  // Helper: Detect if content contains ONLY emojis (1-3 emojis)
+                  const getEmojiCount = (str: string): number => {
+                    const trimmed = str.trim();
+                    if (!trimmed) return 0;
+                    // Remove variation selectors (\ufe0f) and zero-width joiners (\u200d) for clean testing
+                    const cleanStr = trimmed.replace(/[\ufe0f\u200d\u1f3fb-\u1f3ff]/g, "");
+                    // Test if string contains ONLY emojis using Extended_Pictographic property
+                    try {
+                      if (!/^\p{Extended_Pictographic}+$/u.test(cleanStr)) return 0;
+                    } catch {
+                      // Fallback regex if \p{Extended_Pictographic} isn't supported
+                      if (!/^[\u1F300-\u1F9FF\u2600-\u26FF\u2700-\u27BF]+$/.test(cleanStr)) return 0;
+                    }
+                    // Count unicode grapheme clusters
+                    const segmenter = typeof Intl !== "undefined" && (Intl as any).Segmenter ? new (Intl as any).Segmenter(undefined, { granularity: "grapheme" }) : null;
+                    const count = segmenter ? Array.from(segmenter.segment(trimmed)).length : Array.from(trimmed).length;
+                    return count >= 1 && count <= 3 ? count : 0;
+                  };
+
+                  const emojiCount = getEmojiCount(item.content);
+
+                  // Dynamic text & bubble classes for emoji-only messages vs standard text
+                  const emojiTextClass =
+                    emojiCount === 1
+                      ? "text-[32px] leading-[1.2]"
+                      : emojiCount === 2
+                      ? "text-[28px] leading-[1.2]"
+                      : emojiCount === 3
+                      ? "text-[24px] leading-[1.2]"
+                      : "text-[13.5px] leading-[1.4]";
+
+                  const bubblePaddingClass =
+                    emojiCount > 0
+                      ? "px-3.5 pt-2.5 pb-2 min-h-[44px]"
+                      : "pl-3 pr-3 pt-2 pb-1.5 min-h-[36px]";
+
+                  const spacerWidthClass = emojiCount > 0 ? "w-[44px]" : "w-[38px]";
 
                   return (
                     <div
@@ -673,17 +710,18 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                       {isMe ? (
                         /* Outgoing Message Bubble */
                         <div
-                          className={`max-w-[65%] px-3.5 pt-2 pb-1.5 text-[13.5px] leading-[1.4] break-words relative flex flex-col bg-[#005c4b] text-white ${outgoingBorderRadiusClass} ${
+                          className={`max-w-[87%] sm:max-w-[80%] w-fit ${bubblePaddingClass} ${emojiTextClass} break-words relative flex flex-col bg-[#C46A2C] text-white ${outgoingBorderRadiusClass} ${
                             isFirstOutgoing
-                              ? "before:content-[''] before:absolute before:top-0 before:-right-[6px] before:w-[6px] before:h-[8px] before:bg-[#005c4b] before:[clip-path:polygon(0_0,100%_0,0_100%)]"
+                              ? "before:content-[''] before:absolute before:top-0 before:-right-[6px] before:w-[6px] before:h-[8px] before:bg-[#C46A2C] before:[clip-path:polygon(0_0,100%_0,0_100%)]"
                               : ""
                           }`}
                         >
-                          <div className="font-normal pr-10 pb-1.5 whitespace-pre-wrap">
+                          <div className="font-normal whitespace-pre-line break-words inline-block">
                             {item.content}
+                            <span className={`inline-block ${spacerWidthClass} h-0 align-baseline pointer-events-none`} />
                           </div>
                           <div
-                            className="absolute bottom-1.5 right-3.5 flex items-center gap-1 select-none pointer-events-none text-white/60"
+                            className="absolute bottom-1 right-2.5 flex items-center gap-1 select-none pointer-events-none text-white/60 leading-none"
                             style={{ fontSize: "11px", fontWeight: 400 }}
                           >
                             <span className="whitespace-nowrap">{timeStr}</span>
@@ -691,42 +729,43 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                           </div>
                         </div>
                       ) : (
-                        /* Incoming message (Left-aligned, max 70% width) */
-                        <div className="flex flex-col max-w-[70%]">
-                          {/* Sender Name: Rendered ~4px above the first bubble of a sender group */}
+                        /* Incoming message (Left-aligned) */
+                        <div className="flex flex-col max-w-[93%] sm:max-w-[85%] w-fit">
+                          {/* Sender Name: Rendered 2px above the first bubble of a sender group */}
                           {showAvatar && (
-                            <span className="text-[13px] font-medium text-[#FF7A45]/90 mb-1 pl-[38px] tracking-wide select-none">
+                            <span className="text-[13px] font-medium text-white mb-[2px] pl-[34px] tracking-wide select-none">
                               {senderName}
                             </span>
                           )}
 
                           {/* Row container: Avatar + Message Bubble (Top-aligned with first bubble) */}
-                          <div className="flex items-start gap-1.5">
-                            {/* Avatar Column: Fixed 32px width, top-aligned with first bubble */}
-                            <div className="w-[32px] h-[32px] flex-shrink-0">
+                          <div className="flex items-start gap-1.5 max-w-full">
+                            {/* Avatar Column: Fixed 28px width, top-aligned with first bubble */}
+                            <div className="w-[28px] h-[28px] flex-shrink-0">
                               {showAvatar ? (
-                                <div className="w-[32px] h-[32px] rounded-full border border-white/10 overflow-hidden bg-zinc-800 flex items-center justify-center">
+                                <div className="w-[28px] h-[28px] rounded-full border border-white/10 overflow-hidden bg-zinc-800 flex items-center justify-center">
                                   <UserAvatar src={senderAvatarSrc} alt={senderName} size="w-full h-full" />
                                 </div>
                               ) : (
                                 /* Empty spacer so follow-up bubbles align under the first bubble */
-                                <div className="w-[32px] h-[32px]" />
+                                <div className="w-[28px] h-[28px]" />
                               )}
                             </div>
 
                             {/* Incoming Message Bubble */}
                             <div
-                              className={`flex-1 px-3.5 pt-2 pb-1.5 text-[13.5px] leading-[1.4] break-words relative flex flex-col bg-[#202c33] text-white min-w-0 ${incomingBorderRadiusClass} ${
+                              className={`w-fit max-w-[calc(100%-34px)] ${bubblePaddingClass} ${emojiTextClass} break-words relative flex flex-col bg-[#1f2c34] text-white min-w-0 ${incomingBorderRadiusClass} ${
                                 showAvatar
-                                  ? "before:content-[''] before:absolute before:top-0 before:-left-[6px] before:w-[6px] before:h-[8px] before:bg-[#202c33] before:[clip-path:polygon(100%_0,0_0,100%_100%)]"
+                                  ? "before:content-[''] before:absolute before:top-0 before:-left-[6px] before:w-[6px] before:h-[8px] before:bg-[#1f2c34] before:[clip-path:polygon(100%_0,0_0,100%_100%)]"
                                   : ""
                               }`}
                             >
-                              <div className="font-normal pr-10 pb-1.5 whitespace-pre-wrap">
+                              <div className="font-normal whitespace-pre-line break-words inline-block">
                                 {item.content}
+                                <span className={`inline-block ${spacerWidthClass} h-0 align-baseline pointer-events-none`} />
                               </div>
                               <div
-                                className="absolute bottom-1.5 right-3.5 flex items-center gap-1 select-none pointer-events-none text-white/50"
+                                className="absolute bottom-1 right-2.5 flex items-center gap-1 select-none pointer-events-none text-white/50 leading-none"
                                 style={{ fontSize: "11px", fontWeight: 400 }}
                               >
                                 <span className="whitespace-nowrap">{timeStr}</span>
@@ -764,9 +803,9 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   type="submit"
                   disabled={!inputText.trim() || sending}
                   onMouseDown={(e) => e.preventDefault()}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#FF6B2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#C46A2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
                 >
-                  <Send className="w-3.5 h-3.5 text-white fill-current stroke-[2.5]" />
+                  <SendHorizontal className="w-4 h-4 text-white stroke-[2]" />
                 </button>
               </div>
             </form>
@@ -819,6 +858,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               await promoteParticipantToHost(plan.id, uId);
             } catch (err) {
               console.error("Failed to promote to host:", err);
+              throw err;
             }
           }}
           onEditTitle={async (newTitle) => {
@@ -843,12 +883,19 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             }
           }}
           onLeavePlan={async () => {
+            console.group("🔍 [LEAVE_AUDIT] 2. PlanChatScreen onLeavePlan Invoked");
+            console.log("📍 currentUserId:", currentUserId);
+            console.log("📍 plan.id:", plan?.id, "| targetPlanUuid:", targetPlanUuid);
+            console.groupEnd();
             try {
-              await removeParticipant(plan.id, currentUserId);
+              console.log("🔍 [LEAVE_AUDIT] Executing store leavePlan()...");
+              await leavePlan(plan.id, currentUserId);
+              console.log("✅ [LEAVE_AUDIT] Store leavePlan() completed cleanly!");
               setShowSettingsScreen(false);
               onBack();
             } catch (err) {
-              console.error("Failed to leave plan:", err);
+              console.error("❌ [LEAVE_AUDIT] PlanChatScreen onLeavePlan error:", err);
+              throw err;
             }
           }}
           onCancelPlan={async () => {
