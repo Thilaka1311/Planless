@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronLeft, Edit, MoreVertical, Settings, Users } from "lucide-react";
+import { ChevronLeft, Edit, MoreVertical, Settings, Users, Activity } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 
@@ -44,6 +44,8 @@ interface HeroHeaderProps {
   onHeaderPress?: () => void;
   /** Called when the user taps the participants icon in the chat header */
   onOpenParticipants?: () => void;
+  /** Called when the user taps the activity history icon in the chat header */
+  onOpenActivity?: () => void;
 }
 
 export const HeroHeader: React.FC<HeroHeaderProps> = ({
@@ -63,6 +65,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   hideHostAttribution = false,
   onHeaderPress,
   onOpenParticipants,
+  onOpenActivity,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
@@ -183,19 +186,47 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               </h1>
             </button>
 
-            {/* Settings icon button — right side, isolated from onHeaderPress */}
-            {onOpenSettings && (
-              <button
-                id="immersive-plan-settings-btn"
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onOpenSettings(); }}
-                className="p-2 -mr-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
-                style={{ minWidth: "44px", minHeight: "44px" }}
-                title="Settings"
-              >
-                <Settings className="w-5 h-5" />
-              </button>
-            )}
+            {/* Header action buttons — right side (Participants -> Activity -> Settings) */}
+            <div className="flex items-center gap-0.5 flex-shrink-0 -mr-2">
+              {onOpenParticipants && (
+                <button
+                  id="immersive-plan-participants-btn"
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onOpenParticipants(); }}
+                  className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
+                  style={{ minWidth: "40px", minHeight: "40px" }}
+                  title="Participants"
+                >
+                  <Users className="w-5 h-5" />
+                </button>
+              )}
+
+              {onOpenActivity && (
+                <button
+                  id="immersive-plan-activity-btn"
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onOpenActivity(); }}
+                  className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
+                  style={{ minWidth: "40px", minHeight: "40px" }}
+                  title="Activity Timeline"
+                >
+                  <Activity className="w-5 h-5" />
+                </button>
+              )}
+
+              {onOpenSettings && (
+                <button
+                  id="immersive-plan-settings-btn"
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onOpenSettings(); }}
+                  className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
+                  style={{ minWidth: "40px", minHeight: "40px" }}
+                  title="Settings"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

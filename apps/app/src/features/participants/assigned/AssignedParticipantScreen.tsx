@@ -53,6 +53,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   initialTab,
   waitlistMode = 'assigned',
   onWaitlistModeChange,
+  onPlanSizeEditingChange,
   displayMode = 'standalone',
 }) => {
   const isStandalone = displayMode === 'standalone';
@@ -177,6 +178,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     setPendingCapacity(null);
   };
 
+  const [isPlanSizeEditing, setIsPlanSizeEditing] = useState(false);
+
   const isInviteOnly = managementMode === 'invite_only' || (!isHostUser && managementMode !== 'host');
 
   const closeSheet = () => {
@@ -186,7 +189,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   };
 
   const handleItemTap = (item: Friend, type: ParticipantTab) => {
-    if (isInviteOnly) return;
+    if (isInviteOnly || isPlanSizeEditing) return;
     setSelectedItem(item);
     setSheetType(type);
     setShowConfirmRemove(false);
@@ -255,6 +258,10 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           isHostUser={isHostUser}
           isInviteOnly={isInviteOnly}
           onConfirmAdjustCapacity={handleApplyCapacityChange}
+          onEditingChange={(editing) => {
+            setIsPlanSizeEditing(editing);
+            if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
+          }}
         />
       </div>
 

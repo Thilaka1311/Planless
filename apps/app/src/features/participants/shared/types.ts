@@ -44,6 +44,7 @@ export interface SharedParticipantScreenProps {
   initialTab?: ParticipantTab;
   waitlistMode?: 'automatic' | 'assigned';
   displayMode?: 'standalone' | 'embedded';
+  onPlanSizeEditingChange?: (isEditing: boolean) => void;
   onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;
   isHostSelected?: boolean;
   selectedFriends?: Friend[];

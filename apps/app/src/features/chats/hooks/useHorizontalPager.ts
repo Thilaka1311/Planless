@@ -5,10 +5,11 @@ export interface UseHorizontalPagerOptions {
   initialPage?: number;
   totalPages?: number;
   keyboardOpen?: boolean;
+  disabled?: boolean;
 }
 
 export function useHorizontalPager(options: UseHorizontalPagerOptions = {}) {
-  const { initialPage = 1, totalPages = 3, keyboardOpen = false } = options;
+  const { initialPage = 1, totalPages = 3, keyboardOpen = false, disabled = false } = options;
 
   const [currentPage, setCurrentPage] = useState<number>(initialPage);
   const [overlayPage, setOverlayPage] = useState<number | null>(null);
@@ -94,18 +95,20 @@ export function useHorizontalPager(options: UseHorizontalPagerOptions = {}) {
     goToPage(targetPage, true, velocity);
   };
 
-  const pagerProps = {
-    drag: "x" as const,
-    dragDirectionLock: true,
-    dragPropagation: false,
-    dragConstraints: {
-      left: typeof window !== "undefined" ? -2 * window.innerWidth : -750,
-      right: 0,
-    },
-    dragElastic: { left: 0.2, right: 0.2 },
-    dragMomentum: false,
-    onDragEnd: handleDragEnd,
-  };
+  const pagerProps = disabled
+    ? {}
+    : {
+        drag: "x" as const,
+        dragDirectionLock: true,
+        dragPropagation: false,
+        dragConstraints: {
+          left: typeof window !== "undefined" ? -2 * window.innerWidth : -750,
+          right: 0,
+        },
+        dragElastic: { left: 0.2, right: 0.2 },
+        dragMomentum: false,
+        onDragEnd: handleDragEnd,
+      };
 
   return {
     currentPage,

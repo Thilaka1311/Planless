@@ -51,6 +51,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     rejoinPlan,
     updatePlanSettings,
     demoteHostToParticipant,
+    leavePlan,
   } = usePlansStore();
   const selectedPlan = useLivePlan(planId);
 
@@ -248,6 +249,19 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         }}
         onDemoteHost={async (userId) => {
           await demoteHostToParticipant(selectedPlan.id, userId);
+        }}
+        onLeavePlan={async () => {
+          try {
+            await leavePlan(selectedPlan.id, resolvedUserUuid);
+            if (onLeavePlan) {
+              onLeavePlan();
+            } else {
+              onClose();
+            }
+          } catch (err) {
+            console.error("Failed to leave plan from HomePlansPreviewScreen:", err);
+            throw err;
+          }
         }}
       />
     );

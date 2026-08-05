@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { UserPlus } from 'lucide-react';
 import { PlanSizeSlider } from '../../create/components/PlanSizeSlider';
 
@@ -9,6 +9,7 @@ interface PlanSizeCardProps {
   isInviteOnly?: boolean;
   onAdjustCapacity?: (newCapacity: number) => void;
   onConfirmAdjustCapacity?: (targetCap: number) => void;
+  onEditingChange?: (isEditing: boolean) => void;
 }
 
 export const PlanSizeCard: React.FC<PlanSizeCardProps> = ({
@@ -17,27 +18,81 @@ export const PlanSizeCard: React.FC<PlanSizeCardProps> = ({
   isHostUser = false,
   isInviteOnly = false,
   onConfirmAdjustCapacity,
+  onEditingChange,
 }) => {
   const [isEditingCapacity, setIsEditingCapacity] = useState(false);
   const [tempCapacity, setTempCapacity] = useState(capacity);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const tempCapRef = useRef(capacity);
+  const initialCapRef = useRef(capacity);
 
-  React.useEffect(() => {
+  const isEditingRef = useRef(false);
+
+  // Sync refs and local state when external capacity prop changes
+  useEffect(() => {
     setTempCapacity(capacity);
+    tempCapRef.current = capacity;
   }, [capacity]);
+
+  const handleSetEditing = (editing: boolean) => {
+    isEditingRef.current = editing;
+    setIsEditingCapacity(editing);
+    if (onEditingChange) {
+      onEditingChange(editing);
+    }
+  };
+
+  const handleStartEditing = () => {
+    initialCapRef.current = capacity;
+    setTempCapacity(capacity);
+    tempCapRef.current = capacity;
+    handleSetEditing(true);
+  };
+
+  const handleExitEditing = () => {
+    if (tempCapRef.current !== initialCapRef.current) {
+      if (onConfirmAdjustCapacity) {
+        onConfirmAdjustCapacity(tempCapRef.current);
+      }
+    }
+    // Visually collapse immediately
+    setIsEditingCapacity(false);
+    // Keep lock active synchronously through the remainder of the current event loop (pointerdown -> click cycle)
+    setTimeout(() => {
+      isEditingRef.current = false;
+      if (onEditingChange) {
+        onEditingChange(false);
+      }
+    }, 0);
+  };
+
+  // Click-outside event listener (capture phase) to collapse card & save immediately on tap outside
+  useEffect(() => {
+    if (!isEditingCapacity) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (cardRef.current && !cardRef.current.contains(event.target as Node)) {
+        handleExitEditing();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('mousedown', handlePointerDown, true);
+    document.addEventListener('touchstart', handlePointerDown, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('mousedown', handlePointerDown, true);
+      document.removeEventListener('touchstart', handlePointerDown, true);
+    };
+  }, [isEditingCapacity, onConfirmAdjustCapacity]);
 
   if (!isHostUser || isInviteOnly || maxCapacity === undefined) {
     return null;
   }
 
-  const handleApply = (targetCap: number) => {
-    if (onConfirmAdjustCapacity) {
-      onConfirmAdjustCapacity(targetCap);
-    }
-    setIsEditingCapacity(false);
-  };
-
   return (
-    <div style={{ padding: '0 20px', marginBottom: 12 }}>
+    <div ref={cardRef} style={{ padding: '0 20px', marginBottom: 12 }}>
       {!isEditingCapacity ? (
         <div
           style={{
@@ -65,7 +120,7 @@ export const PlanSizeCard: React.FC<PlanSizeCardProps> = ({
           </div>
           <button
             type="button"
-            onClick={() => setIsEditingCapacity(true)}
+            onClick={handleStartEditing}
             style={{
               padding: '6px 14px',
               background: 'rgba(255, 255, 255, 0.08)',
@@ -109,52 +164,14 @@ export const PlanSizeCard: React.FC<PlanSizeCardProps> = ({
           <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
             <PlanSizeSlider
               value={tempCapacity}
-              onChange={(val) => setTempCapacity(val)}
+              onChange={(val) => {
+                setTempCapacity(val);
+                tempCapRef.current = val;
+              }}
               hasError={false}
               min={2}
               max={maxCapacity}
             />
-          </div>
-          <div style={{ display: 'flex', gap: 10, width: '100%' }}>
-            <button
-              type="button"
-              onClick={() => {
-                setTempCapacity(capacity);
-                setIsEditingCapacity(false);
-              }}
-              style={{
-                flex: 1,
-                padding: '10px',
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: 'none',
-                borderRadius: 10,
-                color: '#FFFFFF',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'Inter, sans-serif',
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => handleApply(tempCapacity)}
-              style={{
-                flex: 1,
-                padding: '10px',
-                background: '#FF6B2C',
-                border: 'none',
-                borderRadius: 10,
-                color: '#FFFFFF',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'Inter, sans-serif',
-              }}
-            >
-              Apply
-            </button>
           </div>
         </div>
       )}
