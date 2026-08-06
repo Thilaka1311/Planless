@@ -3,7 +3,7 @@ import { UserPlus } from 'lucide-react';
 import { SharedParticipantScreenProps, Friend, ParticipantTab } from '../shared/types';
 import { ParticipantHeader } from '../shared/ParticipantHeader';
 import { PlanSizeCard } from '../shared/PlanSizeCard';
-import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
+
 import { AssignedParticipantTabs } from './AssignedParticipantTabs';
 import { AssignedParticipantActions } from './AssignedParticipantActions';
 import { GoingSection } from '../components/GoingSection';
@@ -50,9 +50,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onOpenActivity,
   onReorderGoing,
   onReorderWaitlist,
+  onReorderWaitlistComplete,
   initialTab,
-  waitlistMode = 'assigned',
-  onWaitlistModeChange,
   onPlanSizeEditingChange,
   displayMode = 'standalone',
 }) => {
@@ -265,13 +264,6 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         />
       </div>
 
-      <WaitlistModeSelector
-        waitlistMode={waitlistMode}
-        onWaitlistModeChange={onWaitlistModeChange}
-        isHostUser={isHostUser}
-        isInviteOnly={isInviteOnly}
-      />
-
       <AssignedParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
@@ -342,6 +334,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
                 onItemTap={isHostUser ? (item) => handleItemTap(item, 'waitlist') : undefined}
                 onAddFriends={onAddFriends}
                 onReorder={mode === 'wizard' ? (newWait) => setInternalWaitlist(newWait) : onReorderWaitlist}
+                onReorderComplete={onReorderWaitlistComplete}
                 reorderable={mode === 'wizard' || (isHostUser && Boolean(onReorderWaitlist))}
                 showIndex={true}
               />

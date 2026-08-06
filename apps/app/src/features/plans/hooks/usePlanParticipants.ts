@@ -1168,9 +1168,7 @@ export function usePlanParticipants({
     }
   }, [plans, dbPlanParticipants, resolveUserUuid, refreshPlans, setDbPlanParticipants]);
 
-  const reorderDebounceTimersRef = React.useRef<Map<string, NodeJS.Timeout>>(new Map());
-
-  const reorderWaitlist = useCallback((planId: string, orderedUserUuids: string[]) => {
+  const reorderWaitlist = useCallback(async (planId: string, orderedUserUuids: string[]) => {
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
     if (!planUuid || orderedUserUuids.length === 0) return;
@@ -1199,48 +1197,46 @@ export function usePlanParticipants({
       });
     });
 
-    // 2. Clear any existing debounce timer for this plan
-    const existingTimer = reorderDebounceTimersRef.current.get(planUuid);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
+    // 2. Immediately execute atomic PostgreSQL RPC to persist reordered waitlist
+    try {
+      const resolvedUserUuids = orderedUserUuids.map(uId => resolveUserUuid(uId) || uId);
+      const { error } = await (supabase as any).rpc("reorder_waitlist", {
+        p_plan_id: planUuid,
+        p_ordered_user_ids: resolvedUserUuids,
+      });
 
-    // 3. Set a new 3-second debounce timer before writing final order to DB
-    const timer = setTimeout(async () => {
-      reorderDebounceTimersRef.current.delete(planUuid);
-      try {
-        // Switch plan waitlist_order_mode to CUSTOM
-        await (supabase as any)
-          .from("plans")
-          .update({ waitlist_order_mode: "CUSTOM" })
-          .eq("id", planUuid);
-
-        // Persist 1-indexed waitlist_position to plan_participants for waitlist participants
-        for (let i = 0; i < orderedUserUuids.length; i++) {
-          const userUuid = resolveUserUuid(orderedUserUuids[i]);
-          await (supabase as any)
-            .from("plan_participants")
-            .update({ waitlist_position: i + 1 })
-            .eq("plan_id", planUuid)
-            .eq("user_id", userUuid);
-        }
-
-        // Guarantee any participant assigned to GOING has waitlist_position = null in DB
-        await (supabase as any)
-          .from("plan_participants")
-          .update({ waitlist_position: null })
-          .eq("plan_id", planUuid)
-          .eq("assigned_group", "GOING");
-
-        await refreshPlans();
-      } catch (err) {
-        console.error("[reorderWaitlist] Failed to persist new order to DB after 3s debounce:", err);
-        await refreshPlans(); // Revert/sync to current DB state if save fails
+      if (error) {
+        console.error("[reorderWaitlist] Error executing reorder_waitlist RPC:", error);
+        await refreshPlans(["plans", "plan_participants"]);
       }
-    }, 3000);
-
-    reorderDebounceTimersRef.current.set(planUuid, timer);
+    } catch (err) {
+      await refreshPlans(["plans", "plan_participants"]);
+    }
   }, [plans, resolveUserUuid, setDbPlanParticipants, refreshPlans]);
+
+  const switchToAutomaticWaitlistMode = useCallback(async (planId: string, promotedUserUuids: string[] = []) => {
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+    if (!planUuid) return;
+
+    try {
+      const resolvedPromotedUserUuids = promotedUserUuids.map(uId => resolveUserUuid(uId) || uId);
+      const { error } = await (supabase as any).rpc("switch_to_automatic_waitlist_mode", {
+        p_plan_id: planUuid,
+        p_promoted_user_ids: resolvedPromotedUserUuids,
+      });
+
+      if (error) {
+        console.error("[switchToAutomaticWaitlistMode] RPC error:", error);
+        throw error;
+      }
+
+      await refreshPlans(["plans", "plan_participants"]);
+    } catch (err) {
+      console.error("[switchToAutomaticWaitlistMode] Exception:", err);
+      throw err;
+    }
+  }, [plans, resolveUserUuid, refreshPlans]);
 
   return {
     joinPlan,
@@ -1257,6 +1253,7 @@ export function usePlanParticipants({
     moveParticipantToGoing,
     moveParticipantToWaitlist,
     moveParticipantToInvited,
-    reorderWaitlist
+    reorderWaitlist,
+    switchToAutomaticWaitlistMode
   };
 }

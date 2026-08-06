@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight, TrendingUp, Hourglass, Check } from "lucide-react";
+import { ChevronRight, TrendingUp, Hourglass, Check, AlertCircle } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { HostInfo } from "./HeroHeader";
 
@@ -992,23 +992,292 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
               <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Increase Plan Size</span>
             </div>
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-          {/* Cancel Button */}
+// ----------------------------------------------------------------------
+// 11. SWITCH TO AUTOMATIC SELECTION BOTTOM SHEET (Case 1)
+// ----------------------------------------------------------------------
+interface SwitchToAutomaticSelectionBottomSheetProps {
+  isOpen: boolean;
+  vacantSpots: number;
+  eligibleWaitlist: any[];
+  onConfirm: (selectedUserIds: string[]) => Promise<void> | void;
+  onClose: () => void;
+}
+
+export const SwitchToAutomaticSelectionBottomSheet: React.FC<SwitchToAutomaticSelectionBottomSheetProps> = ({
+  isOpen,
+  vacantSpots,
+  eligibleWaitlist,
+  onConfirm,
+  onClose,
+}) => {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedIds([]);
+      setIsSubmitting(false);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(i => i !== id);
+      }
+      if (prev.length >= vacantSpots) {
+        return prev;
+      }
+      return [...prev, id];
+    });
+  };
+
+  const isReady = selectedIds.length === vacantSpots;
+
+  const handleConfirm = async () => {
+    if (!isReady || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onConfirm(selectedIds);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.6)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'flex-end',
+        animation: 'fadeIn 0.2s ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxHeight: '85vh',
+          background: '#1C1C1E',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: '16px 20px 32px',
+          color: '#FFFFFF',
+          fontFamily: 'Inter, sans-serif',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.2)', margin: '0 auto 16px' }} />
+
+        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px', textAlign: 'center' }}>
+          Fill Available GOING Spots
+        </h3>
+
+        <p style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.5)', textAlign: 'center', margin: '0 0 16px', lineHeight: 1.4 }}>
+          Automatic mode requires all available spots to be filled. Select <span style={{ color: '#FF6B2C', fontWeight: 600 }}>exactly {vacantSpots} participant{vacantSpots > 1 ? 's' : ''}</span> to move into GOING.
+        </p>
+
+        {/* Participant Selection List */}
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+          {eligibleWaitlist.map((friend) => {
+            const fId = friend.dbUuid || friend.id;
+            const isSelected = selectedIds.includes(fId);
+            return (
+              <div
+                key={fId}
+                onClick={() => toggleSelect(fId)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  borderRadius: 14,
+                  background: isSelected ? 'rgba(255, 107, 44, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                  border: isSelected ? '1px solid #FF6B2C' : '1px solid rgba(255, 255, 255, 0.08)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <img
+                    src={friend.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=256'}
+                    alt={friend.name}
+                    style={{ width: 36, height: 36, borderRadius: 18, objectFit: 'cover' }}
+                  />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>{friend.name}</span>
+                </div>
+
+                <div
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 11,
+                    border: isSelected ? 'none' : '2px solid rgba(255, 255, 255, 0.3)',
+                    background: isSelected ? '#FF6B2C' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {isSelected && <span style={{ color: '#FFFFFF', fontSize: 12, fontWeight: 800 }}>✓</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={!isReady || isSubmitting}
+          style={{
+            width: '100%',
+            padding: '14px',
+            borderRadius: 14,
+            background: isReady ? '#FF6B2C' : 'rgba(255, 255, 255, 0.1)',
+            color: isReady ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: isReady ? 'pointer' : 'not-allowed',
+            border: 'none',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          {isSubmitting ? 'Switching...' : `Confirm & Switch (${selectedIds.length}/${vacantSpots})`}
+        </button>
+
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            width: '100%',
+            padding: '12px',
+            background: 'none',
+            border: 'none',
+            color: 'rgba(255, 255, 255, 0.4)',
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: 'pointer',
+            marginTop: 6,
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 12. SWITCH TO AUTOMATIC WARNING BOTTOM SHEET (Case 2)
+// ----------------------------------------------------------------------
+interface SwitchToAutomaticWarningBottomSheetProps {
+  isOpen: boolean;
+  onReducePlanSize?: () => void;
+  onClose: () => void;
+}
+
+export const SwitchToAutomaticWarningBottomSheet: React.FC<SwitchToAutomaticWarningBottomSheetProps> = ({
+  isOpen,
+  onReducePlanSize,
+  onClose,
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.6)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'flex-end',
+        animation: 'fadeIn 0.2s ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          background: '#1C1C1E',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: '16px 20px 32px',
+          color: '#FFFFFF',
+          fontFamily: 'Inter, sans-serif',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.2)', margin: '0 auto 16px' }} />
+
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 12, marginBottom: 24 }}>
+          <div className="w-12 h-12 rounded-2xl bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C]">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+
+          <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
+            Cannot Switch to Automatic
+          </h3>
+
+          <p style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.5)', margin: 0, lineHeight: 1.5, maxWidth: 320 }}>
+            There aren't enough participants who have joined the waitlist to fill the available GOING spots. Ask more participants to join the waitlist or reduce the plan size before switching to Automatic.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {onReducePlanSize && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onReducePlanSize();
+              }}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: 14,
+                background: '#FF6B2C',
+                color: '#FFFFFF',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer',
+                border: 'none',
+              }}
+            >
+              Reduce Plan Size
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onClose}
             style={{
               width: '100%',
               padding: '14px',
-              background: 'none',
-              border: 'none',
-              borderRadius: 12,
-              color: 'rgba(255, 255, 255, 0.4)',
+              borderRadius: 14,
+              background: 'rgba(255, 255, 255, 0.08)',
+              color: 'rgba(255, 255, 255, 0.6)',
               fontSize: 14,
-              fontWeight: 500,
+              fontWeight: 600,
               cursor: 'pointer',
-              textAlign: 'center',
-              marginTop: 6,
+              border: '1px solid rgba(255, 255, 255, 0.12)',
             }}
           >
             Cancel

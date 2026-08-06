@@ -111,7 +111,7 @@ BEGIN
 
         v_invited_count := v_invited_count + 1;
       END IF;
-    LOOP;
+    END LOOP;
   END IF;
 
   RETURN jsonb_build_object(

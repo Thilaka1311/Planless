@@ -15,6 +15,7 @@ interface WaitlistSectionProps {
   onItemTap?: (item: Friend) => void;
   onAddFriends?: () => void;
   onReorder?: (newWaitlist: Friend[]) => void;
+  onReorderComplete?: (finalWaitlist: Friend[]) => void;
   reorderable?: boolean;
   showIndex?: boolean;
   indexOffset?: number;
@@ -25,6 +26,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
   onItemTap,
   onAddFriends,
   onReorder,
+  onReorderComplete,
   reorderable = true,
   showIndex = true,
   indexOffset = 1,
@@ -49,27 +51,37 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
           as="div"
           style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}
         >
-          {waitlist.map((item, idx) => (
-            <Reorder.Item
-              key={item.id}
-              value={item}
-              id={item.id}
-              as="div"
-              whileDrag={{
-                scale: 1.02,
-                boxShadow: '0 12px 28px rgba(0, 0, 0, 0.7)',
-                zIndex: 50,
-              }}
-              style={{ position: 'relative', cursor: 'grab', touchAction: 'none' }}
-            >
-              <StackingFriends
-                item={item}
-                index={idx + indexOffset}
-                showIndex={showIndex}
-                onClick={onItemTap ? () => onItemTap(item) : undefined}
-              />
-            </Reorder.Item>
-          ))}
+          {waitlist.map((item, idx) => {
+            const itemKey = item.dbUuid || item.id;
+            return (
+              <Reorder.Item
+                key={itemKey}
+                value={item}
+                id={itemKey}
+                as="div"
+                layoutId={itemKey}
+                onDragEnd={() => {
+                  if (onReorderComplete) {
+                    onReorderComplete(waitlist);
+                  }
+                }}
+                transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                whileDrag={{
+                  scale: 1.02,
+                  boxShadow: '0 12px 28px rgba(0, 0, 0, 0.7)',
+                  zIndex: 50,
+                }}
+                style={{ position: 'relative', cursor: 'grab', touchAction: 'none' }}
+              >
+                <StackingFriends
+                  item={item}
+                  index={idx + indexOffset}
+                  showIndex={showIndex}
+                  onClick={onItemTap ? () => onItemTap(item) : undefined}
+                />
+              </Reorder.Item>
+            );
+          })}
         </Reorder.Group>
       ) : (
         waitlist.map((item, idx) => (

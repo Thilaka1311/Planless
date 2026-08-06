@@ -591,6 +591,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     promoteParticipantToHost,
     demoteHostToParticipant,
     reorderWaitlist,
+    switchToAutomaticWaitlistMode,
   } = usePlansStore();
   const selectedPlan = useLivePlan(planId);
 
@@ -1142,6 +1143,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onUpdatePlanDetails={async (updates) => {
           await updatePlanDetails(selectedPlan.id, updates);
         }}
+        onWaitlistModeChange={async (newMode) => {
+          if (newMode === 'assigned') {
+            await updatePlanDetails(selectedPlan.id, { participant_filtering: 'ASSIGNED' });
+          } else {
+            // Open Participant Management screen so validation & selection bottom sheet run cleanly
+            setShowPlanSettingsScreen(false);
+            setShowParticipantManagement(true);
+          }
+        }}
         onDemoteHost={async (userId) => {
           await demoteHostToParticipant(selectedPlan.id, userId);
         }}
@@ -1447,6 +1457,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 assignedGroup
               })}
               onReorderWaitlist={(planId, orderedUserUuids) => reorderWaitlist(planId, orderedUserUuids)}
+              onSwitchToAutomaticMode={(planId, userIds) => switchToAutomaticWaitlistMode(planId, userIds)}
               onOpenSettings={() => {
                 setShowParticipantManagement(false);
                 setShowPlanSettingsScreen(true);

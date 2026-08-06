@@ -129,6 +129,8 @@ const EventIcon: React.FC<{ type: ActivityEvent["type"] }> = ({ type }) => {
       return <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
     case "participant_promoted":
       return <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
+    case "host_promoted":
+      return <Crown className="w-4 h-4 text-amber-300 flex-shrink-0" />;
     case "participant_removed":
       return <UserX className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
 
@@ -325,6 +327,12 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
         case "participant_promoted":
           primaryTitle = targetDetails.name || "Participant";
           secondaryDescription = actorDetails.name ? `Moved to Going by ${actorDetails.name}` : "Moved to Going";
+          isUserEvent = true;
+          userAvatarSrc = targetDetails.avatar;
+          break;
+        case "host_promoted":
+          primaryTitle = targetDetails.name || "Participant";
+          secondaryDescription = actorDetails.name ? `Promoted to Host by ${actorDetails.name}` : "Promoted to Host";
           isUserEvent = true;
           userAvatarSrc = targetDetails.avatar;
           break;

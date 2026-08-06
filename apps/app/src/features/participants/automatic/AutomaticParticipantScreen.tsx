@@ -3,7 +3,7 @@ import { UserPlus } from 'lucide-react';
 import { SharedParticipantScreenProps, Friend, ParticipantTab } from '../shared/types';
 import { ParticipantHeader } from '../shared/ParticipantHeader';
 import { PlanSizeCard } from '../shared/PlanSizeCard';
-import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
+
 import { AutomaticParticipantTabs } from './AutomaticParticipantTabs';
 import { AutomaticParticipantActions } from './AutomaticParticipantActions';
 import { GoingSection } from '../components/GoingSection';
@@ -44,8 +44,6 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   onOpenSettings,
   onOpenActivity,
   initialTab,
-  waitlistMode = 'automatic',
-  onWaitlistModeChange,
   onPlanSizeEditingChange,
   displayMode = 'standalone',
 }) => {
@@ -80,17 +78,19 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   const hasWaitlistTab = displayWaitlist.length > 0;
   const hasInvitedTab = displayInvited.length > 0;
 
+  const isFull = capacity > 0 && displayGoing.length >= capacity;
+
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     if (mode === 'wizard') {
       return ['invited'];
     }
-    const t: ParticipantTab[] = [];
-    if (hasInvitedTab) t.push('invited');
-    if (hasGoingTab) t.push('going');
-    if (hasWaitlistTab) t.push('waitlist');
-    if (t.length === 0) t.push('going');
-    return t;
-  }, [hasInvitedTab, hasGoingTab, hasWaitlistTab, mode]);
+    // Phase 2: Plan is full -> Going + Waitlist
+    if (isFull) {
+      return ['going', 'waitlist'];
+    }
+    // Phase 1: Before plan is full -> Invited + Going
+    return ['invited', 'going'];
+  }, [isFull, mode]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>('going');
   const initialMountRef = React.useRef(true);
@@ -175,13 +175,6 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         />
       </div>
 
-      <WaitlistModeSelector
-        waitlistMode={waitlistMode}
-        onWaitlistModeChange={onWaitlistModeChange}
-        isHostUser={isHostUser}
-        isInviteOnly={isInviteOnly}
-      />
-
       <AutomaticParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
@@ -233,7 +226,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
             showIndex={false}
           />
         )}
-        {activeTab === 'waitlist' && hasWaitlistTab && (
+        {activeTab === 'waitlist' && (
           <WaitlistSection
             waitlist={displayWaitlist}
             onItemTap={isHostUser ? (item) => handleItemTap(item, 'waitlist') : undefined}

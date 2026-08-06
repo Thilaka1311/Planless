@@ -42,10 +42,8 @@ export interface SharedParticipantScreenProps {
   onOpenSettings?: () => void;
   onOpenActivity?: () => void;
   initialTab?: ParticipantTab;
-  waitlistMode?: 'automatic' | 'assigned';
   displayMode?: 'standalone' | 'embedded';
   onPlanSizeEditingChange?: (isEditing: boolean) => void;
-  onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;
   isHostSelected?: boolean;
   selectedFriends?: Friend[];
   externalGoingList?: Friend[];
@@ -53,6 +51,7 @@ export interface SharedParticipantScreenProps {
   externalInvitedList?: Friend[];
   onReorderGoing?: (newGoing: Friend[]) => void;
   onReorderWaitlist?: (newWaitlist: Friend[]) => void;
+  onReorderWaitlistComplete?: (finalWaitlist: Friend[]) => void;
 }
 
 export type ParticipantManagementScreenProps = SharedParticipantScreenProps;

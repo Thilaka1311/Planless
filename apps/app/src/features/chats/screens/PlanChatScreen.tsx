@@ -35,7 +35,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost } = usePlansStore();
+  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost } = usePlansStore();
   const { profile: userProfile, activeUserUuid } = useProfileStore();
 
   // Robust sender UUID resolution across all possible user state sources
@@ -234,7 +234,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         plan_id: targetPlanUuid,
         sender_id: effectiveSenderUuid,
         content: trimmed,
-        message_type: "text",
+        message_type: "text" as const,
       };
 
       const { data, error } = await supabase
@@ -555,6 +555,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   })
                 }
                 onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
+                onSwitchToAutomaticMode={(pId, userIds) => switchToAutomaticWaitlistMode(pId, userIds)}
                 onOpenActivity={() => goToPage(2)}
                 onPlanSizeEditingChange={setIsEditingPlanSize}
               />
@@ -847,6 +848,13 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               await updatePlanDetails(plan.id, updates as any);
             } catch (err) {
               console.error("Failed to update plan details:", err);
+            }
+          }}
+          onWaitlistModeChange={async (newMode) => {
+            if (newMode === 'assigned') {
+              await updatePlanDetails(plan.id, { participant_filtering: 'ASSIGNED' });
+            } else {
+              goToPage(0); // Switch to Participants tab to initiate validation & selection sheet
             }
           }}
           onDemoteHost={async (uId) => {

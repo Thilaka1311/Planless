@@ -18,6 +18,7 @@ interface PlanSettingsScreenProps {
     maxParticipants?: number;
   }) => Promise<void> | void;
   onUpdatePlanDetails?: (updates: { participant_filtering?: "AUTOMATIC" | "ASSIGNED" }) => Promise<void> | void;
+  onWaitlistModeChange?: (newMode: "automatic" | "assigned") => Promise<void> | void;
   onDemoteHost?: (userId: string) => Promise<void> | void;
   onRemoveParticipant?: (userId: string) => Promise<void> | void;
   onSelectHost?: (hostItem: { id: string; dbUuid: string; name: string; avatar: string; isHost: boolean }) => void;
@@ -36,6 +37,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   onBack,
   onUpdateSettings,
   onUpdatePlanDetails,
+  onWaitlistModeChange,
   onDemoteHost,
   onRemoveParticipant,
   onSelectHost,
@@ -140,9 +142,26 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     setWaitlistModeState(currentFiltering === "ASSIGNED" ? "assigned" : "automatic");
   }, [plan.participantFiltering, (plan as any).participant_filtering]);
 
+  const [isSubmittingMode, setIsSubmittingMode] = useState(false);
+
   const handleWaitlistModeChange = async (newMode: "automatic" | "assigned") => {
-    if (!isHostMode) return;
+    if (!isHostMode || isSubmittingMode) return;
     const previousMode = waitlistModeState;
+    setIsSubmittingMode(true);
+    
+    if (onWaitlistModeChange) {
+      try {
+        await onWaitlistModeChange(newMode);
+        const updatedFiltering = plan.participantFiltering || (plan as any).participant_filtering || "AUTOMATIC";
+        setWaitlistModeState(updatedFiltering === "ASSIGNED" ? "assigned" : "automatic");
+      } catch (err) {
+        setWaitlistModeState(previousMode);
+      } finally {
+        setIsSubmittingMode(false);
+      }
+      return;
+    }
+    
     setWaitlistModeState(newMode);
     const dbVal = newMode === "assigned" ? "ASSIGNED" : "AUTOMATIC";
     try {
@@ -155,6 +174,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     } catch {
       setWaitlistModeState(previousMode);
       showToast("Failed to update waitlist mode");
+    } finally {
+      setIsSubmittingMode(false);
     }
   };
 
@@ -604,22 +625,22 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
                 <button
                   type="button"
-                  disabled={!isHostMode}
+                  disabled={!isHostMode || isSubmittingMode}
                   onClick={() => handleWaitlistModeChange("automatic")}
                   className={`flex-1 border-none bg-transparent text-xs cursor-pointer z-10 h-full flex items-center justify-center font-medium transition-colors duration-200 ${
                     waitlistModeState === "automatic" ? "text-white font-bold" : "text-zinc-400"
-                  }`}
+                  } ${isSubmittingMode ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   Automatic
                 </button>
 
                 <button
                   type="button"
-                  disabled={!isHostMode}
+                  disabled={!isHostMode || isSubmittingMode}
                   onClick={() => handleWaitlistModeChange("assigned")}
                   className={`flex-1 border-none bg-transparent text-xs cursor-pointer z-10 h-full flex items-center justify-center font-medium transition-colors duration-200 ${
                     waitlistModeState === "assigned" ? "text-white font-bold" : "text-zinc-400"
-                  }`}
+                  } ${isSubmittingMode ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   Assigned
                 </button>

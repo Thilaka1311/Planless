@@ -148,7 +148,8 @@ export type PlanActivityType =
   | 'plan_restored'
   | 'plan_completed'
   | 'participant_moved_to_waitlist'
-  | 'participant_moved_to_going';
+  | 'participant_moved_to_going'
+  | 'host_promoted';
 
 // 5c. PLAN_ACTIVITY TABLE (Append-only historical audit log)
 export interface DbPlanActivity {

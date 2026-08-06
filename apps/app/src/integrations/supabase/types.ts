@@ -1045,6 +1045,19 @@ export type Database = {
         | "CAFE"
       friendship_status: "PENDING" | "ACCEPTED"
       message_status: "SENT" | "DELIVERED"
+      message_type: "text" | "system" | "poll"
+      system_message_type:
+        | "plan_created"
+        | "participant_joined"
+        | "participant_left"
+        | "title_changed"
+        | "description_changed"
+        | "date_changed"
+        | "time_changed"
+        | "venue_changed"
+        | "plan_cancelled"
+        | "plan_restored"
+        | "plan_completed"
       movie_genre:
         | "ACTION"
         | "COMEDY"
@@ -1068,6 +1081,29 @@ export type Database = {
         | "PAYMENT_REMINDER"
         | "MEMORY_GENERATED"
       participant_role: "HOST" | "PARTICIPANT"
+      plan_activity_type:
+        | "plan_created"
+        | "participant_invited"
+        | "participant_joined"
+        | "participant_left"
+        | "participant_waitlisted"
+        | "participant_promoted"
+        | "participant_removed"
+        | "invitation_accepted"
+        | "invitation_declined"
+        | "capacity_changed"
+        | "title_changed"
+        | "description_changed"
+        | "date_changed"
+        | "time_changed"
+        | "location_changed"
+        | "host_transferred"
+        | "plan_cancelled"
+        | "plan_restored"
+        | "plan_completed"
+        | "participant_moved_to_waitlist"
+        | "participant_moved_to_going"
+        | "host_promoted"
       plan_status: "LIVE" | "COMPLETED" | "CANCELLED"
       rsvp_status: "INVITED" | "JOINED" | "SKIPPED" | "WAITLISTED"
       skip_reason: "LEFT" | "REMOVED"
@@ -1351,7 +1387,8 @@ export const Constants = {
         "plan_restored",
         "plan_completed",
         "participant_moved_to_waitlist",
-        "participant_moved_to_going"
+        "participant_moved_to_going",
+        "host_promoted"
       ],
       plan_status: ["LIVE", "COMPLETED", "CANCELLED"],
       rsvp_status: ["INVITED", "JOINED", "SKIPPED", "WAITLISTED"],
