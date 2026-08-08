@@ -131,7 +131,7 @@ export function useChatCache(targetPlanUuid: string) {
       try {
         const { data, error } = await supabase
           .from("plan_messages")
-          .select("*")
+          .select("id, plan_id, sender_id, message_type, content, created_at, updated_at, system_message_type")
           .eq("plan_id", targetPlanUuid)
           .order("created_at", { ascending: true });
 
@@ -173,6 +173,7 @@ export function useChatCache(targetPlanUuid: string) {
           event: "*",
           schema: "public",
           table: "plan_messages",
+          filter: `plan_id=eq.${targetPlanUuid}`,
         },
         (payload) => {
           const eventType = payload.eventType;
@@ -222,7 +223,10 @@ export function useChatCache(targetPlanUuid: string) {
       )
       .subscribe((status, err) => {
         if (status === "CHANNEL_ERROR") {
-          console.error("[useChatCache] Channel error occurred, refetching...", err || "");
+          const errMsg = err?.message || String(err || "");
+          if (!errMsg.includes("socket closed") && !errMsg.includes("1006")) {
+            console.warn("[useChatCache] Realtime channel subscription issue, refetching...", errMsg);
+          }
           fetchMessages(true);
         }
       });
@@ -376,6 +380,7 @@ export function useActivityCache(targetPlanUuid: string) {
           event: "*",
           schema: "public",
           table: "plan_activity",
+          filter: `plan_id=eq.${targetPlanUuid}`,
         },
         (payload) => {
           const eventType = payload.eventType;
@@ -412,7 +417,10 @@ export function useActivityCache(targetPlanUuid: string) {
       )
       .subscribe((status, err) => {
         if (status === "CHANNEL_ERROR") {
-          console.error("[useActivityCache] Channel error occurred, refetching...", err || "");
+          const errMsg = err?.message || String(err || "");
+          if (!errMsg.includes("socket closed") && !errMsg.includes("1006")) {
+            console.warn("[useActivityCache] Realtime channel subscription issue, refetching...", errMsg);
+          }
           fetchActivities(true);
         }
       });
@@ -526,6 +534,7 @@ export function useParticipantsCache(targetPlanUuid: string) {
           event: "*",
           schema: "public",
           table: "plan_participants",
+          filter: `plan_id=eq.${targetPlanUuid}`,
         },
         (payload) => {
           const eventType = payload.eventType;
@@ -562,7 +571,10 @@ export function useParticipantsCache(targetPlanUuid: string) {
       )
       .subscribe((status, err) => {
         if (status === "CHANNEL_ERROR") {
-          console.error("[useParticipantsCache] Channel error occurred, refetching...", err || "");
+          const errMsg = err?.message || String(err || "");
+          if (!errMsg.includes("socket closed") && !errMsg.includes("1006")) {
+            console.warn("[useParticipantsCache] Realtime channel subscription issue, refetching...", errMsg);
+          }
           fetchParticipants(true);
         }
       });

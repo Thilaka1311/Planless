@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight, TrendingUp, Hourglass, Check } from "lucide-react";
+import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, Trash2 } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { HostInfo } from "./HeroHeader";
 
@@ -906,6 +906,7 @@ interface MoveToGoingCapacityBottomSheetProps {
   isOpen: boolean;
   participant: { name: string; avatar?: string } | null;
   onIncreaseCapacity: () => void;
+  onSwapParticipant?: () => void;
   onClose: () => void;
 }
 
@@ -913,6 +914,7 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
   isOpen,
   participant,
   onIncreaseCapacity,
+  onSwapParticipant,
   onClose,
 }) => {
   if (!isOpen || !participant) return null;
@@ -939,10 +941,11 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
           borderTopRightRadius: 20,
           padding: '16px 20px 32px',
           color: '#FFFFFF',
+          fontFamily: 'Inter, sans-serif',
           boxShadow: '0 -8px 24px rgba(0, 0, 0, 0.3)',
           animation: 'slideUp 0.28s cubic-bezier(0.25, 1, 0.5, 1)',
         }}
-        className="select-none font-sans text-left"
+        className="select-none text-left"
       >
         {/* Drag handle */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
@@ -960,14 +963,14 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.01em' }}>Move to Going</span>
             <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 2, lineHeight: 1.4 }}>
-              Increase the plan size to move {participant.name} to Going.
+              Choose how you would like to move {participant.name} to Going.
             </span>
           </div>
         </div>
 
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Primary Action: Increase Plan Size */}
+          {/* Action 1: Increase Plan Size */}
           <button
             type="button"
             onClick={onIncreaseCapacity}
@@ -990,19 +993,52 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
               <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Increase Plan Size</span>
+              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
+                Increase the plan capacity by one and move this participant into Going.
+              </span>
             </div>
           </button>
 
-          {/* Cancel Button */}
+          {/* Action 2: Swap Participant */}
+          {onSwapParticipant && (
+            <button
+              type="button"
+              onClick={onSwapParticipant}
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: 14,
+                color: '#FFFFFF',
+                textAlign: 'left',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+              }}
+            >
+              <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 flex-shrink-0">
+                <ArrowLeftRight className="w-5 h-5" />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Swap Participant from Going</span>
+                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
+                  Replace an existing Going participant with this participant without changing the plan size.
+                </span>
+              </div>
+            </button>
+          )}
+
+          {/* Cancel */}
           <button
             type="button"
             onClick={onClose}
             style={{
               width: '100%',
-              padding: '14px',
+              padding: '12px',
               background: 'none',
               border: 'none',
-              borderRadius: 12,
               color: 'rgba(255, 255, 255, 0.4)',
               fontSize: 14,
               fontWeight: 500,
@@ -1018,3 +1054,798 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
     </div>
   );
 };
+
+// ----------------------------------------------------------------------
+// 10B. MOVE TO WAITLIST BOTTOM SHEET (Assigned Mode)
+// ----------------------------------------------------------------------
+interface MoveToWaitlistBottomSheetProps {
+  isOpen: boolean;
+  participant: { name: string; avatar?: string } | null;
+  hasWaitlist: boolean;
+  onDecreaseCapacity: () => void;
+  onSwapParticipant?: () => void;
+  onClose: () => void;
+}
+
+export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps> = ({
+  isOpen,
+  participant,
+  hasWaitlist,
+  onDecreaseCapacity,
+  onSwapParticipant,
+  onClose,
+}) => {
+  if (!isOpen || !participant) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.6)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'flex-end',
+        animation: 'fadeIn 0.2s ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          background: '#1C1C1E',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: '16px 20px 32px',
+          color: '#FFFFFF',
+          fontFamily: 'Inter, sans-serif',
+          boxShadow: '0 -8px 24px rgba(0, 0, 0, 0.3)',
+          animation: 'slideUp 0.28s cubic-bezier(0.25, 1, 0.5, 1)',
+        }}
+        className="select-none text-left"
+      >
+        {/* Drag handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <div style={{ width: 36, height: 5, borderRadius: 2.5, background: 'rgba(255, 255, 255, 0.15)' }} />
+        </div>
+
+        {/* Personalized Participant Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20 }}>
+          <div style={{ flexShrink: 0 }}>
+            <div className="w-12 h-12 rounded-full border-2 border-white/20 overflow-hidden bg-[#1A1A1A] flex items-center justify-center">
+              <UserAvatar src={participant.avatar} alt={participant.name} size="w-full h-full" />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.01em' }}>Move to Waitlist</span>
+            <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 2, lineHeight: 1.4 }}>
+              Choose how you would like to move {participant.name} to the Waitlist.
+            </span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Action 1: Decrease Plan Size */}
+          <button
+            type="button"
+            onClick={onDecreaseCapacity}
+            style={{
+              width: '100%',
+              padding: '14px 16px',
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: 14,
+              color: '#FFFFFF',
+              textAlign: 'left',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
+            <div className="w-10 h-10 rounded-xl bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] flex-shrink-0">
+              <TrendingDown className="w-5 h-5" />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
+              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
+                Reduce the plan capacity by one and move this participant to the Waitlist.
+              </span>
+            </div>
+          </button>
+
+          {/* Action 2: Swap with Participant from Waitlist (Only shown if waitlist has participants) */}
+          {hasWaitlist && onSwapParticipant && (
+            <button
+              type="button"
+              onClick={onSwapParticipant}
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: 14,
+                color: '#FFFFFF',
+                textAlign: 'left',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+              }}
+            >
+              <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 flex-shrink-0">
+                <ArrowLeftRight className="w-5 h-5" />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Swap with Participant from Waitlist</span>
+                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
+                  Replace this Going participant with someone currently in the Waitlist without changing the plan size.
+                </span>
+              </div>
+            </button>
+          )}
+
+          {/* Cancel */}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: '100%',
+              padding: '12px',
+              background: 'none',
+              border: 'none',
+              color: 'rgba(255, 255, 255, 0.4)',
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+              textAlign: 'center',
+              marginTop: 6,
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 10C. REMOVE GOING PARTICIPANT BOTTOM SHEET (Assigned Mode Case 1)
+// ----------------------------------------------------------------------
+interface RemoveGoingParticipantBottomSheetProps {
+  isOpen: boolean;
+  participant: { name: string; avatar?: string } | null;
+  hasWaitlist: boolean;
+  onDecreaseCapacity: () => void;
+  onReplaceParticipant?: () => void;
+  onClose: () => void;
+}
+
+export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantBottomSheetProps> = ({
+  isOpen,
+  participant,
+  hasWaitlist,
+  onDecreaseCapacity,
+  onReplaceParticipant,
+  onClose,
+}) => {
+  if (!isOpen || !participant) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.6)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'flex-end',
+        animation: 'fadeIn 0.2s ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          background: '#1C1C1E',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: '16px 20px 32px',
+          color: '#FFFFFF',
+          fontFamily: 'Inter, sans-serif',
+          boxShadow: '0 -8px 24px rgba(0, 0, 0, 0.3)',
+          animation: 'slideUp 0.28s cubic-bezier(0.25, 1, 0.5, 1)',
+        }}
+        className="select-none text-left"
+      >
+        {/* Drag handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <div style={{ width: 36, height: 5, borderRadius: 2.5, background: 'rgba(255, 255, 255, 0.15)' }} />
+        </div>
+
+        {/* Personalized Participant Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20 }}>
+          <div style={{ flexShrink: 0 }}>
+            <div className="w-12 h-12 rounded-full border-2 border-white/20 overflow-hidden bg-[#1A1A1A] flex items-center justify-center">
+              <UserAvatar src={participant.avatar} alt={participant.name} size="w-full h-full" />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.01em' }}>Remove Participant</span>
+            <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 2, lineHeight: 1.4 }}>
+              How would you like to handle this Going spot?
+            </span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Action 1: Decrease Plan Size */}
+          <button
+            type="button"
+            onClick={onDecreaseCapacity}
+            style={{
+              width: '100%',
+              padding: '14px 16px',
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: 14,
+              color: '#FFFFFF',
+              textAlign: 'left',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
+            <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 flex-shrink-0">
+              <UserMinus className="w-5 h-5" />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
+              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
+                This participant will be removed from the plan and the maximum plan size will decrease by one.
+              </span>
+            </div>
+          </button>
+
+          {/* Action 2: Replace with Participant from Waitlist (Only shown if waitlist has participants) */}
+          {hasWaitlist && onReplaceParticipant && (
+            <button
+              type="button"
+              onClick={onReplaceParticipant}
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: 14,
+                color: '#FFFFFF',
+                textAlign: 'left',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+              }}
+            >
+              <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 flex-shrink-0">
+                <ArrowLeftRight className="w-5 h-5" />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Replace with Participant from Waitlist</span>
+                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
+                  Select a participant from the Waitlist to immediately fill this Going spot without changing plan size.
+                </span>
+              </div>
+            </button>
+          )}
+
+          {/* Cancel */}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: '100%',
+              padding: '12px',
+              background: 'none',
+              border: 'none',
+              color: 'rgba(255, 255, 255, 0.4)',
+              fontSize: 14,
+              fontWeight: 500,
+              cursor: 'pointer',
+              textAlign: 'center',
+              marginTop: 6,
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
+// 11. SWITCH TO AUTOMATIC SELECTION BOTTOM SHEET (Case 1)
+// ------------------------------------------------------------------------------
+interface SwitchToAutomaticSelectionBottomSheetProps {
+  isOpen: boolean;
+  vacantSpots: number;
+  eligibleWaitlist: any[];
+  onConfirm: (selectedUserIds: string[]) => Promise<void> | void;
+  onClose: () => void;
+}
+
+export const SwitchToAutomaticSelectionBottomSheet: React.FC<SwitchToAutomaticSelectionBottomSheetProps> = ({
+  isOpen,
+  vacantSpots,
+  eligibleWaitlist,
+  onConfirm,
+  onClose,
+}) => {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedIds([]);
+      setIsSubmitting(false);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(i => i !== id);
+      }
+      if (prev.length >= vacantSpots) {
+        return prev;
+      }
+      return [...prev, id];
+    });
+  };
+
+  const isReady = selectedIds.length === vacantSpots;
+
+  const handleConfirm = async () => {
+    if (!isReady || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onConfirm(selectedIds);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.6)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'flex-end',
+        animation: 'fadeIn 0.2s ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxHeight: '85vh',
+          background: '#1C1C1E',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: '16px 20px 32px',
+          color: '#FFFFFF',
+          fontFamily: 'Inter, sans-serif',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.2)', margin: '0 auto 16px' }} />
+
+        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px', textAlign: 'center' }}>
+          Fill Available GOING Spots
+        </h3>
+
+        <p style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.5)', textAlign: 'center', margin: '0 0 16px', lineHeight: 1.4 }}>
+          Automatic mode requires all available spots to be filled. Select <span style={{ color: '#FF6B2C', fontWeight: 600 }}>exactly {vacantSpots} participant{vacantSpots > 1 ? 's' : ''}</span> to move into GOING.
+        </p>
+
+        {/* Participant Selection List */}
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+          {eligibleWaitlist.map((friend) => {
+            const fId = friend.dbUuid || friend.id;
+            const isSelected = selectedIds.includes(fId);
+            return (
+              <div
+                key={fId}
+                onClick={() => toggleSelect(fId)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  borderRadius: 14,
+                  background: isSelected ? 'rgba(255, 107, 44, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                  border: isSelected ? '1px solid #FF6B2C' : '1px solid rgba(255, 255, 255, 0.08)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div className="w-9 h-9 rounded-full overflow-hidden border border-white/10 flex-shrink-0 flex items-center justify-center bg-[#1A1A1A]">
+                    <UserAvatar
+                      src={friend.avatar}
+                      alt={friend.name}
+                      size="w-full h-full"
+                    />
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>{friend.name}</span>
+                </div>
+
+                <div
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 11,
+                    border: isSelected ? 'none' : '2px solid rgba(255, 255, 255, 0.3)',
+                    background: isSelected ? '#FF6B2C' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {isSelected && <span style={{ color: '#FFFFFF', fontSize: 12, fontWeight: 800 }}>✓</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={!isReady || isSubmitting}
+          style={{
+            width: '100%',
+            padding: '14px',
+            borderRadius: 14,
+            background: isReady ? '#FF6B2C' : 'rgba(255, 255, 255, 0.1)',
+            color: isReady ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: isReady ? 'pointer' : 'not-allowed',
+            border: 'none',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          {isSubmitting ? 'Switching...' : `Confirm & Switch (${selectedIds.length}/${vacantSpots})`}
+        </button>
+
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            width: '100%',
+            padding: '12px',
+            background: 'none',
+            border: 'none',
+            color: 'rgba(255, 255, 255, 0.4)',
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: 'pointer',
+            marginTop: 6,
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 12. SWITCH TO AUTOMATIC WARNING BOTTOM SHEET (Case 2)
+// ----------------------------------------------------------------------
+interface SwitchToAutomaticWarningBottomSheetProps {
+  isOpen: boolean;
+  onReducePlanSize?: () => void;
+  onClose: () => void;
+}
+
+export const SwitchToAutomaticWarningBottomSheet: React.FC<SwitchToAutomaticWarningBottomSheetProps> = ({
+  isOpen,
+  onReducePlanSize,
+  onClose,
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.6)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'flex-end',
+        animation: 'fadeIn 0.2s ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          background: '#1C1C1E',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: '16px 20px 32px',
+          color: '#FFFFFF',
+          fontFamily: 'Inter, sans-serif',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.2)', margin: '0 auto 16px' }} />
+
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 12, marginBottom: 24 }}>
+          <div className="w-12 h-12 rounded-2xl bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C]">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+
+          <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
+            Cannot Switch to Automatic
+          </h3>
+
+          <p style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.5)', margin: 0, lineHeight: 1.5, maxWidth: 320 }}>
+            There aren't enough participants who have joined the waitlist to fill the available GOING spots. Ask more participants to join the waitlist or reduce the plan size before switching to Automatic.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {onReducePlanSize && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onReducePlanSize();
+              }}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: 14,
+                background: '#FF6B2C',
+                color: '#FFFFFF',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer',
+                border: 'none',
+              }}
+            >
+              Reduce Plan Size
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              width: '100%',
+              padding: '14px',
+              borderRadius: 14,
+              background: 'rgba(255, 255, 255, 0.08)',
+              color: 'rgba(255, 255, 255, 0.6)',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 13. GUIDED CAPACITY ADJUSTMENT BOTTOM SHEET (Assigned Mode)
+// ----------------------------------------------------------------------
+interface GuidedCapacityAdjustmentBottomSheetProps {
+  isOpen: boolean;
+  mode: 'promote' | 'demote';
+  requiredCount: number;
+  candidates: any[];
+  title?: string;
+  subtitle?: string;
+  onConfirm: (selectedUserIds: string[]) => Promise<void> | void;
+  onClose: () => void;
+}
+
+export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustmentBottomSheetProps> = ({
+  isOpen,
+  mode,
+  requiredCount,
+  candidates,
+  title: customTitle,
+  subtitle: customSubtitle,
+  onConfirm,
+  onClose,
+}) => {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedIds([]);
+      setIsSubmitting(false);
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(i => i !== id);
+      }
+      if (prev.length >= requiredCount) {
+        return prev;
+      }
+      return [...prev, id];
+    });
+  };
+
+  const isReady = selectedIds.length === requiredCount;
+  const remainingNeeded = requiredCount - selectedIds.length;
+
+  const handleConfirm = async () => {
+    if (!isReady || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onConfirm(selectedIds);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const title = customTitle || (mode === 'promote' ? 'Who should move to Going?' : 'Who should move to the Waitlist?');
+  const subtitle = customSubtitle || (mode === 'promote'
+    ? 'Select the participant(s) to promote from the waitlist before increasing the plan size.'
+    : 'Select the participant(s) that should move to the waitlist before reducing the plan size.');
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.6)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'flex-end',
+        animation: 'fadeIn 0.2s ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxHeight: '85vh',
+          background: '#1C1C1E',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          padding: '16px 20px 32px',
+          color: '#FFFFFF',
+          fontFamily: 'Inter, sans-serif',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.2)', margin: '0 auto 16px' }} />
+
+        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px', textAlign: 'center' }}>
+          {title}
+        </h3>
+
+        <p style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.5)', textAlign: 'center', margin: '0 0 16px', lineHeight: 1.4 }}>
+          {subtitle}
+        </p>
+
+        {/* Candidate Selection List */}
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20, maxHeight: '45vh' }}>
+          {candidates.map((friend) => {
+            const fId = friend.dbUuid || friend.id;
+            const isSelected = selectedIds.includes(fId);
+            return (
+              <div
+                key={fId}
+                onClick={() => toggleSelect(fId)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  borderRadius: 14,
+                  background: isSelected ? 'rgba(255, 107, 44, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                  border: isSelected ? '1px solid #FF6B2C' : '1px solid rgba(255, 255, 255, 0.08)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div className="w-9 h-9 rounded-full overflow-hidden border border-white/10 flex-shrink-0 flex items-center justify-center bg-[#1A1A1A]">
+                    <UserAvatar
+                      src={friend.avatar}
+                      alt={friend.name}
+                      size="w-full h-full"
+                    />
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>{friend.name}</span>
+                </div>
+
+                <div
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 11,
+                    border: isSelected ? 'none' : '2px solid rgba(255, 255, 255, 0.3)',
+                    background: isSelected ? '#FF6B2C' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {isSelected && <span style={{ color: '#FFFFFF', fontSize: 12, fontWeight: 800 }}>✓</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={!isReady || isSubmitting}
+          style={{
+            width: '100%',
+            padding: '14px',
+            borderRadius: 14,
+            background: isReady ? '#FF6B2C' : 'rgba(255, 255, 255, 0.1)',
+            color: isReady ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: isReady && !isSubmitting ? 'pointer' : 'not-allowed',
+            border: 'none',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          {isSubmitting
+            ? 'Updating...'
+            : isReady
+            ? 'Ready to continue'
+            : `Select ${remainingNeeded} more participant${remainingNeeded > 1 ? 's' : ''}`}
+        </button>
+      </div>
+    </div>
+  );
+};
+

@@ -93,7 +93,6 @@ export interface DbPlanParticipant {
   responded_at: string | null;
   joined_queue_at?: string;
   assigned_group?: 'GOING' | 'WAITLIST' | null;
-  join_queue?: number | null;
   waitlist_position?: number | null;
   created_at: string;
   updated_at: string;
@@ -147,8 +146,9 @@ export type PlanActivityType =
   | 'plan_cancelled'
   | 'plan_restored'
   | 'plan_completed'
-  | 'participant_moved_to_waitlist'
-  | 'participant_moved_to_going';
+  | 'host_promoted'
+  | 'participants_swapped'
+  | 'participant_added';
 
 // 5c. PLAN_ACTIVITY TABLE (Append-only historical audit log)
 export interface DbPlanActivity {
@@ -253,7 +253,6 @@ export interface PlanMember {
   joinedQueueAt?: string;
   waitlistedAt?: string;
   assignedGroup?: 'GOING' | 'WAITLIST' | null;
-  joinQueue?: number | null;
   waitlistPosition?: number | null;
   skippedAt?: string;
   deliveredAt?: string;

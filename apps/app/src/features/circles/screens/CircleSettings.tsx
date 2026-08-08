@@ -52,7 +52,7 @@ export const CircleDetailScreen = (props: any) => {
         name: uObj?.full_name || m.name,
         avatar: uObj?.profile_photo || m.avatar,
         status: uObj?.bio || m.phone || 'Spontaneous and active ⚡',
-        role: (m.role === 'creator_admin' || m.role === 'host' || m.role === 'admin' || m.role === 'co_host') ? 'Admin'
+        role: (m.role === 'creator_admin' || m.role === 'host' || m.role === 'admin') ? 'Admin'
             : 'Member',
         // Keep raw role for permission logic
         rawRole: m.role as string,

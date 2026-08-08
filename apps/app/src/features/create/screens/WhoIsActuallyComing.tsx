@@ -102,6 +102,7 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
       onAdjustCapacity={(val) => form.setTotalCapacity(val)}
       waitlistMode={currentWaitlistMode}
       onWaitlistModeChange={form.setWaitlistMode}
+      showWaitlistMode={true}
       // Only remove is surfaced externally; Going / Waitlist moves stay internal.
       onRemoveParticipant={handleRemoveParticipant}
     />

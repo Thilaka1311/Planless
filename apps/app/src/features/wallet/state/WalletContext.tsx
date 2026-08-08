@@ -28,31 +28,10 @@ export const WalletProvider = ({
   const [dbPlanParticipantsLocal, setDbPlanParticipantsLocal] = useState<any[]>([]);
 
   const refreshTransactions = useCallback(async () => {
-    try {
-      const { data: plansList } = await (supabase as any).from("plans").select("*");
-      const { data: participantsList } = await (supabase as any).from("plan_participants").select("*");
-      const { data: walletTxs, error: walletErr } = await (supabase as any).from("wallet_expenses").select("*");
-      const { data: circlesList, error: circlesErr } = await (supabase as any).from("circles").select("*");
-
-      if (walletErr) console.error("[WalletContext refreshTransactions] wallet_expenses error:", walletErr);
-      if (circlesErr) console.error("[WalletContext refreshTransactions] circles error:", circlesErr);
-
-      setDbWalletTransactions(walletTxs || []);
-      if (plansList) setDbPlansLocal(plansList);
-      setDbCirclesLocal(circlesList || []);
-      if (participantsList) setDbPlanParticipantsLocal(participantsList);
-      setHasLoaded(true);
-    } catch (err) {
-      console.error("[WalletContext refreshTransactions] Failed:", err);
-    }
+    // Wallet feature disabled until built: no database requests to wallet_expenses
+    setDbWalletTransactions([]);
+    setHasLoaded(true);
   }, []);
-
-  // Reload transactions on startup / active user UUID change
-  useEffect(() => {
-    if (activeUserUuid) {
-      refreshTransactions();
-    }
-  }, [activeUserUuid, refreshTransactions]);
 
   const contextValue = useMemo(() => ({
     dbWalletTransactions,

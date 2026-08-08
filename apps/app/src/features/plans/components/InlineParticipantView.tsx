@@ -19,7 +19,6 @@ interface InlineMemberEntry {
   isHost: boolean;
   isAccepted: boolean;
   waitlistPosition?: number | null;
-  joinQueue?: number | null;
   joinedQueueAt?: string | null;
 }
 
@@ -74,7 +73,6 @@ export function InlineParticipantView({ plan, activeUserId }: InlineParticipantV
         isHost: Boolean(isHostRole),
         isAccepted,
         waitlistPosition: (m as any).waitlistPosition ?? (m as any).waitlist_position ?? null,
-        joinQueue: (m as any).joinQueue ?? (m as any).join_queue ?? null,
         joinedQueueAt: (m as any).joinedQueueAt ?? (m as any).joined_queue_at ?? (m as any).createdAt ?? (m as any).created_at ?? null,
       };
 
@@ -113,9 +111,6 @@ export function InlineParticipantView({ plan, activeUserId }: InlineParticipantV
           const posB = b.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
           if (posA !== posB) return posA - posB;
         }
-        const qA = a.joinQueue ?? Number.MAX_SAFE_INTEGER;
-        const qB = b.joinQueue ?? Number.MAX_SAFE_INTEGER;
-        if (qA !== qB) return qA - qB;
 
         const queueA = a.joinedQueueAt ? new Date(a.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
         const queueB = b.joinedQueueAt ? new Date(b.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;

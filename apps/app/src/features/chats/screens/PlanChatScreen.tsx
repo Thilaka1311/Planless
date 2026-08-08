@@ -35,7 +35,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost } = usePlansStore();
+  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost } = usePlansStore();
   const { profile: userProfile, activeUserUuid } = useProfileStore();
 
   // Robust sender UUID resolution across all possible user state sources
@@ -234,7 +234,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         plan_id: targetPlanUuid,
         sender_id: effectiveSenderUuid,
         content: trimmed,
-        message_type: "text",
+        message_type: "text" as const,
       };
 
       const { data, error } = await supabase
@@ -341,7 +341,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         return isTargetPlan && isJoinedStatus && !isHost;
       });
 
-      targetParticipants.forEach((pp) => {
+      targetParticipants.forEach((pp, pIdx) => {
         // Resolve participant user name from dbUsers, plan.members, or userProfile
         let participantName = "";
         const matchUser = (dbUsers || []).find(
@@ -365,8 +365,11 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           }
         }
 
+        const stablePartId = pp.id || (pp as any).dbUuid || pp.user_id || `pIdx-${pIdx}`;
+        const generatedKey = `sys-joined-${stablePartId}`;
+
         items.push({
-          id: `sys-joined-${pp.id}`,
+          id: generatedKey,
           isSystem: true,
           systemType: SystemMessageType.PARTICIPANT_JOINED,
           content: `${participantName} joined`,
@@ -535,7 +538,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 isCreatorHost={isHost}
                 displayMode="embedded"
                 onBack={() => goToPage(1)}
-                onMoveToGoing={(pId, uId) => moveParticipantToGoing(pId, uId)}
+                onMoveToGoing={(pId, uId, opts) => moveParticipantToGoing(pId, uId, opts)}
                 onMoveToWaitlist={(pId, uId) => moveParticipantToWaitlist(pId, uId)}
                 onMoveToInvited={(pId, uId) => moveParticipantToInvited(pId, uId)}
                 onRemoveParticipant={(pId, uId) => removeParticipant(pId, uId)}
@@ -551,9 +554,13 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                     assignedGroup,
                   })
                 }
+                onSwapParticipants={(pId, goingId, waitlistId) => swapParticipants(pId, goingId, waitlistId)}
+                onRemoveAndReplaceWithWaitlist={(pId, removeId, promoteId) => removeAndReplaceWithWaitlist(pId, removeId, promoteId)}
                 onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
+                onSwitchToAutomaticMode={(pId, userIds) => switchToAutomaticWaitlistMode(pId, userIds)}
                 onOpenActivity={() => goToPage(2)}
                 onPlanSizeEditingChange={setIsEditingPlanSize}
+                showWaitlistMode={false}
               />
             )}
           </div>
@@ -846,6 +853,13 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               console.error("Failed to update plan details:", err);
             }
           }}
+          onWaitlistModeChange={async (newMode) => {
+            if (newMode === 'assigned') {
+              await updatePlanDetails(plan.id, { participant_filtering: 'ASSIGNED' });
+            } else {
+              goToPage(0); // Switch to Participants tab to initiate validation & selection sheet
+            }
+          }}
           onDemoteHost={async (uId) => {
             try {
               await demoteHostToParticipant(plan.id, uId);
@@ -883,18 +897,12 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             }
           }}
           onLeavePlan={async () => {
-            console.group("🔍 [LEAVE_AUDIT] 2. PlanChatScreen onLeavePlan Invoked");
-            console.log("📍 currentUserId:", currentUserId);
-            console.log("📍 plan.id:", plan?.id, "| targetPlanUuid:", targetPlanUuid);
-            console.groupEnd();
             try {
-              console.log("🔍 [LEAVE_AUDIT] Executing store leavePlan()...");
               await leavePlan(plan.id, currentUserId);
-              console.log("✅ [LEAVE_AUDIT] Store leavePlan() completed cleanly!");
               setShowSettingsScreen(false);
               onBack();
             } catch (err) {
-              console.error("❌ [LEAVE_AUDIT] PlanChatScreen onLeavePlan error:", err);
+              console.error("PlanChatScreen onLeavePlan error:", err);
               throw err;
             }
           }}

@@ -9,7 +9,7 @@ import { useFriendshipStore } from '../../../../friendships/state/FriendshipCont
 import { supabase } from '../../../../../../lib/supabaseClient';
 import { X } from 'lucide-react';
 import { PlanSizeSlider } from '../../../../create/components/PlanSizeSlider';
-import { PlanIsFullBottomSheet, MoveToGoingCapacityBottomSheet } from '../../../components/BottomSheets';
+import { PlanIsFullBottomSheet, MoveToGoingCapacityBottomSheet, MoveToWaitlistBottomSheet, RemoveGoingParticipantBottomSheet, SwitchToAutomaticSelectionBottomSheet, SwitchToAutomaticWarningBottomSheet, GuidedCapacityAdjustmentBottomSheet } from '../../../components/BottomSheets';
 
 
 interface PlanParticipantManagementWrapperProps {
@@ -21,9 +21,11 @@ interface PlanParticipantManagementWrapperProps {
   onBack: () => void;
   displayMode?: 'standalone' | 'embedded';
   // Store actions passed in so this wrapper stays store-agnostic
-  onMoveToGoing: (planId: string, userId: string) => Promise<void>;
+  onMoveToGoing: (planId: string, userId: string, options?: { bypassCapacityCheck?: boolean }) => Promise<void>;
   onMoveToWaitlist: (planId: string, userId: string) => Promise<void>;
   onMoveToInvited: (planId: string, userId: string) => Promise<void>;
+  onSwapParticipants?: (planId: string, goingUserId: string, waitlistUserId: string) => Promise<void>;
+  onRemoveAndReplaceWithWaitlist?: (planId: string, removeUserId: string, promoteUserId: string) => Promise<void>;
   onRemoveParticipant: (planId: string, userId: string) => Promise<void>;
   onChangePlanHost?: (planId: string, newHostId: string, currentHostId: string) => Promise<void>;
   onPromoteToHost?: (planId: string, userId: string) => Promise<void>;
@@ -31,15 +33,17 @@ interface PlanParticipantManagementWrapperProps {
   onUpdatePlanCapacity?: (planId: string, capacity: number) => Promise<void> | void;
   onAddParticipants?: (planId: string, userIds: string[], circleIds: string[], targetGroup?: 'GOING' | 'WAITLIST') => Promise<void>;
   onReorderWaitlist?: (planId: string, orderedUserUuids: string[]) => Promise<void>;
+  onSwitchToAutomaticMode?: (planId: string, promotedUserUuids?: string[]) => Promise<void>;
   onOpenSettings?: () => void;
   onOpenActivity?: () => void;
   onPlanSizeEditingChange?: (isEditing: boolean) => void;
+  showWaitlistMode?: boolean;
 }
 
 /** Maps a plan member to the shared Friend shape */
 function memberToFriend(m: any, hostId: string, activeUserId?: string): Friend {
   const id = m.userId || m.userUuid || m.user_id || m.id;
-  const isHostRole = m.role === 'HOST' || m.isHost === true;
+  const isHostRole = (m.role || '').toUpperCase() === 'HOST';
   const isCurrentUser = activeUserId && (id === activeUserId || m.userUuid === activeUserId || m.userId === activeUserId || m.user_id === activeUserId);
   const status = normalizeStatus(m.joinState || m.rsvp_status);
   const isAccepted = status !== 'INVITED';
@@ -47,13 +51,12 @@ function memberToFriend(m: any, hostId: string, activeUserId?: string): Friend {
     id,
     dbUuid: m.userUuid || m.userId || m.user_id || m.id,
     name: isCurrentUser ? 'You' : (m.name || m.displayName || 'Unknown'),
-    avatar: m.avatar || m.profile_photo || '',
-    isHost: Boolean(isHostRole),
+    avatar: m.avatar || m.profile_photo || m.profile_photo_path || m.profile_image_url || m.avatar_url || '',
+    isHost: isHostRole,
     joinedQueueAt: m.joinedQueueAt || m.joined_queue_at || m.createdAt || m.created_at,
     isAccepted,
     rsvpStatus: status,
     assignedGroup: m.assignedGroup || m.assigned_group || (status === 'WAITLISTED' ? 'WAITLIST' : 'GOING'),
-    joinQueue: m.joinQueue ?? m.join_queue ?? null,
     waitlistPosition: m.waitlistPosition ?? m.waitlist_position ?? null,
   };
 }
@@ -68,6 +71,8 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   onMoveToGoing,
   onMoveToWaitlist,
   onMoveToInvited,
+  onSwapParticipants,
+  onRemoveAndReplaceWithWaitlist,
   onRemoveParticipant,
   onChangePlanHost,
   onPromoteToHost,
@@ -75,10 +80,12 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   onUpdatePlanCapacity,
   onAddParticipants,
   onReorderWaitlist,
+  onSwitchToAutomaticMode,
   onOpenSettings,
   onOpenActivity,
   onPlanSizeEditingChange,
   displayMode = 'standalone',
+  showWaitlistMode = false,
 }) => {
   const { circles } = useCirclesStore();
 
@@ -86,6 +93,26 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const { showToast } = useToast();
   const hostId = plan.hostId || '';
   const members: any[] = plan.members || [];
+
+  // Compute currentUserRole and effectiveIsHost strictly from plan_participants role column
+  const effectiveIsHost = useMemo(() => {
+    const currentMember = members.find((m) => {
+      const uId = m.userId || m.userUuid || m.user_id || m.id;
+      return Boolean(
+        activeUserId &&
+          (uId === activeUserId ||
+            m.userUuid === activeUserId ||
+            m.userId === activeUserId ||
+            m.user_id === activeUserId)
+      );
+    });
+
+    if (currentMember && currentMember.role) {
+      return (currentMember.role || '').toUpperCase() === 'HOST';
+    }
+
+    return Boolean(isHost);
+  }, [members, activeUserId, isHost]);
 
   // Determine active members (excluding host) to filter them out of the picker
   const activeMembers = useMemo(() => {
@@ -372,9 +399,16 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   };
 
   const handleConfirmInvite = async () => {
-    if (!onAddParticipants) return;
+    if (!canInvite) {
+      showToast("You do not have permission to invite participants");
+      return;
+    }
+
     const friendIds = individuallySelectedFriendIds.filter(id => !disabledUserIds.has(id));
-    const targetGroup = waitlistMode === 'assigned' ? addFriendsTargetTab : 'GOING';
+    // Non-host participant-controlled invitation invariant: ALWAYS 'WAITLIST', never 'GOING'
+    const targetGroup = (!effectiveIsHost && canParticipantInvite)
+      ? 'WAITLIST'
+      : (waitlistMode === 'assigned' ? addFriendsTargetTab : 'GOING');
 
     if (friendIds.length === 0) return;
 
@@ -441,99 +475,127 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   };
 
   // Extract all active plan members with unique ID deduplication (excluding SKIPPED / LEFT / REMOVED)
-  const seenMemberIds = new Set<string>();
-  const allPlanMembers = members.filter((m) => {
-    const mId = m.userId || m.userUuid || m.user_id || m.id;
-    if (!mId || seenMemberIds.has(mId)) return false;
-    const status = normalizeStatus(m.joinState || m.rsvp_status);
-    if (status === 'SKIPPED') return false;
-    seenMemberIds.add(mId);
-    return true;
-  });
+  const allPlanMembers = useMemo(() => {
+    const seenMemberIds = new Set<string>();
+    return members.filter((m) => {
+      const mId = m.userId || m.userUuid || m.user_id || m.id;
+      if (!mId || seenMemberIds.has(mId)) return false;
+      const status = normalizeStatus(m.joinState || m.rsvp_status);
+      if (status === 'SKIPPED') return false;
+      seenMemberIds.add(mId);
+      return true;
+    });
+  }, [members]);
+
+  const planFiltering = plan.participantFiltering || (plan as any).participant_filtering || 'AUTOMATIC';
+  const waitlistMode: 'automatic' | 'assigned' = planFiltering === 'ASSIGNED' ? 'assigned' : 'automatic';
+
+  // Compute current participant's RSVP status for non-host invitation permission check
+  const currentParticipantRsvp = useMemo(() => {
+    const currentMember = members.find((m) => {
+      const uId = m.userId || m.userUuid || m.user_id || m.id;
+      return Boolean(
+        activeUserId &&
+          (uId === activeUserId ||
+            m.userUuid === activeUserId ||
+            m.userId === activeUserId ||
+            m.user_id === activeUserId)
+      );
+    });
+    if (!currentMember) return null;
+    return normalizeStatus(currentMember.joinState || currentMember.rsvp_status);
+  }, [members, activeUserId]);
+
+  const isAssignedWaitlistPlan = waitlistMode === 'assigned';
+  const allowParticipantsToInviteOthers = Boolean(plan.allowParticipantInvites === true || (plan as any).allow_participant_invites === true);
+  const isEligibleParticipantRsvp = currentParticipantRsvp === 'JOINED' || currentParticipantRsvp === 'WAITLISTED';
+
+  const canParticipantInvite = isAssignedWaitlistPlan && allowParticipantsToInviteOthers && isEligibleParticipantRsvp && !effectiveIsHost;
+  const canInvite = effectiveIsHost || canParticipantInvite;
 
   const waitlistOrderMode = plan.waitlistOrderMode || (plan as any).waitlist_order_mode || 'AUTO';
 
-  const sortByWaitlistOrder = (list: Friend[]) =>
+  const sortByWaitlistOrder = useCallback((list: Friend[]) =>
     [...list].sort((a, b) => {
-      if (waitlistOrderMode === 'CUSTOM') {
+      // In Assigned mode, prioritize stored assigned waitlist position from DB
+      if (waitlistMode === 'assigned') {
         const posA = a.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
         const posB = b.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
         if (posA !== posB) return posA - posB;
       }
-      const qA = a.joinQueue ?? Number.MAX_SAFE_INTEGER;
-      const qB = b.joinQueue ?? Number.MAX_SAFE_INTEGER;
-      if (qA !== qB) return qA - qB;
-
+      // Sort strictly by acceptance timestamp
       const queueA = a.joinedQueueAt ? new Date(a.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
       const queueB = b.joinedQueueAt ? new Date(b.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
       if (queueA !== queueB) return queueA - queueB;
       return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
-    });
+    }), [waitlistMode]);
 
-  const prioritizeCurrentUserAndSort = (list: Friend[]) => {
-    const isAccepted = (f: Friend) => f.rsvpStatus === 'JOINED' || f.isAccepted;
-
-    const accepted = list.filter(isAccepted);
-    const nonAccepted = list.filter((f) => !isAccepted(f));
-
-    const currentUserEntry = accepted.find(
+  const prioritizeCurrentUserAndSort = useCallback((list: Friend[]) => {
+    const currentUserEntry = list.find(
       (f) => f.name === 'You' || (activeUserId && (f.dbUuid === activeUserId || f.id === activeUserId))
     );
-    const remainingAccepted = accepted.filter((f) => f !== currentUserEntry);
+    const remaining = list.filter((f) => f !== currentUserEntry);
 
-    const sortAlphabetically = (arr: Friend[]) =>
-      [...arr].sort((a, b) =>
-        (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
-      );
+    const sortedRemaining = [...remaining].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+    );
 
-    const sortedAccepted = sortAlphabetically(remainingAccepted);
-    const sortedNonAccepted = sortAlphabetically(nonAccepted);
-
-    const finalAccepted = currentUserEntry
-      ? [{ ...currentUserEntry, name: 'You' }, ...sortedAccepted]
-      : sortedAccepted;
-
-    return [...finalAccepted, ...sortedNonAccepted];
-  };
-
-  const invitedList: Friend[] = useMemo(() => {
-    const rawInvited = allPlanMembers
-      .filter((m) => normalizeStatus(m.joinState || m.rsvp_status) === 'INVITED')
-      .map((m) => memberToFriend(m, hostId, activeUserId));
-    return prioritizeCurrentUserAndSort(rawInvited);
-  }, [allPlanMembers, hostId, activeUserId]);
+    return currentUserEntry
+      ? [{ ...currentUserEntry, name: 'You' }, ...sortedRemaining]
+      : sortedRemaining;
+  }, [activeUserId]);
 
   // Determine capacity bounds
   const storedCapacity = plan.joinLimit || plan.capacity || 2;
   const maxCapacity = Math.max(storedCapacity, Math.max(2, allPlanMembers.length));
   const capacity = Math.max(2, storedCapacity);
 
-  const planFiltering = plan.participantFiltering || (plan as any).participant_filtering || 'AUTOMATIC';
-  const waitlistMode: 'automatic' | 'assigned' = planFiltering === 'ASSIGNED' ? 'assigned' : 'automatic';
+  const goingMembers = useMemo(() => {
+    return allPlanMembers.filter((m) => {
+      const status = normalizeStatus(m.joinState || m.rsvp_status);
+      if (status === 'SKIPPED') return false;
+      if (waitlistMode === 'assigned') {
+        const group = (m as any).assignedGroup || (m as any).assigned_group;
+        return group === 'GOING' || (!group && status !== 'WAITLISTED');
+      }
+      return status === 'JOINED';
+    });
+  }, [allPlanMembers, waitlistMode]);
 
-  const goingMembers = allPlanMembers.filter((m) => {
-    const status = normalizeStatus(m.joinState || m.rsvp_status);
-    if (waitlistMode === 'assigned') {
-      const group = (m as any).assignedGroup || (m as any).assigned_group;
-      return group === 'GOING' || (!group && status !== 'WAITLISTED');
+  const isAutomaticFull = waitlistMode === 'automatic' && capacity > 0 && goingMembers.length >= capacity;
+
+  const waitlistMembers = useMemo(() => {
+    return allPlanMembers.filter((m) => {
+      const status = normalizeStatus(m.joinState || m.rsvp_status);
+      if (status === 'SKIPPED') return false;
+      if (waitlistMode === 'assigned') {
+        const group = (m as any).assignedGroup || (m as any).assigned_group;
+        return group === 'WAITLIST' || (!group && status === 'WAITLISTED');
+      }
+      if (isAutomaticFull) {
+        return status === 'WAITLISTED' || status === 'INVITED';
+      }
+      return status === 'WAITLISTED';
+    });
+  }, [allPlanMembers, waitlistMode, isAutomaticFull]);
+
+  const invitedList: Friend[] = useMemo(() => {
+    if (waitlistMode === 'assigned' || isAutomaticFull) {
+      return [];
     }
-    return status === 'JOINED';
-  });
+    const rawInvited = allPlanMembers
+      .filter((m) => normalizeStatus(m.joinState || m.rsvp_status) === 'INVITED')
+      .map((m) => memberToFriend(m, hostId, activeUserId));
+    return prioritizeCurrentUserAndSort(rawInvited);
+  }, [allPlanMembers, hostId, activeUserId, waitlistMode, isAutomaticFull, prioritizeCurrentUserAndSort]);
 
-  const waitlistMembers = allPlanMembers.filter((m) => {
-    const status = normalizeStatus(m.joinState || m.rsvp_status);
-    if (waitlistMode === 'assigned') {
-      const group = (m as any).assignedGroup || (m as any).assigned_group;
-      return group === 'WAITLIST' || (!group && status === 'WAITLISTED');
-    }
-    return status === 'WAITLISTED';
-  });
-
-  const rawGoingList: Friend[] = goingMembers.map((m) => memberToFriend(m, hostId, activeUserId));
+  const rawGoingList: Friend[] = useMemo(() => {
+    return goingMembers.map((m) => memberToFriend(m, hostId, activeUserId));
+  }, [goingMembers, hostId, activeUserId]);
 
   const goingList: Friend[] = useMemo(() => {
     return prioritizeCurrentUserAndSort(rawGoingList);
-  }, [rawGoingList]);
+  }, [rawGoingList, prioritizeCurrentUserAndSort]);
 
   const waitlistList: Friend[] = useMemo(() => {
     const rawList = waitlistMembers.map((m) => memberToFriend(m, hostId, activeUserId));
@@ -622,7 +684,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       setLocalGoingList(null);
       setLocalWaitlist(null);
       try {
-        await onMoveToGoing(plan.id, friend.dbUuid || friend.id);
+        await onMoveToGoing(plan.id, friend.dbUuid || friend.id, { bypassCapacityCheck: true });
       } catch (err: any) {
         console.error("[handleConfirmPendingPromote] error:", err);
         showToast(err?.message || 'Failed to move participant');
@@ -634,8 +696,56 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     [pendingPromoteToGoing, capacity, goingMembers.length, maxCapacity, onUpdatePlanCapacity, plan.id, onMoveToGoing, showToast],
   );
 
+  const handleOpenSwapTargetPicker = useCallback(() => {
+    if (!pendingPromoteToGoing) return;
+    const incomingFriend = pendingPromoteToGoing;
+    setPendingPromoteToGoing(null);
+    setSwapState({ type: 'swap_incoming', targetFriend: incomingFriend });
+  }, [pendingPromoteToGoing]);
+
+  const [pendingMoveToWaitlist, setPendingMoveToWaitlist] = useState<Friend | null>(null);
+
+  const handleCancelPendingWaitlist = useCallback(() => {
+    setPendingMoveToWaitlist(null);
+  }, []);
+
+  const handleConfirmDecreaseCapacityForWaitlist = useCallback(async () => {
+    if (!pendingMoveToWaitlist || !onUpdatePlanCapacity) return;
+    const friend = pendingMoveToWaitlist;
+    const targetCapacity = Math.max(2, capacity - 1);
+    setPendingMoveToWaitlist(null);
+
+    try {
+      // 1. Reduce plan capacity by 1 first (so capacity change activity is logged first)
+      await onUpdatePlanCapacity(plan.id, targetCapacity);
+      // 2. Move participant to waitlist second
+      await onMoveToWaitlist(plan.id, friend.dbUuid || friend.id);
+      showToast(`✓ Capacity reduced to ${targetCapacity}`);
+    } catch (err: any) {
+      console.error("[handleConfirmDecreaseCapacityForWaitlist] error:", err);
+      showToast(err?.message || 'Failed to move participant');
+    }
+  }, [pendingMoveToWaitlist, capacity, onUpdatePlanCapacity, plan.id, onMoveToWaitlist, showToast]);
+
+  const handleOpenWaitlistSwapPicker = useCallback(() => {
+    if (!pendingMoveToWaitlist) return;
+    const outgoingFriend = pendingMoveToWaitlist;
+    setPendingMoveToWaitlist(null);
+    setSwapState({ type: 'swap', targetFriend: outgoingFriend });
+  }, [pendingMoveToWaitlist]);
+
+  const [swapState, setSwapState] = useState<{
+    type: 'swap' | 'remove' | 'swap_incoming';
+    targetFriend: Friend;
+  } | null>(null);
+
   const handleMoveToWaitlist = useCallback(
     async (friend: Friend) => {
+      if (waitlistMode === 'assigned') {
+        setPendingMoveToWaitlist(friend);
+        return;
+      }
+
       setLocalGoingList(null);
       setLocalWaitlist(null);
       try {
@@ -647,48 +757,124 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         setLocalWaitlist(null);
       }
     },
-    [plan.id, onMoveToWaitlist, showToast],
+    [plan.id, waitlistMode, onMoveToWaitlist, showToast],
   );
+
+  const [pendingRemoveGoing, setPendingRemoveGoing] = useState<Friend | null>(null);
+
+  const handleCancelPendingRemoveGoing = useCallback(() => {
+    setPendingRemoveGoing(null);
+  }, []);
+
+  const handleConfirmDecreaseCapacityForRemoveGoing = useCallback(async () => {
+    if (!pendingRemoveGoing || !onUpdatePlanCapacity) return;
+    const friend = pendingRemoveGoing;
+    const targetCapacity = Math.max(2, capacity - 1);
+    setPendingRemoveGoing(null);
+
+    try {
+      // 1. Reduce plan capacity by 1 first (so capacity change activity is logged first)
+      await onUpdatePlanCapacity(plan.id, targetCapacity);
+      // 2. Remove participant from plan second
+      await onRemoveParticipant(plan.id, friend.dbUuid || friend.id);
+      showToast(`✓ Removed ${friend.name} and reduced capacity to ${targetCapacity}`);
+    } catch (err: any) {
+      console.error("[handleConfirmDecreaseCapacityForRemoveGoing] error:", err);
+      showToast(err?.message || 'Failed to remove participant');
+    }
+  }, [pendingRemoveGoing, capacity, onUpdatePlanCapacity, plan.id, onRemoveParticipant, showToast]);
+
+  const handleOpenRemoveGoingReplacePicker = useCallback(() => {
+    if (!pendingRemoveGoing) return;
+    const friend = pendingRemoveGoing;
+    setPendingRemoveGoing(null);
+    setSwapState({ type: 'remove', targetFriend: friend });
+  }, [pendingRemoveGoing]);
 
   const handleRemoveParticipant = useCallback(
     async (friend: Friend) => {
+      const friendId = friend.dbUuid || friend.id;
+      if (waitlistMode === 'assigned') {
+        const isGoing = goingList.some(g => (g.dbUuid || g.id) === friendId);
+        if (isGoing) {
+          setPendingRemoveGoing(friend);
+          return;
+        }
+      }
+
       try {
-        await onRemoveParticipant(plan.id, friend.dbUuid);
+        await onRemoveParticipant(plan.id, friendId);
         showToast(`✓ Removed ${friend.name}`);
       } catch {
         showToast('Failed to remove participant');
       }
     },
-    [plan.id, onRemoveParticipant, showToast],
+    [plan.id, waitlistMode, goingList, onRemoveParticipant, showToast],
+  );
+
+  const handleConfirmSwap = useCallback(
+    async (selectedUserIds: string[]) => {
+      if (!swapState || selectedUserIds.length === 0) return;
+      const { type, targetFriend } = swapState;
+      const selectedUserId = selectedUserIds[0];
+      const targetUserId = targetFriend.dbUuid || targetFriend.id;
+
+      if (!targetUserId || !selectedUserId) {
+        console.error("[handleConfirmSwap] Missing participant IDs", { targetUserId, selectedUserId });
+        showToast("Cannot swap: missing participant ID");
+        return;
+      }
+
+      try {
+        if (type === 'swap') {
+          // targetFriend is GOING → WAITLIST, selectedUser is WAITLIST → GOING
+          if (!onSwapParticipants) throw new Error("swap is not supported");
+          await onSwapParticipants(plan.id, targetUserId, selectedUserId);
+          showToast(`✓ Swapped ${targetFriend.name} with waitlist participant`);
+        } else if (type === 'swap_incoming') {
+          // targetFriend is WAITLIST → GOING, selectedUser is GOING → WAITLIST
+          if (!onSwapParticipants) throw new Error("swap is not supported");
+          await onSwapParticipants(plan.id, selectedUserId, targetUserId);
+          showToast(`✓ Swapped ${targetFriend.name} into Going`);
+        } else {
+          // type === 'remove': atomically remove going participant + replace from waitlist
+          if (!onRemoveAndReplaceWithWaitlist) throw new Error("remove-and-replace is not supported");
+          await onRemoveAndReplaceWithWaitlist(plan.id, targetUserId, selectedUserId);
+          showToast(`✓ Removed ${targetFriend.name} and replaced from waitlist`);
+        }
+        setSwapState(null);
+      } catch (err: any) {
+        console.error("[handleConfirmSwap] Error:", err);
+        showToast(err?.message || "Failed to swap participants");
+        // Do NOT clear swapState on error so user can retry
+      }
+    },
+    [swapState, plan.id, onSwapParticipants, onRemoveAndReplaceWithWaitlist, onMoveToGoing, onRemoveParticipant, showToast],
   );
 
   const handlePromoteHost = useCallback(
     async (friend: Friend) => {
       if (!onPromoteToHost) return;
-      const targetStatus = normalizeStatus((friend as any).joinState || (friend as any).rsvp_status || 'JOINED');
+      const targetId = friend.dbUuid || friend.id || (friend as any).user_id || (friend as any).userId || "";
+      if (!targetId) return;
+
+      const memberRecord = members.find(
+        (m: any) => (m.userId || m.userUuid || m.user_id || m.id) === targetId
+      );
+
+      const targetStatus = normalizeStatus((friend as any).joinState || (friend as any).rsvp_status || memberRecord?.joinState || memberRecord?.rsvp_status || 'JOINED');
+      const targetRole = memberRecord?.role || (friend.isHost ? 'HOST' : 'PARTICIPANT');
+
+      const isAlreadyHost = friend.isHost || targetRole === 'HOST';
+      if (isAlreadyHost) return;
+
       if (targetStatus !== 'JOINED') {
         showToast("Only Going participants can be promoted to host");
         return;
       }
 
-      const memberRecord = members.find(
-        (m: any) => (m.userId || m.userUuid || m.user_id || m.id) === friend.dbUuid
-      );
-
-      const isAlreadyHost = friend.isHost || (memberRecord && memberRecord.role === 'HOST');
-      if (isAlreadyHost) {
-        // Participant is already a host — silently ignore per prompt specs
-        return;
-      }
-
-      const rsvp = normalizeStatus(memberRecord?.joinState || memberRecord?.rsvp_status);
-      if (rsvp !== 'JOINED') {
-        showToast("Only Going participants can be promoted to host");
-        return;
-      }
-
       try {
-        await onPromoteToHost(plan.id, friend.dbUuid);
+        await onPromoteToHost(plan.id, targetId);
         showToast(`✓ ${friend.name} is now a host`);
       } catch (err: any) {
         showToast(err?.message || 'Failed to promote host');
@@ -710,81 +896,209 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     [plan.id, onDemoteFromHost, showToast],
   );
 
+  const [guidedAdjustmentState, setGuidedAdjustmentState] = useState<{
+    mode: 'promote' | 'demote';
+    targetCapacity: number;
+    requiredCount: number;
+    candidates: Friend[];
+  } | null>(null);
+
   const handleAdjustCapacity = useCallback(
     async (newVal: number) => {
-      const currentGoingCount = goingMembers.length;
-      if (newVal < currentGoingCount) {
-        showToast(`Cannot reduce capacity below current Going count (${currentGoingCount})`);
+      const clampedVal = Math.min(maxCapacity, Math.max(2, newVal));
+      if (clampedVal === capacity || !onUpdatePlanCapacity) return;
+
+      if (waitlistMode === 'assigned') {
+        if (clampedVal > capacity) {
+          // Guided Increase: Host must choose who to promote from WAITLIST
+          const requiredCount = clampedVal - capacity;
+          const candidates = waitlistList;
+          if (candidates.length === 0) {
+            showToast("No waitlisted participants available to promote");
+            return;
+          }
+          setGuidedAdjustmentState({
+            mode: 'promote',
+            targetCapacity: clampedVal,
+            requiredCount: Math.min(requiredCount, candidates.length),
+            candidates,
+          });
+        } else {
+          // Guided Decrease: Host must choose who to demote from GOING
+          const requiredCount = capacity - clampedVal;
+          // Filter candidates to prevent sole host self-demotion if restricted
+          const candidates = goingList.filter(f => {
+            const uId = f.dbUuid || f.id;
+            return !(f.isHost && activeUserId && uId === activeUserId);
+          });
+          setGuidedAdjustmentState({
+            mode: 'demote',
+            targetCapacity: clampedVal,
+            requiredCount: Math.min(requiredCount, candidates.length),
+            candidates,
+          });
+        }
         return;
       }
 
-      const clampedVal = Math.min(maxCapacity, Math.max(2, newVal));
-      if (clampedVal !== capacity && onUpdatePlanCapacity) {
-        try {
-          await onUpdatePlanCapacity(plan.id, clampedVal);
-          // If a participant was waiting to be moved to Going upon capacity increase
-          if (pendingPromoteToGoing) {
-            const friendToMove = pendingPromoteToGoing;
-            setPendingPromoteToGoing(null);
-            setLocalGoingList(null);
+      // Automatic mode: direct capacity update
+      try {
+        await onUpdatePlanCapacity(plan.id, clampedVal);
+        if (pendingPromoteToGoing) {
+          const friendToMove = pendingPromoteToGoing;
+          setPendingPromoteToGoing(null);
+          setLocalWaitlist(null);
+          try {
+            await onMoveToGoing(plan.id, friendToMove.dbUuid || friendToMove.id);
+          } catch (moveErr: any) {
+            console.error("[handleAdjustCapacity] Error moving pending participant to Going:", moveErr);
+            showToast(moveErr?.message || 'Failed to move participant');
+          } finally {
             setLocalWaitlist(null);
-            try {
-              await onMoveToGoing(plan.id, friendToMove.dbUuid || friendToMove.id);
-            } catch (moveErr: any) {
-              console.error("[handleAdjustCapacity] Error moving pending participant to Going:", moveErr);
-              showToast(moveErr?.message || 'Failed to move participant');
-            } finally {
-              setLocalGoingList(null);
-              setLocalWaitlist(null);
-            }
           }
-        } catch (err: any) {
-          const msg = typeof err === 'string' ? err : err?.message || err?.error_description || err?.details || 'Failed to update capacity';
-          console.error("[handleAdjustCapacity] Error updating capacity:", msg, err);
-          showToast(msg);
         }
+      } catch (err: any) {
+        const msg = typeof err === 'string' ? err : err?.message || err?.error_description || err?.details || 'Failed to update capacity';
+        console.error("[handleAdjustCapacity] Error updating capacity:", msg, err);
+        showToast(msg);
       }
     },
-    [plan.id, capacity, goingMembers.length, maxCapacity, onUpdatePlanCapacity, showToast, pendingPromoteToGoing, onMoveToGoing]
+    [plan.id, capacity, maxCapacity, waitlistMode, waitlistList, goingList, activeUserId, onUpdatePlanCapacity, showToast, pendingPromoteToGoing, onMoveToGoing]
   );
 
-  const managementMode: "host" | "invite_only" = isHost ? "host" : "invite_only";
-  const canInvite = isHost || plan.allowParticipantInvites === true || (plan as any).allow_participant_invites === true;
+  const handleConfirmGuidedAdjustment = useCallback(async (selectedUserIds: string[]) => {
+    if (!guidedAdjustmentState || !onUpdatePlanCapacity) return;
+    const { mode, targetCapacity } = guidedAdjustmentState;
+    try {
+      if (mode === 'promote') {
+        // 1. Expand plan capacity first
+        await onUpdatePlanCapacity(plan.id, targetCapacity);
+        // 2. Promote selected waitlisted participants with capacity validation bypass
+        for (const uId of selectedUserIds) {
+          await onMoveToGoing(plan.id, uId, { bypassCapacityCheck: true });
+        }
+      } else {
+        // 1. Demote selected going participants to waitlist first
+        for (const uId of selectedUserIds) {
+          await onMoveToWaitlist(plan.id, uId);
+        }
+        // 2. Reduce plan capacity after demotions succeed
+        await onUpdatePlanCapacity(plan.id, targetCapacity);
+      }
+      showToast(`✓ Capacity updated to ${targetCapacity}`);
+    } catch (err: any) {
+      console.error("[handleConfirmGuidedAdjustment] Error:", err);
+      showToast(err?.message || "Failed to update capacity");
+    } finally {
+      setGuidedAdjustmentState(null);
+    }
+  }, [guidedAdjustmentState, plan.id, onMoveToGoing, onMoveToWaitlist, onUpdatePlanCapacity, showToast]);
+
+  const managementMode: "host" | "invite_only" = effectiveIsHost ? "host" : "invite_only";
   const [localGoingList, setLocalGoingList] = useState<Friend[] | null>(null);
   const [localWaitlist, setLocalWaitlist] = useState<Friend[] | null>(null);
 
-  // Auto-clear local drag overrides whenever underlying plan members change from store / DB / Realtime
+  // Sync local drag state with store members: clear local override ONLY once store/DB reflects exact order and positions
   useEffect(() => {
-    setLocalGoingList(null);
-    setLocalWaitlist(null);
-  }, [members]);
+    if (!localWaitlist || localWaitlist.length === 0) return;
+
+    if (waitlistList.length !== localWaitlist.length) return;
+
+    // 1. Verify exact participant ordering match by UUID
+    const localIds = localWaitlist.map(f => f.dbUuid || f.id);
+    const storeIds = waitlistList.map(f => f.dbUuid || f.id);
+    const orderMatches = localIds.every((id, idx) => storeIds[idx] === id);
+    if (!orderMatches) return;
+
+    // 2. Verify parent members have valid, non-null waitlistPosition values matching index + 1
+    const allPositionsValid = waitlistList.every((item, idx) => {
+      const pos = item.waitlistPosition;
+      return typeof pos === 'number' && pos > 0 && (waitlistMode !== 'assigned' || pos === idx + 1);
+    });
+
+    if (allPositionsValid) {
+      setLocalWaitlist(null);
+    }
+  }, [waitlistList, localWaitlist, waitlistMode]);
 
   const displayGoingList = useMemo(() => {
-    const list = localGoingList ?? goingList;
-    return prioritizeCurrentUserAndSort(list);
-  }, [localGoingList, goingList]);
+    return goingList;
+  }, [goingList]);
 
   const displayWaitlist = useMemo(() => {
-    const rawList = localWaitlist ?? waitlistList;
+    const rawList = localWaitlist || waitlistList;
     const goingUserIds = new Set(displayGoingList.map(g => g.dbUuid || g.id));
     return rawList.filter(w => !goingUserIds.has(w.dbUuid || w.id));
   }, [localWaitlist, waitlistList, displayGoingList]);
 
-  const handleReorderGoing = useCallback(async (newGoing: Friend[]) => {
-    setLocalGoingList(newGoing);
+  const handleReorderWaitlist = useCallback((newWaitlist: Friend[]) => {
+    // ONLY update local visual state during active dragging for 60fps smooth UI
+    setLocalWaitlist(newWaitlist);
   }, []);
 
-  const handleReorderWaitlist = useCallback(async (newWaitlist: Friend[]) => {
-    setLocalWaitlist(newWaitlist);
+  const handleReorderWaitlistComplete = useCallback(async (finalWaitlist: Friend[]) => {
+    // Persist the EXACT visual waitlist order at the moment the card is dropped
     try {
-      const userUuids = newWaitlist.map((f) => f.dbUuid || f.id);
-      if (onReorderWaitlist) {
+      const userUuids = finalWaitlist.map((f) => f.dbUuid || f.id);
+      if (onReorderWaitlist && userUuids.length > 0) {
         await onReorderWaitlist(plan.id, userUuids);
       }
     } catch (err) {
-      console.error("[handleReorderWaitlist] Failed to persist new order:", err);
+      console.error("[handleReorderWaitlistComplete] Failed to persist final waitlist order:", err);
     }
   }, [plan.id, onReorderWaitlist]);
+
+  // ── Switch to Automatic Mode State & Handler ──
+  const [showAutomaticSelectionSheet, setShowAutomaticSelectionSheet] = useState(false);
+  const [showAutomaticWarningSheet, setShowAutomaticWarningSheet] = useState(false);
+
+  const vacantSpots = Math.max(0, capacity - goingMembers.length);
+
+  // Eligible participants are strictly those with assigned_group = WAITLIST and rsvp_status = JOINED
+  const eligibleWaitlist = useMemo(() => {
+    return waitlistList.filter((f) => {
+      const isJoined = f.rsvpStatus === 'JOINED' || f.isAccepted === true;
+      return isJoined;
+    });
+  }, [waitlistList]);
+
+  const handleWaitlistModeChange = useCallback(async (newMode: 'automatic' | 'assigned') => {
+    if (newMode === 'assigned' || waitlistMode === newMode) return;
+
+    if (!onSwitchToAutomaticMode) return;
+
+    // Case 1: Vacant GOING spots exist AND eligible waitlist participants exist -> Show selection bottom sheet
+    if (vacantSpots > 0 && eligibleWaitlist.length > 0) {
+      setShowAutomaticSelectionSheet(true);
+      return;
+    }
+
+    // Case 2: Vacant GOING spots exist BUT NO eligible waitlist participants -> Show warning bottom sheet and block
+    if (vacantSpots > 0 && eligibleWaitlist.length === 0) {
+      setShowAutomaticWarningSheet(true);
+      return;
+    }
+
+    // Case 3: GOING is already full (vacantSpots === 0) -> Switch directly
+    try {
+      await onSwitchToAutomaticMode(plan.id, []);
+      showToast("✓ Waitlist mode switched to Automatic");
+    } catch (err: any) {
+      console.error("[handleWaitlistModeChange] Error switching to Automatic:", err);
+      showToast(err?.message || "Failed to switch waitlist mode");
+    }
+  }, [waitlistMode, onSwitchToAutomaticMode, vacantSpots, eligibleWaitlist.length, plan.id, showToast]);
+
+  const handleConfirmAutomaticSelection = useCallback(async (selectedUserIds: string[]) => {
+    if (!onSwitchToAutomaticMode) return;
+    try {
+      await onSwitchToAutomaticMode(plan.id, selectedUserIds);
+      showToast("✓ Participants promoted & switched to Automatic");
+    } catch (err: any) {
+      console.error("[handleConfirmAutomaticSelection] Error:", err);
+      showToast(err?.message || "Failed to switch waitlist mode");
+    }
+  }, [onSwitchToAutomaticMode, plan.id, showToast]);
 
   return (
     <>
@@ -797,19 +1111,21 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         maxCapacity={maxCapacity}
         mode="editor"
         managementMode={managementMode}
-        isHostUser={isHost}
+        isHost={effectiveIsHost}
+        isHostUser={effectiveIsHost}
         waitlistMode={waitlistMode}
+        onWaitlistModeChange={handleWaitlistModeChange}
         externalGoingList={displayGoingList}
         externalWaitlist={displayWaitlist}
         externalInvitedList={invitedList}
         initialTab={initialTab}
         onBack={onBack}
-        onAdjustCapacity={isHost ? handleAdjustCapacity : undefined}
-        onMoveToGoing={isHost ? handleMoveToGoing : undefined}
-        onMoveToWaitlist={isHost ? handleMoveToWaitlist : undefined}
-        onRemoveParticipant={isHost ? handleRemoveParticipant : undefined}
-        onPromoteHost={onPromoteToHost ? handlePromoteHost : undefined}
-        onDemoteHost={onDemoteFromHost ? handleDemoteHost : undefined}
+        onAdjustCapacity={effectiveIsHost ? handleAdjustCapacity : undefined}
+        onMoveToGoing={effectiveIsHost ? handleMoveToGoing : undefined}
+        onMoveToWaitlist={effectiveIsHost ? handleMoveToWaitlist : undefined}
+        onRemoveParticipant={effectiveIsHost ? handleRemoveParticipant : undefined}
+        onPromoteHost={onPromoteToHost && effectiveIsHost ? handlePromoteHost : undefined}
+        onDemoteHost={onDemoteFromHost && effectiveIsHost ? handleDemoteHost : undefined}
         onAddFriends={canInvite ? (targetTab) => {
           setAddFriendsTargetTab(targetTab === 'waitlist' ? 'WAITLIST' : 'GOING');
           setShowAddFriendsPicker(true);
@@ -818,8 +1134,10 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         onOpenSettings={onOpenSettings}
         onOpenActivity={onOpenActivity}
         onPlanSizeEditingChange={onPlanSizeEditingChange}
-        onReorderGoing={isHost && waitlistMode === 'assigned' ? handleReorderGoing : undefined}
-        onReorderWaitlist={isHost && waitlistMode === 'assigned' ? handleReorderWaitlist : undefined}
+        showWaitlistMode={showWaitlistMode}
+        onReorderWaitlist={effectiveIsHost && waitlistMode === 'assigned' ? handleReorderWaitlist : undefined}
+        onReorderWaitlistComplete={effectiveIsHost && waitlistMode === 'assigned' ? handleReorderWaitlistComplete : undefined}
+        canParticipantInvite={canParticipantInvite}
       />
 
       {showAddFriendsPicker && (
@@ -851,7 +1169,83 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         isOpen={Boolean(pendingPromoteToGoing)}
         participant={pendingPromoteToGoing ? { name: pendingPromoteToGoing.name, avatar: pendingPromoteToGoing.avatar } : null}
         onIncreaseCapacity={handleConfirmPendingPromote}
+        onSwapParticipant={handleOpenSwapTargetPicker}
         onClose={handleCancelPendingPromote}
+      />
+
+      {/* Move to Waitlist capacity bottom sheet */}
+      <MoveToWaitlistBottomSheet
+        isOpen={Boolean(pendingMoveToWaitlist)}
+        participant={pendingMoveToWaitlist ? { name: pendingMoveToWaitlist.name, avatar: pendingMoveToWaitlist.avatar } : null}
+        hasWaitlist={waitlistList.length > 0}
+        onDecreaseCapacity={handleConfirmDecreaseCapacityForWaitlist}
+        onSwapParticipant={waitlistList.length > 0 ? handleOpenWaitlistSwapPicker : undefined}
+        onClose={handleCancelPendingWaitlist}
+      />
+
+      {/* Remove Going Participant bottom sheet (Case 1) */}
+      <RemoveGoingParticipantBottomSheet
+        isOpen={Boolean(pendingRemoveGoing)}
+        participant={pendingRemoveGoing ? { name: pendingRemoveGoing.name, avatar: pendingRemoveGoing.avatar } : null}
+        hasWaitlist={waitlistList.length > 0}
+        onDecreaseCapacity={handleConfirmDecreaseCapacityForRemoveGoing}
+        onReplaceParticipant={waitlistList.length > 0 ? handleOpenRemoveGoingReplacePicker : undefined}
+        onClose={handleCancelPendingRemoveGoing}
+      />
+
+      {/* Switch to Automatic Selection Bottom Sheet (Case 1) */}
+      <SwitchToAutomaticSelectionBottomSheet
+        isOpen={showAutomaticSelectionSheet}
+        vacantSpots={vacantSpots}
+        eligibleWaitlist={eligibleWaitlist}
+        onConfirm={handleConfirmAutomaticSelection}
+        onClose={() => setShowAutomaticSelectionSheet(false)}
+      />
+
+      {/* Switch to Automatic Warning Bottom Sheet (Case 2) */}
+      <SwitchToAutomaticWarningBottomSheet
+        isOpen={showAutomaticWarningSheet}
+        onClose={() => setShowAutomaticWarningSheet(false)}
+      />
+
+      {/* Guided Capacity Adjustment Bottom Sheet (Assigned Mode Capacity Change) */}
+      <GuidedCapacityAdjustmentBottomSheet
+        isOpen={Boolean(guidedAdjustmentState)}
+        mode={guidedAdjustmentState?.mode || 'promote'}
+        requiredCount={guidedAdjustmentState?.requiredCount || 1}
+        candidates={guidedAdjustmentState?.candidates || []}
+        onConfirm={handleConfirmGuidedAdjustment}
+        onClose={() => setGuidedAdjustmentState(null)}
+      />
+
+      {/* Guided Swap / Replacement Bottom Sheet */}
+      <GuidedCapacityAdjustmentBottomSheet
+        isOpen={Boolean(swapState)}
+        mode="promote"
+        requiredCount={1}
+        candidates={
+          swapState?.type === 'swap_incoming'
+            ? goingList.filter(f => {
+                const uId = f.dbUuid || f.id;
+                const incomingId = swapState.targetFriend.dbUuid || swapState.targetFriend.id;
+                return !(f.isHost || (activeUserId && uId === activeUserId) || uId === incomingId);
+              })
+            : waitlistList
+        }
+        title={
+          swapState?.type === 'swap_incoming'
+            ? 'Who should this participant replace?'
+            : 'Who should replace this participant?'
+        }
+        subtitle={
+          swapState?.type === 'swap_incoming'
+            ? 'Select a participant currently in the Going group.'
+            : swapState?.type === 'swap'
+            ? 'Select one participant from the waitlist to swap into the Going group.'
+            : 'Select a participant from the waitlist before removing them.'
+        }
+        onConfirm={handleConfirmSwap}
+        onClose={() => setSwapState(null)}
       />
     </>
   );

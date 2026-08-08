@@ -3,13 +3,14 @@ import { UserPlus } from 'lucide-react';
 import { SharedParticipantScreenProps, Friend, ParticipantTab } from '../shared/types';
 import { ParticipantHeader } from '../shared/ParticipantHeader';
 import { PlanSizeCard } from '../shared/PlanSizeCard';
-import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
+
 import { AssignedParticipantTabs } from './AssignedParticipantTabs';
 import { AssignedParticipantActions } from './AssignedParticipantActions';
 import { GoingSection } from '../components/GoingSection';
 import { WaitlistSection } from '../components/WaitlistSection';
 import { ContinueButton } from '../../create/components/ContinueButton';
 import { DisplacedHostModal } from '../../plans/components/DisplacedHostModal';
+import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
 
 interface AssignedParticipantScreenProps extends SharedParticipantScreenProps {
   isHostSelected?: boolean;
@@ -17,8 +18,8 @@ interface AssignedParticipantScreenProps extends SharedParticipantScreenProps {
   externalGoingList?: Friend[];
   externalWaitlist?: Friend[];
   externalInvitedList?: Friend[];
-  onReorderGoing?: (newGoing: Friend[]) => void;
   onReorderWaitlist?: (newWaitlist: Friend[]) => void;
+  canParticipantInvite?: boolean;
 }
 
 export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps> = ({
@@ -36,6 +37,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   managementMode,
   continueText,
   isLoading = false,
+  isHost,
   isHostUser = false,
   onBack,
   onContinue,
@@ -48,13 +50,15 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onDemoteHost,
   onOpenSettings,
   onOpenActivity,
-  onReorderGoing,
   onReorderWaitlist,
+  onReorderWaitlistComplete,
   initialTab,
-  waitlistMode = 'assigned',
-  onWaitlistModeChange,
   onPlanSizeEditingChange,
   displayMode = 'standalone',
+  waitlistMode = 'assigned',
+  onWaitlistModeChange,
+  showWaitlistMode = true,
+  canParticipantInvite = false,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
@@ -81,12 +85,6 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
   const displayGoing = mode === 'editor' ? (externalGoingList ?? []) : internalGoingList;
   const displayWaitlist = mode === 'editor' ? (externalWaitlist ?? []) : internalWaitlist;
-
-  const acceptedGoing = useMemo(() => displayGoing.filter(item => item.isAccepted !== false), [displayGoing]);
-  const invitedGoing = useMemo(() => displayGoing.filter(item => item.isAccepted === false), [displayGoing]);
-
-  const acceptedWaitlist = useMemo(() => displayWaitlist.filter(item => item.isAccepted !== false), [displayWaitlist]);
-  const invitedWaitlist = useMemo(() => displayWaitlist.filter(item => item.isAccepted === false), [displayWaitlist]);
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     const t: ParticipantTab[] = ['going'];
@@ -180,7 +178,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
   const [isPlanSizeEditing, setIsPlanSizeEditing] = useState(false);
 
-  const isInviteOnly = managementMode === 'invite_only' || (!isHostUser && managementMode !== 'host');
+  const effectiveIsHost = isHost !== undefined ? isHost : isHostUser;
+  const isInviteOnly = managementMode === 'invite_only' || (!effectiveIsHost && managementMode !== 'host');
 
   const closeSheet = () => {
     setSelectedItem(null);
@@ -189,7 +188,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   };
 
   const handleItemTap = (item: Friend, type: ParticipantTab) => {
-    if (isInviteOnly || isPlanSizeEditing) return;
+    if (!effectiveIsHost || isInviteOnly || isPlanSizeEditing) return;
     setSelectedItem(item);
     setSheetType(type);
     setShowConfirmRemove(false);
@@ -243,7 +242,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         <ParticipantHeader
           title={title}
           subtitle={subtitle}
-          isHostUser={isHostUser}
+          isHostUser={effectiveIsHost}
           onBack={onBack}
           onOpenSettings={onOpenSettings}
           onOpenActivity={onOpenActivity}
@@ -251,26 +250,30 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         />
       )}
 
-      <div className={displayMode === 'embedded' ? "pt-4" : ""}>
-        <PlanSizeCard
-          capacity={capacity}
-          maxCapacity={maxCapacity}
-          isHostUser={isHostUser}
-          isInviteOnly={isInviteOnly}
-          onConfirmAdjustCapacity={handleApplyCapacityChange}
-          onEditingChange={(editing) => {
-            setIsPlanSizeEditing(editing);
-            if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
-          }}
-        />
-      </div>
-
-      <WaitlistModeSelector
-        waitlistMode={waitlistMode}
-        onWaitlistModeChange={onWaitlistModeChange}
-        isHostUser={isHostUser}
-        isInviteOnly={isInviteOnly}
-      />
+      {effectiveIsHost && (
+        <>
+          <div className={displayMode === 'embedded' ? "pt-4" : ""}>
+            <PlanSizeCard
+              capacity={capacity}
+              maxCapacity={maxCapacity}
+              isHostUser={effectiveIsHost}
+              isInviteOnly={isInviteOnly}
+              onConfirmAdjustCapacity={handleApplyCapacityChange}
+              onEditingChange={(editing) => {
+                setIsPlanSizeEditing(editing);
+                if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
+              }}
+            />
+          </div>
+          {showWaitlistMode && (
+            <WaitlistModeSelector
+              waitlistMode={waitlistMode}
+              onWaitlistModeChange={onWaitlistModeChange}
+              isHost={effectiveIsHost}
+            />
+          )}
+        </>
+      )}
 
       <AssignedParticipantTabs
         visibleTabs={visibleTabs}
@@ -282,7 +285,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       />
 
       {/* Action Button Below Segmented Control — Assigned Mode */}
-      {onAddFriends && (
+      {(effectiveIsHost || canParticipantInvite) && onAddFriends && (
         <div style={{ padding: '0 20px', margin: '4px 0 12px' }}>
           <button
             type="button"
@@ -307,7 +310,13 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             className="hover:bg-white/[0.12] active:scale-[0.99]"
           >
             <UserPlus className="w-4 h-4 text-white" />
-            <span>{activeTab === 'going' ? 'Add to Going' : 'Add to Waitlist'}</span>
+            <span>
+              {canParticipantInvite && !effectiveIsHost
+                ? 'Add Participants'
+                : visibleTabs.includes('waitlist')
+                ? (activeTab === 'going' ? 'Add to Going' : 'Add to Waitlist')
+                : 'Add Participants'}
+            </span>
           </button>
         </div>
       )}
@@ -319,9 +328,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             {displayGoing.length > 0 ? (
               <GoingSection
                 goingList={displayGoing}
-                onItemTap={isHostUser ? (item) => handleItemTap(item, 'going') : undefined}
-                onReorder={mode === 'editor' ? onReorderGoing : undefined}
-                reorderable={mode === 'editor' && isHostUser && Boolean(onReorderGoing)}
+                onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'going') : undefined}
                 showIndex={false}
               />
             ) : (
@@ -339,10 +346,11 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             {displayWaitlist.length > 0 ? (
               <WaitlistSection
                 waitlist={displayWaitlist}
-                onItemTap={isHostUser ? (item) => handleItemTap(item, 'waitlist') : undefined}
-                onAddFriends={onAddFriends}
-                onReorder={mode === 'wizard' ? (newWait) => setInternalWaitlist(newWait) : onReorderWaitlist}
-                reorderable={mode === 'wizard' || (isHostUser && Boolean(onReorderWaitlist))}
+                onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'waitlist') : undefined}
+                onAddFriends={effectiveIsHost ? onAddFriends : undefined}
+                onReorder={mode === 'wizard' ? (newWait) => setInternalWaitlist(newWait) : (effectiveIsHost ? onReorderWaitlist : undefined)}
+                onReorderComplete={effectiveIsHost ? onReorderWaitlistComplete : undefined}
+                reorderable={mode === 'wizard' || (effectiveIsHost && Boolean(onReorderWaitlist))}
                 showIndex={true}
               />
             ) : (
@@ -369,20 +377,22 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         />
       )}
 
-      <AssignedParticipantActions
-        selectedItem={selectedItem}
-        sheetType={sheetType}
-        showConfirmRemove={showConfirmRemove}
-        isHostUser={isHostUser}
-        userProfile={userProfile}
-        onClose={closeSheet}
-        onShowConfirmRemove={setShowConfirmRemove}
-        onMoveToWaitlist={moveToWaitlistAction}
-        onMoveToGoing={moveToGoingAction}
-        onPromoteHost={onPromoteHost}
-        onDemoteHost={onDemoteHost}
-        onRemoveParticipant={removeFromPlanAction}
-      />
+      {effectiveIsHost && (
+        <AssignedParticipantActions
+          selectedItem={selectedItem}
+          sheetType={sheetType}
+          showConfirmRemove={showConfirmRemove}
+          isHostUser={effectiveIsHost}
+          userProfile={userProfile}
+          onClose={closeSheet}
+          onShowConfirmRemove={setShowConfirmRemove}
+          onMoveToWaitlist={moveToWaitlistAction}
+          onMoveToGoing={moveToGoingAction}
+          onPromoteHost={onPromoteHost}
+          onDemoteHost={onDemoteHost}
+          onRemoveParticipant={removeFromPlanAction}
+        />
+      )}
 
       <DisplacedHostModal
         isOpen={affectedIndex >= 0 && affectedIndex < affectedHosts.length}

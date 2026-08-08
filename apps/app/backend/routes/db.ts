@@ -453,7 +453,7 @@ router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) =>
         if (rec.role !== undefined) {
           const rawRole = String(rec.role).toLowerCase();
           let mappedRole = "member";
-          if (rawRole === "creator_admin" || rawRole === "host" || rawRole === "creator" || rawRole === "admin" || rawRole === "co_host") mappedRole = "admin";
+          if (rawRole === "creator_admin" || rawRole === "host" || rawRole === "creator" || rawRole === "admin") mappedRole = "admin";
           rec.role = mappedRole;
         }
         if (rec.auto_join_enabled !== undefined) {

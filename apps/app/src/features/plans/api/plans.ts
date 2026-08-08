@@ -32,7 +32,7 @@ export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]
     .from("plans")
     .select(`
       *,
-      host_profile:users!plans_host_id_fkey(id, public_id, full_name, profile_photo_path, bio),
+      host_profile:users!plans_host_id_fkey(id, public_id, full_name, profile_photo_path),
       discovery_items(category, subcategory, cover_image_url)
     `)
     .in("id", allPlanIds);
@@ -46,7 +46,7 @@ export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]
     .from("plan_participants")
     .select(`
       *,
-      user_profile:users(id, public_id, full_name, profile_photo_path, bio)
+      user_profile:users(id, public_id, full_name, profile_photo_path)
     `)
     .in("plan_id", allPlanIds);
 
@@ -204,133 +204,13 @@ export async function promoteToHostRPC(
   planId: string,
   targetUserId: string
 ): Promise<any> {
-  console.group("🔥 [PROMOTE_AUDIT] promoteToHostRPC Execution Started");
-  console.log("📍 Input Parameters -> planId:", planId, "| targetUserId:", targetUserId);
-
-  let callerUserId: string | null = null;
-  try {
-    const { data: userData } = await supabase.auth.getUser();
-    callerUserId = userData?.user?.id || null;
-    console.log("📍 Authenticated Caller User ID:", callerUserId);
-  } catch (authErr) {
-    console.warn("⚠️ [PROMOTE_AUDIT] Could not fetch authenticated user:", authErr);
-  }
-
-  // ─── STEP 1 & 2: Verify Current Database State ───────────────────────────────
-  console.group("📊 [PROMOTE_AUDIT] Pre-Promotion Database Snapshot");
-  
-  const { data: planRow, error: planErr } = await (supabase as any)
-    .from("plans")
-    .select("id, host_id")
-    .eq("id", planId)
-    .maybeSingle();
-
-  console.log("📥 DB Query (plans): SELECT id, host_id FROM plans WHERE id =", planId, {
-    data: planRow,
-    error: planErr,
-    isCallerOwner: Boolean(callerUserId && planRow?.host_id === callerUserId)
-  });
-
-  const queryUserIds = [callerUserId, targetUserId].filter(Boolean);
-  const { data: participantRows, error: partErr } = await (supabase as any)
-    .from("plan_participants")
-    .select("user_id, role, rsvp_status")
-    .eq("plan_id", planId)
-    .in("user_id", queryUserIds);
-
-  console.log("📥 DB Query (plan_participants): SELECT user_id, role, rsvp_status FROM plan_participants:", {
-    data: participantRows,
-    error: partErr
-  });
-
-  const callerParticipantRow = (participantRows || []).find((p: any) => p.user_id === callerUserId);
-  const targetParticipantRow = (participantRows || []).find((p: any) => p.user_id === targetUserId);
-
-  console.log("📊 Summary of Pre-Promotion Roles:", {
-    callerRole: callerParticipantRow?.role,
-    callerRSVP: callerParticipantRow?.rsvp_status,
-    targetOldRole: targetParticipantRow?.role,
-    targetRSVP: targetParticipantRow?.rsvp_status
-  });
-
-  console.groupEnd();
-
-  // ─── STEP 3: Log Promotion Request ─────────────────────────────────────────
-  console.log("🚀 [PROMOTE_AUDIT] Executing RPC promote_to_host with input:", {
+  const { data, error } = await supabase.rpc("promote_to_host" as any, {
     p_plan_id: planId,
     p_target_user_id: targetUserId,
-    targetPreviousRole: targetParticipantRow?.role,
-    targetNewRole: "HOST"
   });
 
-  // ─── STEP 4: Execute RPC & Log Response ────────────────────────────────────
-  let rpcData: any = null;
-  let rpcError: any = null;
-
-  try {
-    const response = await supabase.rpc("promote_to_host" as any, {
-      p_plan_id: planId,
-      p_target_user_id: targetUserId
-    });
-
-    rpcData = response.data;
-    rpcError = response.error;
-
-    console.log("📤 RPC promote_to_host Response:", {
-      returnedData: rpcData,
-      returnedError: rpcError,
-      fullResponseObject: response
-    });
-
-    if (rpcError) {
-      console.error("❌ [PROMOTE_AUDIT] RPC promote_to_host returned error:", {
-        message: rpcError.message,
-        code: rpcError.code,
-        details: rpcError.details,
-        hint: rpcError.hint,
-        errorObject: rpcError
-      });
-      console.groupEnd();
-      throw rpcError;
-    }
-  } catch (err: any) {
-    console.error("❌ [PROMOTE_AUDIT] Exception thrown during promote_to_host RPC execution:", {
-      message: err?.message,
-      code: err?.code,
-      details: err?.details,
-      stack: err?.stack,
-      fullError: err
-    });
-    console.groupEnd();
-    throw err;
-  }
-
-  // ─── STEP 5: Verification Query ─────────────────────────────────────────────
-  console.group("🔎 [PROMOTE_AUDIT] Post-Promotion Verification Query");
-
-  const { data: targetPostCheck, error: postCheckErr } = await (supabase as any)
-    .from("plan_participants")
-    .select("user_id, role, rsvp_status")
-    .eq("plan_id", planId)
-    .eq("user_id", targetUserId)
-    .maybeSingle();
-
-  console.log("📥 Verification Query (plan_participants):", {
-    data: targetPostCheck,
-    error: postCheckErr,
-    roleIsHost: targetPostCheck?.role === "HOST"
-  });
-
-  if (!targetPostCheck || targetPostCheck.role !== "HOST") {
-    console.error("🚨 [PROMOTE_AUDIT] Promotion did not persist. Target role is still:", targetPostCheck?.role);
-  } else {
-    console.log("✅ [PROMOTE_AUDIT] Promotion verified! Target role is now HOST.");
-  }
-
-  console.groupEnd();
-  console.groupEnd();
-
-  return rpcData;
+  if (error) throw error;
+  return data;
 }
 
 /**

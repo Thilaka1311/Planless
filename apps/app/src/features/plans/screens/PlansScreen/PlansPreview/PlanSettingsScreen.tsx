@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { ChevronLeft, Crown, Users, Plus, Check, Pencil, LogOut, Trash2, Hourglass } from "lucide-react";
+import { ChevronLeft, Crown, Users, Plus, Check, Pencil, LogOut, Trash2 } from "lucide-react";
 import { Plan, UserProfile } from "../../../../../core/types";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
 import { useToast } from "../../../../../shared/contexts/ToastContext";
@@ -128,36 +128,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     }).length;
   }, [members]);
 
-  const hasWaitlistedParticipants = waitlistCount > 0 || (totalJoinedOrWaitlisted > planCapacity && planCapacity > 0) || (members.length > planCapacity && planCapacity > 0);
-
-  const initialFiltering = plan.participantFiltering || (plan as any).participant_filtering || "AUTOMATIC";
-  const [waitlistModeState, setWaitlistModeState] = useState<"automatic" | "assigned">(
-    initialFiltering === "ASSIGNED" ? "assigned" : "automatic"
-  );
-
-  useEffect(() => {
-    const currentFiltering = plan.participantFiltering || (plan as any).participant_filtering || "AUTOMATIC";
-    setWaitlistModeState(currentFiltering === "ASSIGNED" ? "assigned" : "automatic");
-  }, [plan.participantFiltering, (plan as any).participant_filtering]);
-
-  const handleWaitlistModeChange = async (newMode: "automatic" | "assigned") => {
-    if (!isHostMode) return;
-    const previousMode = waitlistModeState;
-    setWaitlistModeState(newMode);
-    const dbVal = newMode === "assigned" ? "ASSIGNED" : "AUTOMATIC";
-    try {
-      if (onUpdatePlanDetails) {
-        await onUpdatePlanDetails({ participant_filtering: dbVal });
-      } else if (onUpdateSettings) {
-        await onUpdateSettings({ participant_filtering: dbVal } as any);
-      }
-      showToast(`✓ Waitlist mode updated to ${newMode === "assigned" ? "Assigned" : "Automatic"}`);
-    } catch {
-      setWaitlistModeState(previousMode);
-      showToast("Failed to update waitlist mode");
-    }
-  };
-
   const allHosts = useMemo(() => {
     const rawHosts = members
       .filter((m) => Boolean(m.isHost || (m as any).role === "HOST"))
@@ -265,21 +235,11 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   const isSoleHost = allHosts.length <= 1 && isHostUser;
 
   const executeLeavePlanFlow = async () => {
-    console.group("🔍 [LEAVE_AUDIT] 1. executeLeavePlanFlow Initiated");
-    console.log("📍 activeUserUuid:", activeUserUuid);
-    console.log("📍 isSoleHost:", isSoleHost, "| isHostUser:", isHostUser);
-    console.log("📍 allHosts:", allHosts);
-    console.log("📍 members count:", members.length);
-    console.groupEnd();
-
     setIsLeaving(true);
     try {
       if (onLeavePlan) {
-        console.log("🔍 [LEAVE_AUDIT] Invoking onLeavePlan() callback...");
         await onLeavePlan();
-        console.log("✅ [LEAVE_AUDIT] onLeavePlan() callback resolved successfully!");
       } else if (onRemoveParticipant) {
-        console.log("🔍 [LEAVE_AUDIT] Fallback: Invoking onRemoveParticipant()...");
         await onRemoveParticipant(activeUserUuid);
         showToast("You left the plan");
         onBack();
@@ -287,7 +247,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         showToast("Leave plan feature coming soon");
       }
     } catch (err) {
-      console.error("❌ [LEAVE_AUDIT] executeLeavePlanFlow failed with error:", err);
       showToast("Failed to leave plan");
     } finally {
       setIsLeaving(false);
@@ -295,24 +254,15 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   };
 
   const handlePromoteAndLeave = async (participantId: string) => {
-    console.group("🔍 [LEAVE_AUDIT] 0. handlePromoteAndLeave Initiated");
-    console.log("📍 Target replacement host ID to promote:", participantId);
-    console.log("📍 Current active user ID (leaving owner):", activeUserUuid);
-    console.groupEnd();
-
     setPromotingToLeaveUserId(participantId);
     try {
       if (onPromoteToHost) {
-        console.log("🔍 [LEAVE_AUDIT] Promoting replacement host via onPromoteToHost...");
         await onPromoteToHost(participantId);
-        console.log("✅ [LEAVE_AUDIT] Promotion of replacement host succeeded!");
         showToast("✓ Promoted to host");
       }
       setShowPromoteHostToLeaveModal(false);
-      console.log("🔍 [LEAVE_AUDIT] Triggering executeLeavePlanFlow after promotion...");
       await executeLeavePlanFlow();
     } catch (err) {
-      console.error("❌ [LEAVE_AUDIT] handlePromoteAndLeave failed with error:", err);
       showToast("Failed to promote participant");
     } finally {
       setPromotingToLeaveUserId(null);
@@ -583,70 +533,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
             </div>
           </div>
         </div>
-
-        {/* ========================================== */}
-        {/* SECTION 3 — WAITLIST TYPE */}
-        {/* ========================================== */}
-        {hasWaitlistedParticipants && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 px-1">
-              <Hourglass className="w-4 h-4 text-[#FF6B2C]" />
-              <h2 className="text-xs font-bold text-zinc-400">
-                Waitlist Type
-              </h2>
-            </div>
-
-            <div className="bg-[#111111] border border-white/[0.08] rounded-2xl p-4.5 space-y-3.5">
-              <div className="space-y-1">
-                <span className="text-sm font-semibold text-white block">
-                  Waitlist Type
-                </span>
-                <span className="text-xs text-zinc-400 block leading-relaxed">
-                  {waitlistModeState === "assigned"
-                    ? "Hosts choose which waitlisted person moves to Going when a spot opens."
-                    : "The next person on the waitlist automatically moves to Going when a spot opens."}
-                </span>
-              </div>
-
-              {/* Full-width Segmented Control below description */}
-              <div
-                className={`flex items-center bg-white/[0.05] rounded-xl p-0.75 relative h-9.5 border border-white/[0.08] w-full ${
-                  isHostMode ? "" : "opacity-60 pointer-events-none"
-                }`}
-              >
-                <div
-                  className="absolute top-[3px] bottom-[3px] bg-[#FF6B2C] rounded-[9px] transition-all duration-250 cubic-bezier(0.2, 0.8, 0.2, 1) shadow-md"
-                  style={{
-                    left: waitlistModeState === "automatic" ? "3px" : "calc(50% + 1.5px)",
-                    width: "calc(50% - 4.5px)",
-                  }}
-                />
-
-                <button
-                  type="button"
-                  disabled={!isHostMode}
-                  onClick={() => handleWaitlistModeChange("automatic")}
-                  className={`flex-1 border-none bg-transparent text-xs cursor-pointer z-10 h-full flex items-center justify-center font-medium transition-colors duration-200 ${
-                    waitlistModeState === "automatic" ? "text-white font-bold" : "text-zinc-400"
-                  }`}
-                >
-                  Automatic
-                </button>
-
-                <button
-                  type="button"
-                  disabled={!isHostMode}
-                  onClick={() => handleWaitlistModeChange("assigned")}
-                  className={`flex-1 border-none bg-transparent text-xs cursor-pointer z-10 h-full flex items-center justify-center font-medium transition-colors duration-200 ${
-                    waitlistModeState === "assigned" ? "text-white font-bold" : "text-zinc-400"
-                  }`}
-                >
-                  Assigned
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="space-y-2.5">
           <button

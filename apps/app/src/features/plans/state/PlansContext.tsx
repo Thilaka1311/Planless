@@ -100,6 +100,9 @@ interface PlansContextType {
   promoteParticipantToHost: (planId: string, participantUserUuid: string) => Promise<void>;
   demoteHostToParticipant: (planId: string, participantUserUuid: string) => Promise<void>;
   reorderWaitlist: (planId: string, orderedUserUuids: string[]) => Promise<void>;
+  switchToAutomaticWaitlistMode: (planId: string, promotedUserUuids?: string[]) => Promise<void>;
+  swapParticipants: (planId: string, goingUserId: string, waitlistUserId: string) => Promise<void>;
+  removeAndReplaceWithWaitlist: (planId: string, removeUserId: string, promoteUserId: string) => Promise<void>;
 }
 
 const PlansContext = createContext<PlansContextType | undefined>(undefined);
@@ -322,7 +325,6 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return prev.filter(p => p.id !== planId && p.plan_id !== planId);
             });
           }
-          refreshPlans(["plans", "plan_participants"], "realtime_plans_table_change");
         }
       )
       .on(
@@ -356,39 +358,9 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return prev.filter(pp => !(pp.plan_id === planId && pp.user_id === userIdVal));
             });
           }
-          refreshPlans(["plans", "plan_participants"], "realtime_participants_table_change");
         }
       )
 
-      // plan_outcomes real-time changes are disabled (unfinished feature)
-      // .on(
-      //   "postgres_changes",
-      //   { event: "*", schema: "public", table: "plan_outcomes" },
-      //   (payload: any) => {
-      //     const { eventType, new: newRec, old: oldRec } = payload;
-      // 
-      //     if (eventType === "INSERT" || eventType === "UPDATE") {
-      //       const outcomeId = newRec.id;
-      // 
-      //       setDbPlanOutcomes(prev => {
-      //         const matchIndex = prev.findIndex(outcome => outcome.id === outcomeId);
-      //         if (matchIndex > -1) {
-      //           const updated = [...prev];
-      //           updated[matchIndex] = newRec;
-      //           return updated;
-      //         } else {
-      //           return [...prev, newRec];
-      //         }
-      //       });
-      //     } else if (eventType === "DELETE") {
-      //       const outcomeId = oldRec.id;
-      // 
-      //       setDbPlanOutcomes(prev => {
-      //         return prev.filter(outcome => outcome.id !== outcomeId);
-      //       });
-      //     }
-      //   }
-      // )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "memories" },
@@ -417,54 +389,11 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
       )
-      // memory_results real-time changes are disabled (unfinished feature)
-      // .on(
-      //   "postgres_changes",
-      //   { event: "*", schema: "public", table: "memory_results" },
-      //   (payload: any) => {
-      //     const { eventType, new: newRec, old: oldRec } = payload;
-      // 
-      //     if (eventType === "INSERT" || eventType === "UPDATE") {
-      //       const resultId = newRec.id;
-      // 
-      //       setDbMemoryResults(prev => {
-      //         const matchIndex = prev.findIndex(r => r.id === resultId);
-      //         if (matchIndex > -1) {
-      //           const updated = [...prev];
-      //           updated[matchIndex] = newRec;
-      //           return updated;
-      //         } else {
-      //           return [...prev, newRec];
-      //         }
-      //       });
-      //     } else if (eventType === "DELETE") {
-      //       const resultId = oldRec.id;
-      // 
-      //       setDbMemoryResults(prev => {
-      //         return prev.filter(r => r.id !== resultId);
-      //       });
-      //     }
-      //   }
-      // )
       .subscribe((status) => {
-
-        const prevStatus = lastStatusRef.current;
         lastStatusRef.current = status;
-
-        if (status === "SUBSCRIBED") {
-          if (prevStatus && prevStatus !== "SUBSCRIBED") {
-
-            refreshPlans(["plans", "plan_participants", "memories"], "realtime_subscribed_reconnect");
-          } else {
-
-          }
-        } else if (status === "CLOSED" || status === "CHANNEL_ERROR") {
-
-        }
       });
 
     return () => {
-
       channel.unsubscribe();
     };
   }, [refreshPlans]);
@@ -572,7 +501,10 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     moveParticipantToGoing,
     moveParticipantToWaitlist,
     moveParticipantToInvited,
-    reorderWaitlist
+    swapParticipants,
+    removeAndReplaceWithWaitlist,
+    reorderWaitlist,
+    switchToAutomaticWaitlistMode
   } = usePlanParticipants({
     userId,
     dbUsers: dbUsers,
@@ -647,6 +579,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     dbCircleMembers,
     dbUsers: planUsers,
     userId,
+    setDbPlans,
     setDbPlanTeamAssignments,
     refreshPlans,
     insertSystemMessage,
@@ -894,7 +827,6 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const autoJoinedUuids = new Set<string>();
-    let waitlistQueueCounter = 1;
     uniqueInviteeUuids.forEach((inviteeUuid) => {
       inviteeUuids.push(inviteeUuid);
       let shouldAutoJoin = false;
@@ -917,7 +849,6 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         role: "PARTICIPANT",
         rsvp_status: shouldAutoJoin ? "JOINED" : "INVITED",
         assigned_group: assignedGroup,
-        join_queue: assignedGroup === "WAITLIST" ? waitlistQueueCounter++ : null,
         responded_at: shouldAutoJoin ? new Date().toISOString() : null,
         circle_id: cId
       });
@@ -1061,10 +992,20 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [lifecycle, plans, updateLocalPlan]);
 
   const updatePlanDetails = useCallback(async (planId: string, updates: Partial<DbPlan>) => {
-    await lifecycle.updatePlanDetails(planId, updates);
-    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId || (p as any).public_id === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
+
+    // Synchronously update local React state first so capacity bounds expand immediately
     updateLocalPlan(planUuid, updates);
+    if (updates.max_participants !== undefined) {
+      updateLocalPlan(planUuid, {
+        max_participants: updates.max_participants,
+        joinLimit: updates.max_participants,
+        capacity: updates.max_participants,
+      } as any);
+    }
+
+    await lifecycle.updatePlanDetails(planId, updates);
   }, [lifecycle, plans, updateLocalPlan]);
 
   const completePlan = useCallback(async (planId: string) => {
@@ -1210,7 +1151,10 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     updatePlanSettings,
     promoteParticipantToHost,
     demoteHostToParticipant,
-    reorderWaitlist
+    swapParticipants,
+    removeAndReplaceWithWaitlist,
+    reorderWaitlist,
+    switchToAutomaticWaitlistMode
   }), [
     plans, dbPlans, dbPlanParticipants,
     dbPlanOutcomes, dbMemories, dbMemoryResults, dbPlanTeamAssignments,
@@ -1227,7 +1171,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addParticipantsToPlan, promoteWaitlistParticipant, rebalanceCapacity, getAvailableCapacity,
     moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited,
     updatePlanSettings, promoteParticipantToHost, demoteHostToParticipant,
-    reorderWaitlist
+    swapParticipants, removeAndReplaceWithWaitlist, reorderWaitlist, switchToAutomaticWaitlistMode
   ]);
 
   return (

@@ -23,6 +23,7 @@ export interface PlanLifecycleDeps {
   userId: string;
 
   // State setters
+  setDbPlans?: Dispatch<SetStateAction<DbPlan[]>>;
   setDbPlanTeamAssignments: Dispatch<SetStateAction<DbPlanTeamAssignment[]>>;
 
   // Shared side-effect helpers
@@ -43,6 +44,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     dbCircleMembers,
     dbUsers,
     userId,
+    setDbPlans,
     setDbPlanTeamAssignments,
     refreshPlans,
     insertSystemMessage,
@@ -258,6 +260,20 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     }
 
     if (planUpdate.max_participants !== undefined) {
+      const newMax = planUpdate.max_participants;
+      if (setDbPlans) {
+        setDbPlans(prev => prev.map(p => {
+          if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+            return {
+              ...p,
+              max_participants: newMax,
+              joinLimit: newMax,
+              capacity: newMax,
+            };
+          }
+          return p;
+        }));
+      }
       await api.updatePlanCapacityRPC(planUuid, planUpdate.max_participants);
       delete planUpdate.max_participants;
     }
@@ -278,9 +294,10 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       .select("*");
     const freshParticipants = freshParticipantsData || dbPlanParticipants;
 
-    // REBALANCE PARTICIPANTS IF CAPACITY CHANGED
+    // REBALANCE PARTICIPANTS IF CAPACITY CHANGED (AUTOMATIC Mode Only)
     let rebalanceResult = { promotedCount: 0, demotedCount: 0 };
-    if (newCapacity !== undefined && rebalanceCapacity) {
+    const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
+    if (newCapacity !== undefined && rebalanceCapacity && filteringMode !== 'ASSIGNED') {
       rebalanceResult = await rebalanceCapacity(planUuid, newCapacity);
     }
 

@@ -550,7 +550,6 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
           />
         </div>
 
-
         {/* ── Cost Section ── */}
         <div className="px-6 pb-5 space-y-4 pt-1">
           <div className="flex items-center justify-between">

@@ -64,8 +64,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         zIndex: isItemDragged ? 0 : 1,
         position: 'relative',
         opacity: isItemDragged ? 0.25 : item.isAccepted === false ? 0.7 : 1,
-        transition: 'background 0.2s, opacity 0.2s ease, box-shadow 0.28s ease',
-        willChange: 'transform'
+        transition: 'background 0.2s ease, opacity 0.2s ease, box-shadow 0.28s ease',
       }}
       onMouseEnter={(e) => {
         if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = '#222227';
@@ -83,7 +82,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
       <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: item.isAccepted === false ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
         {item.name}
       </span>
-      {item.isHost && (
+      {item.isHost ? (
         <span style={{
           fontSize: 11,
           fontWeight: 600,
@@ -98,7 +97,22 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         }}>
           Host
         </span>
-      )}
+      ) : item.isAccepted === false ? (
+        <span style={{
+          fontSize: 11,
+          fontWeight: 500,
+          color: '#8E8E93',
+          background: 'rgba(255, 255, 255, 0.06)',
+          padding: '2px 8px',
+          borderRadius: 9999,
+          fontFamily: 'Inter, sans-serif',
+          lineHeight: 1.2,
+          display: 'inline-flex',
+          alignItems: 'center',
+        }}>
+          Invited
+        </span>
+      ) : null}
     </div>
   );
 };

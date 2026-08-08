@@ -8,7 +8,6 @@ export interface Friend {
   isAccepted?: boolean;
   rsvpStatus?: string;
   assignedGroup?: 'GOING' | 'WAITLIST' | null;
-  joinQueue?: number | null;
   waitlistPosition?: number | null;
 }
 
@@ -27,6 +26,7 @@ export interface SharedParticipantScreenProps {
   managementMode?: 'host' | 'invite_only';
   continueText?: string;
   isLoading?: boolean;
+  isHost?: boolean;
   isHostUser?: boolean;
   onBack: () => void;
   onContinue?: (going: Friend[], waitlist: Friend[]) => void;
@@ -42,17 +42,19 @@ export interface SharedParticipantScreenProps {
   onOpenSettings?: () => void;
   onOpenActivity?: () => void;
   initialTab?: ParticipantTab;
-  waitlistMode?: 'automatic' | 'assigned';
   displayMode?: 'standalone' | 'embedded';
   onPlanSizeEditingChange?: (isEditing: boolean) => void;
-  onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;
   isHostSelected?: boolean;
   selectedFriends?: Friend[];
   externalGoingList?: Friend[];
   externalWaitlist?: Friend[];
   externalInvitedList?: Friend[];
-  onReorderGoing?: (newGoing: Friend[]) => void;
   onReorderWaitlist?: (newWaitlist: Friend[]) => void;
+  onReorderWaitlistComplete?: (finalWaitlist: Friend[]) => void;
+  waitlistMode?: 'automatic' | 'assigned';
+  onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;
+  showWaitlistMode?: boolean;
+  canParticipantInvite?: boolean;
 }
 
 export type ParticipantManagementScreenProps = SharedParticipantScreenProps;

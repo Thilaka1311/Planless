@@ -18,6 +18,7 @@ import {
   UsersRound,
   IndianRupee,
   Sparkles,
+  ArrowLeftRight,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { usePlansStore } from "../../plans/state/PlansContext";
@@ -35,6 +36,13 @@ export interface ActivityEvent {
   secondaryDescription: string; // Action & Details (Multi-line)
   isUserEvent?: boolean; // True if primaryTitle represents a user
   userAvatarSrc?: string | null; // Avatar URL if title represents a user
+  accentEdgeColor?: string; // Optional full-height left edge colour (e.g. yellow for waitlist)
+  swapData?: {
+    goingUser: { name: string; avatar?: string | null };
+    waitlistUser: { name: string; avatar?: string | null };
+    waitlistResult?: 'waitlist' | 'removed'; // 'removed' = remove-replace flow
+    actorName?: string;
+  };
   timeText: string; // "10:06 AM"
   dateText: string; // "Today", "Yesterday", "Jul 31, 2026"
   dateGroup: string; // Grouping key
@@ -129,6 +137,8 @@ const EventIcon: React.FC<{ type: ActivityEvent["type"] }> = ({ type }) => {
       return <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
     case "participant_promoted":
       return <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
+    case "host_promoted":
+      return <Crown className="w-4 h-4 text-amber-300 flex-shrink-0" />;
     case "participant_removed":
       return <UserX className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
 
@@ -151,36 +161,155 @@ const ActivityRow: React.FC<{ event: ActivityEvent; opacity: any }> = ({ event, 
       </div>
 
       {/* Main Activity Card */}
-      <div className="flex-1 bg-zinc-900/80 border border-white/[0.06] rounded-2xl p-3.5 flex items-start gap-3 shadow-md hover:border-white/10 transition-colors">
-        {/* Left Avatar / Icon indicator */}
-        <div className="mt-0.5 flex-shrink-0">
-          {event.isUserEvent && event.userAvatarSrc !== undefined ? (
-            <UserAvatar
-              src={event.userAvatarSrc}
-              alt={event.primaryTitle}
-              size="w-7 h-7"
-              className="rounded-full border border-white/10"
-            />
-          ) : (
-            <div className="w-7 h-7 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center">
-              <EventIcon type={event.type} />
+      {event.type === "participants_swapped" && event.swapData ? (
+        (() => {
+          const isRemoveReplace = event.swapData.waitlistResult === 'removed';
+          const rightEdgeColor  = isRemoveReplace ? '#ef4444' : '#eab308';
+          const rightStatusText = isRemoveReplace ? 'Removed' : 'Waitlist';
+          const rightStatusColor = rightEdgeColor;
+          return (
+            /* Outer shell — no border, overflow-hidden clips to rounded corners */
+            <div
+              className="flex-1 flex select-none overflow-hidden shadow-sm"
+              style={{ background: 'rgba(24, 24, 27, 0.82)', borderRadius: 16 }}
+            >
+              {/* ── LEFT GREEN EDGE ── */}
+              <div style={{ width: 3, flexShrink: 0, background: '#22c55e' }} />
+
+              {/* ── CARD BODY ── */}
+              <div className="flex flex-col flex-1 min-w-0 py-2.5 px-0">
+
+                {/* Participant row */}
+                <div className="flex items-center gap-1.5 px-2.5">
+
+                  {/* Going participant (left) */}
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div className="w-9 h-9 rounded-full border border-white/10 overflow-hidden flex-shrink-0 bg-[#1A1A1A]">
+                      <UserAvatar
+                        src={event.swapData.goingUser.avatar || ""}
+                        alt={event.swapData.goingUser.name}
+                        size="w-full h-full"
+                      />
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[12.5px] font-semibold text-white/95 truncate leading-tight">
+                        {event.swapData.goingUser.name}
+                      </span>
+                      <span className="text-[11px] font-medium leading-none" style={{ color: '#22c55e' }}>
+                        Going
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Swap icon */}
+                  <ArrowLeftRight className="w-3.5 h-3.5 text-white/60 flex-shrink-0" />
+
+                  {/* Right participant */}
+                  <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                    <div className="flex flex-col items-end min-w-0">
+                      <span className="text-[12.5px] font-semibold text-white/95 truncate leading-tight">
+                        {event.swapData.waitlistUser.name}
+                      </span>
+                      <span className="text-[11px] font-medium leading-none" style={{ color: rightStatusColor }}>
+                        {rightStatusText}
+                      </span>
+                    </div>
+                    <div className="w-9 h-9 rounded-full border border-white/10 overflow-hidden flex-shrink-0 bg-[#1A1A1A]">
+                      <UserAvatar
+                        src={event.swapData.waitlistUser.avatar || ""}
+                        alt={event.swapData.waitlistUser.name}
+                        size="w-full h-full"
+                      />
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Footer */}
+                <p className="text-[11px] text-zinc-500 px-2.5 mt-1.5 leading-none">
+                  {event.swapData.actorName ? `Swapped by ${event.swapData.actorName}` : "Swapped participants"}
+                </p>
+
+              </div>
+
+              {/* ── RIGHT EDGE — yellow for waitlist swap, red for remove-replace ── */}
+              <div style={{ width: 3, flexShrink: 0, background: rightEdgeColor }} />
+
             </div>
-          )}
-        </div>
+          );
+        })()
+      ) : event.accentEdgeColor ? (
+        /* Coloured-edge card (e.g. host-moved-to-waitlist = yellow) */
+        <div
+          className="flex-1 flex select-none overflow-hidden shadow-sm"
+          style={{ background: 'rgba(24, 24, 27, 0.82)', borderRadius: 16 }}
+        >
+          {/* Full-height left accent edge */}
+          <div style={{ width: 3, flexShrink: 0, background: event.accentEdgeColor }} />
 
-        {/* Text details */}
-        <div className="flex-1 min-w-0">
-          {/* Primary Title: Person / Entity Name - Single Line */}
-          <h4 className="text-[14px] font-sans font-semibold text-white/95 leading-snug whitespace-nowrap overflow-hidden truncate">
-            {event.primaryTitle}
-          </h4>
+          {/* Card body — mirrors the standard card layout */}
+          <div className="flex flex-1 items-start gap-3 px-3 py-3">
+            {/* Avatar */}
+            <div className="mt-0.5 flex-shrink-0">
+              {event.isUserEvent ? (
+                <div className="w-7 h-7 rounded-full border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0">
+                  <UserAvatar
+                    src={event.userAvatarSrc || ""}
+                    alt={event.primaryTitle}
+                    size="w-full h-full"
+                  />
+                </div>
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center">
+                  <EventIcon type={event.type} />
+                </div>
+              )}
+            </div>
 
-          {/* Secondary Description: Action / Details - Multi-line */}
-          <p className="text-[12.5px] font-sans text-zinc-300 leading-snug mt-0.5 break-words">
-            {event.secondaryDescription}
-          </p>
+            {/* Text */}
+            <div className="flex-1 min-w-0">
+              <h4 className="text-[14px] font-semibold text-white/95 leading-snug whitespace-nowrap overflow-hidden truncate">
+                {event.primaryTitle}
+              </h4>
+              <p className="text-[12.5px] text-zinc-300 leading-snug mt-0.5 break-words">
+                {event.secondaryDescription}
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex-1 bg-zinc-900/80 border border-white/[0.06] rounded-2xl p-3.5 flex items-start gap-3 shadow-md hover:border-white/10 transition-colors">
+          {/* Left Avatar / Icon indicator */}
+          <div className="mt-0.5 flex-shrink-0">
+            {event.isUserEvent ? (
+              <div className="w-7 h-7 rounded-full border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0">
+                <UserAvatar
+                  src={event.userAvatarSrc || ""}
+                  alt={event.primaryTitle}
+                  size="w-full h-full"
+                />
+              </div>
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center">
+                <EventIcon type={event.type} />
+              </div>
+            )}
+          </div>
+
+          {/* Text details */}
+          <div className="flex-1 min-w-0">
+            {/* Primary Title: Person / Entity Name - Single Line */}
+            <h4 className="text-[14px] font-sans font-semibold text-white/95 leading-snug whitespace-nowrap overflow-hidden truncate">
+              {event.primaryTitle}
+            </h4>
+
+            {/* Secondary Description: Action / Details - Multi-line */}
+            <p className="text-[12.5px] font-sans text-zinc-300 leading-snug mt-0.5 break-words">
+              {event.secondaryDescription}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -192,7 +321,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
   embedded = false,
   dragX: externalDragX,
 }) => {
-  const { plans } = usePlansStore();
+  const { plans, dbPlanParticipants } = usePlansStore();
   const { userProfile, activeUserId, dbUsers } = useProfileStore();
 
   const plan = useMemo(() => {
@@ -217,6 +346,43 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
     (userId?: string | null, isTargetUser: boolean = false): { name: string; avatar?: string | null } => {
       if (!userId) return { name: "" };
 
+      // 1. Current logged-in user profile
+      const userProfId = userProfile?.dbUuid || (userProfile as any)?.id || (userProfile as any)?.user_id || activeUserId;
+      if (userId === userProfId || userId === activeUserId) {
+        return {
+          name: isTargetUser ? (userProfile?.name || "You") : (userProfile?.name || "You"),
+          avatar:
+            (userProfile as any)?.avatar ||
+            (userProfile as any)?.profile_photo ||
+            (userProfile as any)?.profile_photo_path ||
+            (userProfile as any)?.profile_image_url ||
+            (userProfile as any)?.avatar_url,
+        };
+      }
+
+      // 2. DbPlanParticipants with nested user_profile
+      const matchPp = dbPlanParticipants.find(
+        (pp: any) =>
+          pp.user_id === userId ||
+          pp.user_profile?.id === userId ||
+          pp.user_profile?.public_id === userId
+      );
+      if (matchPp) {
+        const uProf = (matchPp as any).user_profile;
+        const name = uProf?.full_name || uProf?.name || (matchPp as any).name || "Someone";
+        const avatar =
+          uProf?.avatar ||
+          uProf?.profile_photo ||
+          uProf?.profile_photo_path ||
+          uProf?.profile_image_url ||
+          uProf?.avatar_url ||
+          (matchPp as any).avatar;
+        if (name !== "Someone" || avatar) {
+          return { name, avatar };
+        }
+      }
+
+      // 3. Global dbUsers list
       const matchUser = dbUsers.find(
         (u) => u.id === userId || u.public_id === userId || (u as any).user_id === userId || (u as any).dbUuid === userId
       );
@@ -232,6 +398,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
         };
       }
 
+      // 4. Plan members array
       if (plan?.members) {
         const matchMember = plan.members.find(
           (m) => m.userId === userId || m.userUuid === userId || (m as any).id === userId || (m as any).user_id === userId
@@ -244,26 +411,19 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
         }
       }
 
-      if (
-        userId === userProfile?.dbUuid ||
-        userId === (userProfile as any)?.id ||
-        userId === (userProfile as any)?.user_id ||
-        userId === activeUserId
-      ) {
+      // 5. Fallback: match by name in dbUsers or plan.members if userId is a name string
+      const matchByName = dbUsers.find(u => u.full_name === userId || (u as any).name === userId) ||
+        (plan?.members || []).find((m: any) => m.name === userId);
+      if (matchByName) {
         return {
-          name: isTargetUser ? (userProfile?.name || "You") : (userProfile?.name || "You"),
-          avatar:
-            (userProfile as any)?.avatar ||
-            (userProfile as any)?.profile_photo ||
-            (userProfile as any)?.profile_photo_path ||
-            (userProfile as any)?.profile_image_url ||
-            (userProfile as any)?.avatar_url,
+          name: (matchByName as any).full_name || (matchByName as any).name || userId,
+          avatar: (matchByName as any).avatar || (matchByName as any).profile_photo || (matchByName as any).avatar_url,
         };
       }
 
       return { name: "Someone", avatar: null };
     },
-    [dbUsers, userProfile, activeUserId, plan]
+    [dbUsers, userProfile, activeUserId, plan, dbPlanParticipants]
   );
 
   // Format description strings from DbPlanActivity rows & collapse consecutive capacity events
@@ -280,6 +440,8 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       let secondaryDescription = "";
       let isUserEvent = false;
       let userAvatarSrc: string | null | undefined = undefined;
+      let swapData: ActivityEvent["swapData"] = undefined;
+      let accentEdgeColor: string | undefined = undefined;
 
       switch (act.activity_type) {
         case "plan_created":
@@ -296,35 +458,57 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           primaryTitle = targetDetails.name || actorDetails.name || "Someone";
           secondaryDescription = "Joined the plan";
           isUserEvent = true;
-          userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
+          userAvatarSrc = targetDetails.avatar;
           break;
         case "participant_left":
           primaryTitle = targetDetails.name || actorDetails.name || "Someone";
           secondaryDescription = "Left the plan";
           isUserEvent = true;
-          userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
+          userAvatarSrc = targetDetails.avatar;
           break;
-        case "participant_waitlisted":
+        case "participant_added": {
+          const participantName = meta.participant_name || targetDetails.name || "Participant";
+          const participantAvatar = meta.participant_avatar_url ?? targetDetails.avatar;
+          const actorName = meta.performed_by_name || actorDetails.name;
+          const group = (meta.assigned_group || '').toLowerCase();
+          const isGoing = group === 'going';
+
+          const actionLabel = isGoing ? "Added to Going" : "Added to Waitlist";
+          primaryTitle = participantName;
+          secondaryDescription = actorName ? `${actionLabel} by ${actorName}` : actionLabel;
+          isUserEvent = true;
+          userAvatarSrc = participantAvatar;
+          accentEdgeColor = isGoing ? '#22c55e' : '#eab308';
+          break;
+        }
+        case "participant_waitlisted": {
+          // Distinguish: host-moved (actor !== target) vs. participant voluntarily joined
+          const isHostAction = act.actor_id && act.target_user_id && act.actor_id !== act.target_user_id;
           primaryTitle = targetDetails.name || actorDetails.name || "Someone";
-          secondaryDescription = "Joined the waitlist";
-          isUserEvent = true;
-          userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
-          break;
-        case "participant_moved_to_waitlist":
-          primaryTitle = targetDetails.name || "Participant";
-          secondaryDescription = actorDetails.name ? `Moved to the waitlist by ${actorDetails.name}` : "Moved to the waitlist";
-          isUserEvent = true;
-          userAvatarSrc = targetDetails.avatar;
-          break;
-        case "participant_moved_to_going":
-          primaryTitle = targetDetails.name || "Participant";
-          secondaryDescription = actorDetails.name ? `Moved to Going by ${actorDetails.name}` : "Moved to Going";
+          if (isHostAction) {
+            secondaryDescription = actorDetails.name
+              ? `Added to Waitlist by ${actorDetails.name}`
+              : "Added to Waitlist";
+            // Use same yellow token as the Participant Swap waitlist edge
+            accentEdgeColor = '#eab308';
+          } else {
+            secondaryDescription = "Joined the waitlist";
+          }
           isUserEvent = true;
           userAvatarSrc = targetDetails.avatar;
           break;
+        }
         case "participant_promoted":
           primaryTitle = targetDetails.name || "Participant";
           secondaryDescription = actorDetails.name ? `Moved to Going by ${actorDetails.name}` : "Moved to Going";
+          isUserEvent = true;
+          userAvatarSrc = targetDetails.avatar;
+          // Use same green token as the Participant Swap going edge
+          accentEdgeColor = '#22c55e';
+          break;
+        case "host_promoted":
+          primaryTitle = targetDetails.name || "Participant";
+          secondaryDescription = actorDetails.name ? `Promoted to Host by ${actorDetails.name}` : "Promoted to Host";
           isUserEvent = true;
           userAvatarSrc = targetDetails.avatar;
           break;
@@ -335,23 +519,53 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
             secondaryDescription = "Left the plan";
           } else {
             secondaryDescription = actorDetails.name ? `Removed from the plan by ${actorDetails.name}` : "Removed from the plan";
+            // Use same red token as the Participant Swap removed edge
+            accentEdgeColor = '#ef4444';
           }
           isUserEvent = true;
-          userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
+          userAvatarSrc = targetDetails.avatar;
           break;
         }
         case "invitation_accepted":
           primaryTitle = targetDetails.name || actorDetails.name || "Someone";
           secondaryDescription = "Accepted the invitation";
           isUserEvent = true;
-          userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
+          userAvatarSrc = targetDetails.avatar;
           break;
         case "invitation_declined":
           primaryTitle = targetDetails.name || actorDetails.name || "Someone";
           secondaryDescription = "Declined the invitation";
           isUserEvent = true;
-          userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
+          userAvatarSrc = targetDetails.avatar;
           break;
+        case "participants_swapped": {
+          const goingId = meta.going_user_id || act.target_user_id;
+          const waitlistId = meta.waitlist_user_id;
+          const resolvedGoing = goingId ? resolveUserDetails(goingId, true) : { name: "Participant" };
+          const resolvedWaitlist = waitlistId ? resolveUserDetails(waitlistId, true) : { name: "Participant" };
+
+          const goingDetails = {
+            name: meta.going_user_name || resolvedGoing.name,
+            avatar: meta.going_avatar_url ?? resolvedGoing.avatar,
+          };
+          const waitlistDetails = {
+            name: meta.waitlist_user_name || resolvedWaitlist.name,
+            avatar: meta.waitlist_avatar_url ?? resolvedWaitlist.avatar,
+          };
+          const actorName = meta.performed_by_name || actorDetails.name;
+
+          primaryTitle = `${goingDetails.name} ⇄ ${waitlistDetails.name}`;
+          secondaryDescription = actorName ? `Swapped by ${actorName}` : "Swapped participants";
+          isUserEvent = true;
+          userAvatarSrc = goingDetails.avatar;
+          swapData = {
+            goingUser: goingDetails,
+            waitlistUser: waitlistDetails,
+            waitlistResult: meta.waitlist_result === 'removed' ? 'removed' : 'waitlist',
+            actorName: actorName,
+          };
+          break;
+        }
         case "capacity_changed":
           primaryTitle = "Capacity";
           if (meta.old_capacity !== undefined && meta.new_capacity !== undefined) {
@@ -435,6 +649,8 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
         secondaryDescription,
         isUserEvent,
         userAvatarSrc,
+        accentEdgeColor,
+        swapData,
         timeText: formatExactTime(validDate),
         dateText: formatDateSubtext(validDate),
         dateGroup: formatDateGroup(validDate),
@@ -442,58 +658,8 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       };
     });
 
-    // Collapse consecutive capacity_changed events (rawActivities is newest to oldest)
-    const result: ActivityEvent[] = [];
-    let i = 0;
-    while (i < uncollapsed.length) {
-      if (uncollapsed[i].type === "capacity_changed") {
-        const capacityGroup: DbPlanActivity[] = [];
-        let j = i;
-        while (j < uncollapsed.length && uncollapsed[j].type === "capacity_changed") {
-          capacityGroup.push(rawActivities[j]);
-          j++;
-        }
-
-        if (capacityGroup.length === 1) {
-          result.push(uncollapsed[i]);
-        } else {
-          const oldestMeta = capacityGroup[capacityGroup.length - 1].metadata || {};
-          const chain: (number | string)[] = [];
-
-          if (oldestMeta.old_capacity !== undefined) {
-            chain.push(oldestMeta.old_capacity);
-          }
-
-          for (let k = capacityGroup.length - 1; k >= 0; k--) {
-            const m = capacityGroup[k].metadata || {};
-            if (m.new_capacity !== undefined) {
-              chain.push(m.new_capacity);
-            }
-          }
-
-          const mostRecentEvent = uncollapsed[i];
-          result.push({
-            id: mostRecentEvent.id,
-            type: "capacity_collapsed",
-            primaryTitle: "Capacity",
-            secondaryDescription: chain.length > 0
-              ? `Changed multiple times (${chain.join(" → ")})`
-              : "Capacity changed multiple times",
-            timeText: mostRecentEvent.timeText,
-            dateText: mostRecentEvent.dateText,
-            dateGroup: mostRecentEvent.dateGroup,
-            rawDate: mostRecentEvent.rawDate,
-          });
-        }
-
-        i = j;
-      } else {
-        result.push(uncollapsed[i]);
-        i++;
-      }
-    }
-
-    return result;
+    // Return all activity events uncollapsed (one card per event)
+    return uncollapsed;
   }, [rawActivities, resolveUserDetails, plan]);
 
   // Group activities chronologically by dateGroup (preserving newest first order)
