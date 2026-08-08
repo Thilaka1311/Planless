@@ -3,44 +3,37 @@ import React from 'react';
 interface WaitlistModeSelectorProps {
   waitlistMode?: 'automatic' | 'assigned';
   onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;
-  isHostUser?: boolean;
-  isInviteOnly?: boolean;
+  isHost?: boolean;
 }
 
 export const WaitlistModeSelector: React.FC<WaitlistModeSelectorProps> = ({
   waitlistMode = 'automatic',
   onWaitlistModeChange,
-  isHostUser = false,
-  isInviteOnly = false,
+  isHost = true,
 }) => {
-  if (!isHostUser || isInviteOnly || !onWaitlistModeChange) {
-    return null;
-  }
-
-  const isAutomatic = waitlistMode === 'automatic';
+  if (!isHost) return null;
 
   return (
     <div style={{ padding: '0 20px', marginBottom: 12 }}>
       <div
         style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-          padding: '14px 16px',
           background: '#111111',
           border: '1px solid rgba(255, 255, 255, 0.08)',
           borderRadius: 16,
-          boxSizing: 'border-box',
+          padding: '14px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF' }}>
             Waitlist Mode
           </span>
-          <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)', fontFamily: 'Inter, sans-serif' }}>
-            {isAutomatic
-              ? 'Queue ordering and promotions happen automatically'
-              : 'Host manually manages Going and Waitlist placements'}
+          <span style={{ fontSize: 11, color: '#A1A1AA', lineHeight: 1.4 }}>
+            {waitlistMode === 'assigned'
+              ? 'You decide who is Going and who is Waitlisted. Acceptance order does not affect placement.'
+              : 'Participants fill available spots in the order they accept invitations. Additional participants are automatically waitlisted.'}
           </span>
         </div>
 
@@ -53,8 +46,9 @@ export const WaitlistModeSelector: React.FC<WaitlistModeSelectorProps> = ({
             borderRadius: 12,
             padding: 3,
             position: 'relative',
-            height: 36,
+            height: 38,
             border: '1px solid rgba(255, 255, 255, 0.08)',
+            width: '100%',
           }}
         >
           <div
@@ -62,33 +56,32 @@ export const WaitlistModeSelector: React.FC<WaitlistModeSelectorProps> = ({
               position: 'absolute',
               top: 3,
               bottom: 3,
-              left: isAutomatic ? '3px' : 'calc(50% + 1.5px)',
-              width: 'calc(50% - 4.5px)',
               background: '#FF6B2C',
               borderRadius: 9,
-              transition: 'all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)',
-              boxShadow: '0 2px 8px rgba(255, 107, 44, 0.3)',
+              transition: 'all 250ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+              left: waitlistMode === 'automatic' ? 3 : 'calc(50% + 1.5px)',
+              width: 'calc(50% - 4.5px)',
             }}
           />
 
           <button
             type="button"
-            onClick={() => onWaitlistModeChange('automatic')}
+            onClick={() => onWaitlistModeChange && onWaitlistModeChange('automatic')}
             style={{
               flex: 1,
               border: 'none',
               background: 'transparent',
-              color: isAutomatic ? '#FFFFFF' : '#8E8E93',
               fontSize: 12,
-              fontWeight: isAutomatic ? 700 : 500,
               cursor: 'pointer',
-              zIndex: 2,
+              zIndex: 10,
               height: '100%',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontFamily: 'Inter, sans-serif',
-              transition: 'color 0.2s ease',
+              fontWeight: waitlistMode === 'automatic' ? 700 : 500,
+              color: waitlistMode === 'automatic' ? '#FFFFFF' : '#A1A1AA',
+              transition: 'color 200ms',
             }}
           >
             Automatic
@@ -96,22 +89,21 @@ export const WaitlistModeSelector: React.FC<WaitlistModeSelectorProps> = ({
 
           <button
             type="button"
-            onClick={() => onWaitlistModeChange('assigned')}
+            onClick={() => onWaitlistModeChange && onWaitlistModeChange('assigned')}
             style={{
               flex: 1,
               border: 'none',
               background: 'transparent',
-              color: !isAutomatic ? '#FFFFFF' : '#8E8E93',
               fontSize: 12,
-              fontWeight: !isAutomatic ? 700 : 500,
               cursor: 'pointer',
-              zIndex: 2,
+              zIndex: 10,
               height: '100%',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontFamily: 'Inter, sans-serif',
-              transition: 'color 0.2s ease',
+              fontWeight: waitlistMode === 'assigned' ? 700 : 500,
+              color: waitlistMode === 'assigned' ? '#FFFFFF' : '#A1A1AA',
+              transition: 'color 200ms',
             }}
           >
             Assigned

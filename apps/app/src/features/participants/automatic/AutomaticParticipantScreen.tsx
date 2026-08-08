@@ -10,6 +10,7 @@ import { GoingSection } from '../components/GoingSection';
 import { WaitlistSection } from '../components/WaitlistSection';
 import { StackingFriends } from '../components/StackingFriends';
 import { ContinueButton } from '../../create/components/ContinueButton';
+import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
 
 interface AutomaticParticipantScreenProps extends SharedParticipantScreenProps {
   isHostSelected?: boolean;
@@ -31,6 +32,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   managementMode,
   continueText,
   isLoading = false,
+  isHost,
   isHostUser = false,
   onBack,
   onContinue,
@@ -46,6 +48,9 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   initialTab,
   onPlanSizeEditingChange,
   displayMode = 'standalone',
+  waitlistMode = 'automatic',
+  onWaitlistModeChange,
+  showWaitlistMode = true,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
@@ -144,6 +149,8 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
     setShowConfirmRemove(false);
   };
 
+  const effectiveIsHost = isHost !== undefined ? isHost : isHostUser;
+
   return (
     <div
       className="flex-1 flex flex-col h-full bg-[#000000] text-left relative"
@@ -153,7 +160,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         <ParticipantHeader
           title={title}
           subtitle={subtitle}
-          isHostUser={isHostUser}
+          isHostUser={effectiveIsHost}
           onBack={onBack}
           onOpenSettings={onOpenSettings}
           onOpenActivity={onOpenActivity}
@@ -161,19 +168,30 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         />
       )}
 
-      <div className={displayMode === 'embedded' ? "pt-4" : ""}>
-        <PlanSizeCard
-          capacity={capacity}
-          maxCapacity={maxCapacity}
-          isHostUser={isHostUser}
-          isInviteOnly={isInviteOnly}
-          onConfirmAdjustCapacity={onAdjustCapacity}
-          onEditingChange={(editing) => {
-            setIsPlanSizeEditing(editing);
-            if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
-          }}
-        />
-      </div>
+      {effectiveIsHost && (
+        <>
+          <div className={displayMode === 'embedded' ? "pt-4" : ""}>
+            <PlanSizeCard
+              capacity={capacity}
+              maxCapacity={maxCapacity}
+              isHostUser={effectiveIsHost}
+              isInviteOnly={isInviteOnly}
+              onConfirmAdjustCapacity={onAdjustCapacity}
+              onEditingChange={(editing) => {
+                setIsPlanSizeEditing(editing);
+                if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
+              }}
+            />
+          </div>
+          {showWaitlistMode && (
+            <WaitlistModeSelector
+              waitlistMode={waitlistMode}
+              onWaitlistModeChange={onWaitlistModeChange}
+              isHost={effectiveIsHost}
+            />
+          )}
+        </>
+      )}
 
       <AutomaticParticipantTabs
         visibleTabs={visibleTabs}
@@ -186,7 +204,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       />
 
       {/* Action Button Below Segmented Control — Automatic Mode */}
-      {onAddFriends && (
+      {effectiveIsHost && onAddFriends && (
         <div style={{ padding: '0 20px', margin: '4px 0 12px' }}>
           <button
             type="button"
@@ -221,7 +239,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         {activeTab === 'going' && (
           <GoingSection
             goingList={displayGoing}
-            onItemTap={isHostUser ? (item) => handleItemTap(item, 'going') : undefined}
+            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'going') : undefined}
             reorderable={false}
             showIndex={false}
           />
@@ -229,8 +247,8 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         {activeTab === 'waitlist' && (
           <WaitlistSection
             waitlist={displayWaitlist}
-            onItemTap={isHostUser ? (item) => handleItemTap(item, 'waitlist') : undefined}
-            onAddFriends={onAddFriends}
+            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'waitlist') : undefined}
+            onAddFriends={effectiveIsHost ? onAddFriends : undefined}
             reorderable={false}
             showIndex={true}
           />
@@ -244,7 +262,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
               <StackingFriends
                 key={item.id}
                 item={item}
-                onClick={isHostUser ? () => handleItemTap(item, 'invited') : undefined}
+                onClick={effectiveIsHost ? () => handleItemTap(item, 'invited') : undefined}
               />
             ))}
           </div>
@@ -264,19 +282,21 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         />
       )}
 
-      <AutomaticParticipantActions
-        selectedItem={selectedItem}
-        sheetType={sheetType}
-        showConfirmRemove={showConfirmRemove}
-        isHostUser={isHostUser}
-        userProfile={userProfile}
-        onClose={closeSheet}
-        onShowConfirmRemove={setShowConfirmRemove}
-        onMoveToGoing={onMoveToGoing}
-        onPromoteHost={onPromoteHost}
-        onDemoteHost={onDemoteHost}
-        onRemoveParticipant={onRemoveParticipant || (() => {})}
-      />
+      {effectiveIsHost && (
+        <AutomaticParticipantActions
+          selectedItem={selectedItem}
+          sheetType={sheetType}
+          showConfirmRemove={showConfirmRemove}
+          isHostUser={effectiveIsHost}
+          userProfile={userProfile}
+          onClose={closeSheet}
+          onShowConfirmRemove={setShowConfirmRemove}
+          onMoveToGoing={onMoveToGoing}
+          onPromoteHost={onPromoteHost}
+          onDemoteHost={onDemoteHost}
+          onRemoveParticipant={onRemoveParticipant || (() => {})}
+        />
+      )}
     </div>
   );
 };

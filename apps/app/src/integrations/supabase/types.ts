@@ -1386,9 +1386,8 @@ export const Constants = {
         "plan_cancelled",
         "plan_restored",
         "plan_completed",
-        "participant_moved_to_waitlist",
-        "participant_moved_to_going",
-        "host_promoted"
+        "host_promoted",
+        "participants_swapped"
       ],
       plan_status: ["LIVE", "COMPLETED", "CANCELLED"],
       rsvp_status: ["INVITED", "JOINED", "SKIPPED", "WAITLISTED"],

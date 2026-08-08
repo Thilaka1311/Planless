@@ -592,6 +592,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     demoteHostToParticipant,
     reorderWaitlist,
     switchToAutomaticWaitlistMode,
+    swapParticipants,
+    removeAndReplaceWithWaitlist,
   } = usePlansStore();
   const selectedPlan = useLivePlan(planId);
 
@@ -1442,9 +1444,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               isHost={isHost}
               isCreatorHost={isCreatorHost}
               onBack={() => setShowParticipantManagement(false)}
-              onMoveToGoing={(planId, userId) => moveParticipantToGoing(planId, userId)}
+              onMoveToGoing={(planId, userId, opts) => moveParticipantToGoing(planId, userId, opts)}
               onMoveToWaitlist={(planId, userId) => moveParticipantToWaitlist(planId, userId)}
               onMoveToInvited={(planId, userId) => moveParticipantToInvited(planId, userId)}
+              onSwapParticipants={(planId, goingUserId, waitlistUserId) => swapParticipants(planId, goingUserId, waitlistUserId)}
+              onRemoveAndReplaceWithWaitlist={(planId, removeId, promoteId) => removeAndReplaceWithWaitlist(planId, removeId, promoteId)}
               onRemoveParticipant={(planId, userId) => removeParticipant(planId, userId)}
               onPromoteToHost={(planId, userId) => promoteParticipantToHost(planId, userId)}
               onDemoteFromHost={(planId, userId) => demoteHostToParticipant(planId, userId)}
@@ -1462,6 +1466,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 setShowParticipantManagement(false);
                 setShowPlanSettingsScreen(true);
               }}
+              showWaitlistMode={false}
             />
           </motion.div>
         )}

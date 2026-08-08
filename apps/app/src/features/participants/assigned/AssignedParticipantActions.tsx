@@ -142,7 +142,13 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
 
             {isHostUser && (!selectedItem.isHost || onDemoteHost) && (
               <button
-                onClick={() => onShowConfirmRemove(true)}
+                onClick={() => {
+                  if (sheetType === 'going' && !isSelf) {
+                    onRemoveParticipant(selectedItem);
+                  } else {
+                    onShowConfirmRemove(true);
+                  }
+                }}
                 style={{ width: '100%', padding: '14px', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
               >
                 {isSelf ? 'Leave Plan' : 'Remove from Plan'}

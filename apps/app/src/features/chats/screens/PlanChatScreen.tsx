@@ -35,7 +35,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost } = usePlansStore();
+  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost } = usePlansStore();
   const { profile: userProfile, activeUserUuid } = useProfileStore();
 
   // Robust sender UUID resolution across all possible user state sources
@@ -538,7 +538,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 isCreatorHost={isHost}
                 displayMode="embedded"
                 onBack={() => goToPage(1)}
-                onMoveToGoing={(pId, uId) => moveParticipantToGoing(pId, uId)}
+                onMoveToGoing={(pId, uId, opts) => moveParticipantToGoing(pId, uId, opts)}
                 onMoveToWaitlist={(pId, uId) => moveParticipantToWaitlist(pId, uId)}
                 onMoveToInvited={(pId, uId) => moveParticipantToInvited(pId, uId)}
                 onRemoveParticipant={(pId, uId) => removeParticipant(pId, uId)}
@@ -554,10 +554,13 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                     assignedGroup,
                   })
                 }
+                onSwapParticipants={(pId, goingId, waitlistId) => swapParticipants(pId, goingId, waitlistId)}
+                onRemoveAndReplaceWithWaitlist={(pId, removeId, promoteId) => removeAndReplaceWithWaitlist(pId, removeId, promoteId)}
                 onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
                 onSwitchToAutomaticMode={(pId, userIds) => switchToAutomaticWaitlistMode(pId, userIds)}
                 onOpenActivity={() => goToPage(2)}
                 onPlanSizeEditingChange={setIsEditingPlanSize}
+                showWaitlistMode={false}
               />
             )}
           </div>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { ChevronLeft, Crown, Users, Plus, Check, Pencil, LogOut, Trash2, Hourglass } from "lucide-react";
+import { ChevronLeft, Crown, Users, Plus, Check, Pencil, LogOut, Trash2 } from "lucide-react";
 import { Plan, UserProfile } from "../../../../../core/types";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
 import { useToast } from "../../../../../shared/contexts/ToastContext";
@@ -18,7 +18,6 @@ interface PlanSettingsScreenProps {
     maxParticipants?: number;
   }) => Promise<void> | void;
   onUpdatePlanDetails?: (updates: { participant_filtering?: "AUTOMATIC" | "ASSIGNED" }) => Promise<void> | void;
-  onWaitlistModeChange?: (newMode: "automatic" | "assigned") => Promise<void> | void;
   onDemoteHost?: (userId: string) => Promise<void> | void;
   onRemoveParticipant?: (userId: string) => Promise<void> | void;
   onSelectHost?: (hostItem: { id: string; dbUuid: string; name: string; avatar: string; isHost: boolean }) => void;
@@ -37,7 +36,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   onBack,
   onUpdateSettings,
   onUpdatePlanDetails,
-  onWaitlistModeChange,
   onDemoteHost,
   onRemoveParticipant,
   onSelectHost,
@@ -129,55 +127,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       return status === "JOINED" || status === "WAITLISTED" || (status as string) === "WAITLIST";
     }).length;
   }, [members]);
-
-  const hasWaitlistedParticipants = waitlistCount > 0 || (totalJoinedOrWaitlisted > planCapacity && planCapacity > 0) || (members.length > planCapacity && planCapacity > 0);
-
-  const initialFiltering = plan.participantFiltering || (plan as any).participant_filtering || "AUTOMATIC";
-  const [waitlistModeState, setWaitlistModeState] = useState<"automatic" | "assigned">(
-    initialFiltering === "ASSIGNED" ? "assigned" : "automatic"
-  );
-
-  useEffect(() => {
-    const currentFiltering = plan.participantFiltering || (plan as any).participant_filtering || "AUTOMATIC";
-    setWaitlistModeState(currentFiltering === "ASSIGNED" ? "assigned" : "automatic");
-  }, [plan.participantFiltering, (plan as any).participant_filtering]);
-
-  const [isSubmittingMode, setIsSubmittingMode] = useState(false);
-
-  const handleWaitlistModeChange = async (newMode: "automatic" | "assigned") => {
-    if (!isHostMode || isSubmittingMode) return;
-    const previousMode = waitlistModeState;
-    setIsSubmittingMode(true);
-    
-    if (onWaitlistModeChange) {
-      try {
-        await onWaitlistModeChange(newMode);
-        const updatedFiltering = plan.participantFiltering || (plan as any).participant_filtering || "AUTOMATIC";
-        setWaitlistModeState(updatedFiltering === "ASSIGNED" ? "assigned" : "automatic");
-      } catch (err) {
-        setWaitlistModeState(previousMode);
-      } finally {
-        setIsSubmittingMode(false);
-      }
-      return;
-    }
-    
-    setWaitlistModeState(newMode);
-    const dbVal = newMode === "assigned" ? "ASSIGNED" : "AUTOMATIC";
-    try {
-      if (onUpdatePlanDetails) {
-        await onUpdatePlanDetails({ participant_filtering: dbVal });
-      } else if (onUpdateSettings) {
-        await onUpdateSettings({ participant_filtering: dbVal } as any);
-      }
-      showToast(`✓ Waitlist mode updated to ${newMode === "assigned" ? "Assigned" : "Automatic"}`);
-    } catch {
-      setWaitlistModeState(previousMode);
-      showToast("Failed to update waitlist mode");
-    } finally {
-      setIsSubmittingMode(false);
-    }
-  };
 
   const allHosts = useMemo(() => {
     const rawHosts = members
@@ -584,70 +533,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
             </div>
           </div>
         </div>
-
-        {/* ========================================== */}
-        {/* SECTION 3 — WAITLIST TYPE */}
-        {/* ========================================== */}
-        {hasWaitlistedParticipants && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 px-1">
-              <Hourglass className="w-4 h-4 text-[#FF6B2C]" />
-              <h2 className="text-xs font-bold text-zinc-400">
-                Waitlist Type
-              </h2>
-            </div>
-
-            <div className="bg-[#111111] border border-white/[0.08] rounded-2xl p-4.5 space-y-3.5">
-              <div className="space-y-1">
-                <span className="text-sm font-semibold text-white block">
-                  Waitlist Type
-                </span>
-                <span className="text-xs text-zinc-400 block leading-relaxed">
-                  {waitlistModeState === "assigned"
-                    ? "Hosts choose which waitlisted person moves to Going when a spot opens."
-                    : "The next person on the waitlist automatically moves to Going when a spot opens."}
-                </span>
-              </div>
-
-              {/* Full-width Segmented Control below description */}
-              <div
-                className={`flex items-center bg-white/[0.05] rounded-xl p-0.75 relative h-9.5 border border-white/[0.08] w-full ${
-                  isHostMode ? "" : "opacity-60 pointer-events-none"
-                }`}
-              >
-                <div
-                  className="absolute top-[3px] bottom-[3px] bg-[#FF6B2C] rounded-[9px] transition-all duration-250 cubic-bezier(0.2, 0.8, 0.2, 1) shadow-md"
-                  style={{
-                    left: waitlistModeState === "automatic" ? "3px" : "calc(50% + 1.5px)",
-                    width: "calc(50% - 4.5px)",
-                  }}
-                />
-
-                <button
-                  type="button"
-                  disabled={!isHostMode || isSubmittingMode}
-                  onClick={() => handleWaitlistModeChange("automatic")}
-                  className={`flex-1 border-none bg-transparent text-xs cursor-pointer z-10 h-full flex items-center justify-center font-medium transition-colors duration-200 ${
-                    waitlistModeState === "automatic" ? "text-white font-bold" : "text-zinc-400"
-                  } ${isSubmittingMode ? "opacity-50 cursor-not-allowed" : ""}`}
-                >
-                  Automatic
-                </button>
-
-                <button
-                  type="button"
-                  disabled={!isHostMode || isSubmittingMode}
-                  onClick={() => handleWaitlistModeChange("assigned")}
-                  className={`flex-1 border-none bg-transparent text-xs cursor-pointer z-10 h-full flex items-center justify-center font-medium transition-colors duration-200 ${
-                    waitlistModeState === "assigned" ? "text-white font-bold" : "text-zinc-400"
-                  } ${isSubmittingMode ? "opacity-50 cursor-not-allowed" : ""}`}
-                >
-                  Assigned
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="space-y-2.5">
           <button

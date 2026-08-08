@@ -325,7 +325,7 @@ export const mapCirclesToLegacyCircles = (
         auto_join_enabled: !!cmr.auto_join_enabled,
         role: (() => {
           const r = String(cmr.role).toLowerCase();
-          if (r === "creator_admin" || r === "host" || r === "admin" || r === "co_host") return "admin";
+          if (r === "creator_admin" || r === "host" || r === "admin") return "admin";
           return "member";
         })()
       };
