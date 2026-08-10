@@ -1,416 +1,143 @@
-# Plan: Social Graph (Friends System)
+# Feature: Refactor Friends Navigation & Screens
 
-## Goal
+## Summary
 
-Implement the complete friendship system for Planless.
+Refactor the Friends section into a cleaner, multi-screen navigation flow. The current Friends page contains too much information on a single screen. The goal is to make it a lightweight overview screen and move full lists and search functionality into dedicated screens.
 
-The objective is to create a scalable relationship model that supports:
+---
+
+## User Story
+
+As a user, I want the Friends section to be organized into dedicated screens so that I can quickly navigate to Friend Requests, Friends, and Discover People without the main screen feeling cluttered.
+
+---
+
+## Requirements
+
+### 1. Main Friends Screen
+
+Refactor the main Friends screen into a simple overview.
+
+#### Remove
+
+- Search bar
+
+#### Keep
+
+Three sections only:
 
 - Friend Requests
-- Friends List
-- Incoming Requests
-- Outgoing Requests
-- Removing Friends
-- Future notifications
-- Future mutual friends
-- Future chat permissions
-- Future invite permissions
+- Friends
+- Discover People
 
-This is the foundation for all social features.
+The main screen should act as a navigation hub instead of displaying complete lists.
 
 ---
 
-# Design Principles
+### 2. Friend Requests
 
-The friendship system should have a single source of truth.
+Tapping **Friend Requests** should navigate to a dedicated screen.
 
-Do not store friendships in multiple places.
+This screen should continue to contain:
 
-All relationship state should be derived from one table.
+- Incoming friend requests
+- Outgoing (sent) friend requests
 
-The UI should simply reflect the current relationship state.
-
----
-
-# Relationship States
-
-Two users can only have one active relationship.
-
-Supported states:
-
-- NONE
-- PENDING
-- ACCEPTED
-- REJECTED
-- BLOCKED (future)
-
-Definitions:
-
-NONE
-No relationship exists.
-
-PENDING
-One user has sent a request.
-The other user has not responded.
-
-ACCEPTED
-Both users are friends.
-
-REJECTED
-A request was rejected.
-
-BLOCKED
-Reserved for future implementation.
+Existing functionality should remain unchanged.
 
 ---
 
-# Database Design
+### 3. Friends
 
-## friendships
+The main Friends screen should display only a preview of the user's friends.
 
-Columns:
+Requirements:
 
-- id
-- requester_id
-- recipient_id
-- status
-- created_at
-- updated_at
-- responded_at
+- Show a limited number of friends (preview only).
+- Add a **See More** button.
 
-Constraints:
+Tapping **See More** should navigate to a dedicated **All Friends** screen.
 
-- requester_id != recipient_id
+The All Friends screen should include:
 
-- Only one active relationship may exist between two users.
-
-- Prevent duplicate friend requests.
+- Search bar
+- Complete friends list
+- Scrolling through all friends
+- Existing friend actions and functionality
 
 ---
 
-# User Flow
+### 4. Discover People
 
-## Send Request
+The main Friends screen should display only a preview of discoverable users.
 
-User searches for another user.
+Requirements:
 
-↓
+- Show a limited number of users.
+- Add a **See More** button.
 
-Tap "Add Friend"
+Tapping **See More** should navigate to a dedicated **Discover People** screen.
 
-↓
+The Discover People screen should include:
 
-Create friendship row
-
-status = PENDING
-
-requester_id = current user
-
-recipient_id = target user
-
-↓
-
-Recipient receives notification (future)
+- Search bar
+- Complete discoverable users list
+- Existing discover functionality
+- Existing pagination/infinite scrolling (if already implemented)
 
 ---
 
-## Incoming Requests
+## Navigation Flow
 
-Open Friends screen
-
-↓
-
-Requests tab
-
-↓
-
-Display all rows where
-
-recipient_id = current user
-
-status = PENDING
-
----
-
-Each card contains
-
-- avatar
-- username
-- name
-- mutual friends (future)
-
-Actions
-
-Accept
-
-Reject
-
----
-
-## Accept
-
-Update
-
-status = ACCEPTED
-
-responded_at = now()
-
-Realtime updates
-
-Both users immediately become friends.
-
----
-
-## Reject
-
-Update
-
-status = REJECTED
-
-responded_at = now()
-
----
-
-## Friends List
-
-Display all rows where
-
-status = ACCEPTED
-
-AND
-
-current user is either
-
-requester
-
-or
-
-recipient
-
-Display the opposite user.
-
----
-
-## Remove Friend
-
-Delete friendship
-
-OR
-
-change status
-
-Decision:
-
-(Delete vs archive will be decided during implementation.)
-
----
-
-# Screens
-
-## Friends Screen
-
-Header
-
+```
 Friends
 
-Statistics
-
-Friends Count
-
-Pending Requests Count
-
-Segmented Control
-
-Friends
-
-Requests
-
----
-
-Friends Tab
-
-Search
-
-Friend Cards
-
-Empty State
+├── Friend Requests
+│   └── Friend Requests Screen
+│
+├── Friends
+│   ├── Preview
+│   └── See More
+│       └── All Friends Screen
+│
+└── Discover People
+    ├── Preview
+    └── See More
+        └── Discover People Screen
+```
 
 ---
 
-Requests Tab
+## Design Goals
 
-Incoming Requests
-
-Accept
-
-Reject
-
-Empty State
-
-"No pending requests."
+- Remove clutter from the main Friends screen.
+- Keep the main screen lightweight and easy to scan.
+- Move search functionality into dedicated screens where it is actually needed.
+- Improve navigation and separation of concerns.
+- Preserve all existing friend management functionality.
 
 ---
 
-# Services
+## Out of Scope
 
-Create a dedicated friendship service.
-
-Functions:
-
-sendFriendRequest()
-
-acceptFriendRequest()
-
-rejectFriendRequest()
-
-cancelFriendRequest()
-
-removeFriend()
-
-getFriends()
-
-getIncomingRequests()
-
-getOutgoingRequests()
-
-getRelationship()
+- No backend changes.
+- No changes to the Friends data model.
+- No changes to friend request functionality.
+- No changes to friend discovery logic.
+- No changes to search behavior beyond moving it to dedicated screens.
 
 ---
 
-# Realtime
-
-Subscribe to friendship table.
-
-Automatically update:
-
-Friends list
-
-Request count
-
-Pending requests
-
-Friend status
-
-without requiring refresh.
-
----
-
-# Future Features
-
-Not part of MVP.
-
-- Mutual friends
-
-- Friend suggestions
-
-- Blocks
-
-- Close Friends
-
-- Best Friends
-
-- Friend activity
-
-- Friend streaks
-
-- Shared plans
-
-- Shared memories
-
-- Invite recommendations
-
----
-
-# MVP Scope
-
-Included
-
-✅ Send request
-
-✅ Receive request
-
-✅ Accept
-
-✅ Reject
-
-✅ Friends list
-
-✅ Friend count
-
-✅ Incoming requests
-
-✅ Outgoing requests
-
-✅ Realtime
-
-Excluded
-
-❌ Blocking
-
-❌ Suggestions
-
-❌ Mutual friends
-
-❌ Close friends
-
-❌ Friend activity
-
-❌ Friend recommendations
-
-❌ Privacy controls
-
----
-
-# Implementation Order
-
-Phase 1
-
-Design database schema
-
-↓
-
-Phase 2
-
-Create friendship services
-
-↓
-
-Phase 3
-
-Realtime subscriptions
-
-↓
-
-Phase 4
-
-Friends screen
-
-↓
-
-Phase 5
-
-Requests screen
-
-↓
-
-Phase 6
-
-Integrate with Profile
-
-↓
-
-Phase 7
-
-Integrate with Create Plan
-
-↓
-
-Phase 8
-
-Notifications
-
-↓
-
-Phase  8
-
-Polish
+## Acceptance Criteria
+
+- [ ] Main screen contains only Friend Requests, Friends, and Discover People sections.
+- [ ] Friend Requests opens a dedicated screen.
+- [ ] Friends section shows only a preview of friends.
+- [ ] Friends section includes a **See More** button.
+- [ ] **See More** opens a dedicated All Friends screen.
+- [ ] All Friends screen includes a search bar and full friends list.
+- [ ] Discover People section shows only a preview.
+- [ ] Discover People includes a **See More** button.
+- [ ] **See More** opens a dedicated Discover People screen.
+- [ ] Discover People screen includes a search bar and full discover list.
+- [ ] Existing functionality continues to work without regressions.

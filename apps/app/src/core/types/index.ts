@@ -21,6 +21,7 @@ export interface User {
   created_at: string; // ISO format
   wallet_balance: number;
   active_status: boolean;
+  friends?: number;
 }
 
 
