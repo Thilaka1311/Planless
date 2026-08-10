@@ -1453,6 +1453,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               onPromoteToHost={(planId, userId) => promoteParticipantToHost(planId, userId)}
               onDemoteFromHost={(planId, userId) => demoteHostToParticipant(planId, userId)}
               onUpdatePlanCapacity={(planId, capacity) => updatePlanDetails(planId, { max_participants: capacity })}
+              onCancelPlan={(planId) => cancelPlan(planId)}
               onAddParticipants={(planId, userIds, circleIds, assignedGroup) => addParticipantsToPlan({
                 planId,
                 inviteeUuids: userIds,

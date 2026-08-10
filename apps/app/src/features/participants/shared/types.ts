@@ -55,6 +55,7 @@ export interface SharedParticipantScreenProps {
   onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;
   showWaitlistMode?: boolean;
   canParticipantInvite?: boolean;
+  onBottomSheetStateChange?: (isOpen: boolean) => void;
 }
 
 export type ParticipantManagementScreenProps = SharedParticipantScreenProps;

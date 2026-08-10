@@ -37,6 +37,8 @@ interface PlanParticipantManagementWrapperProps {
   onOpenSettings?: () => void;
   onOpenActivity?: () => void;
   onPlanSizeEditingChange?: (isEditing: boolean) => void;
+  onBottomSheetStateChange?: (isOpen: boolean) => void;
+  onCancelPlan?: (planId: string) => Promise<void>;
   showWaitlistMode?: boolean;
 }
 
@@ -84,6 +86,8 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   onOpenSettings,
   onOpenActivity,
   onPlanSizeEditingChange,
+  onBottomSheetStateChange,
+  onCancelPlan,
   displayMode = 'standalone',
   showWaitlistMode = false,
 }) => {
@@ -742,7 +746,12 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const handleMoveToWaitlist = useCallback(
     async (friend: Friend) => {
       if (waitlistMode === 'assigned') {
-        setPendingMoveToWaitlist(friend);
+        if (goingMembers.length <= 2 && waitlistList.length > 0) {
+          // If goingCount === 2 and waitlist exists, bypass capacity reduction options and directly open swap picker
+          setSwapState({ type: 'swap', targetFriend: friend });
+        } else {
+          setPendingMoveToWaitlist(friend);
+        }
         return;
       }
 
@@ -757,7 +766,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         setLocalWaitlist(null);
       }
     },
-    [plan.id, waitlistMode, onMoveToWaitlist, showToast],
+    [plan.id, waitlistMode, goingMembers.length, waitlistList.length, onMoveToWaitlist, showToast],
   );
 
   const [pendingRemoveGoing, setPendingRemoveGoing] = useState<Friend | null>(null);
@@ -978,12 +987,12 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           await onMoveToGoing(plan.id, uId, { bypassCapacityCheck: true });
         }
       } else {
-        // 1. Demote selected going participants to waitlist first
+        // 1. Reduce plan capacity first (so capacity_changed activity is logged first)
+        await onUpdatePlanCapacity(plan.id, targetCapacity);
+        // 2. Demote selected going participants to waitlist second
         for (const uId of selectedUserIds) {
           await onMoveToWaitlist(plan.id, uId);
         }
-        // 2. Reduce plan capacity after demotions succeed
-        await onUpdatePlanCapacity(plan.id, targetCapacity);
       }
       showToast(`✓ Capacity updated to ${targetCapacity}`);
     } catch (err: any) {
@@ -1051,6 +1060,27 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   // ── Switch to Automatic Mode State & Handler ──
   const [showAutomaticSelectionSheet, setShowAutomaticSelectionSheet] = useState(false);
   const [showAutomaticWarningSheet, setShowAutomaticWarningSheet] = useState(false);
+
+  const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
+
+  const isAnyBottomSheetOpen = Boolean(
+    isActionSheetOpen ||
+    pendingCapacityInvite ||
+    pendingPromoteToGoing ||
+    pendingMoveToWaitlist ||
+    pendingRemoveGoing ||
+    showAutomaticSelectionSheet ||
+    showAutomaticWarningSheet ||
+    guidedAdjustmentState ||
+    swapState ||
+    showAddFriendsPicker
+  );
+
+  useEffect(() => {
+    if (onBottomSheetStateChange) {
+      onBottomSheetStateChange(isAnyBottomSheetOpen);
+    }
+  }, [isAnyBottomSheetOpen, onBottomSheetStateChange]);
 
   const vacantSpots = Math.max(0, capacity - goingMembers.length);
 
@@ -1134,6 +1164,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         onOpenSettings={onOpenSettings}
         onOpenActivity={onOpenActivity}
         onPlanSizeEditingChange={onPlanSizeEditingChange}
+        onBottomSheetStateChange={setIsActionSheetOpen}
         showWaitlistMode={showWaitlistMode}
         onReorderWaitlist={effectiveIsHost && waitlistMode === 'assigned' ? handleReorderWaitlist : undefined}
         onReorderWaitlistComplete={effectiveIsHost && waitlistMode === 'assigned' ? handleReorderWaitlistComplete : undefined}
@@ -1178,8 +1209,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         isOpen={Boolean(pendingMoveToWaitlist)}
         participant={pendingMoveToWaitlist ? { name: pendingMoveToWaitlist.name, avatar: pendingMoveToWaitlist.avatar } : null}
         hasWaitlist={waitlistList.length > 0}
+        goingCount={goingMembers.length}
+        waitlistCount={waitlistList.length}
         onDecreaseCapacity={handleConfirmDecreaseCapacityForWaitlist}
         onSwapParticipant={waitlistList.length > 0 ? handleOpenWaitlistSwapPicker : undefined}
+        onCancelPlan={onCancelPlan ? () => onCancelPlan(plan.id) : undefined}
         onClose={handleCancelPendingWaitlist}
       />
 
@@ -1188,8 +1222,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         isOpen={Boolean(pendingRemoveGoing)}
         participant={pendingRemoveGoing ? { name: pendingRemoveGoing.name, avatar: pendingRemoveGoing.avatar } : null}
         hasWaitlist={waitlistList.length > 0}
+        goingCount={goingMembers.length}
+        waitlistCount={waitlistList.length}
         onDecreaseCapacity={handleConfirmDecreaseCapacityForRemoveGoing}
         onReplaceParticipant={waitlistList.length > 0 ? handleOpenRemoveGoingReplacePicker : undefined}
+        onCancelPlan={onCancelPlan ? () => onCancelPlan(plan.id) : undefined}
         onClose={handleCancelPendingRemoveGoing}
       />
 

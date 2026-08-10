@@ -1048,6 +1048,10 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         dbPayload.max_participants = settings.max_participants ?? settings.maxParticipants;
       }
 
+      const newAllowInvites = dbPayload.allow_participant_invites;
+      const oldAllowInvites = Boolean((matchedPlan as any)?.allow_participant_invites ?? (matchedPlan as any)?.allowParticipantInvites);
+      const isToggleChanged = newAllowInvites !== undefined && newAllowInvites !== oldAllowInvites;
+
       // 1. Persist to DB first
       await api.updatePlanSettingsInDb(planUuid, dbPayload);
 
@@ -1055,8 +1059,27 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setDbPlans(prev =>
         prev.map(p => (p.id === planUuid ? { ...p, ...dbPayload } : p))
       );
+
+      // 3. Log activity when setting is toggled ON or OFF
+      if (isToggleChanged && userId) {
+        const actorUser = dbUsers.find(u => u.id === userId);
+        const actorName = actorUser?.full_name || (actorUser as any)?.name || "Host";
+
+        await (supabase as any)
+          .from("plan_activity")
+          .insert({
+            plan_id: planUuid,
+            actor_id: userId,
+            activity_type: "participant_invite_others",
+            metadata: {
+              enabled: Boolean(newAllowInvites),
+              performed_by: userId,
+              performed_by_name: actorName,
+            }
+          });
+      }
     },
-    [plans]
+    [plans, userId, dbUsers]
   );
 
   const promoteParticipantToHost = useCallback(
