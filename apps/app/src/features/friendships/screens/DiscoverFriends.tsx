@@ -190,7 +190,6 @@ export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
 
       {/* FRIEND / USER PROFILE VIEWER BOTTOM SHEET */}
       <FriendProfileViewerBottomSheet
-        friendshipId={null}
         friendUserId={selectedUserForViewer?.userId || null}
         onClose={() => setSelectedUserForViewer(null)}
       />

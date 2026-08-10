@@ -1,16 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { UserMinus, Users, X } from "lucide-react";
+import { UserMinus, UserPlus, UserCheck, Users, X } from "lucide-react";
 import { supabase } from "../../../../lib/supabaseClient";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { useFriendshipStore } from "../state/FriendshipContext";
 import { useToast } from "../../../shared/contexts/ToastContext";
 
 interface FriendProfileViewerBottomSheetProps {
-  friendshipId: string | null;
   friendUserId: string | null;
   onClose: () => void;
-  onFriendRemoved?: () => void;
 }
 
 interface FriendProfileData {
@@ -23,17 +21,45 @@ interface FriendProfileData {
 }
 
 export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomSheetProps> = ({
-  friendshipId,
   friendUserId,
   onClose,
-  onFriendRemoved,
 }) => {
-  const { removeFriend } = useFriendshipStore();
+  const {
+    friends,
+    incomingRequests,
+    outgoingRequests,
+    sendFriendRequest,
+    acceptFriendRequest,
+    rejectFriendRequest,
+    removeFriend,
+  } = useFriendshipStore();
   const { showToast } = useToast();
 
   const [profile, setProfile] = useState<FriendProfileData | null>(null);
   const [loadingProfile, setLoadingProfile] = useState<boolean>(false);
-  const [isRemoving, setIsRemoving] = useState<boolean>(false);
+  const [actionLoading, setActionLoading] = useState<boolean>(false);
+
+  // Derive relationship status dynamically from the central Friendship store
+  const relationship = useMemo(() => {
+    if (!friendUserId) return { type: "NONE" as const, friendshipId: null };
+
+    const friendRecord = friends.find((f) => f.friend?.id === friendUserId);
+    if (friendRecord) {
+      return { type: "ACCEPTED" as const, friendshipId: friendRecord.friendshipId };
+    }
+
+    const outgoingRecord = outgoingRequests.find((r) => r.recipient?.id === friendUserId);
+    if (outgoingRecord) {
+      return { type: "PENDING_OUTGOING" as const, friendshipId: outgoingRecord.friendshipId };
+    }
+
+    const incomingRecord = incomingRequests.find((r) => r.sender?.id === friendUserId);
+    if (incomingRecord) {
+      return { type: "PENDING_INCOMING" as const, friendshipId: incomingRecord.friendshipId };
+    }
+
+    return { type: "NONE" as const, friendshipId: null };
+  }, [friendUserId, friends, incomingRequests, outgoingRequests]);
 
   useEffect(() => {
     if (!friendUserId) {
@@ -66,18 +92,43 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
     fetchFriendProfile();
   }, [friendUserId]);
 
-  const handleRemoveFriend = async () => {
-    if (!friendshipId || isRemoving) return;
-    setIsRemoving(true);
+  const handleAction = async () => {
+    if (!friendUserId || actionLoading) return;
+    setActionLoading(true);
+
     try {
-      await removeFriend(friendshipId);
-      showToast(`Removed ${profile?.full_name || "friend"} from your friends.`);
-      if (onFriendRemoved) onFriendRemoved();
+      if (relationship.type === "ACCEPTED" && relationship.friendshipId) {
+        await removeFriend(relationship.friendshipId);
+        showToast(`Removed ${profile?.full_name || "friend"} from your friends.`);
+      } else if (relationship.type === "PENDING_OUTGOING" && relationship.friendshipId) {
+        await rejectFriendRequest(relationship.friendshipId);
+        showToast(`Cancelled friend request to ${profile?.full_name || "User"}.`);
+      } else if (relationship.type === "PENDING_INCOMING" && relationship.friendshipId) {
+        await acceptFriendRequest(relationship.friendshipId);
+        showToast(`Accepted ${profile?.full_name || "User"}'s friend request!`);
+      } else if (relationship.type === "NONE") {
+        await sendFriendRequest(friendUserId);
+        showToast(`Sent friend request to ${profile?.full_name || "User"}!`);
+      }
       onClose();
     } catch (err: any) {
-      showToast(err.message || "Failed to remove friend.");
+      showToast(err.message || "Action failed.");
     } finally {
-      setIsRemoving(false);
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectIncoming = async () => {
+    if (!friendUserId || actionLoading || relationship.type !== "PENDING_INCOMING" || !relationship.friendshipId) return;
+    setActionLoading(true);
+    try {
+      await rejectFriendRequest(relationship.friendshipId);
+      showToast(`Declined ${profile?.full_name || "User"}'s friend request.`);
+      onClose();
+    } catch (err: any) {
+      showToast(err.message || "Failed to decline request.");
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -132,11 +183,11 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
             ) : profile ? (
               <div className="flex flex-col items-center text-center">
                 {/* 1. Large Circular Avatar */}
-                <div className="mb-3">
+                <div className="mb-3.5">
                   <UserAvatar
                     src={profile.profile_photo_path || ""}
                     alt={profile.full_name}
-                    className="w-20 h-20 rounded-full border border-white/10 object-cover shadow-lg"
+                    className="w-35 h-35 rounded-full border border-white/10 object-cover shadow-xl"
                   />
                 </div>
 
@@ -162,51 +213,95 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
                   </span>
                 </div>
 
-                {/* 5. Full-Width Destructive Remove Action (Only for confirmed friends) */}
+                {/* 5. Dynamic Relationship Action Buttons */}
                 <div className="mt-6 w-full space-y-2">
-                  {friendshipId && (
+                  {relationship.type === "PENDING_INCOMING" ? (
+                    <div className="flex gap-2.5 w-full">
+                      <button
+                        type="button"
+                        onClick={handleAction}
+                        disabled={actionLoading}
+                        style={{
+                          flex: 1,
+                          padding: "14px",
+                          background: "rgba(34, 197, 94, 0.12)",
+                          border: "none",
+                          borderRadius: 12,
+                          color: "#4ADE80",
+                          fontSize: 14,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                        className="flex items-center justify-center gap-2 active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
+                      >
+                        <UserCheck className="w-4 h-4 flex-shrink-0" />
+                        <span>Accept</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRejectIncoming}
+                        disabled={actionLoading}
+                        style={{
+                          flex: 1,
+                          padding: "14px",
+                          background: "rgba(239, 68, 68, 0.10)",
+                          border: "none",
+                          borderRadius: 12,
+                          color: "#EF4444",
+                          fontSize: 14,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                        className="flex items-center justify-center gap-2 active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
+                      >
+                        <X className="w-4 h-4 flex-shrink-0" />
+                        <span>Reject</span>
+                      </button>
+                    </div>
+                  ) : (
                     <button
                       type="button"
-                      onClick={handleRemoveFriend}
-                      disabled={isRemoving}
+                      onClick={handleAction}
+                      disabled={actionLoading}
                       style={{
                         width: "100%",
                         padding: "14px",
-                        background: "rgba(239, 68, 68, 0.08)",
+                        background:
+                          relationship.type === "ACCEPTED"
+                            ? "rgba(239, 68, 68, 0.08)"
+                            : "rgba(255, 255, 255, 0.06)",
                         border: "none",
                         borderRadius: 12,
-                        color: "#EF4444",
+                        color:
+                          relationship.type === "ACCEPTED"
+                            ? "#EF4444"
+                            : "#FFFFFF",
                         fontSize: 14,
                         fontWeight: 600,
                         cursor: "pointer",
-                        textAlign: "center",
                       }}
-                      className="active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
+                      className="flex items-center justify-center gap-2 active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
                     >
-                      {isRemoving ? "Removing..." : "Remove"}
+                      {actionLoading ? (
+                        <span>Processing...</span>
+                      ) : relationship.type === "ACCEPTED" ? (
+                        <>
+                          <UserMinus className="w-4 h-4 flex-shrink-0" />
+                          <span>Remove Friend</span>
+                        </>
+                      ) : relationship.type === "PENDING_OUTGOING" ? (
+                        <>
+                          <UserMinus className="w-4 h-4 flex-shrink-0" />
+                          <span>Cancel Request</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="w-4 h-4 flex-shrink-0" />
+                          <span>Add Friend</span>
+                        </>
+                      )}
                     </button>
                   )}
-
-                  {/* 6. Cancel Action Footer */}
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    style={{
-                      width: "100%",
-                      padding: "14px",
-                      background: "none",
-                      border: "none",
-                      borderRadius: 12,
-                      color: "rgba(255, 255, 255, 0.4)",
-                      fontSize: 14,
-                      fontWeight: 500,
-                      cursor: "pointer",
-                      textAlign: "center",
-                    }}
-                    className="active:scale-[0.99] transition cursor-pointer"
-                  >
-                    Cancel
-                  </button>
                 </div>
               </div>
             ) : (
