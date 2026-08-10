@@ -1062,20 +1062,28 @@ interface MoveToWaitlistBottomSheetProps {
   isOpen: boolean;
   participant: { name: string; avatar?: string } | null;
   hasWaitlist: boolean;
+  goingCount?: number;
+  waitlistCount?: number;
   onDecreaseCapacity: () => void;
   onSwapParticipant?: () => void;
+  onCancelPlan?: () => void;
   onClose: () => void;
 }
 
 export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps> = ({
   isOpen,
   participant,
-  hasWaitlist,
+  hasWaitlist: rawHasWaitlist,
+  goingCount,
+  waitlistCount,
   onDecreaseCapacity,
   onSwapParticipant,
+  onCancelPlan,
   onClose,
 }) => {
   if (!isOpen || !participant) return null;
+  const hasWaitlist = waitlistCount !== undefined ? waitlistCount > 0 : rawHasWaitlist;
+  const canDecreaseCapacity = goingCount === undefined || goingCount > 2;
 
   return (
     <div
@@ -1128,34 +1136,36 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
 
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Action 1: Decrease Plan Size */}
-          <button
-            type="button"
-            onClick={onDecreaseCapacity}
-            style={{
-              width: '100%',
-              padding: '14px 16px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 14,
-              color: '#FFFFFF',
-              textAlign: 'left',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 14,
-            }}
-          >
-            <div className="w-10 h-10 rounded-xl bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] flex-shrink-0">
-              <TrendingDown className="w-5 h-5" />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
-              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
-                Reduce the plan capacity by one and move this participant to the Waitlist.
-              </span>
-            </div>
-          </button>
+          {/* Action 1: Decrease Plan Size (Only shown if goingCount > 2) */}
+          {canDecreaseCapacity && (
+            <button
+              type="button"
+              onClick={onDecreaseCapacity}
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: 14,
+                color: '#FFFFFF',
+                textAlign: 'left',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+              }}
+            >
+              <div className="w-10 h-10 rounded-xl bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] flex-shrink-0">
+                <TrendingDown className="w-5 h-5" />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
+                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
+                  Reduce the plan capacity by one and move this participant to the Waitlist.
+                </span>
+              </div>
+            </button>
+          )}
 
           {/* Action 2: Swap with Participant from Waitlist (Only shown if waitlist has participants) */}
           {hasWaitlist && onSwapParticipant && (
@@ -1185,6 +1195,28 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
                   Replace this Going participant with someone currently in the Waitlist without changing the plan size.
                 </span>
               </div>
+            </button>
+          )}
+
+          {/* Action: Cancel Plan (Only shown when waitlistCount === 0 AND goingCount === 2) */}
+          {!hasWaitlist && (goingCount === 2) && onCancelPlan && (
+            <button
+              type="button"
+              onClick={onCancelPlan}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: 'none',
+                borderRadius: 12,
+                color: '#EF4444',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              Cancel Plan
             </button>
           )}
 
@@ -1220,20 +1252,28 @@ interface RemoveGoingParticipantBottomSheetProps {
   isOpen: boolean;
   participant: { name: string; avatar?: string } | null;
   hasWaitlist: boolean;
+  goingCount?: number;
+  waitlistCount?: number;
   onDecreaseCapacity: () => void;
   onReplaceParticipant?: () => void;
+  onCancelPlan?: () => void;
   onClose: () => void;
 }
 
 export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantBottomSheetProps> = ({
   isOpen,
   participant,
-  hasWaitlist,
+  hasWaitlist: rawHasWaitlist,
+  goingCount,
+  waitlistCount,
   onDecreaseCapacity,
   onReplaceParticipant,
+  onCancelPlan,
   onClose,
 }) => {
   if (!isOpen || !participant) return null;
+  const hasWaitlist = waitlistCount !== undefined ? waitlistCount > 0 : rawHasWaitlist;
+  const canDecreaseCapacity = hasWaitlist && (goingCount === undefined || goingCount > 2);
 
   return (
     <div
@@ -1279,41 +1319,43 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.01em' }}>Remove Participant</span>
             <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 2, lineHeight: 1.4 }}>
-              How would you like to handle this Going spot?
+              {!hasWaitlist ? 'Removing them will cancel the plan.' : 'How would you like to handle this Going spot?'}
             </span>
           </div>
         </div>
 
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Action 1: Decrease Plan Size */}
-          <button
-            type="button"
-            onClick={onDecreaseCapacity}
-            style={{
-              width: '100%',
-              padding: '14px 16px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 14,
-              color: '#FFFFFF',
-              textAlign: 'left',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 14,
-            }}
-          >
-            <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 flex-shrink-0">
-              <UserMinus className="w-5 h-5" />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
-              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
-                This participant will be removed from the plan and the maximum plan size will decrease by one.
-              </span>
-            </div>
-          </button>
+          {/* Action 1: Decrease Plan Size (Only shown if goingCount > 2) */}
+          {canDecreaseCapacity && (
+            <button
+              type="button"
+              onClick={onDecreaseCapacity}
+              style={{
+                width: '100%',
+                padding: '14px 16px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: 14,
+                color: '#FFFFFF',
+                textAlign: 'left',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+              }}
+            >
+              <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 flex-shrink-0">
+                <UserMinus className="w-5 h-5" />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
+                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
+                  This participant will be removed from the plan and the maximum plan size will decrease by one.
+                </span>
+              </div>
+            </button>
+          )}
 
           {/* Action 2: Replace with Participant from Waitlist (Only shown if waitlist has participants) */}
           {hasWaitlist && onReplaceParticipant && (
@@ -1343,6 +1385,28 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
                   Select a participant from the Waitlist to immediately fill this Going spot without changing plan size.
                 </span>
               </div>
+            </button>
+          )}
+
+          {/* Action: Cancel Plan (Only shown when waitlistCount === 0) */}
+          {!hasWaitlist && onCancelPlan && (
+            <button
+              type="button"
+              onClick={onCancelPlan}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: 'none',
+                borderRadius: 12,
+                color: '#EF4444',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              Cancel Plan
             </button>
           )}
 
@@ -1674,6 +1738,7 @@ interface GuidedCapacityAdjustmentBottomSheetProps {
   candidates: any[];
   title?: string;
   subtitle?: string;
+  ctaLabel?: string;
   onConfirm: (selectedUserIds: string[]) => Promise<void> | void;
   onClose: () => void;
 }
@@ -1685,6 +1750,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
   candidates,
   title: customTitle,
   subtitle: customSubtitle,
+  ctaLabel: customCtaLabel,
   onConfirm,
   onClose,
 }) => {
@@ -1726,10 +1792,10 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
     }
   };
 
-  const title = customTitle || (mode === 'promote' ? 'Who should move to Going?' : 'Who should move to the Waitlist?');
+  const title = customTitle || (mode === 'promote' ? 'Who should move to Going?' : 'Move to Waitlist');
   const subtitle = customSubtitle || (mode === 'promote'
-    ? 'Select the participant(s) to promote from the waitlist before increasing the plan size.'
-    : 'Select the participant(s) that should move to the waitlist before reducing the plan size.');
+    ? 'Select the participant(s) to promote from the waitlist.'
+    : 'Select who should move to the waitlist.');
 
   return (
     <div
@@ -1752,7 +1818,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
           background: '#1C1C1E',
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
-          padding: '16px 20px 32px',
+          padding: '14px 20px 24px',
           color: '#FFFFFF',
           fontFamily: 'Inter, sans-serif',
           boxSizing: 'border-box',
@@ -1760,18 +1826,18 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
           flexDirection: 'column',
         }}
       >
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.2)', margin: '0 auto 16px' }} />
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.2)', margin: '0 auto 12px' }} />
 
-        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px', textAlign: 'center' }}>
+        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 4px', textAlign: 'center' }}>
           {title}
         </h3>
 
-        <p style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.5)', textAlign: 'center', margin: '0 0 16px', lineHeight: 1.4 }}>
+        <p style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.5)', textAlign: 'center', margin: '0 0 14px', lineHeight: 1.4 }}>
           {subtitle}
         </p>
 
         {/* Candidate Selection List */}
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20, maxHeight: '45vh' }}>
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14, maxHeight: '45vh' }}>
           {candidates.map((friend) => {
             const fId = friend.dbUuid || friend.id;
             const isSelected = selectedIds.includes(fId);
@@ -1783,16 +1849,16 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '10px 14px',
+                  padding: '8px 12px',
                   borderRadius: 14,
-                  background: isSelected ? 'rgba(255, 107, 44, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-                  border: isSelected ? '1px solid #FF6B2C' : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: isSelected ? 'rgba(18, 18, 18, 0.9)' : 'rgba(255, 255, 255, 0.04)',
+                  border: isSelected ? '1px solid rgba(255, 107, 44, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div className="w-9 h-9 rounded-full overflow-hidden border border-white/10 flex-shrink-0 flex items-center justify-center bg-[#1A1A1A]">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-white/10 flex-shrink-0 flex items-center justify-center bg-[#1A1A1A]">
                     <UserAvatar
                       src={friend.avatar}
                       alt={friend.name}
@@ -1804,21 +1870,26 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
 
                 <div
                   style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 11,
-                    border: isSelected ? 'none' : '2px solid rgba(255, 255, 255, 0.3)',
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    border: isSelected ? 'none' : '1.5px solid rgba(255, 255, 255, 0.25)',
                     background: isSelected ? '#FF6B2C' : 'transparent',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  {isSelected && <span style={{ color: '#FFFFFF', fontSize: 12, fontWeight: 800 }}>✓</span>}
+                  {isSelected && <span style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 800 }}>✓</span>}
                 </div>
               </div>
             );
           })}
+        </div>
+
+        {/* Dynamic Selection Count Label */}
+        <div style={{ textAlign: 'center', marginBottom: 8, fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', fontWeight: 500 }}>
+          {selectedIds.length} {selectedIds.length === 1 ? 'participant' : 'participants'} selected
         </div>
 
         <button
@@ -1841,7 +1912,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
           {isSubmitting
             ? 'Updating...'
             : isReady
-            ? 'Ready to continue'
+            ? (customCtaLabel || (mode === 'demote' ? 'Move to Waitlist' : mode === 'promote' ? 'Move to Going' : 'Continue'))
             : `Select ${remainingNeeded} more participant${remainingNeeded > 1 ? 's' : ''}`}
         </button>
       </div>

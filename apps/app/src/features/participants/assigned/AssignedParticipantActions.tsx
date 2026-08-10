@@ -8,6 +8,8 @@ interface AssignedParticipantActionsProps {
   showConfirmRemove: boolean;
   isHostUser: boolean;
   userProfile?: any;
+  goingCount?: number;
+  waitlistCount?: number;
   onClose: () => void;
   onShowConfirmRemove: (show: boolean) => void;
   onMoveToWaitlist?: (item: Friend) => void;
@@ -23,6 +25,8 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
   showConfirmRemove,
   isHostUser,
   userProfile,
+  goingCount,
+  waitlistCount,
   onClose,
   onShowConfirmRemove,
   onMoveToWaitlist,
@@ -34,6 +38,8 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
   const isActionProcessingRef = useRef(false);
 
   if (!selectedItem || !sheetType) return null;
+
+  const canMoveToWaitlist = (goingCount === undefined || goingCount > 2) || (waitlistCount !== undefined && waitlistCount > 0);
 
   const executeActionWithImmediateDismiss = (actionFn: () => Promise<void> | void) => {
     if (isActionProcessingRef.current) return;
@@ -101,7 +107,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
 
         {!showConfirmRemove ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {onMoveToWaitlist && sheetType === 'going' && !selectedItem.isHost && (
+            {onMoveToWaitlist && sheetType === 'going' && !selectedItem.isHost && canMoveToWaitlist && (
               <button
                 onClick={() => onMoveToWaitlist(selectedItem)}
                 style={{ width: '100%', padding: '14px', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}

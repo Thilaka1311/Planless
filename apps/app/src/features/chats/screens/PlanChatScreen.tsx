@@ -35,7 +35,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost } = usePlansStore();
+  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
   const { profile: userProfile, activeUserUuid } = useProfileStore();
 
   // Robust sender UUID resolution across all possible user state sources
@@ -100,6 +100,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   }, []);
 
   const [isEditingPlanSize, setIsEditingPlanSize] = useState(false);
+  const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
 
   // ── Horizontal Motion Pager Hook ──
   const {
@@ -113,7 +114,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     initialPage: 1,
     totalPages: 3,
     keyboardOpen,
-    disabled: isEditingPlanSize,
+    disabled: isEditingPlanSize || isBottomSheetOpen,
   });
 
   // Derive host status & all hosts for HeroHeader
@@ -483,17 +484,17 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             coverImage={plan.coverImage || plan.customCoverUrl || getPlanCover(plan.category, (plan as any).subcategory || (plan as any).sports_type)}
             category={plan.category}
             hideHostAttribution={true}
-            onHeaderPress={onOpenPlanDetails}
-            onOpenParticipants={() => goToPage(0)}
-            onOpenActivity={() => goToPage(2)}
-            onEditTitle={!isCancelled ? async (newTitle) => {
+            onHeaderPress={isBottomSheetOpen ? undefined : onOpenPlanDetails}
+            onOpenParticipants={() => { if (!isBottomSheetOpen) goToPage(0); }}
+            onOpenActivity={() => { if (!isBottomSheetOpen) goToPage(2); }}
+            onEditTitle={!isCancelled && !isBottomSheetOpen ? async (newTitle) => {
               try {
                 await updatePlanDetails(plan.id, { title: newTitle });
               } catch (err) {
                 console.error("Failed to update title:", err);
               }
             } : undefined}
-            onOpenSettings={!isCancelled ? () => setShowSettingsScreen(true) : undefined}
+            onOpenSettings={!isCancelled && !isBottomSheetOpen ? () => setShowSettingsScreen(true) : undefined}
           />
         </div>
       )}
@@ -545,6 +546,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 onPromoteToHost={(pId, uId) => promoteParticipantToHost(pId, uId)}
                 onDemoteFromHost={(pId, uId) => demoteHostToParticipant(pId, uId)}
                 onUpdatePlanCapacity={(pId, capacity) => updatePlanDetails(pId, { max_participants: capacity })}
+                onCancelPlan={(pId) => cancelPlan(pId)}
                 onAddParticipants={(pId, userIds, circleIds, assignedGroup) =>
                   addParticipantsToPlan({
                     planId: pId,
@@ -558,8 +560,9 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 onRemoveAndReplaceWithWaitlist={(pId, removeId, promoteId) => removeAndReplaceWithWaitlist(pId, removeId, promoteId)}
                 onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
                 onSwitchToAutomaticMode={(pId, userIds) => switchToAutomaticWaitlistMode(pId, userIds)}
-                onOpenActivity={() => goToPage(2)}
+                onOpenActivity={() => { if (!isBottomSheetOpen) goToPage(2); }}
                 onPlanSizeEditingChange={setIsEditingPlanSize}
+                onBottomSheetStateChange={setIsBottomSheetOpen}
                 showWaitlistMode={false}
               />
             )}

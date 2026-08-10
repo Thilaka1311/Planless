@@ -37,6 +37,7 @@ export interface ActivityEvent {
   isUserEvent?: boolean; // True if primaryTitle represents a user
   userAvatarSrc?: string | null; // Avatar URL if title represents a user
   accentEdgeColor?: string; // Optional full-height left edge colour (e.g. yellow for waitlist)
+  isDisabled?: boolean; // True if activity represents a disabled state (e.g. invite others disabled)
   swapData?: {
     goingUser: { name: string; avatar?: string | null };
     waitlistUser: { name: string; avatar?: string | null };
@@ -93,58 +94,112 @@ const formatDateSubtext = (d: Date): string => {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 };
 
-const EventIcon: React.FC<{ type: ActivityEvent["type"] }> = ({ type }) => {
+const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }> = ({ type, isDisabled }) => {
+  let iconNode: React.ReactNode = null;
+
   switch (type) {
     // ── PLAN EVENTS ──
     case "plan_created":
-      return <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />;
+      iconNode = <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />;
+      break;
     case "capacity_changed":
     case "capacity_collapsed":
-      return <UsersRound className="w-4 h-4 text-blue-400 flex-shrink-0" />;
+      iconNode = <UsersRound className="w-4 h-4 text-blue-400 flex-shrink-0" />;
+      break;
+    case "participant_invite_others":
+      iconNode = <UserPlus className="w-4 h-4 text-blue-400 flex-shrink-0" />;
+      break;
     case "host_transferred":
-      return <Crown className="w-4 h-4 text-amber-300 flex-shrink-0" />;
+      iconNode = <Crown className="w-4 h-4 text-amber-300 flex-shrink-0" />;
+      break;
     case "date_changed":
-      return <Calendar className="w-4 h-4 text-white flex-shrink-0" />;
+      iconNode = <Calendar className="w-4 h-4 text-white flex-shrink-0" />;
+      break;
     case "time_changed":
-      return <Clock className="w-4 h-4 text-blue-400 flex-shrink-0" />;
+      iconNode = <Clock className="w-4 h-4 text-blue-400 flex-shrink-0" />;
+      break;
     case "location_changed":
-      return <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />;
+      iconNode = <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />;
+      break;
     case "title_changed":
-      return <SquarePen className="w-4 h-4 text-white flex-shrink-0" />;
+      iconNode = <SquarePen className="w-4 h-4 text-white flex-shrink-0" />;
+      break;
     case "description_changed":
-      return <SquarePen className="w-4 h-4 text-zinc-300 flex-shrink-0" />;
+      iconNode = <SquarePen className="w-4 h-4 text-zinc-300 flex-shrink-0" />;
+      break;
     case "cost_changed":
-      return <IndianRupee className="w-4 h-4 text-green-500 flex-shrink-0" />;
+      iconNode = <IndianRupee className="w-4 h-4 text-green-500 flex-shrink-0" />;
+      break;
     case "plan_cancelled":
-      return <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />;
+      iconNode = <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />;
+      break;
     case "plan_restored":
-      return <RefreshCw className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      iconNode = <RefreshCw className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      break;
     case "plan_completed":
-      return <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      iconNode = <CheckCircle2 className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      break;
 
     // ── PARTICIPANT EVENTS ──
     case "participant_invited":
-      return <UserPlus className="w-4 h-4 text-blue-400 flex-shrink-0" />;
+      iconNode = <UserPlus className="w-4 h-4 text-blue-400 flex-shrink-0" />;
+      break;
     case "participant_joined":
-      return <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      iconNode = <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      break;
     case "participant_left":
-      return <UserX className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
+      iconNode = <UserX className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
+      break;
     case "participant_waitlisted":
-      return <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />;
+      iconNode = <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />;
+      break;
     case "participant_moved_to_waitlist":
-      return <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />;
+      iconNode = <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />;
+      break;
     case "participant_moved_to_going":
-      return <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      iconNode = <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      break;
     case "participant_promoted":
-      return <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      iconNode = <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
+      break;
     case "host_promoted":
-      return <Crown className="w-4 h-4 text-amber-300 flex-shrink-0" />;
+      iconNode = <Crown className="w-4 h-4 text-amber-300 flex-shrink-0" />;
+      break;
     case "participant_removed":
-      return <UserX className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
+      iconNode = <UserX className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
+      break;
 
     default:
-      return <Activity className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
+      iconNode = <Activity className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
+      break;
   }
+
+  if (isDisabled) {
+    return (
+      <div className="relative flex items-center justify-center w-full h-full">
+        {iconNode}
+        {/* Diagonal white cancellation line extending across icon */}
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          viewBox="0 0 16 16"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <line
+            x1="1"
+            y1="15"
+            x2="15"
+            y2="1"
+            stroke="rgba(255, 255, 255, 0.75)"
+            strokeWidth="0.65"
+            strokeLinecap="round"
+          />
+        </svg>
+      </div>
+    );
+  }
+
+  return iconNode;
 };
 
 const ActivityRow: React.FC<{ event: ActivityEvent; opacity: any }> = ({ event, opacity }) => {
@@ -261,7 +316,7 @@ const ActivityRow: React.FC<{ event: ActivityEvent; opacity: any }> = ({ event, 
                 </div>
               ) : (
                 <div className="w-7 h-7 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center">
-                  <EventIcon type={event.type} />
+                  <EventIcon type={event.type} isDisabled={event.isDisabled} />
                 </div>
               )}
             </div>
@@ -291,7 +346,7 @@ const ActivityRow: React.FC<{ event: ActivityEvent; opacity: any }> = ({ event, 
               </div>
             ) : (
               <div className="w-7 h-7 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center">
-                <EventIcon type={event.type} />
+                <EventIcon type={event.type} isDisabled={event.isDisabled} />
               </div>
             )}
           </div>
@@ -442,6 +497,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       let userAvatarSrc: string | null | undefined = undefined;
       let swapData: ActivityEvent["swapData"] = undefined;
       let accentEdgeColor: string | undefined = undefined;
+      let isDisabled: boolean | undefined = undefined;
 
       switch (act.activity_type) {
         case "plan_created":
@@ -479,6 +535,19 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           isUserEvent = true;
           userAvatarSrc = participantAvatar;
           accentEdgeColor = isGoing ? '#22c55e' : '#eab308';
+          break;
+        }
+        case "participant_moved": {
+          const isToWaitlist = (meta.to || '').toLowerCase() === 'waitlist';
+          const participantName = targetDetails.name || actorDetails.name || "Participant";
+          const actorName = meta.movedBy ? resolveUserDetails(meta.movedBy, false).name : actorDetails.name;
+          const actionLabel = isToWaitlist ? "Moved to Waitlist" : "Moved to Going";
+
+          primaryTitle = participantName;
+          secondaryDescription = actorName ? `${actionLabel} by ${actorName}` : actionLabel;
+          isUserEvent = true;
+          userAvatarSrc = targetDetails.avatar;
+          accentEdgeColor = isToWaitlist ? '#eab308' : '#22c55e';
           break;
         }
         case "participant_waitlisted": {
@@ -566,6 +635,19 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           };
           break;
         }
+        case "participant_invite_others": {
+          const actorName = meta.performed_by_name || actorDetails.name;
+          const isEnabled = meta.enabled !== false; // Default to true if not explicitly false (backward-compatible)
+          if (isEnabled) {
+            primaryTitle = "Participants can invite others";
+            secondaryDescription = actorName ? `Enabled by ${actorName}` : "Enabled by host";
+          } else {
+            primaryTitle = "Participants can no longer invite others";
+            secondaryDescription = actorName ? `Disabled by ${actorName}` : "Disabled by host";
+            isDisabled = true;
+          }
+          break;
+        }
         case "capacity_changed":
           primaryTitle = "Capacity";
           if (meta.old_capacity !== undefined && meta.new_capacity !== undefined) {
@@ -650,6 +732,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
         isUserEvent,
         userAvatarSrc,
         accentEdgeColor,
+        isDisabled,
         swapData,
         timeText: formatExactTime(validDate),
         dateText: formatDateSubtext(validDate),
@@ -658,8 +741,28 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       };
     });
 
-    // Return all activity events uncollapsed (one card per event)
-    return uncollapsed;
+    // Deduplicate participant_invite_others: keep ONLY the single most recent change by timestamp (rawDate)
+    let latestInviteOthersId: string | null = null;
+    let maxInviteOthersTime = -1;
+
+    uncollapsed.forEach((evt) => {
+      if (evt.type === 'participant_invite_others') {
+        const time = evt.rawDate.getTime();
+        if (time > maxInviteOthersTime) {
+          maxInviteOthersTime = time;
+          latestInviteOthersId = evt.id;
+        }
+      }
+    });
+
+    const filtered = uncollapsed.filter((evt) => {
+      if (evt.type === 'participant_invite_others') {
+        return evt.id === latestInviteOthersId;
+      }
+      return true;
+    });
+
+    return filtered;
   }, [rawActivities, resolveUserDetails, plan]);
 
   // Group activities chronologically by dateGroup (preserving newest first order)

@@ -1055,7 +1055,7 @@ export function usePlanParticipants({
         throw updateErr;
       }
 
-      // Log host management activity event (Host promoted participant to Going)
+      // Log host management activity event (Host moved participant to Going)
       if (userId) {
         await (supabase as any)
           .from("plan_activity")
@@ -1063,8 +1063,13 @@ export function usePlanParticipants({
             plan_id: planUuid,
             actor_id: userId,
             target_user_id: resolvedUserUuid,
-            activity_type: "participant_promoted",
-            metadata: {}
+            activity_type: "participant_moved",
+            metadata: {
+              participantId: resolvedUserUuid,
+              from: "waitlist",
+              to: "going",
+              movedBy: userId,
+            }
           });
       }
 
@@ -1160,8 +1165,13 @@ export function usePlanParticipants({
             plan_id: planUuid,
             actor_id: userId,
             target_user_id: resolvedUserUuid,
-            activity_type: "participant_waitlisted",
-            metadata: {}
+            activity_type: "participant_moved",
+            metadata: {
+              participantId: resolvedUserUuid,
+              from: "going",
+              to: "waitlist",
+              movedBy: userId,
+            }
           });
       }
 

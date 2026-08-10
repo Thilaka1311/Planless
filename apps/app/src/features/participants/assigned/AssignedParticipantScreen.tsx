@@ -59,6 +59,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onWaitlistModeChange,
   showWaitlistMode = true,
   canParticipantInvite = false,
+  onBottomSheetStateChange,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
@@ -186,6 +187,12 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     setSheetType(null);
     setShowConfirmRemove(false);
   };
+
+  useEffect(() => {
+    if (onBottomSheetStateChange) {
+      onBottomSheetStateChange(Boolean(selectedItem));
+    }
+  }, [selectedItem, onBottomSheetStateChange]);
 
   const handleItemTap = (item: Friend, type: ParticipantTab) => {
     if (!effectiveIsHost || isInviteOnly || isPlanSizeEditing) return;
@@ -384,6 +391,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           showConfirmRemove={showConfirmRemove}
           isHostUser={effectiveIsHost}
           userProfile={userProfile}
+          goingCount={displayGoing.length}
+          waitlistCount={displayWaitlist.length}
           onClose={closeSheet}
           onShowConfirmRemove={setShowConfirmRemove}
           onMoveToWaitlist={moveToWaitlistAction}
