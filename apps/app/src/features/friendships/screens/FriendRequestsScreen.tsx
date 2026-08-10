@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { ArrowLeft, Check, X, ChevronDown } from "lucide-react";
+import { ArrowLeft, Check, UserCheck, X, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
 import { useToast } from "../../../shared/contexts/ToastContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
+import { FriendProfileViewerBottomSheet } from "../components/FriendProfileViewerBottomSheet";
 
 interface FriendRequestsScreenProps {
   onBack: () => void;
@@ -21,6 +22,8 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
   } = useFriendshipStore();
 
   const [showSentRequests, setShowSentRequests] = useState(false);
+  const [selectedSentUserForViewer, setSelectedSentUserForViewer] = useState<{ friendshipId: string; userId: string } | null>(null);
+  const [selectedIncomingUserForViewer, setSelectedIncomingUserForViewer] = useState<{ userId: string } | null>(null);
 
   const handleAccept = async (friendshipId: string, name: string) => {
     try {
@@ -91,39 +94,47 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
               {incomingRequests.map((item) => (
                 <div
                   key={item.friendshipId}
-                  className="w-full p-4 bg-[#0A0A0C] border border-white/[0.03] rounded-2xl flex flex-col space-y-4"
+                  className="w-full p-4 bg-[#0A0A0C] border border-white/[0.03] rounded-2xl flex items-center justify-between"
                 >
-                  <div className="flex items-center space-x-3.5">
+                  <div
+                    onClick={() => setSelectedIncomingUserForViewer({ userId: item.sender?.id })}
+                    className="flex items-center space-x-3.5 min-w-0 flex-1 pr-3 cursor-pointer group"
+                  >
                     <UserAvatar
                       src={item.sender?.profile_photo || ""}
                       alt={item.sender?.full_name || "User"}
-                      onClick={() => onZoomPhoto?.({ src: item.sender?.profile_photo || "", name: item.sender?.full_name || "User" })}
-                      className="w-11 h-11 rounded-full border border-white/[0.06] object-cover cursor-pointer hover:scale-105 active:scale-95 transition-transform duration-200"
+                      className="w-11 h-11 rounded-full border border-white/[0.06] object-cover transition-transform duration-200 group-hover:scale-105 flex-shrink-0"
                     />
-                    <div>
-                      <h4 className="font-sans font-bold text-sm text-zinc-200">
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-sans font-bold text-sm text-zinc-200 group-hover:text-white transition truncate">
                         {item.sender?.full_name || "User"}
                       </h4>
-                      <p className="text-[11.5px] font-sans font-medium text-zinc-500 mt-0.5 line-clamp-1">
+                      <p className="text-[11.5px] font-sans font-medium text-zinc-500 mt-0.5 line-clamp-1 truncate">
                         {item.sender?.bio || "Always spontaneous, never planless."}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex gap-2.5">
+                  <div className="flex items-center space-x-2 flex-shrink-0">
                     <button
-                      onClick={() => handleAccept(item.friendshipId, item.sender?.full_name || "User")}
-                      className="flex-1 py-2.5 bg-white text-black font-sans font-bold text-xs rounded-xl hover:bg-zinc-100 transition active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAccept(item.friendshipId, item.sender?.full_name || "User");
+                      }}
+                      title="Accept"
+                      className="w-9 h-9 rounded-xl bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 flex items-center justify-center text-green-400 transition active:scale-95 cursor-pointer"
                     >
-                      <Check className="w-3.5 h-3.5 stroke-[3px]" />
-                      Accept
+                      <Check className="w-4 h-4 stroke-[2.5px]" />
                     </button>
                     <button
-                      onClick={() => handleReject(item.friendshipId, item.sender?.full_name || "User")}
-                      className="flex-1 py-2.5 bg-zinc-950 hover:bg-zinc-900 border border-white/[0.04] text-zinc-300 font-sans font-bold text-xs rounded-xl transition active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReject(item.friendshipId, item.sender?.full_name || "User");
+                      }}
+                      title="Reject"
+                      className="w-9 h-9 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 flex items-center justify-center text-red-500 transition active:scale-95 cursor-pointer"
                     >
-                      <X className="w-3.5 h-3.5 stroke-[3px]" />
-                      Reject
+                      <X className="w-4 h-4 stroke-[2.5px]" />
                     </button>
                   </div>
                 </div>
@@ -160,15 +171,17 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
                       key={item.friendshipId}
                       className="w-full p-4 bg-[#0A0A0C]/60 border border-white/[0.03] rounded-2xl flex items-center justify-between"
                     >
-                      <div className="flex items-center space-x-3.5">
+                      <div
+                        onClick={() => setSelectedSentUserForViewer({ friendshipId: item.friendshipId, userId: item.recipient?.id })}
+                        className="flex items-center space-x-3.5 flex-1 pr-3 cursor-pointer group"
+                      >
                         <UserAvatar
                           src={item.recipient?.profile_photo || ""}
                           alt={item.recipient?.full_name || "User"}
-                          onClick={() => onZoomPhoto?.({ src: item.recipient?.profile_photo || "", name: item.recipient?.full_name || "User" })}
-                          className="w-10 h-10 rounded-full border border-white/[0.06] object-cover cursor-pointer hover:scale-105 active:scale-95 transition-transform duration-200"
+                          className="w-10 h-10 rounded-full border border-white/[0.06] object-cover transition-transform duration-200 group-hover:scale-105"
                         />
                         <div>
-                          <h4 className="font-sans font-bold text-sm text-zinc-300">
+                          <h4 className="font-sans font-bold text-sm text-zinc-300 group-hover:text-white transition">
                             {item.recipient?.full_name}
                           </h4>
                           <p className="text-[11px] font-sans font-medium text-zinc-550 line-clamp-1">
@@ -177,8 +190,11 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
                         </div>
                       </div>
                       <button
-                        onClick={() => handleCancelSentRequest(item.friendshipId, item.recipient?.full_name || "User")}
-                        className="px-3 py-1.5 bg-zinc-950 hover:bg-zinc-900 border border-white/[0.04] hover:border-white/[0.08] text-zinc-400 hover:text-white font-sans font-semibold text-[11px] rounded-lg transition active:scale-[0.97] cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCancelSentRequest(item.friendshipId, item.recipient?.full_name || "User");
+                        }}
+                        className="px-3 py-1.5 bg-zinc-950 hover:bg-zinc-900 border border-white/[0.04] hover:border-white/[0.08] text-zinc-400 hover:text-white font-sans font-semibold text-[11px] rounded-lg transition active:scale-[0.97] cursor-pointer whitespace-nowrap flex-shrink-0"
                       >
                         Cancel
                       </button>
@@ -190,6 +206,15 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
           </div>
         )}
       </div>
+
+      {/* FRIEND PROFILE VIEWER BOTTOM SHEET (For Outgoing & Incoming Requests) */}
+      <FriendProfileViewerBottomSheet
+        friendUserId={selectedSentUserForViewer?.userId || selectedIncomingUserForViewer?.userId || null}
+        onClose={() => {
+          setSelectedSentUserForViewer(null);
+          setSelectedIncomingUserForViewer(null);
+        }}
+      />
     </motion.div>
   );
 };

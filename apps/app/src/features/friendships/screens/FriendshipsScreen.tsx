@@ -294,7 +294,6 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
 
       {/* FRIEND PROFILE VIEWER BOTTOM SHEET */}
       <FriendProfileViewerBottomSheet
-        friendshipId={selectedFriendForViewer?.friendshipId || null}
         friendUserId={selectedFriendForViewer?.userId || null}
         onClose={() => setSelectedFriendForViewer(null)}
       />
