@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
-import { ArrowLeft, SendHorizontal, MessageSquare, ChevronDown, CheckCheck } from "lucide-react";
+import { ArrowLeft, SendHorizontal, MessageSquare, ChevronDown, CheckCheck, Check } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plan } from "../../../core/types";
 import { usePlansStore } from "../../plans/state/PlansContext";
@@ -263,11 +263,222 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     }
   };
 
+  // Add Cost Bottom Sheet state
+  const [showAddCostSheet, setShowAddCostSheet] = useState(false);
+  const [costTitle, setCostTitle] = useState("");
+  const [costAmount, setCostAmount] = useState("");
+  const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
+  const [submittingCost, setSubmittingCost] = useState(false);
+
+  // Derive all JOINED participants (including host and active user) for this plan
+  const joinedParticipants = useMemo(() => {
+    if (!plan) return [];
+    const targetPlanId = plan.dbUuid || plan.id;
+    const cleanId = (id: string) => String(id || "").toLowerCase().trim();
+    const myId = currentUserId || activeUserId || userProfile?.dbUuid;
+
+    // Filter dbPlanParticipants for this plan with status JOINED (or 'going')
+    const participantsForPlan = dbPlanParticipants.filter((pp) => {
+      const isTargetPlan =
+        cleanId(pp.plan_id) === cleanId(targetPlanId) ||
+        (plan.id && cleanId(pp.plan_id) === cleanId(plan.id)) ||
+        (plan.dbUuid && cleanId(pp.plan_id) === cleanId(plan.dbUuid));
+      const status = String(pp.rsvp_status || "").toUpperCase();
+      return isTargetPlan && (status === "JOINED" || status === "GOING");
+    });
+
+    const userMap = new Map<string, { id: string; name: string; avatar: string }>();
+
+    // Helper to resolve user name and avatar
+    const resolveUser = (userId: string) => {
+      const isMe =
+        (myId && cleanId(userId) === cleanId(myId)) ||
+        (userProfile?.dbUuid && cleanId(userId) === cleanId(userProfile.dbUuid)) ||
+        (activeUserId && cleanId(userId) === cleanId(activeUserId));
+
+      // 1. Check dbUsers
+      const uObj = (dbUsers || []).find(
+        (u) => cleanId(u.id) === cleanId(userId) || cleanId(u.user_id) === cleanId(userId) || cleanId(u.public_id) === cleanId(userId)
+      );
+
+      // 2. Check plan.members
+      const mObj = (plan.members || []).find(
+        (m: any) => cleanId(m.userId) === cleanId(userId) || cleanId(m.userUuid) === cleanId(userId) || cleanId(m.user_id) === cleanId(userId) || cleanId(m.id) === cleanId(userId)
+      );
+
+      const fullName = isMe
+        ? "You"
+        : uObj?.full_name || uObj?.name || mObj?.name || "Participant";
+
+      const avatar =
+        uObj?.profile_photo_path ||
+        uObj?.profile_photo ||
+        uObj?.avatar_url ||
+        uObj?.avatar ||
+        mObj?.avatar ||
+        mObj?.profilePhoto ||
+        (isMe ? userProfile?.avatar || "" : "");
+
+      return {
+        id: userId,
+        name: fullName,
+        avatar: avatar || "",
+      };
+    };
+
+    // Include participants from dbPlanParticipants
+    participantsForPlan.forEach((pp) => {
+      if (pp.user_id && !userMap.has(pp.user_id)) {
+        userMap.set(pp.user_id, resolveUser(pp.user_id));
+      }
+    });
+
+    // Also check plan.members with JOINED / GOING status or host
+    (plan.members || []).forEach((m: any) => {
+      const mId = m.userId || m.userUuid || m.user_id || m.id;
+      const status = String(m.status || m.rsvp_status || "").toUpperCase();
+      const isHost = m.role === "HOST" || m.isHost || mId === plan.hostId;
+      if (mId && (status === "JOINED" || status === "GOING" || isHost) && !userMap.has(mId)) {
+        userMap.set(mId, resolveUser(mId));
+      }
+    });
+
+    // Ensure current user is included if they are part of the plan / host
+    if (myId && !userMap.has(myId)) {
+      userMap.set(myId, resolveUser(myId));
+    }
+
+    return Array.from(userMap.values());
+  }, [plan, dbPlanParticipants, dbUsers, currentUserId, activeUserId, userProfile]);
+
+  // When Add Cost sheet opens, default selection to all JOINED participants
+  const handleOpenAddCostSheet = () => {
+    const defaultSelected = joinedParticipants.map((p) => p.id);
+    setSelectedParticipantIds(defaultSelected);
+    setShowAddCostSheet(true);
+  };
+
+  const toggleParticipantSelection = (pId: string) => {
+    setSelectedParticipantIds((prev) =>
+      prev.includes(pId) ? prev.filter((id) => id !== pId) : [...prev, pId]
+    );
+  };
+
+  const handleSendCostMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const titleTrimmed = costTitle.trim();
+    const parsedAmount = parseFloat(costAmount.trim());
+
+    if (!titleTrimmed || isNaN(parsedAmount) || parsedAmount <= 0 || selectedParticipantIds.length === 0) {
+      return;
+    }
+
+    let effectiveSenderUuid = senderUuid;
+    if (!effectiveSenderUuid) {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user?.id) {
+          effectiveSenderUuid = authData.user.id;
+        }
+      } catch (err) {
+        console.error("Failed async auth user fallback:", err);
+      }
+    }
+
+    if (!effectiveSenderUuid) return;
+
+    setSubmittingCost(true);
+    const countSelected = selectedParticipantIds.length;
+    const costPerPerson = Math.round((parsedAmount / countSelected) * 100) / 100;
+
+    // Chat message content — used for rendering the cost card in the timeline.
+    // splitWith is kept for UI rendering only; Wallet truth is in wallet_expense_participants.
+    const costPayloadContent = JSON.stringify({
+      title: titleTrimmed,
+      amount: parsedAmount,
+      splitWith: selectedParticipantIds,
+      costPerPerson,
+    });
+
+    const tempId = `temp-cost-${Date.now()}`;
+    const optimisticMsg: ChatMessage = {
+      id: tempId,
+      plan_id: targetPlanUuid,
+      sender_id: effectiveSenderUuid,
+      message_type: "cost",
+      content: costPayloadContent,
+      created_at: new Date().toISOString(),
+    };
+
+    appendOptimisticMessage(optimisticMsg);
+    setShowAddCostSheet(false);
+    setCostTitle("");
+    setCostAmount("");
+    scrollToBottom(false);
+
+    try {
+      // Step 1: Insert the cost chat message
+      const { data: msgData, error: msgError } = await supabase
+        .from("plan_messages")
+        .insert({
+          plan_id: targetPlanUuid,
+          sender_id: effectiveSenderUuid,
+          content: costPayloadContent,
+          message_type: "cost" as const,
+        })
+        .select()
+        .single();
+
+      if (msgError || !msgData) {
+        console.error("[PlanChatScreen] Failed to insert cost plan_message:", msgError);
+        removeOptimisticMessage(tempId);
+        return;
+      }
+
+      replaceOptimisticMessage(tempId, msgData as ChatMessage);
+      scrollToBottom(false);
+
+      // Step 2: Atomically create wallet_expenses + wallet_expense_participants via RPC
+      // Ensure Payer is always part of the final participant split and resolve UUIDs
+      const resolveUserUuid = (rawId: string): string => {
+        const u = (dbUsers || []).find(
+          (usr) => usr.id === rawId || usr.user_id === rawId || usr.public_id === rawId
+        );
+        return u?.id || rawId;
+      };
+
+      const resolvedPayerUuid = resolveUserUuid(effectiveSenderUuid);
+      const resolvedParticipantUuids = selectedParticipantIds.map(resolveUserUuid);
+      const finalParticipantIds = Array.from(new Set([resolvedPayerUuid, ...resolvedParticipantUuids]));
+
+      const { error: rpcError } = await supabase.rpc("insert_cost_expense", {
+        p_plan_id: targetPlanUuid,
+        p_message_id: msgData.id,
+        p_payer_id: resolvedPayerUuid,
+        p_title: titleTrimmed,
+        p_total_amount: parsedAmount,
+        p_participant_ids: finalParticipantIds,
+      });
+
+      if (rpcError) {
+        console.error("[PlanChatScreen] insert_cost_expense RPC failed:", rpcError);
+        // The chat message was created successfully — do not roll it back.
+        // The wallet record can be retried. Log the error and continue.
+      }
+    } catch (err) {
+      console.error("[PlanChatScreen] Exception inserting cost plan_message:", err);
+      removeOptimisticMessage(tempId);
+    } finally {
+      setSubmittingCost(false);
+    }
+  };
+
   // Dynamic timeline event item (combines user messages and derived system events)
   interface TimelineItem {
     id: string;
     isSystem: boolean;
     systemType?: SystemMessageType;
+    messageType?: "text" | "system" | "poll" | "cost";
     content: string;
     senderId?: string;
     createdAt: string;
@@ -283,6 +494,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         id: msg.id,
         isSystem: msg.message_type === "system",
         systemType: msg.system_message_type || undefined,
+        messageType: msg.message_type,
         content: msg.content,
         senderId: msg.sender_id,
         createdAt: msg.created_at,
@@ -712,6 +924,100 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
 
                   const spacerWidthClass = emojiCount > 0 ? "w-[44px]" : "w-[38px]";
 
+                  // Helper to safely parse cost content JSON
+                  const renderCostCard = () => {
+                    let costTitleStr = "Expense";
+                    let costAmountVal = 0;
+                    let splitCount = 0;
+                    let costPerPersonVal = 0;
+
+                    try {
+                      const parsed = JSON.parse(item.content);
+                      if (parsed && typeof parsed === "object") {
+                        costTitleStr = parsed.title || "Expense";
+                        costAmountVal = Number(parsed.amount) || 0;
+                        if (Array.isArray(parsed.splitWith)) {
+                          splitCount = parsed.splitWith.length;
+                        }
+                        if (parsed.costPerPerson) {
+                          costPerPersonVal = Number(parsed.costPerPerson);
+                        } else if (splitCount > 0) {
+                          costPerPersonVal = Math.round((costAmountVal / splitCount) * 100) / 100;
+                        }
+                      }
+                    } catch {
+                      costTitleStr = item.content || "Expense";
+                    }
+
+                    const formattedCost = costAmountVal.toLocaleString("en-IN", {
+                      style: "currency",
+                      currency: "INR",
+                      maximumFractionDigits: 0,
+                    });
+
+                    const formattedPerPerson = costPerPersonVal.toLocaleString("en-IN", {
+                      style: "currency",
+                      currency: "INR",
+                      maximumFractionDigits: 0,
+                    });
+
+                    return (
+                      <div className="w-64 p-3.5 bg-zinc-950/90 border border-zinc-800 rounded-2xl shadow-md my-1 text-left">
+                        <div className="flex items-center justify-between gap-2 border-b border-zinc-800/60 pb-2 mb-2">
+                          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                            Added Expense
+                          </span>
+                          <span className="text-xs font-bold text-[#ff8b66]">
+                            {formattedCost}
+                          </span>
+                        </div>
+                        <p className="text-sm font-semibold text-white truncate">
+                          {costTitleStr}
+                        </p>
+                        {splitCount > 0 && (
+                          <div className="mt-2 pt-2 border-t border-zinc-800/40 flex items-center justify-between text-[11px] font-sans text-zinc-400">
+                            <span>Split with {splitCount} {splitCount === 1 ? "person" : "people"}</span>
+                            <span className="font-mono font-semibold text-zinc-300">{formattedPerPerson}/ea</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  };
+
+                  if (item.messageType === "cost") {
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex flex-col ${isMe ? "items-end" : "items-start"} ${topMarginClass}`}
+                      >
+                        {!isMe && showAvatar && (
+                          <span className="text-[13px] font-medium text-white mb-[2px] pl-[34px] tracking-wide select-none">
+                            {senderName}
+                          </span>
+                        )}
+                        <div className="flex items-start gap-1.5 max-w-full">
+                          {!isMe && (
+                            <div className="w-[28px] h-[28px] flex-shrink-0">
+                              {showAvatar ? (
+                                <div className="w-[28px] h-[28px] rounded-full border border-white/10 overflow-hidden bg-zinc-800 flex items-center justify-center">
+                                  <UserAvatar src={senderAvatarSrc} alt={senderName} size="w-full h-full" />
+                                </div>
+                              ) : (
+                                <div className="w-[28px] h-[28px]" />
+                              )}
+                            </div>
+                          )}
+                          <div>
+                            {renderCostCard()}
+                            <span className="text-[10px] text-zinc-500 block px-1 mt-0.5">
+                              {timeStr}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div
                       key={item.id}
@@ -807,16 +1113,27 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   onFocus={() => {
                     scrollToBottom(false);
                   }}
-                  className="w-full h-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none pr-10 font-sans"
+                  className="w-full h-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none pr-24 font-sans"
                 />
-                <button
-                  type="submit"
-                  disabled={!inputText.trim() || sending}
-                  onMouseDown={(e) => e.preventDefault()}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#C46A2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
-                >
-                  <SendHorizontal className="w-4 h-4 text-white stroke-[2]" />
-                </button>
+
+                {inputText.trim() ? (
+                  <button
+                    type="submit"
+                    disabled={sending}
+                    onMouseDown={(e) => e.preventDefault()}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#C46A2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
+                  >
+                    <SendHorizontal className="w-4 h-4 text-white stroke-[2]" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddCostSheet}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-xs font-semibold text-white hover:bg-zinc-700 transition cursor-pointer flex items-center gap-1 shadow-md"
+                  >
+                    <span>+ Add Cost</span>
+                  </button>
+                )}
               </div>
             </form>
           </div>
@@ -833,6 +1150,133 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           </div>
         </motion.div>
       </div>
+
+      {/* ADD COST BOTTOM SHEET */}
+      {showAddCostSheet && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div
+            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-zinc-900 pb-3 shrink-0">
+              <h3 className="text-lg font-display font-bold text-white">Add Cost</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddCostSheet(false);
+                  setCostTitle("");
+                  setCostAmount("");
+                }}
+                className="text-zinc-400 hover:text-white text-sm font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <form onSubmit={handleSendCostMessage} className="space-y-4 pt-1 overflow-y-auto scrollbar-none flex-1">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  placeholder="What is this expense for?"
+                  value={costTitle}
+                  onChange={(e) => setCostTitle(e.target.value)}
+                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
+                  Total Cost (₹)
+                </label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={costAmount}
+                  onChange={(e) => setCostAmount(e.target.value)}
+                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
+                  min="1"
+                  step="any"
+                />
+              </div>
+
+              {/* SPLIT WITH SECTION */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Split With ({selectedParticipantIds.length})
+                  </label>
+                  {costAmount.trim() && parseFloat(costAmount) > 0 && selectedParticipantIds.length > 0 && (
+                    <span className="text-xs font-mono font-semibold text-[#ff8b66]">
+                      ₹
+                      {Math.round(
+                        (parseFloat(costAmount) / selectedParticipantIds.length) * 100
+                      ) / 100}{" "}
+                      / person
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-none pr-1">
+                  {joinedParticipants.map((p) => {
+                    const isSelected = selectedParticipantIds.includes(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => toggleParticipantSelection(p.id)}
+                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer text-left ${
+                          isSelected
+                            ? "bg-zinc-900 border-[#C46A2C]/60 text-white"
+                            : "bg-zinc-900/40 border-zinc-800/60 text-zinc-400 hover:bg-zinc-900/80"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <UserAvatar
+                            src={p.avatar}
+                            alt={p.name}
+                            size="w-8 h-8"
+                            className="shrink-0"
+                          />
+                          <span className="font-sans text-xs font-semibold truncate">
+                            {p.name}
+                          </span>
+                        </div>
+
+                        <div
+                          className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
+                            isSelected
+                              ? "bg-[#C46A2C] border-[#C46A2C] text-white"
+                              : "border-zinc-700 bg-transparent"
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={
+                  !costTitle.trim() ||
+                  !costAmount.trim() ||
+                  selectedParticipantIds.length === 0 ||
+                  submittingCost
+                }
+                className="w-full h-11 rounded-xl bg-[#C46A2C] text-white font-semibold text-sm active:scale-95 disabled:opacity-40 disabled:active:scale-100 transition cursor-pointer mt-2 shrink-0"
+              >
+                {submittingCost ? "Adding..." : "Add to Chat"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* PLAN SETTINGS SCREEN OVERLAY */}
       {showSettingsScreen && plan && (

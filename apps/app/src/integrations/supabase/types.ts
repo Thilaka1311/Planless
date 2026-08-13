@@ -880,57 +880,54 @@ export type Database = {
       }
       wallet_expenses: {
         Row: {
-          circle_id: string | null
-          cost_per_participant: number | null
           created_at: string
           id: string
+          message_id: string | null
+          payer_id: string
           plan_id: string
           public_id: string
-          receiver_id: string
-          rsvp_status: Database["public"]["Enums"]["rsvp_status"] | null
-          sender_id: string
           status: Database["public"]["Enums"]["wallet_expense_status"]
+          title: string
+          total_amount: number
           updated_at: string
         }
         Insert: {
-          circle_id?: string | null
-          cost_per_participant?: number | null
           created_at?: string
           id?: string
+          message_id?: string | null
+          payer_id: string
           plan_id: string
           public_id: string
-          receiver_id: string
-          rsvp_status?: Database["public"]["Enums"]["rsvp_status"] | null
-          sender_id: string
           status?: Database["public"]["Enums"]["wallet_expense_status"]
+          title: string
+          total_amount: number
           updated_at?: string
         }
         Update: {
-          circle_id?: string | null
-          cost_per_participant?: number | null
           created_at?: string
           id?: string
+          message_id?: string | null
+          payer_id?: string
           plan_id?: string
           public_id?: string
-          receiver_id?: string
-          rsvp_status?: Database["public"]["Enums"]["rsvp_status"] | null
-          sender_id?: string
           status?: Database["public"]["Enums"]["wallet_expense_status"]
+          title?: string
+          total_amount?: number
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "fk_wallet_expenses_plan_participant"
-            columns: ["plan_id", "sender_id"]
-            isOneToOne: true
-            referencedRelation: "plan_participants"
-            referencedColumns: ["plan_id", "user_id"]
+            foreignKeyName: "wallet_expenses_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "plan_messages"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "wallet_expenses_circle_id_fkey"
-            columns: ["circle_id"]
+            foreignKeyName: "wallet_expenses_payer_id_fkey"
+            columns: ["payer_id"]
             isOneToOne: false
-            referencedRelation: "circles"
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
@@ -939,21 +936,123 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "plans"
             referencedColumns: ["id"]
-          },
+          }
+        ]
+      }
+      wallet_expense_participants: {
+        Row: {
+          id: string
+          expense_id: string
+          user_id: string
+          amount_owed: number
+          amount_paid: number
+          status: Database["public"]["Enums"]["participant_payment_status"]
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          expense_id: string
+          user_id: string
+          amount_owed: number
+          amount_paid?: number
+          status?: Database["public"]["Enums"]["participant_payment_status"]
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          expense_id?: string
+          user_id?: string
+          amount_owed?: number
+          amount_paid?: number
+          status?: Database["public"]["Enums"]["participant_payment_status"]
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
           {
-            foreignKeyName: "wallet_expenses_receiver_id_fkey"
-            columns: ["receiver_id"]
+            foreignKeyName: "wallet_expense_participants_expense_id_fkey"
+            columns: ["expense_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "wallet_expenses"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "wallet_expenses_sender_id_fkey"
+            foreignKeyName: "wallet_expense_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      wallet_transactions: {
+        Row: {
+          id: string
+          expense_id: string
+          plan_id: string
+          sender_id: string
+          receiver_id: string
+          amount: number
+          status: Database["public"]["Enums"]["transaction_status"]
+          public_id: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          expense_id: string
+          plan_id: string
+          sender_id: string
+          receiver_id: string
+          amount: number
+          status?: Database["public"]["Enums"]["transaction_status"]
+          public_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          expense_id?: string
+          plan_id?: string
+          sender_id?: string
+          receiver_id?: string
+          amount?: number
+          status?: Database["public"]["Enums"]["transaction_status"]
+          public_id?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wallet_transactions_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "wallet_expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wallet_transactions_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wallet_transactions_sender_id_fkey"
             columns: ["sender_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "wallet_transactions_receiver_id_fkey"
+            columns: ["receiver_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
         ]
       }
     }
@@ -963,6 +1062,21 @@ export type Database = {
     Functions: {
       generate_discovery_public_id: { Args: never; Returns: string }
       generate_user_public_id: { Args: never; Returns: string }
+      insert_cost_expense: {
+        Args: {
+          p_plan_id: string
+          p_message_id: string
+          p_payer_id: string
+          p_title: string
+          p_total_amount: number
+          p_participant_ids: string[]
+        }
+        Returns: string
+      }
+      recalculate_wallet_expenses: {
+        Args: { p_plan_id: string }
+        Returns: undefined
+      }
       transfer_circle_ownership: {
         Args: {
           p_circle_id: string
@@ -1045,7 +1159,7 @@ export type Database = {
         | "CAFE"
       friendship_status: "PENDING" | "ACCEPTED"
       message_status: "SENT" | "DELIVERED"
-      message_type: "text" | "system" | "poll"
+      message_type: "text" | "system" | "poll" | "cost"
       system_message_type:
         | "plan_created"
         | "participant_joined"
@@ -1120,6 +1234,8 @@ export type Database = {
       team_type: "TEAM_1" | "TEAM_2"
       user_role: "user" | "admin"
 
+      participant_payment_status: "PENDING" | "SETTLED"
+      transaction_status: "PENDING" | "COMPLETED" | "FAILED" | "CANCELLED"
       wallet_expense_status: "PENDING" | "SETTLED"
       wallet_status: "PENDING" | "PAID"
     }
@@ -1404,7 +1520,7 @@ export const Constants = {
       ],
       sports_subcategory_enum: ["FOOTBALL", "BADMINTON", "PICKLEBALL"],
       team_type: ["TEAM_1", "TEAM_2"],
-      user_role: ["user", "admin"],
+      participant_payment_status: ["PENDING", "SETTLED"],
       wallet_expense_status: ["PENDING", "SETTLED"],
       wallet_status: ["PENDING", "PAID"],
 

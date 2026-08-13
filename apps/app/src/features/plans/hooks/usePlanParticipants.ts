@@ -515,6 +515,10 @@ export function usePlanParticipants({
     await unassignTeam(planUuid, userUuid);
     await promoteWaitlistIfSpotsAvailable(planUuid);
     await renumberWaitlistPositions(planUuid);
+    // Recalculate wallet splits after a participant leaves Going
+    recalculateWalletExpenses(planUuid).catch(err =>
+      console.error("[leavePlan] recalculateWalletExpenses failed:", err)
+    );
   }, [plans, dbPlans, resolveUserUuid, isUuid, dbPlanParticipants, handleParticipantStatusChange, unassignTeam, applyParticipantOptimisticUpdate]);
 
   const skipPlan = useCallback(async (rawPlanId: string, userId: string) => {
@@ -574,6 +578,10 @@ export function usePlanParticipants({
       await unassignTeam(planUuid, userUuid);
       await promoteWaitlistIfSpotsAvailable(planUuid);
       await renumberWaitlistPositions(planUuid);
+      // Recalculate wallet splits after a participant leaves
+      recalculateWalletExpenses(planUuid).catch(err =>
+        console.error("[skipPlan] recalculateWalletExpenses failed:", err)
+      );
     } catch (error) {
       console.error(`[PlansContext] skipPlan DB write failed:`, error);
 
@@ -838,6 +846,13 @@ export function usePlanParticipants({
     // 3. Ensure contiguous renumbering 1..N
     await renumberWaitlistPositions(planUuid);
 
+    // Recalculate wallet splits when a participant is added directly to Going
+    if (effectiveAssignedGroup === 'GOING') {
+      recalculateWalletExpenses(planUuid).catch(err =>
+        console.error("[addParticipantsToPlan] recalculateWalletExpenses failed:", err)
+      );
+    }
+
     await refreshPlans();
   }, [plans, dbPlans, dbPlanParticipants, refreshPlans, applyParticipantOptimisticUpdate]);
 
@@ -1074,6 +1089,10 @@ export function usePlanParticipants({
       }
 
       renumberWaitlistPositions(planUuid).catch(() => {});
+      // Recalculate wallet splits: moving a participant to Going changes the JOINED count
+      recalculateWalletExpenses(planUuid).catch(err =>
+        console.error("[moveParticipantToGoing] recalculateWalletExpenses failed:", err)
+      );
     } catch (err) {
       await refreshPlans(); // Rollback optimistic state on failure
       throw err;
@@ -1176,6 +1195,10 @@ export function usePlanParticipants({
       }
 
       renumberWaitlistPositions(planUuid).catch(() => {});
+      // Recalculate wallet splits: moving a participant off Going changes the JOINED count
+      recalculateWalletExpenses(planUuid).catch(err =>
+        console.error("[moveParticipantToWaitlist] recalculateWalletExpenses failed:", err)
+      );
     } catch (err) {
       await refreshPlans(); // Rollback optimistic state on failure
       throw err;
@@ -1301,6 +1324,10 @@ export function usePlanParticipants({
       }
 
       renumberWaitlistPositions(planUuid).catch(() => {});
+      // Recalculate wallet splits: a swap changes who is in Going
+      recalculateWalletExpenses(planUuid).catch(err =>
+        console.error("[swapParticipants] recalculateWalletExpenses failed:", err)
+      );
     } catch (err) {
       console.error("[swapParticipants] Error during atomic swap, rolling back optimistic state:", err);
       // Roll back to pre-swap snapshot
@@ -1419,6 +1446,10 @@ export function usePlanParticipants({
       }
 
       renumberWaitlistPositions(planUuid).catch(() => {});
+      // Recalculate wallet splits: removing a Going participant and promoting another changes the count
+      recalculateWalletExpenses(planUuid).catch(err =>
+        console.error("[removeAndReplaceWithWaitlist] recalculateWalletExpenses failed:", err)
+      );
     } catch (err) {
       console.error('[removeAndReplaceWithWaitlist] Error, rolling back:', err);
       setDbPlanParticipants(snapshotBefore);
