@@ -36,19 +36,17 @@ export const ExpenseBreakdownCard: React.FC<ExpenseBreakdownCardProps> = ({
     setIsSettling(true);
 
     try {
-      const { error } = await (supabase as any)
-        .from("wallet_transactions")
-        .upsert({
-          id: expense.id,
-          status: "paid",
-          paid_at: new Date().toISOString(),
-        });
+      const { settleWalletExpenseParticipant } = await import("../services/walletService");
+      const success = await settleWalletExpenseParticipant({
+        expenseId: expense.id,
+        participantUserId: activeUserId,
+      });
 
-      if (!error) {
+      if (success) {
         showToast("Settlement registered successfully!");
         onSettleSuccess();
       } else {
-        console.error("[ExpenseBreakdownCard] Settlement failed:", error);
+        console.error("[ExpenseBreakdownCard] Settlement failed");
         showToast("Failed to register settlement.");
       }
     } catch (err) {

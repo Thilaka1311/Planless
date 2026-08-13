@@ -487,11 +487,8 @@ router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) =>
           console.warn(`[DB Integrity Warning] plans mutation has non-UUID circle_id: "${rec.circle_id}"`);
         }
       } else if (table === "wallet_expenses") {
-        if (rec.sender_id && !isUuid(rec.sender_id)) {
-          console.warn(`[DB Integrity Warning] wallet_expenses mutation has non-UUID sender_id: "${rec.sender_id}"`);
-        }
-        if (rec.receiver_id && !isUuid(rec.receiver_id)) {
-          console.warn(`[DB Integrity Warning] wallet_expenses mutation has non-UUID receiver_id: "${rec.receiver_id}"`);
+        if (rec.payer_id && !isUuid(rec.payer_id)) {
+          console.warn(`[DB Integrity Warning] wallet_expenses mutation has non-UUID payer_id: "${rec.payer_id}"`);
         }
         if (rec.plan_id && !isUuid(rec.plan_id)) {
           console.warn(`[DB Integrity Warning] wallet_expenses mutation has non-UUID plan_id: "${rec.plan_id}"`);
@@ -1066,17 +1063,14 @@ async function recalculatePlanParticipantsCosts(client: any, planUuid: string): 
     return;
   }
 
-  // Count participants in the 'JOINED' state
-  const joinedCount = participants.filter((p: any) => {
-    const status = String(p.rsvp_status || "").toUpperCase();
-    return status === "JOINED";
-  }).length;
-
-  // Divisor is strictly the max_participants capacity determined during Plan Creation
+  // cost_per_participant = total_cost / max_participants (fixed plan capacity).
+  // The per-participant cost is based on the plan's defined maximum capacity,
+  // not the current number of people who have joined. This keeps the share
+  // amount consistent regardless of current RSVP state.
   const divisor = plan.max_participants > 0 ? plan.max_participants : 1;
   const shareAmount = totalCost <= 0 ? 0 : Math.round((totalCost / divisor) * 100) / 100;
 
-  console.log(`[Backend Recalculating Costs] Plan total cost: ₹${totalCost}, Capacity limit: ${plan.max_participants}, Share amount: ₹${shareAmount}`);
+  console.log(`[Backend Recalculating Costs] Plan total cost: ₹${totalCost}, max_participants: ${plan.max_participants}, Share per participant: ₹${shareAmount}`);
 
   // Batch update: Update cost_per_participant to shareAmount for joined, others to NULL
   // Run this as a single transaction update query on the table to avoid row-by-row race conditions
@@ -1099,73 +1093,105 @@ async function recalculatePlanParticipantsCosts(client: any, planUuid: string): 
     console.error(`[Backend Recalculating Costs] Failed to batch update cost_per_participant for plan ${planUuid}`, batchUpdateErr);
   }
 
-  // Wallet Expenses Sync Strategy: Sync strictly using plan_participants.cost_per_participant values
+  // Wallet Expenses Sync Strategy: Sync using new normalized schema
   if (totalCost <= 0) {
-    await client.from("wallet_expenses").delete().eq("plan_id", planUuid);
+    // No cost: remove all plan-level wallet expenses (message_id IS NULL = plan default)
+    await client.from("wallet_expenses").delete().eq("plan_id", planUuid).is("message_id", null);
     return;
   }
 
-  // Fetch the newly updated records to grab exact cost_per_participant amounts
+  // Fetch the plan title for the expense record
+  const { data: planDetails } = await client
+    .from("plans")
+    .select("title")
+    .eq("id", planUuid)
+    .single();
+  const planTitle = planDetails?.title || "Plan Expense";
+
+  // Find or create the single plan-level wallet_expense (message_id IS NULL = plan default)
+  const { data: existingExpense } = await client
+    .from("wallet_expenses")
+    .select("id")
+    .eq("plan_id", planUuid)
+    .is("message_id", null)
+    .maybeSingle();
+
+  let expenseId: string;
+
+  if (existingExpense?.id) {
+    expenseId = existingExpense.id;
+    // Update total_amount if plan cost changed
+    await client
+      .from("wallet_expenses")
+      .update({ total_amount: totalCost, updated_at: new Date().toISOString() })
+      .eq("id", expenseId);
+  } else {
+    // Create the plan expense record (host is the payer)
+    const { data: newExpense, error: insertExpErr } = await client
+      .from("wallet_expenses")
+      .insert({
+        plan_id: planUuid,
+        payer_id: hostUuid,
+        title: planTitle,
+        total_amount: totalCost,
+        status: "PENDING",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+
+    if (insertExpErr || !newExpense) {
+      console.error(`[Backend Recalculating Costs] Failed to create wallet_expense for plan ${planUuid}`, insertExpErr);
+      return;
+    }
+    expenseId = newExpense.id;
+  }
+
+  // Fetch fresh JOINED participants for this plan
   const { data: freshParticipants } = await client
     .from("plan_participants")
-    .select("user_id, cost_per_participant, rsvp_status, circle_id")
+    .select("user_id, rsvp_status")
     .eq("plan_id", planUuid);
 
   if (!freshParticipants) return;
 
-  const joinedNonHosts = freshParticipants.filter((p: any) => {
+  const joinedParticipants = freshParticipants.filter((p: any) => {
     const status = String(p.rsvp_status || "").toUpperCase();
-    const isJoined = status === "JOINED";
-    return isJoined && p.user_id !== hostUuid;
+    return status === "JOINED";
   });
 
-  const activeParticipantUuids = joinedNonHosts.map((p: any) => p.user_id);
+  const joinedUserIds = joinedParticipants.map((p: any) => p.user_id);
 
-  // Remove wallet expenses for users who are no longer joined
-  if (activeParticipantUuids.length > 0) {
-    const formattedUuids = activeParticipantUuids.map((id: string) => `'${id}'`);
+  // Remove participant rows for users no longer JOINED
+  if (joinedUserIds.length > 0) {
     await client
-      .from("wallet_expenses")
+      .from("wallet_expense_participants")
       .delete()
-      .eq("plan_id", planUuid)
-      .not("sender_id", "in", `(${formattedUuids.join(",")})`);
+      .eq("expense_id", expenseId)
+      .not("user_id", "in", `(${joinedUserIds.map((id: string) => `'${id}'`).join(",")})`);
   } else {
-    await client.from("wallet_expenses").delete().eq("plan_id", planUuid);
+    await client.from("wallet_expense_participants").delete().eq("expense_id", expenseId);
   }
 
-  // Upsert expense shares for active non-host participants
-  for (const participant of joinedNonHosts) {
-    const actualShare = Number(participant.cost_per_participant || 0);
-    if (actualShare <= 0) continue;
+  // Upsert participant shares for all JOINED participants
+  if (joinedParticipants.length > 0) {
+    const participantRows = joinedParticipants.map((p: any) => ({
+      expense_id: expenseId,
+      user_id: p.user_id,
+      amount_owed: shareAmount,
+      amount_paid: 0,
+      status: "PENDING",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
 
-    const { data: existing } = await client
-      .from("wallet_expenses")
-      .select("id")
-      .eq("plan_id", planUuid)
-      .eq("sender_id", participant.user_id);
+    const { error: participantErr } = await client
+      .from("wallet_expense_participants")
+      .upsert(participantRows, { onConflict: "expense_id,user_id", ignoreDuplicates: false });
 
-    if (existing && existing.length > 0) {
-      await client
-        .from("wallet_expenses")
-        .update({
-          cost_per_participant: actualShare,
-          rsvp_status: participant.rsvp_status,
-          circle_id: participant.circle_id || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", existing[0].id);
-    } else if (hostUuid) {
-      await client.from("wallet_expenses").insert({
-        plan_id: planUuid,
-        circle_id: participant.circle_id || null,
-        sender_id: participant.user_id,
-        receiver_id: hostUuid,
-        cost_per_participant: actualShare,
-        rsvp_status: participant.rsvp_status,
-        status: "PENDING",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
+    if (participantErr) {
+      console.error(`[Backend Recalculating Costs] Failed to upsert wallet_expense_participants for plan ${planUuid}`, participantErr);
     }
   }
 

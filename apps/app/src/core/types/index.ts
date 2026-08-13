@@ -120,7 +120,7 @@ export interface DbPlanMessage {
   id: string;
   plan_id: string;
   sender_id: string;
-  message_type: 'text' | 'system' | 'poll';
+  message_type: 'text' | 'system' | 'poll' | 'cost';
   system_message_type?: SystemMessageType | null;
   content: string;
   created_at: string;
