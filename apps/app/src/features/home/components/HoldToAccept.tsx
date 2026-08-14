@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { motion } from "motion/react";
 import { Plan } from "../../../core/types";
 import { useLivePlan } from "../../plans/hooks/useLivePlan";
+import { usePlansStore } from "../../plans/state/PlansContext";
 
 interface HoldToAcceptOverlayProps {
   planId: string;
@@ -19,6 +20,19 @@ export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
   formattedDateAndTime,
 }) => {
   const plan = useLivePlan(planId);
+  const { dbPlans } = usePlansStore();
+
+  const costText = useMemo(() => {
+    if (!plan) return null;
+    const rawDbPlan = dbPlans.find((p) => p.id === plan.id || (plan.dbUuid && p.id === plan.dbUuid));
+    if (!rawDbPlan || !rawDbPlan.total_cost || Number(rawDbPlan.total_cost) <= 0) return null;
+
+    const total = Number(rawDbPlan.total_cost);
+    const capacity = rawDbPlan.max_participants ? Number(rawDbPlan.max_participants) : (plan.maxSpots || 8);
+    const perPerson = Math.round(total / (capacity || 1));
+    return `₹${perPerson} / person`;
+  }, [plan, dbPlans]);
+
   if (!isHolding || !plan) return null;
 
   return (
@@ -92,6 +106,13 @@ export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
           <span className="text-[12.5px] font-sans text-zinc-400 mt-1.5 block">
             Hosted by <strong className="font-bold text-zinc-100">{plan.creatorName || "Host"}</strong>
           </span>
+
+          {/* 4. Dynamic Cost per person (Supporting metadata) */}
+          {costText && (
+            <span className="text-[13.5px] font-sans font-semibold text-white/90 mt-2 block tracking-tight">
+              {costText}
+            </span>
+          )}
         </div>
 
       </div>

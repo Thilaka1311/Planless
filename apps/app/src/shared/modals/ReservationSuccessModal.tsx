@@ -6,6 +6,7 @@ import { useLivePlan } from "../../features/plans/hooks/useLivePlan";
 interface ReservationSuccessModalProps {
   planId: string | null;
   isWaitlist?: boolean;
+  isLeft?: boolean;
   onClose: () => void;
   setActiveTab: (tab: any) => void;
   setPlansFilter?: (filter: any) => void;
@@ -14,6 +15,7 @@ interface ReservationSuccessModalProps {
 export default function ReservationSuccessModal({
   planId,
   isWaitlist = false,
+  isLeft = false,
   onClose,
   setActiveTab,
   setPlansFilter,
@@ -30,10 +32,11 @@ export default function ReservationSuccessModal({
         <PlanConfirmedOverlay
           plan={livePlan}
           isWaitlist={isWaitlist}
+          isLeft={isLeft}
           onGoToPlans={() => {
             onClose();
             if (setPlansFilter) {
-              setPlansFilter(isWaitlist ? "WAITLISTED" : "JOINED");
+              setPlansFilter(isLeft ? "SKIPPED" : isWaitlist ? "WAITLISTED" : "JOINED");
             }
             setActiveTab("plans");
           }}

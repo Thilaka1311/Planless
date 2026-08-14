@@ -121,16 +121,30 @@ function getCategoryPopoverContent(plan: any): { title: string } {
   return { title: 'Custom' };
 }
 
-export function formatDeadlineFull(deadlineStr: string | null | undefined): string {
+export function formatDeadlineFull(deadlineStr: string | null | undefined, now: Date = new Date()): string {
   if (!deadlineStr) return '';
   try {
     const date = new Date(deadlineStr);
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const timeStr = `${hours}:${minutes}`;
+
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfDeadline = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.round((startOfDeadline.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return `Today • ${timeStr}`;
+    }
+
+    if (diffDays === 1) {
+      return `Tomorrow • ${timeStr}`;
+    }
+
     const weekday = date.toLocaleDateString('en-US', { weekday: 'long' });
     const month = date.toLocaleDateString('en-US', { month: 'short' });
     const day = date.getDate();
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${weekday}, ${month} ${day} • ${hours}:${minutes}`;
+    return `${weekday}, ${month} ${day} • ${timeStr}`;
   } catch {
     return deadlineStr || '';
   }
@@ -227,7 +241,7 @@ export interface PlanCardProps {
   setSelectedPlan: (planId: string | null) => void;
   setPaymentConfirmationPlan: (planId: string | null) => void;
   walletBalance: number;
-  handleToggleJoin: (planId: string) => void;
+  handleToggleJoin: (planId: string) => Promise<boolean | void> | void;
   setShowPaymentSuccess: (planId: string | null) => void;
   setShowWaitlistSuccess?: (planId: string | null) => void;
   setNotifications: React.Dispatch<React.SetStateAction<NotificationItem[]>>;

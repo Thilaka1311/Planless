@@ -13,7 +13,7 @@ interface PlanStackProps {
   setSelectedPlan: (planId: string | null) => void;
   setPaymentConfirmationPlan: (planId: string | null) => void;
   walletBalance: number;
-  handleToggleJoin: (planId: string) => void;
+  handleToggleJoin: (planId: string) => Promise<boolean | void> | void;
   setShowPaymentSuccess: (planId: string | null) => void;
   setShowWaitlistSuccess?: (planId: string | null) => void;
   setNotifications: React.Dispatch<React.SetStateAction<NotificationItem[]>>;

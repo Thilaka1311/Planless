@@ -5,7 +5,7 @@ import {
   Bell, Users, Plus, Home, Calendar, Wallet, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { UserProfile, Plan, Circle, Transaction, DbCircle, DbCircleMember, DbPlan, DbPlanParticipant, DbTransaction, DbPlanOutcome } from "./core/types";
+import { UserProfile, Plan, Circle, Transaction, DbCircle, DbCircleMember, DbPlan, DbPlanParticipant, DbTransaction, DbPlanOutcome, NotificationItem } from "./core/types";
 import { getInitialsAvatar, mapCirclesToLegacyCircles, mapTransactionsToLegacy } from "../lib/mappers";
 import { insertCircle, insertCircleMembers, syncUserStats, insertTransaction } from "../lib/db";
 import { usePlansStore } from "./features/plans/state/PlansContext";
@@ -77,8 +77,10 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
 
   // Checkout splits overlay
   const [paymentConfirmationPlanId, setPaymentConfirmationPlanId] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showPaymentSuccessId, setShowPaymentSuccessId] = useState<string | null>(null);
   const [showWaitlistSuccessId, setShowWaitlistSuccessId] = useState<string | null>(null);
+  const [showLeftSuccessId, setShowLeftSuccessId] = useState<string | null>(null);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const [plansFilter, setPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED'>('JOINED');
   const [showHostedPlansScreen, setShowHostedPlansScreen] = useState(false);
@@ -287,33 +289,17 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
 
 
   // Checkin join toggle
-  const handleToggleJoin = async (planId: string) => {
-    const plan = plans.find(p => p.id === planId);
-    if (!plan) return;
-    await joinPlan(plan.id, userProfile);
-
-    // Sync Wallet & Ledger for cost-based plans without payment_required (which bypass Razorpay checkout but still deduct balance)
-    if (plan.cost > 0 && !(plan as any).payment_required) {
-      // Resolve UUIDs before writing to DB (transactions must use users.id, not user_id)
-      const meTxUser = dbUsers.find(u => u.user_id === activeUserId);
-      const meTxUuid = meTxUser?.id || activeUserUuid || activeUserId;
-      const creatorTxUser = dbUsers.find(u => u.user_id === plan.creatorId || u.id === plan.creatorId);
-      const creatorTxUuid = creatorTxUser?.id || plan.creatorId || null;
-
-      const newDbTx = {
-        transaction_id: `T_pay_${Date.now()}`,
-        sender_id: meTxUuid,
-        receiver_id: creatorTxUuid,
-        plan_id: plan.dbUuid || plan.id,
-        amount: plan.cost,
-        transaction_type: "split_payment",
-        status: "success",
-        timestamp: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-        created_at: new Date().toISOString()
-      };
-      await insertTransaction(newDbTx as any);
+  const handleToggleJoin = async (planId: string): Promise<boolean> => {
+    try {
+      const plan = plans.find(p => p.id === planId);
+      if (!plan) return false;
+      await joinPlan(plan.id, userProfile);
+      await refreshTransactions();
+      return true;
+    } catch (err) {
+      console.error("[handleToggleJoin] Error joining plan:", err);
+      return false;
     }
-    await refreshTransactions();
   };
 
   // Cash deposits
@@ -458,6 +444,8 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
             handleToggleJoin={handleToggleJoin}
             setShowPaymentSuccess={setShowPaymentSuccessId}
             setShowWaitlistSuccess={setShowWaitlistSuccessId}
+            setShowLeftSuccess={setShowLeftSuccessId}
+            setNotifications={setNotifications}
             activeCardId={activeCardId}
             setActiveCardId={setActiveCardId}
             handleSnoozePlan={handleSnoozePlan}
@@ -537,6 +525,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           activeUserId={activeUserId}
           setShowPaymentSuccess={setShowPaymentSuccessId}
           setShowWaitlistSuccess={setShowWaitlistSuccessId}
+          setShowLeftSuccess={setShowLeftSuccessId}
           onLeavePlan={() => {
             setSelectedPlanId(null);
           }}
@@ -644,13 +633,16 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
 
       {/* RESERVATION SUCCESS OVERLAYS */}
       <ReservationSuccessModal
-        planId={showPaymentSuccessId || showWaitlistSuccessId}
+        planId={showPaymentSuccessId || showWaitlistSuccessId || showLeftSuccessId}
         isWaitlist={!!showWaitlistSuccessId}
+        isLeft={!!showLeftSuccessId}
         onClose={() => {
           setShowPaymentSuccessId(null);
           setShowWaitlistSuccessId(null);
+          setShowLeftSuccessId(null);
         }}
         setActiveTab={setActiveTab}
+        setPlansFilter={setPlansFilter}
       />
 
 

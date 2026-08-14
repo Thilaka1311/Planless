@@ -16,7 +16,7 @@ import { useLiveCountdown, rsvpUrgencyStyles } from "../../components/PlanCard";
 import { useHoldToAccept } from "../../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "../../components/HoldToAccept";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
-import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
+import { JoinPlanConfirmationBottomSheet, SkipPlanConfirmationDialog } from "../../../plans/components/BottomSheets";
 import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
 
 export interface PlansPreviewScreenProps {
@@ -28,6 +28,7 @@ export interface PlansPreviewScreenProps {
   onEditPlan?: (planId: string) => void;
   setShowPaymentSuccess?: (planId: string | null) => void;
   setShowWaitlistSuccess?: (planId: string | null) => void;
+  setShowLeftSuccess?: (planId: string | null) => void;
   onLeavePlan?: () => void;
   onPlanCancelled?: (planId: string) => void;
 }
@@ -40,6 +41,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   onNavigateToCircle,
   setShowPaymentSuccess,
   setShowWaitlistSuccess,
+  setShowLeftSuccess,
   onLeavePlan,
   onPlanCancelled,
 }) => {
@@ -197,43 +199,60 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     return `₹${perPerson} / person`;
   }, [hasCost, rawDbPlan, maxSpots]);
 
-  const handleJoinDirect = useCallback(async () => {
+  const [showJoinConfirmation, setShowJoinConfirmation] = useState(false);
+
+  const handleConfirmJoinDirect = useCallback(() => {
     if (!selectedPlan || isJoiningDirect) return;
-    setIsJoiningDirect(true);
-    try {
-      if (alreadySkipped && activeUserId) {
-        await rejoinPlan(selectedPlan.id, activeUserId, userProfile);
-      } else {
-        await joinPlan(selectedPlan.id, userProfile);
-      }
-      if (isFull) {
-        showToast("Added to Waitlist");
-        if (setShowWaitlistSuccess) setShowWaitlistSuccess(selectedPlan.id);
-      } else {
-        showToast((selectedPlan as any).payment_required ? "Joined plan successfully! (mock checkout)" : "Joined plan successfully!");
-        if (setShowPaymentSuccess) setShowPaymentSuccess(selectedPlan.id);
-      }
-      onClose();
-    } catch {
-      showToast("Failed to join plan");
-    } finally {
-      setIsJoiningDirect(false);
+    const planToJoin = selectedPlan;
+    setShowJoinConfirmation(false);
+
+    if (isFull) {
+      showToast("Added to Waitlist");
+      if (setShowWaitlistSuccess) setShowWaitlistSuccess(planToJoin.id);
+    } else {
+      if (setShowPaymentSuccess) setShowPaymentSuccess(planToJoin.id);
     }
+    onClose();
+
+    // Perform DB join asynchronously in background without blocking UI overlay
+    const joinOp = alreadySkipped && activeUserId
+      ? rejoinPlan(planToJoin.id, activeUserId, userProfile)
+      : joinPlan(planToJoin.id, userProfile);
+
+    joinOp.catch((err) => {
+      console.error("[handleJoinDirect] Background join failed:", err);
+      showToast("Failed to sync join status with database.");
+    });
   }, [selectedPlan, isJoiningDirect, alreadySkipped, activeUserId, userProfile, isFull, rejoinPlan, joinPlan, setShowWaitlistSuccess, setShowPaymentSuccess, onClose, showToast]);
 
-  const handleSkip = useCallback(async () => {
+  const handleJoinDirect = useCallback(() => {
+    if (!selectedPlan || isJoiningDirect) return;
+    setShowJoinConfirmation(true);
+  }, [selectedPlan, isJoiningDirect]);
+
+  const [showSkipConfirmation, setShowSkipConfirmation] = useState(false);
+
+  const handleConfirmSkip = useCallback(() => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
-    setIsSkipping(true);
-    try {
-      await skipPlan(selectedPlan.id, activeUserId);
-      showToast("Skipped plan");
-      onClose();
-    } catch {
-      showToast("Failed to skip plan");
-    } finally {
-      setIsSkipping(false);
+    const planToSkip = selectedPlan;
+    setShowSkipConfirmation(false);
+
+    if (setShowLeftSuccess) {
+      setShowLeftSuccess(planToSkip.id);
     }
-  }, [selectedPlan, activeUserId, isSkipping, skipPlan, onClose, showToast]);
+    onClose();
+
+    // Perform DB skip asynchronously in background without blocking visual confirmation overlay
+    skipPlan(planToSkip.id, activeUserId).catch((err) => {
+      console.error("[handleSkip] Background skip failed:", err);
+      showToast("Failed to sync skip status with database.");
+    });
+  }, [selectedPlan, activeUserId, isSkipping, skipPlan, setShowLeftSuccess, onClose, showToast]);
+
+  const handleSkip = useCallback(() => {
+    if (!selectedPlan || !activeUserId || isSkipping) return;
+    setShowSkipConfirmation(true);
+  }, [selectedPlan, activeUserId, isSkipping]);
 
   if (!selectedPlan) return null;
 
@@ -374,13 +393,13 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       {/* Sticky Bottom Action Section (Primary CTA + Secondary Skip) */}
       {!isParticipant && (
         <div id="immersive-actions-dock" className="no-hold px-6 pt-3 pb-6 z-30 relative bg-[#050505] border-t border-white/[0.08] flex-shrink-0 flex flex-col gap-3">
-          {/* Primary Action Button: Join Plan (Solid White CTA) */}
+          {/* Primary Action Button: Join Plan (Brand Orange CTA matching Go to Plans) */}
           <button
             id="immersive-join-btn"
             type="button"
             onClick={handleJoinDirect}
             disabled={isJoiningDirect || isWaitlist}
-            className="w-full py-3.5 px-6 rounded-2xl bg-white hover:bg-white/90 active:bg-white/80 active:scale-[0.98] text-[#0A0A0B] font-sans font-semibold text-[15px] tracking-tight transition-all duration-150 flex items-center justify-center text-center cursor-pointer shadow-md shadow-black/40 border-0 disabled:opacity-40"
+            className="w-full py-3.5 px-6 rounded-2xl bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white font-sans font-semibold text-[15px] tracking-tight transition-all duration-150 flex items-center justify-center text-center cursor-pointer shadow-md shadow-[#FF6B2C]/20 border border-[#FF6B2C]/20 disabled:opacity-40"
           >
             {isJoiningDirect
               ? "Joining…"
@@ -459,6 +478,23 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      <JoinPlanConfirmationBottomSheet
+        isOpen={showJoinConfirmation}
+        costText={costText}
+        planTitle={selectedPlan?.title}
+        isJoining={isJoiningDirect}
+        onConfirm={handleConfirmJoinDirect}
+        onClose={() => setShowJoinConfirmation(false)}
+      />
+
+      <SkipPlanConfirmationDialog
+        isOpen={showSkipConfirmation}
+        planTitle={selectedPlan?.title}
+        isSkipping={isSkipping}
+        onConfirm={handleConfirmSkip}
+        onClose={() => setShowSkipConfirmation(false)}
+      />
 
       {showManageTeams && (
         <TeamOrganizerModal

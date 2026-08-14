@@ -9,7 +9,7 @@ interface UseHoldToAcceptProps {
   isJoined: boolean;
   isWaitlisted: boolean;
   isFull: boolean;
-  handleToggleJoin: (plan: Plan) => void;
+  handleToggleJoin: (plan: Plan) => Promise<boolean | void> | void;
   setShowPaymentSuccess: (plan: Plan | null) => void;
   setShowWaitlistSuccess?: (plan: Plan | null) => void;
   setNotifications: React.Dispatch<React.SetStateAction<NotificationItem[]>>;
@@ -128,7 +128,7 @@ export function useHoldToAccept({
       const startTime = performance.now();
       holdStartTimeRef.current = startTime;
 
-      const tick = (now: number) => {
+      const tick = async (now: number) => {
         const elapsed = now - startTime;
         const progress = Math.min(elapsed / HOLD_DURATION, 1);
         setHoldProgress(progress * 100);
@@ -175,7 +175,7 @@ export function useHoldToAccept({
           } else {
             setSuccessMode("join");
             setIsSuccess(true);
-            handleToggleJoin(plan);
+            setShowPaymentSuccess(plan);
 
             const newNotification: NotificationItem = {
               id: `n_pay_${Date.now()}`,
@@ -196,10 +196,15 @@ export function useHoldToAccept({
             };
 
             setNotifications((prev) => [newNotification, joinedNotification, ...prev]);
-            setShowPaymentSuccess(plan);
+
             setTimeout(() => {
               setIsSuccess(false);
             }, 2000);
+
+            // Execute DB join asynchronously in background without blocking visual confirmation overlay
+            Promise.resolve(handleToggleJoin(plan)).catch((err) => {
+              console.error("[useHoldToAccept] Async Join error:", err);
+            });
           }
 
           setTimeout(() => {

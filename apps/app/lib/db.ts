@@ -278,7 +278,7 @@ export async function insertPlanReminder(reminder: { plan_id: string, sent_by: s
 
 /** Insert a transaction. */
 export async function insertTransaction(tx: Omit<DbTransaction, "id">): Promise<DbTransaction | null> {
-  const result = await upsert("transactions", [tx]);
+  const result = await upsert("wallet_transactions", [tx]);
   return (result?.[0] as DbTransaction) ?? null;
 }
 

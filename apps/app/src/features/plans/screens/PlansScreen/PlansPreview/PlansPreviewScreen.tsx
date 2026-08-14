@@ -49,6 +49,8 @@ import {
   EditDateTimeBottomSheet,
   EditCostBottomSheet,
   EditDetailsBottomSheet,
+  JoinPlanConfirmationBottomSheet,
+  SkipPlanConfirmationDialog,
 } from "../../../components/BottomSheets";
 
 // ==========================================
@@ -554,6 +556,7 @@ export interface PlansDetailsScreenProps {
   onNavigateToCircle?: (circleId: string) => void;
   setShowPaymentSuccess?: (planId: string | null) => void;
   setShowWaitlistSuccess?: (planId: string | null) => void;
+  setShowLeftSuccess?: (planId: string | null) => void;
   onLeavePlan?: () => void;
   onPlanCancelled?: (planId: string) => void;
 }
@@ -566,6 +569,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   onNavigateToCircle,
   setShowPaymentSuccess,
   setShowWaitlistSuccess,
+  setShowLeftSuccess,
   onLeavePlan,
   onPlanCancelled,
 }) => {
@@ -994,71 +998,86 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     }
   }, [planUuid, selectedPlan, getTeamAssignments]);
 
-  const handleSkip = useCallback(async () => {
-    if (!selectedPlan || !activeUserId || isSkipping) return;
-    setIsSkipping(true);
-    try {
-      await skipPlan(selectedPlan.id, activeUserId);
-      showToast("You left the plan.");
-      if (onLeavePlan) {
-        onLeavePlan();
-      } else {
-        onClose();
-      }
-    } catch (err) {
-      showToast("Failed to skip plan");
-    } finally {
-      setIsSkipping(false);
-    }
-  }, [selectedPlan, activeUserId, isSkipping, onLeavePlan, onClose, skipPlan, showToast]);
+  const [showSkipConfirmation, setShowSkipConfirmation] = useState(false);
 
-  const handleRejoin = useCallback(async () => {
-    if (!selectedPlan || !activeUserId || isRejoining) return;
-    setIsRejoining(true);
-    try {
-      await rejoinPlan(selectedPlan.id, userProfile);
-      if (isFull) {
-        showToast("Added to Waitlist");
-        if (setShowWaitlistSuccess) {
-          setShowWaitlistSuccess(selectedPlan.id);
-        }
-      } else {
-        showToast((selectedPlan as any).payment_required ? "Plan joined (mock checkout)" : "Plan joined");
-        if (setShowPaymentSuccess) {
-          setShowPaymentSuccess(selectedPlan.id);
-        }
-      }
-      onClose();
-    } catch (err) {
-      showToast("Failed to join plan");
-    } finally {
-      setIsRejoining(false);
+  const handleConfirmSkip = useCallback(() => {
+    if (!selectedPlan || !activeUserId || isSkipping) return;
+    const planToSkip = selectedPlan;
+    setShowSkipConfirmation(false);
+
+    if (setShowLeftSuccess) {
+      setShowLeftSuccess(planToSkip.id);
     }
+    if (onLeavePlan) {
+      onLeavePlan();
+    } else {
+      onClose();
+    }
+
+    // Perform DB skip asynchronously in background without blocking visual confirmation overlay
+    skipPlan(planToSkip.id, activeUserId).catch((err) => {
+      console.error("[handleSkip] Background skip failed:", err);
+      showToast("Failed to sync skip status with database.");
+    });
+  }, [selectedPlan, activeUserId, isSkipping, onLeavePlan, onClose, skipPlan, setShowLeftSuccess, showToast]);
+
+  const handleSkip = useCallback(() => {
+    if (!selectedPlan || !activeUserId || isSkipping) return;
+    setShowSkipConfirmation(true);
+  }, [selectedPlan, activeUserId, isSkipping]);
+
+  const handleRejoin = useCallback(() => {
+    if (!selectedPlan || !activeUserId || isRejoining) return;
+    const planToJoin = selectedPlan;
+    if (isFull) {
+      showToast("Added to Waitlist");
+      if (setShowWaitlistSuccess) {
+        setShowWaitlistSuccess(planToJoin.id);
+      }
+    } else {
+      if (setShowPaymentSuccess) {
+        setShowPaymentSuccess(planToJoin.id);
+      }
+    }
+    onClose();
+
+    // Perform DB rejoin asynchronously in background without blocking visual confirmation overlay
+    rejoinPlan(planToJoin.id, userProfile).catch((err) => {
+      console.error("[handleRejoin] Background rejoin failed:", err);
+      showToast("Failed to sync rejoin status with database.");
+    });
   }, [selectedPlan, activeUserId, isRejoining, userProfile, isFull, rejoinPlan, setShowWaitlistSuccess, setShowPaymentSuccess, onClose, showToast]);
 
-  const handleJoinDirect = useCallback(async () => {
+  const [showJoinConfirmation, setShowJoinConfirmation] = useState(false);
+
+  const handleConfirmJoinDirect = useCallback(() => {
     if (!selectedPlan || isJoiningDirect) return;
-    setIsJoiningDirect(true);
-    try {
-      await joinPlan(selectedPlan.id, userProfile);
-      if (isFull) {
-        showToast("Added to Waitlist");
-        if (setShowWaitlistSuccess) {
-          setShowWaitlistSuccess(selectedPlan.id);
-        }
-      } else {
-        showToast((selectedPlan as any).payment_required ? "Joined plan successfully! (mock checkout)" : "Joined plan successfully!");
-        if (setShowPaymentSuccess) {
-          setShowPaymentSuccess(selectedPlan.id);
-        }
+    const planToJoin = selectedPlan;
+    setShowJoinConfirmation(false);
+
+    if (isFull) {
+      showToast("Added to Waitlist");
+      if (setShowWaitlistSuccess) {
+        setShowWaitlistSuccess(planToJoin.id);
       }
-      onClose();
-    } catch (err) {
-      showToast("Failed to join plan");
-    } finally {
-      setIsJoiningDirect(false);
+    } else {
+      if (setShowPaymentSuccess) {
+        setShowPaymentSuccess(planToJoin.id);
+      }
     }
+    onClose();
+
+    // Perform DB join asynchronously in background without blocking UI overlay
+    joinPlan(planToJoin.id, userProfile).catch((err) => {
+      console.error("[handleJoinDirect] Background join failed:", err);
+      showToast("Failed to sync join status with database.");
+    });
   }, [selectedPlan, isJoiningDirect, userProfile, isFull, joinPlan, setShowWaitlistSuccess, setShowPaymentSuccess, onClose, showToast]);
+
+  const handleJoinDirect = useCallback(() => {
+    if (!selectedPlan || isJoiningDirect) return;
+    setShowJoinConfirmation(true);
+  }, [selectedPlan, isJoiningDirect]);
 
   const handleSkipConfirm = useCallback(async () => {
     if (!selectedPlan || !activeUserId || isLeaving) return;
@@ -1497,6 +1516,23 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       </AnimatePresence>
 
       {/* ---------------- 🚪 LEAVE PLAN CONFIRMATION SHEET ---------------- */}
+      <JoinPlanConfirmationBottomSheet
+        isOpen={showJoinConfirmation}
+        costText={costText}
+        planTitle={selectedPlan?.title}
+        isJoining={isJoiningDirect}
+        onConfirm={handleConfirmJoinDirect}
+        onClose={() => setShowJoinConfirmation(false)}
+      />
+
+      <SkipPlanConfirmationDialog
+        isOpen={showSkipConfirmation}
+        planTitle={selectedPlan?.title}
+        isSkipping={isSkipping}
+        onConfirm={handleConfirmSkip}
+        onClose={() => setShowSkipConfirmation(false)}
+      />
+
       <LeavePlanBottomSheet
         isOpen={showLeavePlanConfirm}
         isSkipping={isSkipping}

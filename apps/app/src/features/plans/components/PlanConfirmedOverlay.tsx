@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Check } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { Plan as ActivePlan } from '../../../core/types';
 import { usePlansStore } from "../state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
@@ -8,6 +8,7 @@ import { useProfileStore } from "../../profile/state/ProfileContext";
 interface PlanConfirmedOverlayProps {
   plan: ActivePlan;
   isWaitlist?: boolean;
+  isLeft?: boolean;
   onGoToPlans: () => void;
   onBackToHome: () => void;
 }
@@ -15,6 +16,7 @@ interface PlanConfirmedOverlayProps {
 export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
   plan,
   isWaitlist = false,
+  isLeft = false,
   onGoToPlans,
   onBackToHome,
 }) => {
@@ -46,7 +48,7 @@ export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
       {/* Centered Confirmation Section */}
       <div className="flex-1 flex flex-col justify-center items-center space-y-8 my-auto">
         
-        {/* Glow-enhanced Success Checkmark Badge (Staged Entrance: 100ms) */}
+        {/* Glow-enhanced Badge */}
         <motion.div 
           initial={{ scale: 0.85, opacity: 0 }}
           animate={{ 
@@ -59,24 +61,30 @@ export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
             ease: [0.16, 1, 0.3, 1]
           }}
           className={`w-20 h-20 rounded-full flex items-center justify-center ${
-            isWaitlist
+            isLeft
+              ? "bg-red-500/10 border-2 border-red-500/70 text-red-500 shadow-[0_0_40px_rgba(239,68,68,0.35)]"
+              : isWaitlist
               ? "bg-amber-500/10 border-2 border-[#F5C542]/70 text-[#F5C542] shadow-[0_0_40px_rgba(245,197,66,0.35)]"
               : "bg-emerald-500/10 border-2 border-emerald-500/70 text-emerald-400 shadow-[0_0_40px_rgba(16,185,129,0.35)]"
           }`}
         >
-          <Check className="w-9 h-9 stroke-[3]" />
+          {isLeft ? (
+            <X className="w-9 h-9 stroke-[3]" />
+          ) : (
+            <Check className="w-9 h-9 stroke-[3]" />
+          )}
         </motion.div>
 
         {/* Text Area */}
         <div className="space-y-4 max-w-xs mx-auto">
-          {/* Headline (Staged Entrance: 250ms) */}
+          {/* Headline */}
           <motion.h3 
             initial={{ y: 8, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.25, duration: 0.3, ease: 'easeOut' }}
             className="font-sans font-black text-[28px] text-white tracking-tight leading-none"
           >
-            {isWaitlist ? "Added to Waitlist" : "You're In"}
+            {isLeft ? "You've Left" : isWaitlist ? "Added to Waitlist" : "You're In"}
           </motion.h3>
 
           {/* Waitlist Description */}
@@ -99,8 +107,20 @@ export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
               )}
             </motion.div>
           )}
+
+          {/* Left Plan Description */}
+          {isLeft && (
+            <motion.div
+              initial={{ y: 8, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.3, duration: 0.3, ease: 'easeOut' }}
+              className="text-[13px] text-zinc-400 font-sans font-medium tracking-wide leading-relaxed mt-2"
+            >
+              You are no longer attending this plan.
+            </motion.div>
+          )}
           
-          {/* Plan context with title, date, time and host (Staged Entrance: 350ms) */}
+          {/* Plan context with title, date, time and host */}
           <motion.div
             initial={{ y: 8, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}

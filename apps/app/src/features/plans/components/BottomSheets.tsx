@@ -103,6 +103,170 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
 };
 
 // ----------------------------------------------------------------------
+// 1B. JOIN PLAN CONFIRMATION BOTTOM SHEET
+// ----------------------------------------------------------------------
+interface JoinPlanConfirmationBottomSheetProps {
+  isOpen: boolean;
+  costText: string | null;
+  planTitle?: string;
+  isJoining: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+export const JoinPlanConfirmationBottomSheet: React.FC<JoinPlanConfirmationBottomSheetProps> = ({
+  isOpen,
+  costText,
+  planTitle,
+  isJoining,
+  onConfirm,
+  onClose,
+}) => {
+  const formattedCost = costText ? costText.replace(" / person", "").trim() : null;
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-auto">
+          {/* Subtle backdrop dimming */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+          />
+
+          {/* Minimal Centered Modal Dialog Card */}
+          <motion.div
+            initial={{ scale: 0.92, opacity: 0, y: 6 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.92, opacity: 0, y: 6 }}
+            transition={{ type: "spring", damping: 28, stiffness: 360 }}
+            className="relative w-full max-w-[300px] bg-[#18181B] border border-white/[0.08] rounded-2xl p-5 text-center shadow-xl space-y-4 z-10"
+          >
+            {/* Title & Share Amount Wording */}
+            <div className="space-y-1.5 pt-0.5">
+              <h3 className="text-[19px] font-bold text-white tracking-tight leading-snug">
+                Join {planTitle || "Plan"}?
+              </h3>
+              {formattedCost ? (
+                <p className="text-[13.5px] text-zinc-400 font-medium tracking-wide">
+                  Your share is <span className="text-[#FF6B2C] font-semibold">{formattedCost}</span>.
+                </p>
+              ) : (
+                <p className="text-[13px] text-zinc-400 font-medium tracking-wide">
+                  Are you sure you want to join this plan?
+                </p>
+              )}
+            </div>
+
+            {/* Actions: Refined Join Plan CTA & Muted Text Cancel */}
+            <div className="flex flex-col items-center gap-2 pt-1">
+              <button
+                id="join_plan_modal_confirm_btn"
+                type="button"
+                disabled={isJoining}
+                onClick={onConfirm}
+                className="w-full py-3 px-4 rounded-xl text-[13.5px] font-bold text-white bg-[#FF6B2C]/15 hover:bg-[#FF6B2C]/25 active:scale-[0.98] transition-all border border-[#FF6B2C]/40 disabled:opacity-50 tracking-wide shadow-sm"
+              >
+                {isJoining ? "Joining…" : "Join Plan"}
+              </button>
+
+              <button
+                id="join_plan_modal_cancel_btn"
+                type="button"
+                onClick={onClose}
+                className="py-1 px-3 text-[12.5px] font-medium text-zinc-400 hover:text-zinc-200 active:opacity-70 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 1C. SKIP PLAN CONFIRMATION DIALOG
+// ----------------------------------------------------------------------
+interface SkipPlanConfirmationDialogProps {
+  isOpen: boolean;
+  planTitle?: string;
+  isSkipping: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+export const SkipPlanConfirmationDialog: React.FC<SkipPlanConfirmationDialogProps> = ({
+  isOpen,
+  planTitle,
+  isSkipping,
+  onConfirm,
+  onClose,
+}) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-auto">
+          {/* Subtle backdrop dimming */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+          />
+
+          {/* Minimal Centered Modal Dialog Card */}
+          <motion.div
+            initial={{ scale: 0.92, opacity: 0, y: 6 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.92, opacity: 0, y: 6 }}
+            transition={{ type: "spring", damping: 28, stiffness: 360 }}
+            className="relative w-full max-w-[300px] bg-[#18181B] border border-white/[0.08] rounded-2xl p-5 text-center shadow-xl space-y-4 z-10"
+          >
+            {/* Title & Wording */}
+            <div className="space-y-1.5 pt-0.5">
+              <h3 className="text-[19px] font-bold text-white tracking-tight leading-snug">
+                Skip {planTitle || "Plan"}?
+              </h3>
+              <p className="text-[13.5px] text-zinc-400 font-medium tracking-wide">
+                You won't be joining this plan.
+              </p>
+            </div>
+
+            {/* Actions: Skip Plan CTA & Muted Text Cancel */}
+            <div className="flex flex-col items-center gap-2 pt-1">
+              <button
+                id="skip_plan_modal_confirm_btn"
+                type="button"
+                disabled={isSkipping}
+                onClick={onConfirm}
+                className="w-full py-3 px-4 rounded-xl text-[13.5px] font-bold text-white bg-red-500/15 hover:bg-red-500/25 active:scale-[0.98] transition-all border border-red-500/35 disabled:opacity-50 tracking-wide"
+              >
+                {isSkipping ? "Skipping…" : "Skip Plan"}
+              </button>
+
+              <button
+                id="skip_plan_modal_cancel_btn"
+                type="button"
+                onClick={onClose}
+                className="py-1 px-3 text-[12.5px] font-medium text-zinc-400 hover:text-zinc-200 active:opacity-70 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ----------------------------------------------------------------------
 // 2. CANCEL PLAN BOTTOM SHEET
 // ----------------------------------------------------------------------
 interface CancelPlanBottomSheetProps {

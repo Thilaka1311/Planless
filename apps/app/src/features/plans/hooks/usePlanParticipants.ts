@@ -503,13 +503,7 @@ export function usePlanParticipants({
       skip_reason: "LEFT"
     } as any);
 
-    const rpcResult = await (supabase as any).rpc("leave_plan", {
-      p_plan_id: planUuid
-    });
-
-    if (rpcResult.error) {
-      await updateParticipantStatus(planUuid, userUuid, "SKIPPED", undefined, new Date().toISOString(), "LEFT");
-    }
+    await updateParticipantStatus(planUuid, userUuid, "SKIPPED", undefined, new Date().toISOString(), "LEFT");
 
     await handleParticipantStatusChange(planUuid, userUuid, leaverParticipantRecord?.rsvp_status, "SKIPPED");
     await unassignTeam(planUuid, userUuid);
@@ -530,7 +524,6 @@ export function usePlanParticipants({
 
     if (!userUuid || !isUuid(userUuid)) {
       console.error(`[PlansContext] Cannot skip plan: user UUID is missing or invalid:`, userUuid);
-
       return;
     }
 
@@ -553,8 +546,7 @@ export function usePlanParticipants({
     }
 
     try {
-      const wasActive = existingBefore.rsvp_status === "JOINED" || existingBefore.rsvp_status === "WAITLISTED";
-      const targetSkipReason = wasActive ? "LEFT" : null;
+      const targetSkipReason = "LEFT";
 
       applyParticipantOptimisticUpdate(planUuid, userUuid, {
         role: "PARTICIPANT",
@@ -564,14 +556,9 @@ export function usePlanParticipants({
         skip_reason: targetSkipReason
       } as any);
 
-      const { error: rpcError } = await (supabase as any).rpc("leave_plan", {
-        p_plan_id: planUuid
-      });
-
-      if (rpcError) {
-        console.warn("[skipPlan] RPC leave_plan failed, fallback to direct update:", rpcError);
-        const result = await updateParticipantStatus(planUuid, userUuid, "SKIPPED", undefined, new Date().toISOString(), targetSkipReason);
-        if (!result) throw new Error("Fallback status update failed");
+      const result = await updateParticipantStatus(planUuid, userUuid, "SKIPPED", undefined, new Date().toISOString(), targetSkipReason);
+      if (!result) {
+        console.warn("[skipPlan] Direct status update returned null");
       }
 
       await handleParticipantStatusChange(planUuid, userUuid, existingBefore.rsvp_status, "SKIPPED");
@@ -584,7 +571,6 @@ export function usePlanParticipants({
       );
     } catch (error) {
       console.error(`[PlansContext] skipPlan DB write failed:`, error);
-
       throw error;
     }
   }, [plans, resolveUserUuid, isUuid, dbPlanParticipants, handleParticipantStatusChange, unassignTeam, applyParticipantOptimisticUpdate]);
