@@ -50,13 +50,23 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({ myParticipantRecord, classNa
       textColor: 'text-blue-200',
     };
   } else if (status === 'JOINED') {
-    text = "You're Going";
-    dotColor = 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]';
-    glassStyle = {
-      backgroundColor: 'rgba(6, 78, 59, 0.32)',
-      borderColor: 'rgba(16, 185, 129, 0.25)',
-      textColor: 'text-emerald-200',
-    };
+    if (myParticipantRecord?.leave_requested) {
+      text = "Leave Request Pending";
+      dotColor = 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]';
+      glassStyle = {
+        backgroundColor: 'rgba(120, 53, 15, 0.3)',
+        borderColor: 'rgba(245, 158, 11, 0.25)',
+        textColor: 'text-amber-200',
+      };
+    } else {
+      text = "You're Going";
+      dotColor = 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]';
+      glassStyle = {
+        backgroundColor: 'rgba(6, 78, 59, 0.32)',
+        borderColor: 'rgba(16, 185, 129, 0.25)',
+        textColor: 'text-emerald-200',
+      };
+    }
   } else if (status === 'WAITLISTED') {
     text = "You're Waitlisted";
     dotColor = 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]';

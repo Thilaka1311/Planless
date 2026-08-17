@@ -237,8 +237,8 @@ export function usePlanParticipants({
       const waitlisted = planParticipants
         .filter(pp => pp.rsvp_status === "WAITLISTED")
         .sort((a, b) => {
-          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          const timeA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
+          const timeB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
           return timeA - timeB;
         });
 
@@ -574,6 +574,74 @@ export function usePlanParticipants({
       throw error;
     }
   }, [plans, resolveUserUuid, isUuid, dbPlanParticipants, handleParticipantStatusChange, unassignTeam, applyParticipantOptimisticUpdate]);
+
+  const requestPaidPlanLeave = useCallback(async (rawPlanId: string) => {
+    const planId = cleanPlanId(rawPlanId);
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+    const userUuid = resolveUserUuid(userId);
+
+    if (!userUuid || !isUuid(userUuid)) {
+      console.error(`[PlansContext] Cannot request paid plan leave: user UUID is missing or invalid:`, userUuid);
+      return;
+    }
+
+    // Optimistic Update
+    applyParticipantOptimisticUpdate(planUuid, userUuid, {
+      leave_requested: true,
+      leave_requested_at: new Date().toISOString()
+    } as any);
+
+    try {
+      const { data, error } = await (supabase as any).rpc("request_paid_plan_leave", {
+        p_plan_id: planUuid
+      });
+
+      if (error) {
+        console.error(`[requestPaidPlanLeave] RPC failed:`, error);
+        throw error;
+      }
+
+      await refreshPlans(["plan_participants"]);
+    } catch (err) {
+      console.error("[requestPaidPlanLeave] Exception:", err);
+      throw err;
+    }
+  }, [plans, userId, resolveUserUuid, isUuid, applyParticipantOptimisticUpdate, refreshPlans]);
+
+  const cancelPaidPlanLeaveRequest = useCallback(async (rawPlanId: string) => {
+    const planId = cleanPlanId(rawPlanId);
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+    const userUuid = resolveUserUuid(userId);
+
+    if (!userUuid || !isUuid(userUuid)) {
+      console.error(`[PlansContext] Cannot cancel paid plan leave request: user UUID is missing or invalid:`, userUuid);
+      return;
+    }
+
+    // Optimistic Update
+    applyParticipantOptimisticUpdate(planUuid, userUuid, {
+      leave_requested: false,
+      leave_requested_at: null
+    } as any);
+
+    try {
+      const { data, error } = await (supabase as any).rpc("cancel_paid_plan_leave_request", {
+        p_plan_id: planUuid
+      });
+
+      if (error) {
+        console.error(`[cancelPaidPlanLeaveRequest] RPC failed:`, error);
+        throw error;
+      }
+
+      await refreshPlans(["plan_participants"]);
+    } catch (err) {
+      console.error("[cancelPaidPlanLeaveRequest] Exception:", err);
+      throw err;
+    }
+  }, [plans, userId, resolveUserUuid, isUuid, applyParticipantOptimisticUpdate, refreshPlans]);
 
   const rejoinPlan = useCallback(async (rawPlanId: string, userProfile: any) => {
     const planId = cleanPlanId(rawPlanId);
@@ -1565,10 +1633,46 @@ export function usePlanParticipants({
     }
   }, [plans, resolveUserUuid, refreshPlans]);
 
+  const resolvePaidPlanLeaveRequest = useCallback(async (
+    planId: string,
+    targetUserId: string,
+    resolution: 'REPLACED' | 'KEEP_PAYMENT',
+    replacementUserId?: string
+  ) => {
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+    const resolvedTargetUuid = resolveUserUuid(targetUserId);
+    const resolvedReplacementUuid = replacementUserId ? resolveUserUuid(replacementUserId) : undefined;
+
+    if (!planUuid || !resolvedTargetUuid) {
+      throw new Error("Missing plan or target participant ID");
+    }
+
+    const { data: rpcResult, error: rpcError } = await (supabase as any)
+      .rpc('resolve_paid_plan_leave_request', {
+        p_plan_id: planUuid,
+        p_target_user_id: resolvedTargetUuid,
+        p_resolution: resolution,
+        p_replacement_user_id: resolvedReplacementUuid || null,
+      });
+
+    if (rpcError) {
+      console.error("[resolvePaidPlanLeaveRequest] RPC error:", rpcError);
+      throw rpcError;
+    }
+
+    // Refresh local state
+    refreshPlans(['plan_participants', 'plan_activity', 'wallet_expenses', 'wallet_expense_participants']);
+    return rpcResult;
+  }, [plans, resolveUserUuid, refreshPlans]);
+
   return {
     joinPlan,
     leavePlan,
     skipPlan,
+    requestPaidPlanLeave,
+    cancelPaidPlanLeaveRequest,
+    resolvePaidPlanLeaveRequest,
     rejoinPlan,
     removeParticipant,
     promoteWaitlistIfSpotsAvailable,

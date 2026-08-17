@@ -6,6 +6,7 @@ import { useToast } from '../../../../../shared/contexts/ToastContext';
 import { WhoIsComingScreen } from '../../../../create/screens/WhoIsComingScreen';
 import { useCirclesStore } from '../../../../circles/state/CirclesContext';
 import { useFriendshipStore } from '../../../../friendships/state/FriendshipContext';
+import { usePlansStore } from '../../../state/PlansContext';
 import { supabase } from '../../../../../../lib/supabaseClient';
 import { X } from 'lucide-react';
 import { PlanSizeSlider } from '../../../../create/components/PlanSizeSlider';
@@ -40,6 +41,9 @@ interface PlanParticipantManagementWrapperProps {
   onBottomSheetStateChange?: (isOpen: boolean) => void;
   onCancelPlan?: (planId: string) => Promise<void>;
   showWaitlistMode?: boolean;
+  replaceTargetUserId?: string | null;
+  onCancelReplacement?: () => void;
+  onConfirmReplacement?: (planId: string, targetUserId: string, replacementUserId: string) => Promise<void>;
 }
 
 /** Maps a plan member to the shared Friend shape */
@@ -90,13 +94,20 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   onCancelPlan,
   displayMode = 'standalone',
   showWaitlistMode = false,
+  replaceTargetUserId = null,
+  onCancelReplacement,
+  onConfirmReplacement,
 }) => {
   const { circles } = useCirclesStore();
-
   const { friends } = useFriendshipStore();
+  const { dbPlanParticipants, resolvePaidPlanLeaveRequest } = usePlansStore();
   const { showToast } = useToast();
   const hostId = plan.hostId || '';
   const members: any[] = plan.members || [];
+
+  const targetPlanUuid = plan.dbUuid || plan.id;
+
+
 
   // Compute currentUserRole and effectiveIsHost strictly from plan_participants role column
   const effectiveIsHost = useMemo(() => {
@@ -254,6 +265,63 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       }));
   }, [candidateUsers, userProfile, activeUserId, selectedCircleMemberUserIds, disabledUserIds]);
 
+  // Compute pending leave requests directly from dbPlanParticipants and plan.members where leave_requested === true
+  const pendingLeaveRequests = useMemo(() => {
+    const planId1 = plan.id;
+    const planId2 = plan.dbUuid;
+
+    const fromDbParts = dbPlanParticipants
+      .filter((pp) => (pp.plan_id === planId1 || (planId2 && pp.plan_id === planId2)) && pp.leave_requested === true)
+      .map((pp) => {
+        const foundMember = members.find((m) => (m.userId || m.userUuid || m.user_id || m.id || m.dbUuid) === pp.user_id);
+        const foundFriend = candidateUsers.find((u) => u.id === pp.user_id);
+        return {
+          id: pp.user_id,
+          dbUuid: pp.user_id,
+          name: foundMember?.name || foundMember?.full_name || foundFriend?.full_name || "Participant",
+          avatar: foundMember?.avatar || foundMember?.profile_photo || foundFriend?.profile_photo || "",
+          leaveRequestedAt: pp.leave_requested_at,
+        };
+      });
+
+    if (fromDbParts.length > 0) return fromDbParts;
+
+    // Fallback: check plan.members array for leave_requested === true
+    return members
+      .filter((m) => m.leave_requested === true || (m as any).leaveRequested === true)
+      .map((m) => {
+        const userId = m.userId || m.userUuid || m.user_id || m.id || m.dbUuid;
+        const foundFriend = candidateUsers.find((u) => u.id === userId);
+        return {
+          id: userId,
+          dbUuid: userId,
+          name: m.name || m.full_name || foundFriend?.full_name || "Participant",
+          avatar: m.avatar || m.profile_photo || foundFriend?.profile_photo || "",
+          leaveRequestedAt: m.leave_requested_at || (m as any).leaveRequestedAt || null,
+        };
+      });
+  }, [dbPlanParticipants, plan.id, plan.dbUuid, members, candidateUsers]);
+
+  const [localReplaceTargetUserId, setLocalReplaceTargetUserId] = useState<string | null>(null);
+  const effectiveReplaceTargetUserId = replaceTargetUserId || localReplaceTargetUserId;
+
+  const handleKeepPaymentLeaveParticipant = useCallback(async (targetUserId: string) => {
+    if (!resolvePaidPlanLeaveRequest) return;
+    try {
+      await resolvePaidPlanLeaveRequest(plan.id, targetUserId, 'KEEP_PAYMENT');
+      showToast("✓ Leave request resolved (Payment kept)");
+    } catch (err: any) {
+      console.error("[handleKeepPaymentLeaveParticipant] Error:", err);
+      showToast(err?.message || "Failed to resolve leave request");
+    }
+  }, [resolvePaidPlanLeaveRequest, plan.id, showToast]);
+
+  const handleReplaceLeaveParticipant = useCallback((targetUserId: string) => {
+    setLocalReplaceTargetUserId(targetUserId);
+    setIndividuallySelectedFriendIds([]);
+    setShowAddFriendsPicker(true);
+  }, []);
+
 
   const toggleCircleSelection = useCallback((circleId: string) => {
     setSelectedCircles((prev) =>
@@ -273,9 +341,14 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       setSearchPeopleQuery,
       selectedFriends: pickerSelectedFriends,
       toggleFriendSelection: (friend: any) => {
-        setIndividuallySelectedFriendIds((prev) =>
-          prev.includes(friend.id) ? prev.filter((id) => id !== friend.id) : [...prev, friend.id]
-        );
+        if (replaceTargetUserId) {
+          // Single-selection mode for replacement: selecting another friend replaces current selection
+          setIndividuallySelectedFriendIds((prev) => (prev.includes(friend.id) ? [] : [friend.id]));
+        } else {
+          setIndividuallySelectedFriendIds((prev) =>
+            prev.includes(friend.id) ? prev.filter((id) => id !== friend.id) : [...prev, friend.id]
+          );
+        }
       },
       waitlistEnabled: false,
       setWaitlistEnabled: () => { },
@@ -409,12 +482,38 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     }
 
     const friendIds = individuallySelectedFriendIds.filter(id => !disabledUserIds.has(id));
+    if (friendIds.length === 0) return;
+
+    if (effectiveReplaceTargetUserId) {
+      const targetId = effectiveReplaceTargetUserId;
+      const replacementId = friendIds[0];
+      try {
+        if (onConfirmReplacement) {
+          await onConfirmReplacement(plan.id, targetId, replacementId);
+        } else if (resolvePaidPlanLeaveRequest) {
+          await resolvePaidPlanLeaveRequest(plan.id, targetId, 'REPLACED', replacementId);
+        } else if (onRemoveAndReplaceWithWaitlist) {
+          await onRemoveAndReplaceWithWaitlist(plan.id, targetId, replacementId);
+        }
+        showToast("✓ Participant replacement confirmed");
+        setIndividuallySelectedFriendIds([]);
+        setLocalReplaceTargetUserId(null);
+        if (onCancelReplacement) {
+          onCancelReplacement();
+        } else {
+          setShowAddFriendsPicker(false);
+        }
+      } catch (err: any) {
+        console.error("[handleConfirmInvite] Replacement error:", err);
+        showToast(err?.message || "Failed to replace participant");
+      }
+      return;
+    }
+
     // Non-host participant-controlled invitation invariant: ALWAYS 'WAITLIST', never 'GOING'
     const targetGroup = (!effectiveIsHost && canParticipantInvite)
       ? 'WAITLIST'
       : (waitlistMode === 'assigned' ? addFriendsTargetTab : 'GOING');
-
-    if (friendIds.length === 0) return;
 
     // Capacity overflow dialog — Assigned Waitlist only
     if (waitlistMode === 'assigned' && targetGroup === 'GOING' && capacity > 0) {
@@ -1130,6 +1229,26 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     }
   }, [onSwitchToAutomaticMode, plan.id, showToast]);
 
+  // Compute leaving participant & selected replacement friend for replacement mode
+  const isReplacementMode = Boolean(effectiveReplaceTargetUserId);
+  const leavingParticipant = useMemo(() => {
+    if (!effectiveReplaceTargetUserId) return null;
+    const foundMember = members.find(m => (m.userId || m.userUuid || m.user_id || m.id || m.dbUuid) === effectiveReplaceTargetUserId);
+    const foundUser = candidateUsers.find(u => u.id === effectiveReplaceTargetUserId);
+    return {
+      name: foundMember?.name || foundMember?.full_name || foundUser?.full_name || "Participant",
+      avatar: foundMember?.avatar || foundMember?.profile_photo || foundUser?.profile_photo || null,
+    };
+  }, [effectiveReplaceTargetUserId, members, candidateUsers]);
+
+  const selectedReplacementFriend = useMemo(() => {
+    if (!isReplacementMode || individuallySelectedFriendIds.length === 0) return null;
+    const selectedId = individuallySelectedFriendIds[0];
+    return AVAILABLE_FRIENDS.find(f => f.id === selectedId) || candidateUsers.find(u => u.id === selectedId) || null;
+  }, [isReplacementMode, individuallySelectedFriendIds, AVAILABLE_FRIENDS, candidateUsers]);
+
+  const isPickerOpen = Boolean(showAddFriendsPicker || effectiveReplaceTargetUserId);
+
   return (
     <>
       <ParticipantManagementScreen
@@ -1169,21 +1288,34 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         onReorderWaitlist={effectiveIsHost && waitlistMode === 'assigned' ? handleReorderWaitlist : undefined}
         onReorderWaitlistComplete={effectiveIsHost && waitlistMode === 'assigned' ? handleReorderWaitlistComplete : undefined}
         canParticipantInvite={canParticipantInvite}
+        pendingLeaveRequests={pendingLeaveRequests}
+        onReplaceLeaveParticipant={handleReplaceLeaveParticipant}
+        onKeepPaymentLeaveParticipant={handleKeepPaymentLeaveParticipant}
       />
 
-      {showAddFriendsPicker && (
+      {isPickerOpen && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col">
           <WhoIsComingScreen
             form={mockForm}
-            onBack={() => setShowAddFriendsPicker(false)}
+            onBack={() => {
+              setLocalReplaceTargetUserId(null);
+              if (isReplacementMode && onCancelReplacement) {
+                onCancelReplacement();
+              } else {
+                setShowAddFriendsPicker(false);
+              }
+            }}
             onContinue={handleConfirmInvite}
             selectedCategory={plan.category || "custom"}
             selectedSubcategory={plan.subcategory || null}
-            confirmLabel="Send invites"
-            headerTitle="Select friends"
+            confirmLabel={isReplacementMode ? "Confirm Replacement" : "Send invites"}
+            headerTitle={isReplacementMode ? `Replace ${leavingParticipant?.name || "Participant"}` : "Select friends"}
             hideExitDialog={true}
             hideOverviewToggle={true}
             isAddParticipantMode={true}
+            isReplacementMode={isReplacementMode}
+            leavingParticipant={leavingParticipant}
+            selectedReplacementFriend={selectedReplacementFriend}
           />
           <PlanIsFullBottomSheet
             isOpen={Boolean(pendingCapacityInvite)}

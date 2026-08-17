@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Crown } from 'lucide-react';
+import { X, Crown, ArrowLeftRight } from 'lucide-react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 
 interface StepWhoProps {
@@ -25,6 +25,9 @@ interface StepWhoProps {
   hideConfirmButton?: boolean;
   isHostSelected?: boolean;
   onToggleHostSelection?: () => void;
+  isReplacementMode?: boolean;
+  leavingParticipant?: { name: string; avatar?: string | null } | null;
+  selectedReplacementFriend?: any | null;
 
   // Optional plan details for the compact header
   localTitle?: string;
@@ -66,6 +69,9 @@ export const StepWho: React.FC<StepWhoProps> = ({
   hideConfirmButton = false,
   isHostSelected = true,
   onToggleHostSelection,
+  isReplacementMode = false,
+  leavingParticipant = null,
+  selectedReplacementFriend = null,
 }) => {
   const totalParticipantsCount = totalInvitedCount + (isHostSelected ? 1 : 0);
 
@@ -78,15 +84,15 @@ export const StepWho: React.FC<StepWhoProps> = ({
   // The host's own id — excluded from the selectable list (host handled via its own toggle).
   const hostId = activeUserId || userProfile?.dbUuid;
 
-  // ─── Available (unselected) friends, filtered by search query ──────────────
-  // Selected friends are excluded so they never appear as duplicate rows.
+  // ─── Available friends, filtered by search query ──────────────
   const availableItems = React.useMemo((): ParticipantItem[] => {
     const q = searchPeopleQuery.toLowerCase().trim();
 
     return friends
       .filter((u) => {
-        // Exclude already-selected friends
-        if (selectedIds.has(u.id)) return false;
+        // In normal mode: exclude already-selected friends so they move to the top strip
+        // In replacement mode: keep selected friend in the list so they remain visible with radio state
+        if (!isReplacementMode && selectedIds.has(u.id)) return false;
         // Exclude the host entry from the scrollable list
         if (u.id === hostId) return false;
         // Apply search filter
@@ -129,7 +135,7 @@ export const StepWho: React.FC<StepWhoProps> = ({
       <div className="flex flex-col flex-1 min-h-0 space-y-4">
 
         {/* ── Selected avatar strip — single source of truth for selection ── */}
-        {displaySelectedItems.length > 0 && (
+        {!isReplacementMode && displaySelectedItems.length > 0 && (
           <div className="bg-transparent border-b border-white/[0.08] pb-4 flex items-center justify-between gap-3 animate-fade-in select-none">
             <div className="flex-1 flex items-center gap-4 overflow-x-auto scrollbar-none py-1">
               {displaySelectedItems.map((item) => {
@@ -201,6 +207,7 @@ export const StepWho: React.FC<StepWhoProps> = ({
           ) : (
             availableItems.map((item) => {
               const disabled = isItemDisabled(item);
+              const isSelected = selectedIds.has(item.id);
 
               return (
                 <button
@@ -212,8 +219,8 @@ export const StepWho: React.FC<StepWhoProps> = ({
                     width: '100%',
                     padding: '12px 14px',
                     borderRadius: 12,
-                    border: '1px solid rgba(255, 255, 255, 0.04)',
-                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: isSelected ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid rgba(255, 255, 255, 0.04)',
+                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -237,8 +244,14 @@ export const StepWho: React.FC<StepWhoProps> = ({
                     </div>
                   </div>
 
-                  {/* Empty selection circle — row is always unselected */}
-                  <span className="w-4.5 h-4.5 rounded-full border border-white/10 shrink-0" />
+                  {/* Selection radio indicator */}
+                  {isSelected ? (
+                    <span className="w-4.5 h-4.5 rounded-full bg-white flex items-center justify-center shrink-0">
+                      <span className="w-2 h-2 rounded-full bg-black" />
+                    </span>
+                  ) : (
+                    <span className="w-4.5 h-4.5 rounded-full border border-white/20 shrink-0" />
+                  )}
                 </button>
               );
             })

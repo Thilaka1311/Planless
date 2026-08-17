@@ -90,15 +90,15 @@ export interface DbPlanParticipant {
   role: 'HOST' | 'PARTICIPANT';
   rsvp_status: 'INVITED' | 'JOINED' | 'SKIPPED' | 'WAITLISTED';
   delivery_status?: 'DELIVERED';
-  skip_reason?: 'LEFT' | 'REMOVED' | null;
+  skip_reason?: 'LEFT' | 'REMOVED' | 'REPLACED' | null;
   responded_at: string | null;
   joined_queue_at?: string;
   assigned_group?: 'GOING' | 'WAITLIST' | null;
   waitlist_position?: number | null;
-  created_at: string;
-  updated_at: string;
   cost_per_participant?: number | null;
   circle_id?: string | null;
+  leave_requested?: boolean;
+  leave_requested_at?: string | null;
 }
 
 export enum SystemMessageType {
@@ -151,7 +151,8 @@ export type PlanActivityType =
   | 'participants_swapped'
   | 'participant_added'
   | 'participant_invite_others'
-  | 'participant_moved';
+  | 'participant_moved'
+  | 'leave_requested';
 
 // 5c. PLAN_ACTIVITY TABLE (Append-only historical audit log)
 export interface DbPlanActivity {

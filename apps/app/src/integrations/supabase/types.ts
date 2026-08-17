@@ -1503,11 +1503,12 @@ export const Constants = {
         "plan_restored",
         "plan_completed",
         "host_promoted",
-        "participants_swapped"
+        "participants_swapped",
+        "leave_requested"
       ],
       plan_status: ["LIVE", "COMPLETED", "CANCELLED"],
       rsvp_status: ["INVITED", "JOINED", "SKIPPED", "WAITLISTED"],
-      skip_reason: ["LEFT", "REMOVED"],
+      skip_reason: ["LEFT", "REMOVED", "REPLACED"],
       sports_subcategory: [
         "FOOTBALL",
         "BADMINTON",

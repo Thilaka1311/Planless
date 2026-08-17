@@ -35,7 +35,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
+  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
   const { profile: userProfile, activeUserUuid } = useProfileStore();
 
   // Robust sender UUID resolution across all possible user state sources
@@ -73,6 +73,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [showSettingsScreen, setShowSettingsScreen] = useState(false);
+  const [replaceTargetUserId, setReplaceTargetUserId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // ── Keyboard Visibility State (Used to lock pager gestures & bound Chat Page height) ──
@@ -116,6 +117,11 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     keyboardOpen,
     disabled: isEditingPlanSize || isBottomSheetOpen,
   });
+
+  const handleOpenReplacePicker = useCallback((targetUserId: string) => {
+    setReplaceTargetUserId(targetUserId);
+    goToPage(0); // Switch to participants page where replacement selection happens
+  }, [goToPage]);
 
   // Derive host status & all hosts for HeroHeader
   const planUuid = plan ? (plan.dbUuid || plan.id) : "";
@@ -769,13 +775,23 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   })
                 }
                 onSwapParticipants={(pId, goingId, waitlistId) => swapParticipants(pId, goingId, waitlistId)}
-                onRemoveAndReplaceWithWaitlist={(pId, removeId, promoteId) => removeAndReplaceWithWaitlist(pId, removeId, promoteId)}
+                onRemoveAndReplaceWithWaitlist={(pId, removeId, promoteId) => {
+                  if (replaceTargetUserId) {
+                    const targetId = replaceTargetUserId;
+                    setReplaceTargetUserId(null);
+                    return resolvePaidPlanLeaveRequest(pId, targetId, 'REPLACED', promoteId);
+                  }
+                  return removeAndReplaceWithWaitlist(pId, removeId, promoteId);
+                }}
                 onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
                 onSwitchToAutomaticMode={(pId, userIds) => switchToAutomaticWaitlistMode(pId, userIds)}
                 onOpenActivity={() => { if (!isBottomSheetOpen) goToPage(2); }}
                 onPlanSizeEditingChange={setIsEditingPlanSize}
                 onBottomSheetStateChange={setIsBottomSheetOpen}
                 showWaitlistMode={false}
+                replaceTargetUserId={replaceTargetUserId}
+                onCancelReplacement={() => setReplaceTargetUserId(null)}
+                onConfirmReplacement={(pId, targetId, replacementId) => resolvePaidPlanLeaveRequest(pId, targetId, 'REPLACED', replacementId)}
               />
             )}
           </div>
@@ -1146,6 +1162,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               onBack={() => goToPage(1)}
               embedded={true}
               dragX={pageX}
+              onOpenReplacePicker={handleOpenReplacePicker}
             />
           </div>
         </motion.div>

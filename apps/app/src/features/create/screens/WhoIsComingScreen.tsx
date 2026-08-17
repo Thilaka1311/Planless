@@ -18,6 +18,9 @@ interface WhoIsComingScreenProps {
   hideExitDialog?: boolean;
   hideOverviewToggle?: boolean;
   isAddParticipantMode?: boolean;
+  isReplacementMode?: boolean;
+  leavingParticipant?: { name: string; avatar?: string | null } | null;
+  selectedReplacementFriend?: any | null;
 }
 
 export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
@@ -31,6 +34,9 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
   hideExitDialog = false,
   hideOverviewToggle = false,
   isAddParticipantMode = false,
+  isReplacementMode = false,
+  leavingParticipant = null,
+  selectedReplacementFriend = null,
 }) => {
   const [showExitDialog, setShowExitDialog] = useState(false);
 
@@ -55,9 +61,11 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
   const [isHeaderOpen, setIsHeaderOpen] = useState(false);
   const [showRemoveHostDialog, setShowRemoveHostDialog] = useState(false);
 
-  const totalSelectedCount = (form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0);
-  const requiredSize = isAddParticipantMode ? 1 : (form.totalCapacity || 2);
-  const isRequirementMet = totalSelectedCount >= requiredSize;
+  const totalSelectedCount = isReplacementMode
+    ? (selectedReplacementFriend ? 1 : 0)
+    : ((form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0));
+  const requiredSize = isReplacementMode ? 1 : (isAddParticipantMode ? 1 : (form.totalCapacity || 2));
+  const isRequirementMet = isReplacementMode ? Boolean(selectedReplacementFriend) : (totalSelectedCount >= requiredSize);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#000000] text-left relative" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -329,6 +337,9 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
               form.setIsHostSelected(true);
             }
           }}
+          isReplacementMode={isReplacementMode}
+          leavingParticipant={leavingParticipant}
+          selectedReplacementFriend={selectedReplacementFriend}
         />
       </div>
 
@@ -336,7 +347,7 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
       {isRequirementMet && (
         <ContinueButton
           onClick={onContinue}
-          text="Continue"
+          text={confirmLabel || (isReplacementMode ? "Confirm Replacement" : "Continue")}
         />
       )}
 

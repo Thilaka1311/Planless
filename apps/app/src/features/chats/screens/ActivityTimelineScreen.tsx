@@ -23,6 +23,7 @@ import {
 import { motion } from "motion/react";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
+import { useToast } from "../../../shared/contexts/ToastContext";
 import { supabase } from "../../../../lib/supabaseClient";
 import { DbPlanActivity, PlanActivityType } from "../../../core/types";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
@@ -37,7 +38,12 @@ export interface ActivityEvent {
   isUserEvent?: boolean; // True if primaryTitle represents a user
   userAvatarSrc?: string | null; // Avatar URL if title represents a user
   accentEdgeColor?: string; // Optional full-height left edge colour (e.g. yellow for waitlist)
-  isDisabled?: boolean; // True if activity represents a disabled state (e.g. invite others disabled)
+  leaveRequestData?: {
+    targetUserId: string;
+    participantName: string;
+    isPending: boolean;
+    resolution?: 'REPLACED' | 'KEEP_PAYMENT';
+  };
   swapData?: {
     goingUser: { name: string; avatar?: string | null };
     waitlistUser: { name: string; avatar?: string | null };
@@ -56,6 +62,7 @@ interface ActivityTimelineScreenProps {
   onBack?: () => void;
   embedded?: boolean;
   dragX?: any;
+  onOpenReplacePicker?: (targetUserId: string) => void;
 }
 
 const formatExactTime = (d: Date): string => {
@@ -168,6 +175,9 @@ const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }>
     case "participant_removed":
       iconNode = <UserX className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
       break;
+    case "leave_requested":
+      iconNode = <UserX className="w-4 h-4 text-amber-400 flex-shrink-0" />;
+      break;
 
     default:
       iconNode = <Activity className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
@@ -202,7 +212,13 @@ const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }>
   return iconNode;
 };
 
-const ActivityRow: React.FC<{ event: ActivityEvent; opacity: any }> = ({ event, opacity }) => {
+const ActivityRow: React.FC<{
+  event: ActivityEvent;
+  opacity: any;
+  isHost?: boolean;
+  onOpenReplacePicker?: (targetUserId: string) => void;
+  onKeepPayment?: (targetUserId: string) => void;
+}> = ({ event, opacity, isHost, onOpenReplacePicker, onKeepPayment }) => {
   return (
     <div className="flex items-center gap-3 w-full relative group">
       {/* Right-aligned sliding timestamp column — revealed during swipe */}
@@ -303,33 +319,36 @@ const ActivityRow: React.FC<{ event: ActivityEvent; opacity: any }> = ({ event, 
           <div style={{ width: 3, flexShrink: 0, background: event.accentEdgeColor }} />
 
           {/* Card body — mirrors the standard card layout */}
-          <div className="flex flex-1 items-start gap-3 px-3 py-3">
-            {/* Avatar */}
-            <div className="mt-0.5 flex-shrink-0">
-              {event.isUserEvent ? (
-                <div className="w-7 h-7 rounded-full border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0">
-                  <UserAvatar
-                    src={event.userAvatarSrc || ""}
-                    alt={event.primaryTitle}
-                    size="w-full h-full"
-                  />
-                </div>
-              ) : (
-                <div className="w-7 h-7 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center">
-                  <EventIcon type={event.type} isDisabled={event.isDisabled} />
-                </div>
-              )}
+          <div className="flex flex-col flex-1 gap-2.5 px-3 py-3">
+            <div className="flex items-start gap-3">
+              {/* Avatar */}
+              <div className="mt-0.5 flex-shrink-0">
+                {event.isUserEvent ? (
+                  <div className="w-7 h-7 rounded-full border border-white/10 overflow-hidden flex items-center justify-center flex-shrink-0">
+                    <UserAvatar
+                      src={event.userAvatarSrc || ""}
+                      alt={event.primaryTitle}
+                      size="w-full h-full"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center">
+                    <EventIcon type={event.type} isDisabled={event.isDisabled} />
+                  </div>
+                )}
+              </div>
+
+              {/* Text */}
+              <div className="flex-1 min-w-0">
+                <h4 className="text-[14px] font-semibold text-white/95 leading-snug whitespace-nowrap overflow-hidden truncate">
+                  {event.primaryTitle}
+                </h4>
+                <p className="text-[12.5px] text-zinc-300 leading-snug mt-0.5 break-words">
+                  {event.secondaryDescription}
+                </p>
+              </div>
             </div>
 
-            {/* Text */}
-            <div className="flex-1 min-w-0">
-              <h4 className="text-[14px] font-semibold text-white/95 leading-snug whitespace-nowrap overflow-hidden truncate">
-                {event.primaryTitle}
-              </h4>
-              <p className="text-[12.5px] text-zinc-300 leading-snug mt-0.5 break-words">
-                {event.secondaryDescription}
-              </p>
-            </div>
           </div>
         </div>
       ) : (
@@ -375,14 +394,33 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
   onBack,
   embedded = false,
   dragX: externalDragX,
+  onOpenReplacePicker,
 }) => {
-  const { plans, dbPlanParticipants } = usePlansStore();
+  const { plans, dbPlanParticipants, resolvePaidPlanLeaveRequest } = usePlansStore();
   const { userProfile, activeUserId, dbUsers } = useProfileStore();
+  const { showToast } = useToast();
 
   const plan = useMemo(() => {
     if (!planId) return undefined;
     return plans.find((p) => p.id === planId || p.dbUuid === planId);
   }, [plans, planId]);
+
+  const isHost = useMemo(() => {
+    if (!plan) return false;
+    const userUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId;
+    return plan.creatorId === userUuid || plan.host_id === userUuid || plan.creator_id === userUuid;
+  }, [plan, userProfile, activeUserId]);
+
+  const handleKeepPayment = useCallback(async (targetUserId: string) => {
+    if (!plan || !resolvePaidPlanLeaveRequest) return;
+    try {
+      await resolvePaidPlanLeaveRequest(plan.id, targetUserId, 'KEEP_PAYMENT');
+      showToast("Leave request resolved (Payment kept)");
+    } catch (err) {
+      console.error("[handleKeepPayment] Failed:", err);
+      showToast("Failed to resolve leave request");
+    }
+  }, [plan, resolvePaidPlanLeaveRequest, showToast]);
 
   const targetPlanTitle = propPlanTitle || plan?.title || "Plan Activity";
   const targetPlanId = plan?.dbUuid || plan?.id || planId || "";
@@ -495,6 +533,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       let secondaryDescription = "";
       let isUserEvent = false;
       let userAvatarSrc: string | null | undefined = undefined;
+      let leaveRequestData: ActivityEvent["leaveRequestData"] = undefined;
       let swapData: ActivityEvent["swapData"] = undefined;
       let accentEdgeColor: string | undefined = undefined;
       let isDisabled: boolean | undefined = undefined;
@@ -635,6 +674,43 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           };
           break;
         }
+        case "leave_requested": {
+          const isResolved = meta.status === 'RESOLVED';
+          if (!isResolved) {
+            // Unresolved / pending leave requests belong exclusively in Host Pending Decisions, filter out
+            return null;
+          }
+
+          const participantName = targetDetails.name || actorDetails.name || "Participant";
+          const resolution = meta.resolution;
+
+          if (resolution === 'REPLACED') {
+            const replacementUserId = meta.replacement_user_id;
+            const replacementDetails = replacementUserId
+              ? resolveUserDetails(replacementUserId, true)
+              : { name: "Replacement", avatar: null };
+
+            primaryTitle = `Replaced with ${replacementDetails.name || "Replacement"}`;
+            secondaryDescription = `${participantName} was replaced`;
+            accentEdgeColor = "#22c55e"; // Green badge
+            userAvatarSrc = replacementDetails.avatar;
+          } else {
+            // KEEP_PAYMENT or default
+            primaryTitle = `${participantName} left`;
+            secondaryDescription = "Payment Kept";
+            accentEdgeColor = "#ef4444"; // Red badge
+            userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
+          }
+
+          isUserEvent = true;
+          leaveRequestData = {
+            targetUserId: act.target_user_id || act.actor_id || "",
+            participantName,
+            isPending: false,
+            resolution: resolution as any,
+          };
+          break;
+        }
         case "participant_invite_others": {
           const actorName = meta.performed_by_name || actorDetails.name;
           const isEnabled = meta.enabled !== false; // Default to true if not explicitly false (backward-compatible)
@@ -733,13 +809,14 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
         userAvatarSrc,
         accentEdgeColor,
         isDisabled,
+        leaveRequestData,
         swapData,
         timeText: formatExactTime(validDate),
         dateText: formatDateSubtext(validDate),
         dateGroup: formatDateGroup(validDate),
         rawDate: validDate,
       };
-    });
+    }).filter(Boolean) as ActivityEvent[];
 
     // Deduplicate participant_invite_others: keep ONLY the single most recent change by timestamp (rawDate)
     let latestInviteOthersId: string | null = null;
@@ -823,7 +900,14 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
                 className="relative z-10 w-full space-y-2 pt-2 overflow-visible"
               >
                 {groupedEvents[dateGroup].map((event) => (
-                  <ActivityRow key={event.id} event={event} opacity={timestampOpacity} />
+                  <ActivityRow
+                    key={event.id}
+                    event={event}
+                    opacity={timestampOpacity}
+                    isHost={isHost}
+                    onOpenReplacePicker={onOpenReplacePicker}
+                    onKeepPayment={handleKeepPayment}
+                  />
                 ))}
               </motion.div>
             </div>

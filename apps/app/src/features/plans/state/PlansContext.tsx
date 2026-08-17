@@ -55,6 +55,9 @@ interface PlansContextType {
   getParticipantCounts: (planId: string) => ParticipantCounts;
   refreshPlans: (targetTables?: string[]) => Promise<void>;
   skipPlan: (planId: string, userId: string) => Promise<void>;
+  requestPaidPlanLeave: (planId: string) => Promise<void>;
+  cancelPaidPlanLeaveRequest: (planId: string) => Promise<void>;
+  resolvePaidPlanLeaveRequest: (planId: string, targetUserId: string, resolution: 'REPLACED' | 'KEEP_PAYMENT', replacementUserId?: string) => Promise<void>;
   rejoinPlan: (planId: string, userProfile: any) => Promise<void>;
   // New acceptance / payment / booking actions
   acceptPlan: (planId: string, userProfile: any) => Promise<void>;
@@ -490,6 +493,9 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     joinPlan,
     leavePlan,
     skipPlan,
+    requestPaidPlanLeave,
+    cancelPaidPlanLeaveRequest,
+    resolvePaidPlanLeaveRequest,
     rejoinPlan,
     removeParticipant,
     promoteWaitlistIfSpotsAvailable,
@@ -1152,6 +1158,9 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     getParticipantCounts: memoizedGetParticipantCounts,
     refreshPlans,
     skipPlan,
+    requestPaidPlanLeave,
+    cancelPaidPlanLeaveRequest,
+    resolvePaidPlanLeaveRequest,
     rejoinPlan,
     acceptPlan: memoizedAcceptPlan,
     declinePlan: memoizedDeclinePlan,

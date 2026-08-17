@@ -11,6 +11,7 @@ import { WaitlistSection } from '../components/WaitlistSection';
 import { StackingFriends } from '../components/StackingFriends';
 import { ContinueButton } from '../../create/components/ContinueButton';
 import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
+import { PendingDecisionsSection } from '../shared/PendingDecisionsSection';
 
 interface AutomaticParticipantScreenProps extends SharedParticipantScreenProps {
   isHostSelected?: boolean;
@@ -51,6 +52,9 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   waitlistMode = 'automatic',
   onWaitlistModeChange,
   showWaitlistMode = true,
+  pendingLeaveRequests,
+  onReplaceLeaveParticipant,
+  onKeepPaymentLeaveParticipant,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
@@ -183,6 +187,11 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
               }}
             />
           </div>
+          <PendingDecisionsSection
+            pendingRequests={pendingLeaveRequests || []}
+            onReplaceParticipant={onReplaceLeaveParticipant}
+            onKeepPayment={onKeepPaymentLeaveParticipant}
+          />
           {showWaitlistMode && (
             <WaitlistModeSelector
               waitlistMode={waitlistMode}

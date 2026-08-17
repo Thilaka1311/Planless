@@ -9,9 +9,19 @@ export interface Friend {
   rsvpStatus?: string;
   assignedGroup?: 'GOING' | 'WAITLIST' | null;
   waitlistPosition?: number | null;
+  leave_requested?: boolean;
+  leave_requested_at?: string | null;
 }
 
 export type ParticipantTab = 'going' | 'waitlist' | 'invited';
+
+export interface PendingLeaveParticipant {
+  id: string;
+  dbUuid: string;
+  name: string;
+  avatar: string;
+  leaveRequestedAt?: string | null;
+}
 
 export interface SharedParticipantScreenProps {
   title?: string;
@@ -56,6 +66,9 @@ export interface SharedParticipantScreenProps {
   showWaitlistMode?: boolean;
   canParticipantInvite?: boolean;
   onBottomSheetStateChange?: (isOpen: boolean) => void;
+  pendingLeaveRequests?: PendingLeaveParticipant[];
+  onReplaceLeaveParticipant?: (participantId: string) => void;
+  onKeepPaymentLeaveParticipant?: (participantId: string) => void;
 }
 
 export type ParticipantManagementScreenProps = SharedParticipantScreenProps;

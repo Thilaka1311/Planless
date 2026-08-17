@@ -44,6 +44,8 @@ import { PlanSettingsScreen } from "./PlanSettingsScreen";
 import { RSVPCard } from "../../../components/RSVPCard";
 import {
   LeavePlanBottomSheet,
+  PaidPlanLeaveConfirmationDialog,
+  CancelLeaveRequestBottomSheet,
   CancelPlanBottomSheet,
   RestorePlanBottomSheet,
   EditDateTimeBottomSheet,
@@ -580,6 +582,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     getTeamAssignments,
     dbPlanParticipants,
     skipPlan,
+    requestPaidPlanLeave,
+    cancelPaidPlanLeaveRequest,
     leavePlan,
     rejoinPlan,
     joinPlan,
@@ -999,6 +1003,40 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   }, [planUuid, selectedPlan, getTeamAssignments]);
 
   const [showSkipConfirmation, setShowSkipConfirmation] = useState(false);
+  const [showPaidLeaveConfirmation, setShowPaidLeaveConfirmation] = useState(false);
+  const [showCancelLeaveRequestConfirmation, setShowCancelLeaveRequestConfirmation] = useState(false);
+  const [isSubmittingPaidLeave, setIsSubmittingPaidLeave] = useState(false);
+  const [isCancellingLeaveRequest, setIsCancellingLeaveRequest] = useState(false);
+
+  const handleConfirmCancelLeaveRequest = useCallback(async () => {
+    if (!selectedPlan || !activeUserId || isCancellingLeaveRequest) return;
+    setIsCancellingLeaveRequest(true);
+    try {
+      await cancelPaidPlanLeaveRequest(selectedPlan.id);
+      showToast("Leave request cancelled");
+      setShowCancelLeaveRequestConfirmation(false);
+    } catch (err) {
+      console.error("[handleConfirmCancelLeaveRequest] Failed:", err);
+      showToast("Failed to cancel leave request");
+    } finally {
+      setIsCancellingLeaveRequest(false);
+    }
+  }, [selectedPlan, activeUserId, isCancellingLeaveRequest, cancelPaidPlanLeaveRequest, showToast]);
+
+  const handleConfirmPaidLeaveRequest = useCallback(async () => {
+    if (!selectedPlan || !activeUserId || isSubmittingPaidLeave) return;
+    setIsSubmittingPaidLeave(true);
+    try {
+      await requestPaidPlanLeave(selectedPlan.id);
+      showToast("Leave request sent to host");
+      setShowPaidLeaveConfirmation(false);
+    } catch (err) {
+      console.error("[handleConfirmPaidLeaveRequest] Failed:", err);
+      showToast("Failed to send leave request");
+    } finally {
+      setIsSubmittingPaidLeave(false);
+    }
+  }, [selectedPlan, activeUserId, isSubmittingPaidLeave, requestPaidPlanLeave, showToast]);
 
   const handleConfirmSkip = useCallback(() => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
@@ -1023,8 +1061,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
   const handleSkip = useCallback(() => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
-    setShowSkipConfirmation(true);
-  }, [selectedPlan, activeUserId, isSkipping]);
+    if (myParticipantRecord?.leave_requested) {
+      showToast("Leave request pending with host");
+      return;
+    }
+    if (hasCost) {
+      setShowPaidLeaveConfirmation(true);
+    } else {
+      setShowSkipConfirmation(true);
+    }
+  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, hasCost, showToast]);
 
   const handleRejoin = useCallback(() => {
     if (!selectedPlan || !activeUserId || isRejoining) return;
@@ -1389,15 +1435,17 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           <RSVPCard
             myParticipantRecord={myParticipantRecord}
             isCancelled={isCancelled}
-            className={myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" ? "!bottom-24" : ""}
+            className={(myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT") ? "!bottom-24" : ""}
             onClick={
               isHost && isCancelled
                 ? () => setShowRestorePlanConfirm(true)
                 : isHost
                   ? () => setShowCancelPlanConfirm(true)
-                  : myParticipantRecord?.rsvp_status === "JOINED" && !alreadySkipped
-                    ? () => setShowLeavePlanConfirm(true)
-                    : undefined
+                  : myParticipantRecord?.rsvp_status === "JOINED" && myParticipantRecord?.leave_requested
+                    ? () => setShowCancelLeaveRequestConfirmation(true)
+                    : myParticipantRecord?.rsvp_status === "JOINED" && !alreadySkipped
+                      ? () => setShowLeavePlanConfirm(true)
+                      : undefined
             }
           />
           {myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" && (
@@ -1531,6 +1579,22 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         isSkipping={isSkipping}
         onConfirm={handleConfirmSkip}
         onClose={() => setShowSkipConfirmation(false)}
+      />
+
+      <PaidPlanLeaveConfirmationDialog
+        isOpen={showPaidLeaveConfirmation}
+        planTitle={selectedPlan?.title}
+        isSubmitting={isSubmittingPaidLeave}
+        onConfirm={handleConfirmPaidLeaveRequest}
+        onClose={() => setShowPaidLeaveConfirmation(false)}
+      />
+
+      <CancelLeaveRequestBottomSheet
+        isOpen={showCancelLeaveRequestConfirmation}
+        planTitle={selectedPlan?.title}
+        isSubmitting={isCancellingLeaveRequest}
+        onConfirm={handleConfirmCancelLeaveRequest}
+        onClose={() => setShowCancelLeaveRequestConfirmation(false)}
       />
 
       <LeavePlanBottomSheet

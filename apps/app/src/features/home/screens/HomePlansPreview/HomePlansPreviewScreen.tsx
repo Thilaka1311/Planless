@@ -16,7 +16,8 @@ import { useLiveCountdown, rsvpUrgencyStyles } from "../../components/PlanCard";
 import { useHoldToAccept } from "../../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "../../components/HoldToAccept";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
-import { JoinPlanConfirmationBottomSheet, SkipPlanConfirmationDialog } from "../../../plans/components/BottomSheets";
+import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
+import { JoinPlanConfirmationBottomSheet, SkipPlanConfirmationDialog, PaidPlanLeaveConfirmationDialog, CancelLeaveRequestBottomSheet } from "../../../plans/components/BottomSheets";
 import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
 
 export interface PlansPreviewScreenProps {
@@ -48,8 +49,11 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const { showToast } = useToast();
   const {
     dbPlans,
+    dbPlanParticipants,
     joinPlan,
     skipPlan,
+    requestPaidPlanLeave,
+    cancelPaidPlanLeaveRequest,
     rejoinPlan,
     updatePlanSettings,
     demoteHostToParticipant,
@@ -230,7 +234,48 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     setShowJoinConfirmation(true);
   }, [selectedPlan, isJoiningDirect]);
 
+  const myParticipantRecord = useMemo(() => {
+    if (!selectedPlan || !resolvedUserUuid) return null;
+    return dbPlanParticipants.find(
+      (pp) => pp.plan_id === selectedPlan.id && pp.user_id === resolvedUserUuid
+    ) || null;
+  }, [dbPlanParticipants, selectedPlan, resolvedUserUuid]);
+
   const [showSkipConfirmation, setShowSkipConfirmation] = useState(false);
+  const [showPaidLeaveConfirmation, setShowPaidLeaveConfirmation] = useState(false);
+  const [showCancelLeaveRequestConfirmation, setShowCancelLeaveRequestConfirmation] = useState(false);
+  const [isSubmittingPaidLeave, setIsSubmittingPaidLeave] = useState(false);
+  const [isCancellingLeaveRequest, setIsCancellingLeaveRequest] = useState(false);
+
+  const handleConfirmCancelLeaveRequest = useCallback(async () => {
+    if (!selectedPlan || !activeUserId || isCancellingLeaveRequest) return;
+    setIsCancellingLeaveRequest(true);
+    try {
+      await cancelPaidPlanLeaveRequest(selectedPlan.id);
+      showToast("Leave request cancelled");
+      setShowCancelLeaveRequestConfirmation(false);
+    } catch (err) {
+      console.error("[handleConfirmCancelLeaveRequest] Failed:", err);
+      showToast("Failed to cancel leave request");
+    } finally {
+      setIsCancellingLeaveRequest(false);
+    }
+  }, [selectedPlan, activeUserId, isCancellingLeaveRequest, cancelPaidPlanLeaveRequest, showToast]);
+
+  const handleConfirmPaidLeaveRequest = useCallback(async () => {
+    if (!selectedPlan || !activeUserId || isSubmittingPaidLeave) return;
+    setIsSubmittingPaidLeave(true);
+    try {
+      await requestPaidPlanLeave(selectedPlan.id);
+      showToast("Leave request sent to host");
+      setShowPaidLeaveConfirmation(false);
+    } catch (err) {
+      console.error("[handleConfirmPaidLeaveRequest] Failed:", err);
+      showToast("Failed to send leave request");
+    } finally {
+      setIsSubmittingPaidLeave(false);
+    }
+  }, [selectedPlan, activeUserId, isSubmittingPaidLeave, requestPaidPlanLeave, showToast]);
 
   const handleConfirmSkip = useCallback(() => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
@@ -251,8 +296,16 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
   const handleSkip = useCallback(() => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
-    setShowSkipConfirmation(true);
-  }, [selectedPlan, activeUserId, isSkipping]);
+    if (myParticipantRecord?.leave_requested) {
+      setShowCancelLeaveRequestConfirmation(true);
+      return;
+    }
+    if (hasCost) {
+      setShowPaidLeaveConfirmation(true);
+    } else {
+      setShowSkipConfirmation(true);
+    }
+  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, hasCost]);
 
   if (!selectedPlan) return null;
 
@@ -390,7 +443,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         </div>
       </div>
 
-      {/* Sticky Bottom Action Section (Primary CTA + Secondary Skip) */}
+
+
       {!isParticipant && (
         <div id="immersive-actions-dock" className="no-hold px-6 pt-3 pb-6 z-30 relative bg-[#050505] border-t border-white/[0.08] flex-shrink-0 flex flex-col gap-3">
           {/* Primary Action Button: Join Plan (Brand Orange CTA matching Go to Plans) */}
@@ -494,6 +548,22 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         isSkipping={isSkipping}
         onConfirm={handleConfirmSkip}
         onClose={() => setShowSkipConfirmation(false)}
+      />
+
+      <PaidPlanLeaveConfirmationDialog
+        isOpen={showPaidLeaveConfirmation}
+        planTitle={selectedPlan?.title}
+        isSubmitting={isSubmittingPaidLeave}
+        onConfirm={handleConfirmPaidLeaveRequest}
+        onClose={() => setShowPaidLeaveConfirmation(false)}
+      />
+
+      <CancelLeaveRequestBottomSheet
+        isOpen={showCancelLeaveRequestConfirmation}
+        planTitle={selectedPlan?.title}
+        isSubmitting={isCancellingLeaveRequest}
+        onConfirm={handleConfirmCancelLeaveRequest}
+        onClose={() => setShowCancelLeaveRequestConfirmation(false)}
       />
 
       {showManageTeams && (

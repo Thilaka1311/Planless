@@ -267,6 +267,163 @@ export const SkipPlanConfirmationDialog: React.FC<SkipPlanConfirmationDialogProp
 };
 
 // ----------------------------------------------------------------------
+// 1D. PAID PLAN LEAVE REQUEST CONFIRMATION DIALOG (Phase 1)
+// ----------------------------------------------------------------------
+interface PaidPlanLeaveConfirmationDialogProps {
+  isOpen: boolean;
+  planTitle?: string;
+  isSubmitting: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+export const PaidPlanLeaveConfirmationDialog: React.FC<PaidPlanLeaveConfirmationDialogProps> = ({
+  isOpen,
+  planTitle,
+  isSubmitting,
+  onConfirm,
+  onClose,
+}) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-auto">
+          {/* Subtle backdrop dimming */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+          />
+
+          {/* Minimal Centered Modal Dialog Card */}
+          <motion.div
+            initial={{ scale: 0.92, opacity: 0, y: 6 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.92, opacity: 0, y: 6 }}
+            transition={{ type: "spring", damping: 28, stiffness: 360 }}
+            className="relative w-full max-w-[310px] bg-[#18181B] border border-white/[0.08] rounded-2xl p-5 text-center shadow-xl space-y-4 z-10"
+          >
+            {/* Title & Wording */}
+            <div className="space-y-2 pt-0.5">
+              <h3 className="text-[19px] font-bold text-white tracking-tight leading-snug">
+                Leave Plan?
+              </h3>
+              <p className="text-[13px] text-zinc-400 font-medium leading-[1.5] tracking-wide">
+                We'll send a request to the host to leave this plan. You'll remain in the plan until the host decides.
+              </p>
+            </div>
+
+            {/* Actions: Request to Leave CTA & Muted Text Cancel */}
+            <div className="flex flex-col items-center gap-2 pt-1">
+              <button
+                id="paid_leave_request_modal_confirm_btn"
+                type="button"
+                disabled={isSubmitting}
+                onClick={onConfirm}
+                className="w-full py-3 px-4 rounded-xl text-[13.5px] font-bold text-white bg-amber-500/20 hover:bg-amber-500/30 active:scale-[0.98] transition-all border border-amber-500/40 disabled:opacity-50 tracking-wide"
+              >
+                {isSubmitting ? "Sending Request…" : "Request to Leave"}
+              </button>
+
+              <button
+                id="paid_leave_request_modal_cancel_btn"
+                type="button"
+                onClick={onClose}
+                className="py-1 px-3 text-[12.5px] font-medium text-zinc-400 hover:text-zinc-200 active:opacity-70 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 1E. CANCEL LEAVE REQUEST BOTTOM SHEET (Phase 1)
+// ----------------------------------------------------------------------
+interface CancelLeaveRequestBottomSheetProps {
+  isOpen: boolean;
+  planTitle?: string;
+  isSubmitting: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+export const CancelLeaveRequestBottomSheet: React.FC<CancelLeaveRequestBottomSheetProps> = ({
+  isOpen,
+  isSubmitting,
+  onConfirm,
+  onClose,
+}) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto text-left"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
+
+            <div className="px-5 pb-2 text-left">
+              <h2 className="text-[18px] font-bold text-white mb-2">Cancel leave request?</h2>
+              <p className="text-[14px] text-white/55 leading-[1.55]">
+                You're still part of this plan. Would you like to stay?
+              </p>
+            </div>
+
+            <div className="px-4 pt-5 flex flex-col gap-2.5">
+              <button
+                id="cancel_leave_request_confirm_btn"
+                type="button"
+                disabled={isSubmitting}
+                onClick={onConfirm}
+                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-black bg-white hover:bg-zinc-100 active:scale-[0.98] transition-transform disabled:opacity-50"
+              >
+                {isSubmitting ? "Updating…" : "Stay in Plan"}
+              </button>
+
+              <button
+                id="cancel_leave_request_keep_btn"
+                type="button"
+                onClick={onClose}
+                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform"
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+              >
+                Keep Request
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ----------------------------------------------------------------------
 // 2. CANCEL PLAN BOTTOM SHEET
 // ----------------------------------------------------------------------
 interface CancelPlanBottomSheetProps {

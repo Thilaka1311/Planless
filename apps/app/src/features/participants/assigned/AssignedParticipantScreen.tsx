@@ -11,6 +11,7 @@ import { WaitlistSection } from '../components/WaitlistSection';
 import { ContinueButton } from '../../create/components/ContinueButton';
 import { DisplacedHostModal } from '../../plans/components/DisplacedHostModal';
 import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
+import { PendingDecisionsSection } from '../shared/PendingDecisionsSection';
 
 interface AssignedParticipantScreenProps extends SharedParticipantScreenProps {
   isHostSelected?: boolean;
@@ -60,6 +61,9 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   showWaitlistMode = true,
   canParticipantInvite = false,
   onBottomSheetStateChange,
+  pendingLeaveRequests,
+  onReplaceLeaveParticipant,
+  onKeepPaymentLeaveParticipant,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
@@ -272,6 +276,11 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
               }}
             />
           </div>
+          <PendingDecisionsSection
+            pendingRequests={pendingLeaveRequests || []}
+            onReplaceParticipant={onReplaceLeaveParticipant}
+            onKeepPayment={onKeepPaymentLeaveParticipant}
+          />
           {showWaitlistMode && (
             <WaitlistModeSelector
               waitlistMode={waitlistMode}
