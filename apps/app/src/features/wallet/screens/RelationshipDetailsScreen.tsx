@@ -694,11 +694,14 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                       </div>
                     )}
 
-                    <div className="min-w-0">
-                      <h5 className="font-sans font-semibold text-[13px] text-zinc-200 group-hover:text-white transition-colors truncate">
+                    <div className="min-w-0 flex flex-col justify-center">
+                      <h5 className="font-sans font-semibold text-[13.5px] text-zinc-100 group-hover:text-white transition-colors truncate leading-tight">
                         {expense.planTitle}
                       </h5>
-                      <span className="text-[10px] font-sans text-zinc-550 block truncate mt-0.5">
+                      <span className="text-[11.5px] font-sans font-medium text-zinc-300 block truncate leading-tight mt-0.5">
+                        {expense.expenseTitle || expense.title || "Plan Fee"}
+                      </span>
+                      <span className="text-[10px] font-sans text-zinc-550 block truncate leading-tight mt-0.5">
                         {isSettled
                           ? "Settled Up"
                           : expenseIsOwed

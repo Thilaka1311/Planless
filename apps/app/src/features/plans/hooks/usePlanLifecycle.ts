@@ -142,11 +142,16 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       });
     }
 
-    // Previous host remains participant: status is preserved unchanged.
-
+    // Demote former host role in plan_participants to 'PARTICIPANT'
+    if (resolvedOldHostUuid) {
+      participantUpdates.push({
+        plan_id: planUuid,
+        user_id: resolvedOldHostUuid,
+        role: "PARTICIPANT"
+      });
+    }
 
     if (participantUpdates.length > 0) {
-
       const { error: ppError } = await (supabase as any)
         .from("plan_participants")
         .upsert(participantUpdates, { onConflict: "plan_id,user_id" });
@@ -154,7 +159,6 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
         throw new Error("Failed to update participant statuses during host transfer: " + ppError.message);
       }
     }
-
 
     // Update plans.host_id to the new host
     const { error: planError } = await (supabase as any)
@@ -165,12 +169,12 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       throw new Error("Failed to update plan host_id in database: " + planError.message);
     }
 
-
     const newHostUser = dbUsers.find((u: any) => u.id === resolvedNewHostUuid || u.user_id === resolvedNewHostUuid || u.dbUuid === resolvedNewHostUuid);
     const newHostName = (newHostUser as any)?.name || newHostUser?.full_name || "Someone";
     await insertSystemMessage(planUuid, `Host transferred to ${newHostName}`, resolvedNewHostUuid);
 
     await promoteWaitlistIfSpotsAvailable(planUuid);
+    await refreshPlans(["plans", "plan_participants"]);
 
     // Recalculate wallet split expenses
     recalculateWalletExpenses(planUuid).catch(err =>
@@ -178,7 +182,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     );
 
 
-  }, [plans, dbPlanParticipants, dbUsers, resolveUserUuid, isUuid, insertSystemMessage, promoteWaitlistIfSpotsAvailable]);
+  }, [plans, dbPlanParticipants, dbUsers, resolveUserUuid, isUuid, insertSystemMessage, promoteWaitlistIfSpotsAvailable, refreshPlans]);
 
   // ─── cancelPlan ─────────────────────────────────────────────────────────────
 

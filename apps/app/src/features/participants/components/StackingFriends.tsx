@@ -82,6 +82,22 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
       <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: item.isAccepted === false ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
         {item.name}
       </span>
+      {item.leave_requested && (
+        <span
+          title="Requested to leave"
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: '#F59E0B',
+            marginRight: item.isHost || item.isAccepted === false ? 10 : 4,
+            lineHeight: 1,
+            flexShrink: 0,
+            fontFamily: 'Inter, sans-serif',
+          }}
+        >
+          !
+        </span>
+      )}
       {item.isHost ? (
         <span style={{
           fontSize: 11,

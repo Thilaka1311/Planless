@@ -276,11 +276,6 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
               }}
             />
           </div>
-          <PendingDecisionsSection
-            pendingRequests={pendingLeaveRequests || []}
-            onReplaceParticipant={onReplaceLeaveParticipant}
-            onKeepPayment={onKeepPaymentLeaveParticipant}
-          />
           {showWaitlistMode && (
             <WaitlistModeSelector
               waitlistMode={waitlistMode}
@@ -409,6 +404,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           onPromoteHost={onPromoteHost}
           onDemoteHost={onDemoteHost}
           onRemoveParticipant={removeFromPlanAction}
+          onReplaceLeaveParticipant={onReplaceLeaveParticipant}
+          onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
         />
       )}
 

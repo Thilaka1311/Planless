@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ArrowLeftRight, IndianRupee, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { PendingLeaveParticipant } from '../shared/types';
 
@@ -13,122 +15,213 @@ export const PendingDecisionsSection: React.FC<PendingDecisionsSectionProps> = (
   onReplaceParticipant,
   onKeepPayment,
 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   if (!pendingRequests || pendingRequests.length === 0) {
     return null;
   }
+
+  const count = pendingRequests.length;
+  const titleText = count === 1 ? 'Pending decision' : 'Pending decisions';
 
   return (
     <div style={{ padding: '0 20px', margin: '4px 0 12px' }}>
       <div
         style={{
-          background: 'rgba(24, 24, 27, 0.82)',
-          border: '1px solid rgba(245, 158, 11, 0.3)',
+          background: 'rgba(24, 24, 27, 0.6)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
           borderRadius: 16,
-          padding: '14px 16px',
+          padding: isExpanded ? '12px 14px' : '10px 14px',
           display: 'flex',
           flexDirection: 'column',
-          gap: 12,
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+          transition: 'padding 0.2s ease',
         }}
       >
-        {/* Section Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* Section Header (Clickable Collapsible Bar) */}
+        <button
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            padding: 0,
+            width: '100%',
+            cursor: 'pointer',
+            fontFamily: 'Inter, sans-serif',
+          }}
+        >
           <span
             style={{
-              fontSize: 11,
-              fontFamily: 'monospace',
-              fontWeight: 700,
-              letterSpacing: '0.05em',
+              fontSize: 12,
+              fontWeight: 600,
               color: '#F59E0B',
-              textTransform: 'uppercase',
+              letterSpacing: '0.01em',
             }}
           >
-            Pending Decisions ({pendingRequests.length})
+            {titleText}
           </span>
-          <span style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.5)', fontFamily: 'Inter, sans-serif' }}>
-            Host Action Required
-          </span>
-        </div>
 
-        {/* List of Pending Leave Participants */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {pendingRequests.map((req) => (
-            <div
-              key={req.id}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span
               style={{
-                background: 'rgba(255, 255, 255, 0.04)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: 12,
-                padding: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#F59E0B',
+                background: 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                borderRadius: '10px',
+                padding: '1px 7px',
+                lineHeight: '1.4',
               }}
             >
-              {/* Participant Profile Info */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: '50%', overflow: 'hidden', border: '1px solid rgba(255, 255, 255, 0.15)', flexShrink: 0, background: '#1A1A1A' }}>
-                  <UserAvatar src={req.avatar || ''} alt={req.name} size="w-full h-full" />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2' }}>
-                    {req.name}
-                  </span>
-                  <span style={{ fontSize: 11.5, color: '#F59E0B', marginTop: 2, fontWeight: 500, lineHeight: '1.2' }}>
-                    Wants to leave this plan
-                  </span>
-                </div>
-              </div>
+              {count}
+            </span>
+            <ChevronDown
+              className="w-4 h-4 text-zinc-400 transition-transform duration-200"
+              style={{
+                transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+              }}
+            />
+          </div>
+        </button>
 
-              {/* Decision Action Buttons */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => onReplaceParticipant?.(req.id)}
-                  style={{
-                    flex: 1,
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: '#FFFFFF',
-                    background: 'rgba(245, 158, 11, 0.2)',
-                    border: '1px solid rgba(245, 158, 11, 0.4)',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    fontFamily: 'Inter, sans-serif',
-                    transition: 'all 0.15s ease',
-                  }}
-                  className="hover:bg-amber-500/30 active:scale-[0.98]"
-                >
-                  Replace Participant
-                </button>
+        {/* Collapsible Content */}
+        <AnimatePresence initial={false}>
+          {isExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0, marginTop: 0 }}
+              animate={{ height: 'auto', opacity: 1, marginTop: 10 }}
+              exit={{ height: 0, opacity: 0, marginTop: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {pendingRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                      borderRadius: 12,
+                      padding: '10px 12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    }}
+                  >
+                    {/* Participant Profile Info */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: '50%',
+                          overflow: 'hidden',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          flexShrink: 0,
+                          background: '#1A1A1A',
+                        }}
+                      >
+                        <UserAvatar src={req.avatar || ''} alt={req.name} size="w-full h-full" />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: '#FFFFFF',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            lineHeight: '1.2',
+                          }}
+                        >
+                          {req.name}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: '#A1A1AA',
+                            marginTop: 1,
+                            fontWeight: 400,
+                            lineHeight: '1.2',
+                          }}
+                        >
+                          Wants to leave this plan
+                        </span>
+                      </div>
+                    </div>
 
-                <button
-                  type="button"
-                  onClick={() => onKeepPayment?.(req.id)}
-                  style={{
-                    flex: 1,
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: '#E4E4E7',
-                    background: 'rgba(255, 255, 255, 0.08)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    fontFamily: 'Inter, sans-serif',
-                    transition: 'all 0.15s ease',
-                  }}
-                  className="hover:bg-white/15 active:scale-[0.98]"
-                >
-                  Keep Payment
-                </button>
+                    {/* Decision Action Buttons (Side by Side) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onReplaceParticipant?.(req.id);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '7px 10px',
+                          borderRadius: 8,
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          color: '#F59E0B',
+                          background: 'rgba(245, 158, 11, 0.1)',
+                          border: '1px solid rgba(245, 158, 11, 0.25)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 5,
+                          fontFamily: 'Inter, sans-serif',
+                          transition: 'all 0.15s ease',
+                        }}
+                        className="hover:bg-amber-500/20 active:scale-[0.98]"
+                      >
+                        <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
+                        <span>Replace participant</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onKeepPayment?.(req.id);
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '7px 10px',
+                          borderRadius: 8,
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          color: '#E4E4E7',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 5,
+                          fontFamily: 'Inter, sans-serif',
+                          transition: 'all 0.15s ease',
+                        }}
+                        className="hover:bg-white/10 active:scale-[0.98]"
+                      >
+                        <IndianRupee className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                        <span>Keep payment</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          ))}
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

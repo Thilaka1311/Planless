@@ -234,11 +234,25 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
   const isSoleHost = allHosts.length <= 1 && isHostUser;
 
+  const myParticipantRecord = useMemo(() => {
+    return members.find((m) => {
+      const uId = m.userId || m.userUuid || (m as any).user_id || m.id || "";
+      return activeUserUuid && (uId === activeUserUuid || m.userUuid === activeUserUuid || m.userId === activeUserUuid);
+    });
+  }, [members, activeUserUuid]);
+
+  const isLeaveRequested = myParticipantRecord?.leave_requested === true || (myParticipantRecord as any)?.leaveRequested === true;
+
   const executeLeavePlanFlow = async () => {
+    if (isLeaveRequested) {
+      showToast("Leave request pending with host");
+      return;
+    }
     setIsLeaving(true);
     try {
       if (onLeavePlan) {
         await onLeavePlan();
+        onBack();
       } else if (onRemoveParticipant) {
         await onRemoveParticipant(activeUserUuid);
         showToast("You left the plan");

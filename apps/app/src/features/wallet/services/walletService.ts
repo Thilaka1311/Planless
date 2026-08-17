@@ -18,6 +18,7 @@ export interface ExpenseBreakdown {
   publicId?: string;
   planId: string;
   planTitle: string;
+  expenseTitle?: string;
   planCover?: string;
   circleId: string;
   circleName: string;
@@ -169,7 +170,10 @@ export const calculateWalletSummary = (
     const payerUuid: string = exp.payer_id || exp.payer?.id;
     const plan = exp.plan || dbPlans.find((p) => p.id === exp.plan_id);
 
-    const expenseTitle = exp.title || plan?.title || "Shared Expense";
+    const actualPlanTitle = plan?.title || "Plan";
+    const rawTitle = exp.title ? String(exp.title).trim() : "";
+    const isPlanJoiningExpense = !exp.message_id || !exp.messageId || rawTitle === "Plan Expense" || (plan?.title && rawTitle === String(plan.title).trim());
+    const expenseTitle = isPlanJoiningExpense ? "Plan Fee" : (rawTitle || "Shared Expense");
     const planCover = plan?.cover_image || undefined;
     const dateStr = exp.created_at
       ? new Date(exp.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -206,7 +210,8 @@ export const calculateWalletSummary = (
             id: exp.id,
             publicId: exp.public_id || undefined,
             planId: exp.plan_id || "",
-            planTitle: expenseTitle,
+            planTitle: actualPlanTitle,
+            expenseTitle: expenseTitle,
             planCover,
             circleId: "",
             circleName: "Group",
@@ -230,7 +235,8 @@ export const calculateWalletSummary = (
             id: exp.id,
             publicId: exp.public_id || undefined,
             planId: exp.plan_id || "",
-            planTitle: expenseTitle,
+            planTitle: actualPlanTitle,
+            expenseTitle: expenseTitle,
             planCover,
             circleId: "",
             circleName: "Group",

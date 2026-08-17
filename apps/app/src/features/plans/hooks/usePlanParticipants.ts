@@ -6,6 +6,7 @@ import { updateParticipantStatus, insertParticipant, deleteParticipant, syncUser
 import { cleanPlanId, isUuid as isUuidUtil, resolveUserUuid as resolveUserUuidUtil } from "../utils/planUtils";
 import { syncPlanFriendships } from "../../friendships/services/friendshipService";
 import { recalculateWalletExpenses } from "../../wallet/services/walletSyncService";
+import { invalidatePlanCache } from "../../chats/hooks/useChatCache";
 import * as api from "../api/plans";
 
 export interface JoinOptions {
@@ -598,7 +599,12 @@ export function usePlanParticipants({
       });
 
       if (error) {
-        console.error(`[requestPaidPlanLeave] RPC failed:`, error);
+        console.error(`[requestPaidPlanLeave] RPC error details:`, {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
         throw error;
       }
 
@@ -1661,7 +1667,8 @@ export function usePlanParticipants({
       throw rpcError;
     }
 
-    // Refresh local state
+    // Refresh local state and invalidate in-memory activity cache
+    invalidatePlanCache(planUuid, 'activities');
     refreshPlans(['plan_participants', 'plan_activity', 'wallet_expenses', 'wallet_expense_participants']);
     return rpcResult;
   }, [plans, resolveUserUuid, refreshPlans]);
