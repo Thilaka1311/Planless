@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { ArrowLeft, Edit2, Trash2, HandCoins, CheckCircle2, MoreHorizontal } from "lucide-react";
 import { settleWalletExpenseParticipant, deleteWalletExpense, updateWalletExpense } from "../services/walletService";
 import { useProfileStore } from "../../profile/state/ProfileContext";
@@ -21,7 +21,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
   activeUserId,
   source,
 }) => {
-  const { activeUserUuid } = useProfileStore();
+  const { activeUserUuid, userProfile } = useProfileStore();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +41,30 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
   const [settleError, setSettleError] = useState<string | null>(null);
   const [submittingDelete, setSubmittingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Participant Long-Press Action Sheet State
+  const [selectedParticipantForAction, setSelectedParticipantForAction] = useState<any | null>(null);
+  const [showParticipantActionSheet, setShowParticipantActionSheet] = useState(false);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isLongPressRef = useRef(false);
+
+  const handleParticipantTouchStart = (pt: any) => {
+    if (!payerIsMe) return;
+    isLongPressRef.current = false;
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      setSelectedParticipantForAction(pt);
+      setShowParticipantActionSheet(true);
+    }, 500);
+  };
+
+  const handleParticipantTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   // Edit Expense form state
   const [editTitle, setEditTitle] = useState("");
@@ -97,14 +121,15 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         if (plan) setPlanData(plan);
       }
 
-      // 4. Query Participants for this expenseId
+      // 4. Query Participants STRICTLY for this expenseId from wallet_expense_participants
       const { data: pts, error: ptErr } = await supabase
         .from("wallet_expense_participants")
         .select("*")
         .eq("expense_id", expenseId);
 
       if (ptErr) throw ptErr;
-      const ptList = pts || [];
+
+      const ptList: any[] = pts ? [...pts] : [];
       setParticipantsData(ptList);
 
       // 5. Query user profiles for all involved users (payer + participants + current user)
@@ -149,6 +174,8 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     expenseTitle,
     payerIsMe,
     payerUser,
+    payerName,
+    payerPhoto,
     userNetShare,
     formattedParticipants,
     isSettled,
@@ -158,6 +185,8 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         expenseTitle: "Expense",
         payerIsMe: false,
         payerUser: null,
+        payerName: "Payer",
+        payerPhoto: "",
         userNetShare: 0,
         formattedParticipants: [],
         isSettled: false,
@@ -168,6 +197,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     const payerMe = isMe(payerUuid);
     const pUser = profMap.get(payerUuid);
     const payerDisplayName = payerMe ? "You" : pUser?.full_name || pUser?.username || "Payer";
+    const pPhoto = pUser?.profile_photo_path || "";
 
     const rawTitle = expenseData.title ? String(expenseData.title).trim() : "";
     const isPlanJoining =
@@ -231,7 +261,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       } else if (ptIsMe) {
         subtitle = `You owe ${payerDisplayName}`;
       } else {
-        subtitle = `Owes ${payerDisplayName}`;
+        subtitle = `${u?.full_name || u?.username || "Participant"} owes ${payerDisplayName}`;
       }
 
       return {
@@ -252,6 +282,8 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       expenseTitle: expTitle,
       payerIsMe: payerMe,
       payerUser: pUser,
+      payerName: payerDisplayName,
+      payerPhoto: pPhoto,
       userNetShare: netShare,
       formattedParticipants: list,
       isSettled: allSettled || netShare === 0,
@@ -467,36 +499,31 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       </div>
 
       {/* EXPENSE HERO BANNER */}
-      <div className="flex flex-col items-center text-center py-6 mt-2 space-y-3 bg-zinc-950/40 border border-white/[0.04] rounded-3xl p-6 mb-6">
-        <div className="space-y-1">
-          <h3 className="font-display font-bold text-2xl text-zinc-100">
-            {expenseTitle}
-          </h3>
-          <p className="text-zinc-400 font-sans text-xs font-medium">
-            Total ₹{Number(expenseData.total_amount || 0).toLocaleString("en-IN")}
-          </p>
+      <div className="flex flex-col items-center text-center py-6 mt-2 space-y-2 bg-zinc-950/40 border border-white/[0.04] rounded-3xl p-6 mb-6">
+        {/* 1. Expense Title */}
+        <h3 className="font-display font-bold text-2xl text-zinc-100">
+          {expenseTitle}
+        </h3>
 
-          <div className="pt-2">
-            <span className="text-[10px] font-sans font-bold tracking-[0.14em] uppercase text-zinc-500 block mb-1">
-              {isSettled
-                ? "SETTLED"
-                : isOwed
-                ? "YOU ARE OWED"
-                : "YOU OWE"}
-            </span>
-            <div
-              className={`text-3xl font-display font-bold tracking-tight ${
-                isSettled
-                  ? "text-zinc-300"
-                  : isOwed
-                  ? "text-emerald-400"
-                  : "text-[#FF6B2C]"
-              }`}
-            >
-              {isSettled ? "₹0" : `${isOwed ? "+" : "-"}₹${absNetShare.toLocaleString("en-IN")}`}
-            </div>
-          </div>
+        {/* 2. Centered Payer Avatar */}
+        <div className="pt-2 pb-1">
+          <UserAvatar
+            src={payerIsMe ? (userProfile?.profile_photo_path || payerPhoto) : payerPhoto}
+            alt={payerName}
+            size="w-16 h-16"
+            className="ring-2 ring-white/10 shadow-lg mx-auto"
+          />
         </div>
+
+        {/* 3. Payer Name */}
+        <h4 className="font-sans font-semibold text-base text-zinc-100 leading-tight">
+          {payerName}
+        </h4>
+
+        {/* 4. Total Amount Paid */}
+        <p className="text-zinc-400 font-sans text-xs font-medium leading-tight">
+          Paid ₹{Number(expenseData.total_amount || 0).toLocaleString("en-IN")}
+        </p>
       </div>
 
       {/* PARTICIPANTS BREAKDOWN LIST — PAYER ALWAYS SHOWN FIRST */}
@@ -512,7 +539,12 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
             return (
               <div
                 key={`${pt.userId}-${pt.isPayer ? 'payer' : 'pt'}`}
-                className="py-3.5 flex items-center justify-between text-left px-1"
+                onTouchStart={() => handleParticipantTouchStart(pt)}
+                onTouchEnd={handleParticipantTouchEnd}
+                onMouseDown={() => handleParticipantTouchStart(pt)}
+                onMouseUp={handleParticipantTouchEnd}
+                onMouseLeave={handleParticipantTouchEnd}
+                className="py-3.5 flex items-center justify-between text-left px-1 select-none hover:bg-white/[0.02] active:bg-white/[0.04] transition-all cursor-pointer rounded-xl"
               >
                 <div className="flex items-center gap-3.5 min-w-0">
                   <UserAvatar
@@ -741,6 +773,85 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-sans font-semibold text-white transition cursor-pointer disabled:opacity-50"
               >
                 {submittingSettle ? "Settling..." : "Confirm Settlement"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PARTICIPANT ACTIONS BOTTOM SHEET */}
+      {showParticipantActionSheet && selectedParticipantForAction && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-xs animate-fade-in"
+          onClick={() => {
+            setShowParticipantActionSheet(false);
+            setSelectedParticipantForAction(null);
+          }}
+        >
+          <div
+            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-6 shadow-2xl space-y-4 text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Sheet Handle Indicator */}
+            <div className="w-10 h-1 bg-zinc-800 rounded-full mx-auto mb-1" />
+
+            {/* Header: Selected Participant Name */}
+            <div className="border-b border-zinc-900 pb-3">
+              <h3 className="text-base font-display font-bold text-white">
+                {selectedParticipantForAction.fullName}
+              </h3>
+              <p className="text-xs text-zinc-400 font-sans mt-0.5">
+                {selectedParticipantForAction.subtitle}
+              </p>
+            </div>
+
+            {/* Actions List */}
+            <div className="space-y-1.5 pt-1">
+              {/* 1. Edit */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowParticipantActionSheet(false);
+                  handleOpenEditSheet();
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-zinc-900/60 hover:bg-zinc-900 text-xs font-semibold text-zinc-100 transition cursor-pointer text-left"
+              >
+                <Edit2 className="w-4 h-4 text-zinc-400" />
+                <span>Edit</span>
+              </button>
+
+              {/* 2. Settle */}
+              <button
+                type="button"
+                onClick={() => {
+                  const pt = selectedParticipantForAction;
+                  setShowParticipantActionSheet(false);
+                  handleOpenSettleModal(pt);
+                }}
+                disabled={selectedParticipantForAction.isPtSettled}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-semibold transition cursor-pointer text-left ${
+                  selectedParticipantForAction.isPtSettled
+                    ? "bg-zinc-900/20 text-zinc-600 cursor-not-allowed"
+                    : "bg-zinc-900/60 hover:bg-zinc-900 text-emerald-400"
+                }`}
+              >
+                <HandCoins className="w-4 h-4" />
+                <span>
+                  {selectedParticipantForAction.isPtSettled ? "Settled" : "Settle"}
+                </span>
+              </button>
+
+              {/* 3. Delete (Destructive) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowParticipantActionSheet(false);
+                  setShowDeleteModal(true);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 text-xs font-semibold text-rose-400 transition cursor-pointer text-left"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete</span>
               </button>
             </div>
           </div>

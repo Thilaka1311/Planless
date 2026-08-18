@@ -348,8 +348,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
                     fullName={rel.fullName}
                     profilePhoto={rel.profilePhoto}
                     netBalance={0}
-                    type="owed"
-                    planTitle="Settled Up"
+                    isSettled={true}
                     onClick={() => {
                       console.log("[WalletNavigation] screen = peopleBalances, personId =", rel.userId);
                       setSelectedUserId(rel.userId);

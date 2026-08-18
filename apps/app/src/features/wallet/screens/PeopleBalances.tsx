@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useRef } from "react";
-import { ArrowLeft, Plus, Check, Edit2, CheckCircle2, AlertCircle, HandCoins, ArrowUpRight, ArrowDownLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Check, Edit2, CheckCircle2, ChevronDown, ChevronUp, ChevronRight, AlertCircle, HandCoins, ArrowUpRight, ArrowDownLeft, Trash2 } from "lucide-react";
 import { WalletRelationship, ExpenseBreakdown, settleWalletExpenseParticipant, settleWalletRelationship, deleteWalletExpense, updateWalletExpense } from "../services/walletService";
 import { useWalletStore } from "../state/WalletContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import { ExpenseDetails, PlanBalancesDetail } from "./ExpenseDetail";
+import { SettlementHistoryScreen, SettledExpenseItem } from "./SettlementHistory";
 
 interface RelationshipDetailsScreenProps {
   relationship: WalletRelationship;
@@ -48,6 +49,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
   const [showOverallSettleSheet, setShowOverallSettleSheet] = useState(false);
   const [submittingOverallSettle, setSubmittingOverallSettle] = useState(false);
   const [overallSettleError, setOverallSettleError] = useState<string | null>(null);
+  const [showSettlementHistory, setShowSettlementHistory] = useState(false);
 
   // Edit Expense form state
   const [editTitle, setEditTitle] = useState("");
@@ -485,14 +487,14 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
 
   // Open Overall Settle Up sheet
   const handleOpenOverallSettleSheet = () => {
-    if (!isOwed || absNetBalance <= 0) return;
+    if (absNetBalance <= 0) return;
     setOverallSettleError(null);
     setShowOverallSettleSheet(true);
   };
 
   // Execute settlement across all outstanding expenses for this relationship atomically via RPC
   const handleConfirmOverallSettle = async () => {
-    if (submittingOverallSettle || absNetBalance <= 0 || !isOwed) return;
+    if (submittingOverallSettle || absNetBalance <= 0) return;
 
     setSubmittingOverallSettle(true);
     setOverallSettleError(null);
@@ -562,10 +564,37 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     );
   }
 
+  if (showSettlementHistory) {
+    const settledItems: SettledExpenseItem[] = (relationship.expenses || [])
+      .filter((e) => e.status === "SETTLED" || e.participantStatus === "SETTLED")
+      .map((e) => ({
+        id: e.id,
+        title: e.expenseTitle || e.title || "Plan Fee",
+        planTitle: e.planTitle,
+        planCover: e.planCover,
+        amount: e.yourShare || e.totalAmount || 0,
+        settledDate: e.updatedAt || e.date || new Date().toISOString(),
+        planId: e.planId,
+      }));
+
+    return (
+      <SettlementHistoryScreen
+        contextType="person"
+        personName={relationship.fullName}
+        personAvatar={relationship.profilePhoto}
+        settledExpenses={settledItems}
+        onBack={() => setShowSettlementHistory(false)}
+        onSelectExpense={(expId, pId) => {
+          setSelectedExpenseIdForDetail(expId);
+        }}
+      />
+    );
+  }
+
   return (
     <div
       id="subview_relationship_details"
-      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-24 text-left bg-[#050505]"
+      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-20 text-left bg-[#050505]"
     >
       {/* Header with Back Button */}
       <div className="flex items-center gap-3">
@@ -585,7 +614,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
       </div>
 
       {/* Relationship Header Banner */}
-      <div className="flex flex-col items-center text-center py-6 mt-2 space-y-3">
+      <div className="flex flex-col items-center text-center py-2 mt-1 space-y-2">
         <UserAvatar
           src={relationship.profilePhoto}
           alt={relationship.fullName}
@@ -599,31 +628,33 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
           <p className="text-zinc-500 font-sans text-xs font-medium uppercase tracking-wider">
             {absNetBalance === 0 ? "SETTLED UP" : isOwed ? "OWES YOU" : "YOU OWE"}
           </p>
-          <div className="flex items-center justify-center gap-2 mt-1">
-            <h1
-              className={`font-sans font-black text-4xl leading-none ${absNetBalance === 0 ? "text-zinc-300" : isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                }`}
-            >
-              {formattedNetBalance}
-            </h1>
-          </div>
-          {absNetBalance > 0 && isOwed && (
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={handleOpenOverallSettleSheet}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-white/[0.1] text-xs font-sans font-semibold text-zinc-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
-              >
-                <HandCoins className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Settle Up</span>
-              </button>
-            </div>
+          {absNetBalance > 0 && (
+            <>
+              <div className="flex items-center justify-center gap-2 mt-1">
+                <h1
+                  className={`font-sans font-black text-4xl leading-none ${isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
+                    }`}
+                >
+                  {formattedNetBalance}
+                </h1>
+              </div>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleOpenOverallSettleSheet}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-white/[0.1] text-xs font-sans font-semibold text-zinc-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
+                >
+                  <HandCoins className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Settle Up</span>
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
 
       {/* Expense Timeline section header with + Add Cost button */}
-      <div className="flex-1 flex flex-col pt-4 mt-2">
+      <div className="flex-1 flex flex-col pt-1 mt-1">
         <div className="flex items-center justify-between px-1 mb-4">
           <h4 className="text-[11px] font-sans font-semibold text-zinc-500">
             Expenses
@@ -638,104 +669,122 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
           </button>
         </div>
 
-        {/* Expenses Timeline (Sorted newest to oldest) */}
-        <div className="divide-y divide-white/[0.04]">
-          {(() => {
-            const allExpenses = relationship.expenses || [];
+        {/* Expenses Timeline */}
+        {(() => {
+          const allExpenses = relationship.expenses || [];
+          const activeExpenses = allExpenses.filter((e) => {
+            const isSettled = e.status === "SETTLED" || e.participantStatus === "SETTLED";
+            return !isSettled;
+          });
 
-            if (allExpenses.length === 0) {
-              return (
-                <div className="py-8 text-center text-xs text-zinc-500 font-sans">
-                  No expense history yet
-                </div>
-              );
-            }
+          const settledExpenses = allExpenses.filter((e) => {
+            const isSettled = e.status === "SETTLED" || e.participantStatus === "SETTLED";
+            return isSettled;
+          });
 
-            // Sort by wallet_expense_participants.updated_at descending (most recently updated -> top)
-            const sortedExpenses = [...allExpenses].sort((a, b) => {
-              const timeA = new Date(a.updatedAt || a.date).getTime();
-              const timeB = new Date(b.updatedAt || b.date).getTime();
-              return timeB - timeA;
-            });
+          const sortedActive = [...activeExpenses].sort((a, b) => {
+            const timeA = new Date(a.updatedAt || a.date).getTime();
+            const timeB = new Date(b.updatedAt || b.date).getTime();
+            return timeB - timeA;
+          });
 
-            return sortedExpenses.map((expense) => {
-              const expenseIsOwed = expense.role === "creditor";
-              const isSettled = expense.status === "SETTLED" || expense.participantStatus === "SETTLED";
+          const sortedSettled = [...settledExpenses].sort((a, b) => {
+            const timeA = new Date(a.updatedAt || a.date).getTime();
+            const timeB = new Date(b.updatedAt || b.date).getTime();
+            return timeB - timeA;
+          });
 
-              const formattedShare = expense.yourShare.toLocaleString("en-IN", {
-                style: "currency",
-                currency: "INR",
-                maximumFractionDigits: 0,
-              });
-
-              return (
-                <div
-                  key={`expense-${expense.id}`}
-                  onTouchStart={() => !isSettled && handleTouchStart(expense)}
-                  onTouchEnd={handleTouchEnd}
-                  onMouseDown={() => !isSettled && handleTouchStart(expense)}
-                  onMouseUp={handleTouchEnd}
-                  onMouseLeave={handleTouchEnd}
-                  onClick={() => handleCardClick(expense)}
-                  className={`w-full flex items-center justify-between py-4 text-left group transition-all cursor-pointer px-1 select-none ${isSettled ? "opacity-60 hover:opacity-90" : "hover:bg-white/[0.01]"
-                    }`}
-                >
-                  {/* Left block: Cover -> Expense Info */}
-                  <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                    {expense.planCover ? (
-                      <DiscoveryImages
-                        src={expense.planCover}
-                        alt={expense.planTitle}
-                        className={`w-10 h-10 rounded-lg object-cover bg-zinc-900 border border-white/[0.05] shrink-0 ${isSettled ? "grayscale-30" : ""
-                          }`}
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] text-zinc-650 font-black">
-                        PLAN
-                      </div>
-                    )}
-
-                    <div className="min-w-0 flex flex-col justify-center">
-                      <h5 className={`font-sans font-semibold text-[13.5px] truncate leading-tight ${isSettled ? "text-zinc-400 group-hover:text-zinc-200" : "text-zinc-100 group-hover:text-white"
-                        }`}>
-                        {expense.expenseTitle || expense.title || "Plan Fee"}
-                      </h5>
-                      <span className="text-[11.5px] font-sans font-medium text-zinc-400 block truncate leading-tight mt-0.5">
-                        {expense.planTitle}
-                      </span>
-                      <span className="text-[10px] font-sans text-zinc-500 block truncate leading-tight mt-0.5">
-                        {isSettled
-                          ? expenseIsOwed
-                            ? `${relationship.fullName} paid you`
-                            : `You paid ${relationship.fullName}`
-                          : expenseIsOwed
-                            ? `${relationship.fullName} owes you`
-                            : `You owe ${relationship.fullName}`}
-                      </span>
-                    </div>
+          return (
+            <div className="flex-1 flex flex-col justify-between">
+              {/* 1. Active Expenses List */}
+              <div className="divide-y divide-white/[0.04]">
+                {sortedActive.length === 0 ? (
+                  <div className="py-5 text-center text-xs text-zinc-500 font-sans">
+                    {settledExpenses.length > 0 ? "No outstanding expenses" : "No expense history yet"}
                   </div>
+                ) : (
+                  sortedActive.map((expense) => {
+                    const expenseIsOwed = expense.role === "creditor";
+                    const formattedShare = expense.yourShare.toLocaleString("en-IN", {
+                      style: "currency",
+                      currency: "INR",
+                      maximumFractionDigits: 0,
+                    });
 
-                  {/* Right block: Amount or Settled Tag */}
-                  <div className="text-right shrink-0">
-                    {isSettled ? (
-                      <span className="font-sans text-[11px] font-medium tracking-tight text-zinc-500 bg-zinc-900/60 px-2 py-0.5 rounded border border-white/[0.04]">
-                        Settled
-                      </span>
-                    ) : (
-                      <span
-                        className={`font-mono text-sm font-bold tracking-tight ${expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                          }`}
+                    return (
+                      <div
+                        key={`active-expense-${expense.id}`}
+                        onTouchStart={() => handleTouchStart(expense)}
+                        onTouchEnd={handleTouchEnd}
+                        onMouseDown={() => handleTouchStart(expense)}
+                        onMouseUp={handleTouchEnd}
+                        onMouseLeave={handleTouchEnd}
+                        onClick={() => handleCardClick(expense)}
+                        className="w-full flex items-center justify-between py-4 text-left group transition-all cursor-pointer px-1 select-none hover:bg-white/[0.01]"
                       >
-                        {expenseIsOwed ? "+" : "-"}
-                        {formattedShare}
-                      </span>
-                    )}
+                        <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                          {expense.planCover ? (
+                            <DiscoveryImages
+                              src={expense.planCover}
+                              alt={expense.planTitle}
+                              className="w-10 h-10 rounded-lg object-cover bg-zinc-900 border border-white/[0.05] shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] text-zinc-650 font-black">
+                              PLAN
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex flex-col justify-center">
+                            <h5 className="font-sans font-semibold text-[13.5px] truncate leading-tight text-zinc-100 group-hover:text-white">
+                              {expense.expenseTitle || expense.title || "Plan Fee"}
+                            </h5>
+                            <span className="text-[11.5px] font-sans font-medium text-zinc-400 block truncate leading-tight mt-0.5">
+                              {expense.planTitle}
+                            </span>
+                            <span className="text-[10px] font-sans text-zinc-500 block truncate leading-tight mt-0.5">
+                              {expenseIsOwed
+                                ? `${relationship.fullName} owes you`
+                                : `You owe ${relationship.fullName}`}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0 flex items-center justify-end">
+                          <span
+                            className={`font-mono text-sm font-bold tracking-tight ${
+                              expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
+                            }`}
+                          >
+                            {expenseIsOwed ? "+" : "-"}
+                            {formattedShare}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* 2. Settlement History Navigation Link (Anchored at bottom) */}
+              <div className="pt-4 border-t border-white/[0.06] mt-auto pb-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSettlementHistory(true)}
+                  className="w-full flex items-center justify-between h-14 px-1 text-left group cursor-pointer transition-colors hover:bg-white/[0.01]"
+                >
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="font-sans font-medium text-sm text-zinc-200 group-hover:text-white transition-colors">
+                      Settlement History
+                    </span>
                   </div>
-                </div>
-              );
-            });
-          })()}
-        </div>
+                  <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* LONG-PRESS ACTION MENU BOTTOM SHEET */}

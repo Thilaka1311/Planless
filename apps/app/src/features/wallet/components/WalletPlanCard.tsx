@@ -1,4 +1,5 @@
 import React from "react";
+import { Check } from "lucide-react";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { PlanRelationship } from "../services/walletService";
 
@@ -27,26 +28,22 @@ export const WalletPlanCard: React.FC<WalletPlanCardProps> = ({ plan, onClick })
         <DiscoveryImages
           src={plan.planCover}
           alt={plan.planTitle}
-          className="w-10 h-10 rounded-xl object-cover bg-zinc-900 border border-white/[0.08] shrink-0"
+          className="w-10 h-10 rounded-xl object-cover bg-zinc-900 border border-white/[0.08] shrink-0 opacity-90"
         />
         <div className="min-w-0">
           <h4 className="font-display font-medium text-sm text-zinc-200 group-hover:text-white transition-colors truncate">
             {plan.planTitle}
           </h4>
-          <p className="text-[11px] font-sans text-zinc-550 mt-0.5 truncate">
-            {isSettled
-              ? "Settled Up"
-              : isOwed
-              ? "You get back"
-              : "You owe"}
-          </p>
+          {!isSettled && (
+            <p className="text-[11px] font-sans text-zinc-550 mt-0.5 truncate">
+              {isOwed ? "You get back" : "You owe"}
+            </p>
+          )}
         </div>
       </div>
-      <div className="text-right shrink-0 ml-3">
+      <div className="text-right shrink-0 ml-3 flex items-center justify-end">
         {isSettled ? (
-          <span className="font-mono text-xs font-bold tracking-tight text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/20">
-            Settled Up
-          </span>
+          <Check className="w-5 h-5 text-emerald-400 stroke-[2.5]" />
         ) : (
           <span
             className={`font-mono text-sm font-bold tracking-tight ${

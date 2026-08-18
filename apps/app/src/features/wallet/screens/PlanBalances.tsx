@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { ArrowLeft, Plus, Check } from "lucide-react";
+import { ArrowLeft, Plus, Check, CheckCircle2, ChevronRight } from "lucide-react";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import { ExpenseDetails, PlanBalancesDetail } from "./ExpenseDetail";
+import { SettlementHistoryScreen, SettledExpenseItem } from "./SettlementHistory";
 
 interface PlanDetailsScreenProps {
   planId?: string;
@@ -47,6 +48,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
   // Selected expense ID for navigating to Plan balances Detail view
   const [selectedExpenseIdForDetail, setSelectedExpenseIdForDetail] = useState<string | null>(null);
+  const [showSettlementHistory, setShowSettlementHistory] = useState(false);
 
   // Dedicated Database State
   const [dataLoading, setDataLoading] = useState(true);
@@ -222,7 +224,8 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
       if (!isUserInvolved) return; // Only show expenses where user is financially involved
 
       let userNetShare = 0;
-      let allParticipantsSettled = true;
+      let hasDebtors = expPts.length > 0;
+      let allDebtorsSettled = hasDebtors;
 
       expPts.forEach((pt) => {
         const ptIsMe = isMe(pt.user_id);
@@ -231,7 +234,9 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         const isPtSettled = ptStatus === "SETTLED";
         const remaining = isPtSettled ? 0 : amountOwed;
 
-        if (!isPtSettled) allParticipantsSettled = false;
+        if (!isPtSettled) {
+          allDebtorsSettled = false;
+        }
 
         if (payerIsMe && !ptIsMe) {
           userNetShare += remaining;
@@ -239,6 +244,9 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
           userNetShare -= remaining;
         }
       });
+
+      // An expense is fully settled ONLY when all debtor participants have settled their shares
+      const isFullySettled = String(exp.status || "").toUpperCase() === "SETTLED" || (hasDebtors && allDebtorsSettled);
 
       totalNetBalance += userNetShare;
 
@@ -289,7 +297,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         payerName,
         userNetShare,
         isOwed: userNetShare > 0 || (userNetShare === 0 && payerIsMe),
-        isSettled: allParticipantsSettled || userNetShare === 0,
+        isSettled: isFullySettled,
         participantCount: expPts.length,
         participantsPreview: first3,
         extraParticipantsCount: extraCount,
@@ -407,10 +415,37 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
     );
   }
 
+  if (showSettlementHistory) {
+    const settledItems: SettledExpenseItem[] = groupedExpenseRows
+      .filter((r) => r.isSettled)
+      .map((r) => ({
+        id: r.id,
+        title: r.expenseTitle,
+        planTitle: planDetails?.title,
+        planCover: planDetails?.cover_image,
+        amount: r.totalAmount || Math.abs(r.userNetShare) || 0,
+        settledDate: r.updatedAt || r.createdAt || new Date().toISOString(),
+        planId: planDetails?.id || planId,
+      }));
+
+    return (
+      <SettlementHistoryScreen
+        contextType="plan"
+        planTitle={planDetails?.title}
+        planCover={planDetails?.cover_image}
+        settledExpenses={settledItems}
+        onBack={() => setShowSettlementHistory(false)}
+        onSelectExpense={(expId) => {
+          setSelectedExpenseIdForDetail(expId);
+        }}
+      />
+    );
+  }
+
   return (
     <div
       id="subview_plan_balances"
-      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-24 text-left bg-[#050505] select-none animate-fade-in"
+      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-20 text-left bg-[#050505] select-none animate-fade-in"
     >
       {/* HEADER BAR — TOP LEFT "Plan balances" */}
       <div className="flex items-center gap-3">
@@ -486,91 +521,109 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         </button>
       </div>
 
-      {/* EXPENSES LIST — STRICT FIXED 3-COLUMN LAYOUT (w-[105px] AVATAR COLUMN) */}
-      <div className="divide-y divide-white/[0.04]">
-        {dataLoading ? (
-          <div className="py-12 text-center bg-zinc-950/20 border border-dashed border-zinc-900 rounded-[24px] space-y-2">
-            <div className="w-5 h-5 border-2 border-[#FF6B2C] border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-xs text-zinc-500 font-sans">Loading plan wallet data…</p>
-          </div>
-        ) : dataError ? (
-          <div className="p-4 text-center bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
-            {dataError}
-          </div>
-        ) : groupedExpenseRows.length === 0 ? (
-          <div className="py-8 text-center text-xs text-zinc-500 font-sans">
-            No expenses for this plan yet
-          </div>
-        ) : (
-          groupedExpenseRows.map((row) => {
-            const expIsSettled = row.isSettled || row.userNetShare === 0;
-            const expenseIsOwed = row.userNetShare > 0;
-            const absShare = Math.abs(row.userNetShare);
+      {/* EXPENSES CONTENT CONTAINER */}
+      <div className="flex-1 flex flex-col justify-between">
+        {/* EXPENSES LISTING */}
+        <div className="divide-y divide-white/[0.04]">
+          {dataLoading ? (
+            <div className="py-12 text-center bg-zinc-950/20 border border-dashed border-zinc-900 rounded-[24px] space-y-2">
+              <div className="w-5 h-5 border-2 border-[#FF6B2C] border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-zinc-500 font-sans">Loading plan wallet data…</p>
+            </div>
+          ) : dataError ? (
+            <div className="p-4 text-center bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
+              {dataError}
+            </div>
+          ) : (() => {
+            const activeRows = groupedExpenseRows.filter((r) => !r.isSettled);
+            const settledRows = groupedExpenseRows.filter((r) => r.isSettled);
 
-            return (
-              <div
-                key={row.id}
-                onClick={() => {
-                  console.log("[WalletNavigation] screen = expenseDetails, expenseId =", row.id, "source = plan");
-                  setSelectedExpenseIdForDetail(row.id);
-                }}
-                className={`py-3.5 flex items-center text-left group transition-all cursor-pointer px-1 select-none ${expIsSettled ? "opacity-60 hover:opacity-90" : "hover:bg-white/[0.01]"
-                  }`}
-              >
-                {/* COLUMN 1: Fixed-Width Avatar Column (w-[105px] shrink-0) */}
-                <div className="w-[105px] shrink-0 flex items-center pr-3">
-                  <div className="flex items-center -space-x-2">
-                    {row.participantsPreview.map((p, idx) => (
-                      <UserAvatar
-                        key={p.userId}
-                        src={p.avatar}
-                        alt={p.name}
-                        size="w-8 h-8"
-                        className={`ring-2 ring-black rounded-full shrink-0 ${expIsSettled ? "grayscale-30" : ""
-                          }`}
-                        style={{ zIndex: 10 - idx }}
-                      />
-                    ))}
+            if (activeRows.length === 0) {
+              return (
+                <div className="py-8 text-center text-xs text-zinc-500 font-sans">
+                  {settledRows.length > 0 ? "No outstanding expenses" : "No expenses for this plan yet"}
+                </div>
+              );
+            }
+
+            return activeRows.map((row) => {
+              const expenseIsOwed = row.userNetShare > 0;
+              const absShare = Math.abs(row.userNetShare);
+
+              return (
+                <div
+                  key={row.id}
+                  onClick={() => {
+                    console.log("[WalletNavigation] screen = expenseDetails, expenseId =", row.id, "source = plan");
+                    setSelectedExpenseIdForDetail(row.id);
+                  }}
+                  className="py-3.5 flex items-center text-left group transition-all cursor-pointer px-1 select-none hover:bg-white/[0.01]"
+                >
+                  {/* COLUMN 1: Fixed-Width Avatar Column (w-[105px] shrink-0) */}
+                  <div className="w-[105px] shrink-0 flex items-center pr-3">
+                    <div className="flex items-center -space-x-2">
+                      {row.participantsPreview.map((p, idx) => (
+                        <UserAvatar
+                          key={p.userId}
+                          src={p.avatar}
+                          alt={p.name}
+                          size="w-8 h-8"
+                          className="ring-2 ring-black rounded-full shrink-0"
+                          style={{ zIndex: 10 - idx }}
+                        />
+                      ))}
+                    </div>
+                    {row.extraParticipantsCount > 0 && (
+                      <span className="text-[9.5px] font-mono font-bold text-zinc-300 bg-zinc-900 border border-white/[0.1] px-1.5 py-0.5 rounded-full ml-1 shrink-0">
+                        +{row.extraParticipantsCount}
+                      </span>
+                    )}
                   </div>
-                  {row.extraParticipantsCount > 0 && (
-                    <span className="text-[9.5px] font-mono font-bold text-zinc-300 bg-zinc-900 border border-white/[0.1] px-1.5 py-0.5 rounded-full ml-1 shrink-0">
-                      +{row.extraParticipantsCount}
+
+                  {/* COLUMN 2: Flexible Content Column (Title & Payment Context) */}
+                  <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <h5 className="font-sans font-semibold text-[13.5px] truncate leading-tight text-zinc-100 group-hover:text-white">
+                      {row.expenseTitle}
+                    </h5>
+
+                    {/* Payment Context Subtitle */}
+                    <span className="text-[11.5px] font-sans font-medium text-zinc-400 block truncate leading-tight mt-0.5">
+                      {row.subtitleText}
                     </span>
-                  )}
-                </div>
+                  </div>
 
-                {/* COLUMN 2: Flexible Content Column (Title & Payment Context) */}
-                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                  <h5 className={`font-sans font-semibold text-[13.5px] truncate leading-tight ${expIsSettled ? "text-zinc-400 group-hover:text-zinc-200" : "text-zinc-100 group-hover:text-white"
-                    }`}>
-                    {row.expenseTitle}
-                  </h5>
-
-                  {/* Payment Context Subtitle */}
-                  <span className="text-[11.5px] font-sans font-medium text-zinc-400 block truncate leading-tight mt-0.5">
-                    {row.subtitleText}
-                  </span>
-                </div>
-
-                {/* COLUMN 3: Far-Right Amount Column (w-[90px] shrink-0 text-right) */}
-                <div className="w-[90px] shrink-0 text-right flex items-center justify-end">
-                  {expIsSettled ? (
-                    <span className="font-sans text-[11px] font-medium tracking-tight text-zinc-500 bg-zinc-900/60 px-2 py-0.5 rounded border border-white/[0.04]">
-                      Settled
-                    </span>
-                  ) : (
+                  {/* COLUMN 3: Far-Right Amount Column (w-[90px] shrink-0 text-right) */}
+                  <div className="w-[90px] shrink-0 text-right flex items-center justify-end">
                     <span
-                      className={`font-mono text-sm font-bold tracking-tight ${expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                        }`}
+                      className={`font-mono text-sm font-bold tracking-tight ${
+                        expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
+                      }`}
                     >
                       {expenseIsOwed ? "+" : "-"}₹{absShare.toLocaleString("en-IN")}
                     </span>
-                  )}
+                  </div>
                 </div>
-              </div>
-            );
-          })
-        )}
+              );
+            });
+          })()}
+        </div>
+
+        {/* SETTLEMENT HISTORY NAVIGATION LINK (Anchored at bottom) */}
+        <div className="pt-4 border-t border-white/[0.06] mt-auto pb-2">
+          <button
+            type="button"
+            onClick={() => setShowSettlementHistory(true)}
+            className="w-full flex items-center justify-between h-14 px-1 text-left group cursor-pointer transition-colors hover:bg-white/[0.01]"
+          >
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="font-sans font-medium text-sm text-zinc-200 group-hover:text-white transition-colors">
+                Settlement History
+              </span>
+            </div>
+            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+          </button>
+        </div>
       </div>
 
       {/* ADD COST BOTTOM SHEET */}
