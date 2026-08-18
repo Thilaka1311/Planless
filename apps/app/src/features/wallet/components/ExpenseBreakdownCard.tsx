@@ -91,7 +91,7 @@ export const ExpenseBreakdownCard: React.FC<ExpenseBreakdownCardProps> = ({
         </div>
       </div>
 
-      {isDebtor && expense.status === "unpaid" && (
+      {!isDebtor && expense.status === "PENDING" && (
         <button
           onClick={handleSettle}
           disabled={isSettling}

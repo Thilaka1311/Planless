@@ -762,6 +762,11 @@ export function usePlanParticipants({
       }
 
       renumberWaitlistPositions(planUuid).catch(() => {});
+      // Recalculate wallet expenses when a participant is removed
+      recalculateWalletExpenses(planUuid).catch(err =>
+        console.error("[removeParticipant] recalculateWalletExpenses failed:", err)
+      );
+      await refreshPlans(["plans", "plan_participants", "wallet_expenses", "wallet_expense_participants"]);
     } catch (rpcError: any) {
       console.error("[PlansContext removeParticipant] removeParticipantRPC failed.", rpcError);
       await refreshPlans(); // Rollback optimistic state on failure
@@ -1093,26 +1098,23 @@ export function usePlanParticipants({
       }
     }
 
-    // Optimistic state update: update assigned_group to GOING and sync rsvp_status where accepted
+    // Optimistic state update: update assigned_group to GOING and sync rsvp_status to JOINED
     setDbPlanParticipants(prev => prev.map(pp => {
       if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedUserUuid || pp.user_id === participantUserUuid)) {
-        const nextStatus = pp.rsvp_status === 'WAITLISTED' ? 'JOINED' : pp.rsvp_status;
+        const nextStatus = 'JOINED';
         return {
           ...pp,
           assigned_group: 'GOING' as const,
           waitlist_position: null,
-          rsvp_status: nextStatus,
-          responded_at: nextStatus === 'JOINED' ? (pp.responded_at || new Date().toISOString()) : pp.responded_at
+          rsvp_status: nextStatus as any,
+          responded_at: pp.responded_at || new Date().toISOString()
         };
       }
       return pp;
     }));
 
     try {
-      const existingPp = dbPlanParticipants.find(
-        pp => (pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedUserUuid || pp.user_id === participantUserUuid)
-      );
-      const nextRsvp = existingPp?.rsvp_status === 'WAITLISTED' ? 'JOINED' : (existingPp?.rsvp_status || 'INVITED');
+      const nextRsvp = 'JOINED';
 
       const { error: updateErr } = await (supabase as any)
         .from("plan_participants")

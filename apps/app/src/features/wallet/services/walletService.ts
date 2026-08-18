@@ -30,6 +30,7 @@ export interface ExpenseBreakdown {
   status: "PENDING" | "SETTLED";
   participantStatus?: "PENDING" | "SETTLED";
   role: "debtor" | "creditor";
+  payerId?: string;
 }
 
 export interface WalletRelationship {
@@ -172,7 +173,10 @@ export const calculateWalletSummary = (
 
     const actualPlanTitle = plan?.title || "Plan";
     const rawTitle = exp.title ? String(exp.title).trim() : "";
-    const isPlanJoiningExpense = !exp.message_id || !exp.messageId || rawTitle === "Plan Expense" || (plan?.title && rawTitle === String(plan.title).trim());
+    const isPlanJoiningExpense =
+      rawTitle === "Plan Fee" ||
+      rawTitle === "Plan Expense" ||
+      (!rawTitle && !exp.message_id && !exp.messageId);
     const expenseTitle = isPlanJoiningExpense ? "Plan Fee" : (rawTitle || "Shared Expense");
     const planCover = plan?.cover_image || undefined;
     const dateStr = exp.created_at
@@ -223,6 +227,7 @@ export const calculateWalletSummary = (
             status: isParticipantSettled ? "SETTLED" : (exp.status || "PENDING"),
             participantStatus: isParticipantSettled ? "SETTLED" : "PENDING",
             role: "creditor",
+            payerId: payerUuid,
           });
         } else if (!payerIsMe && ptIsMe) {
           // Someone else paid — I owe them my share
@@ -248,6 +253,7 @@ export const calculateWalletSummary = (
             status: isParticipantSettled ? "SETTLED" : (exp.status || "PENDING"),
             participantStatus: isParticipantSettled ? "SETTLED" : "PENDING",
             role: "debtor",
+            payerId: payerUuid,
           });
         }
       });
@@ -703,39 +709,15 @@ export const settleWalletExpenseParticipant = async (params: {
   participantUserId: string;
 }): Promise<boolean> => {
   try {
-    // 1. Update this participant's status to SETTLED
-    const { error: ptErr } = await (supabase as any)
-      .from("wallet_expense_participants")
-      .update({
-        status: "SETTLED",
-      })
-      .eq("expense_id", params.expenseId)
-      .eq("user_id", params.participantUserId);
+    const { error } = await (supabase as any).rpc("settle_wallet_expense", {
+      p_expense_id: params.expenseId,
+      p_debtor_id: params.participantUserId,
+    });
 
-    if (ptErr) {
-      console.error("[walletService] settleWalletExpenseParticipant update failed:", ptErr);
+    if (error) {
+      console.error("[walletService] settleWalletExpenseParticipant RPC failed:", error);
       return false;
     }
-
-    // 2. Check if all participants for this expense are now SETTLED
-    const { data: allPts, error: checkErr } = await (supabase as any)
-      .from("wallet_expense_participants")
-      .select("status")
-      .eq("expense_id", params.expenseId);
-
-    if (!checkErr && allPts && allPts.length > 0) {
-      const allSettled = allPts.every((p: any) => String(p.status).toUpperCase() === "SETTLED");
-      if (allSettled) {
-        await (supabase as any)
-          .from("wallet_expenses")
-          .update({
-            status: "SETTLED",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", params.expenseId);
-      }
-    }
-
     return true;
   } catch (err) {
     console.error("[walletService] settleWalletExpenseParticipant exception:", err);
@@ -744,17 +726,33 @@ export const settleWalletExpenseParticipant = async (params: {
 };
 
 /**
- * Legacy wrapper: Settles a specific expense directly via Supabase.
+ * Settles all outstanding obligations from a debtor to the current user (creditor) in one atomic transaction.
+ */
+export const settleWalletRelationship = async (debtorUserId: string): Promise<boolean> => {
+  try {
+    const { error } = await (supabase as any).rpc("settle_wallet_relationship", {
+      p_debtor_id: debtorUserId,
+    });
+
+    if (error) {
+      console.error("[walletService] settleWalletRelationship RPC failed:", error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[walletService] settleWalletRelationship exception:", err);
+    return false;
+  }
+};
+
+/**
+ * Legacy wrapper: Settles a specific expense directly via Supabase RPC.
  */
 export const settleTransaction = async (expenseId: string): Promise<boolean> => {
   try {
-    const { error } = await (supabase as any)
-      .from("wallet_expenses")
-      .update({
-        status: "SETTLED",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", expenseId);
+    const { error } = await (supabase as any).rpc("settle_wallet_expense", {
+      p_expense_id: expenseId,
+    });
 
     if (error) {
       console.error("[walletService] Settle expense failed:", error);
@@ -766,3 +764,54 @@ export const settleTransaction = async (expenseId: string): Promise<boolean> => 
     return false;
   }
 };
+
+/**
+ * Deletes an additional wallet expense atomically via trusted SECURITY DEFINER RPC.
+ */
+export const deleteWalletExpense = async (expenseId: string): Promise<boolean> => {
+  try {
+    const { error } = await (supabase as any).rpc("delete_wallet_expense", {
+      p_expense_id: expenseId,
+    });
+
+    if (error) {
+      console.error("[walletService] deleteWalletExpense RPC failed:", error);
+      throw error;
+    }
+    return true;
+  } catch (err: any) {
+    console.error("[walletService] deleteWalletExpense exception:", err);
+    throw err;
+  }
+};
+
+/**
+ * Updates an additional wallet expense atomically via trusted SECURITY DEFINER RPC.
+ */
+export const updateWalletExpense = async (params: {
+  expenseId: string;
+  title: string;
+  totalAmount: number;
+  planId: string;
+  participantIds: string[];
+}): Promise<boolean> => {
+  try {
+    const { error } = await (supabase as any).rpc("update_cost_expense", {
+      p_expense_id: params.expenseId,
+      p_title: params.title,
+      p_total_amount: params.totalAmount,
+      p_plan_id: params.planId,
+      p_participant_ids: params.participantIds,
+    });
+
+    if (error) {
+      console.error("[walletService] updateWalletExpense RPC failed:", error);
+      throw error;
+    }
+    return true;
+  } catch (err: any) {
+    console.error("[walletService] updateWalletExpense exception:", err);
+    throw err;
+  }
+};
+
