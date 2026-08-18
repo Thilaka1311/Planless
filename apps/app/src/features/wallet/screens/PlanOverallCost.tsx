@@ -204,7 +204,6 @@ export const PlanOverallCost: React.FC<PlanOverallCostProps> = ({
 
   // Header Title and Total Cost
   const displayTitle = selectedExpenseObj?.title || plan?.title || "Expense Breakdown";
-  const displayCover = plan?.cover_image;
 
   // Filter participants with outstanding balance > 0
   const { participantsWhoOwe, totalCost } = useMemo(() => {
@@ -367,12 +366,24 @@ export const PlanOverallCost: React.FC<PlanOverallCostProps> = ({
       maximumFractionDigits: 0,
     });
 
+  // Plan Title and Expense Title
+  const planName = plan?.title || selectedExpenseObj?.plan?.title || "Plan";
+  const rawExpenseTitle = selectedExpenseObj?.title ? String(selectedExpenseObj.title).trim() : "";
+  const isPlanJoiningExpense = !selectedExpenseObj?.message_id || rawExpenseTitle === "Plan Expense" || rawExpenseTitle === String(planName).trim();
+  const expenseName = isPlanJoiningExpense ? "Plan Fee" : (rawExpenseTitle || "Plan Fee");
+  const displayCover = plan?.cover_image || selectedExpenseObj?.plan?.cover_image;
+
+  const expenseDateObj = new Date(selectedExpenseObj?.created_at || new Date());
+  const formattedExpenseDate = !isNaN(expenseDateObj.getTime())
+    ? expenseDateObj.toLocaleDateString("en-US", { month: "short", day: "2-digit" })
+    : "";
+
   return (
     <div
       id="subview_plan_overall_cost"
       className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-24 text-left bg-[#050505] animate-fade-in"
     >
-      {/* Header */}
+      {/* Header with Back Button and Plan Context + Date */}
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -383,26 +394,34 @@ export const PlanOverallCost: React.FC<PlanOverallCostProps> = ({
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div>
-          <h2 className="text-xl font-display font-semibold text-zinc-100 tracking-tight">
-            {displayTitle}
+          <h2 className="text-xl font-display font-semibold text-zinc-100 tracking-tight flex items-center gap-2">
+            <span>{planName}</span>
+            {formattedExpenseDate && (
+              <span className="text-xs text-zinc-400 font-sans font-normal">• {formattedExpenseDate}</span>
+            )}
           </h2>
         </div>
       </div>
 
-      {/* Plan Header Info */}
-      <div className="flex items-center gap-4 mt-6">
+      {/* Plan Hero Banner (Avatar + Expense Title + Amount) */}
+      <div className="flex flex-col items-center text-center py-6 mt-2 space-y-3">
         <DiscoveryImages
           src={displayCover}
-          alt={displayTitle}
-          className="w-14 h-14 rounded-xl object-cover bg-zinc-900 border border-white/[0.08] shrink-0"
+          alt={planName}
+          className="w-20 h-20 rounded-2xl object-cover bg-zinc-900 border border-white/10 shadow-2xl shrink-0"
         />
-        <div className="min-w-0">
-          <h3 className="font-display font-bold text-lg text-white truncate">
-            {displayTitle}
+        <div className="space-y-1">
+          <h3 className="font-display font-bold text-xl text-zinc-100">
+            {expenseName}
           </h3>
-          <p className="text-xs text-zinc-400 font-sans mt-0.5">
-            {formatINR(totalCost)} total
+          <p className="text-zinc-500 font-sans text-xs font-medium uppercase tracking-wider">
+            Total Expense
           </p>
+          <div className="flex items-center justify-center gap-2 mt-1">
+            <h1 className="font-sans font-black text-4xl leading-none text-white">
+              {formatINR(totalCost)}
+            </h1>
+          </div>
         </div>
       </div>
 

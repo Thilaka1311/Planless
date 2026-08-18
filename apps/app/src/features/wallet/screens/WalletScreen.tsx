@@ -1,13 +1,14 @@
 import React, { useState, useMemo } from "react";
-import { History, ChevronDown, ChevronUp, CheckCircle2 } from "lucide-react";
-import { RelationshipDetailsScreen } from "./RelationshipDetailsScreen";
+import { ChevronDown, ChevronUp, CheckCircle2 } from "lucide-react";
+import { RelationshipDetailsScreen } from "./PeopleBalances";
 import { PlanOverallCost } from "./PlanOverallCost";
-import { TransactionScreen } from "./TransactionScreen";
+import { PlanDetailsScreen } from "./PlanBalances";
 import { WalletRelationshipCard } from "../components/WalletRelationshipCard";
 import { WalletPlanCard } from "../components/WalletPlanCard";
 import { calculateWalletSummary, WalletRelationship, PlanRelationship } from "../services/walletService";
 import { useWalletStore } from "../state/WalletContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
+import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 
 interface WalletScreenProps {
   setActiveTab?: (tab: string) => void;
@@ -18,7 +19,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
   setActiveTab,
   setSelectedPlanId,
 }) => {
-  const [subView, setSubView] = useState<"main" | "relationship" | "planOverallCost" | "transactions">("main");
+  const [subView, setSubView] = useState<"main" | "relationship" | "planOverallCost">("main");
   // We store only the person's UUID — the detail view always shows the FULL relationship.
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedPlanOverallCostId, setSelectedPlanOverallCostId] = useState<string | null>(null);
@@ -39,7 +40,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
     error,
     refreshTransactions,
   } = useWalletStore();
-  const { activeUserUuid, dbUsers } = useProfileStore();
+  const { activeUserUuid, dbUsers, userProfile } = useProfileStore();
 
   const mergedUsers = useMemo(() => {
     const map = new Map<string, any>();
@@ -95,35 +96,21 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
     return all.find((r) => r.userId === selectedUserId) || null;
   }, [walletSummary.personRelationships, walletSummary.settledRelationships, selectedUserId]);
 
-  if (subView === "transactions") {
-    return (
-      <TransactionScreen
-        onBack={() => setSubView("main")}
-        onSelectPlan={(planId) => {
-          if (setSelectedPlanId && setActiveTab) {
-            setSelectedPlanId(planId);
-            setActiveTab("plans");
-          }
-        }}
-      />
-    );
-  }
-
   if (subView === "planOverallCost" && (selectedExpenseId || selectedPlanOverallCostId)) {
     return (
-      <PlanOverallCost
-        expenseId={selectedExpenseId || undefined}
+      <PlanDetailsScreen
         planId={selectedPlanOverallCostId || undefined}
+        expenseId={selectedExpenseId || undefined}
         onBack={() => {
           setSelectedExpenseId(null);
           setSelectedPlanOverallCostId(null);
           setSubView("main");
         }}
-        onSelectUser={(userId) => {
-          setSelectedUserId(userId);
-          setSelectedExpenseId(null);
-          setSelectedPlanOverallCostId(null);
-          setSubView("relationship");
+        onRefreshBalances={refreshTransactions}
+        activeUserId={activeUserUuid || ""}
+        onSelectPlan={(planId) => {
+          if (setSelectedPlanId) setSelectedPlanId(planId);
+          if (setActiveTab) setActiveTab("plans");
         }}
       />
     );
@@ -144,10 +131,8 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
           setSelectedExpenseId(null);
           setSubView("planOverallCost");
         }}
-        onSelectExpense={(expId, pId) => {
+        onSelectExpense={(expId) => {
           setSelectedExpenseId(expId);
-          setSelectedPlanOverallCostId(pId);
-          setSubView("planOverallCost");
         }}
       />
     );
@@ -167,21 +152,35 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
 
   return (
     <div id="subview_payments_wallet" className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 space-y-6 animate-fade-in text-left bg-[#050505]">
-      {/* Header — with top-right Transactions entry */}
-      <div className="pb-1.5 pt-1.5 flex items-center justify-between">
-        <div>
-          <h2 className="text-[28px] font-display font-semibold text-white tracking-tight">Wallet</h2>
-          <p className="text-[13px] text-zinc-550 font-sans mt-0.5">Manage your balance and transactions</p>
+      {/* Header — Centered title WALLET with Profile Avatar on Top-Left */}
+      <div className="pb-1.5 pt-1.5 flex items-center justify-between relative">
+        {/* Left Column: Avatar */}
+        <div className="flex-1 flex items-center justify-start z-10">
+          {userProfile && (
+            <button
+              onClick={() => setActiveTab?.("profile")}
+              className="relative group shrink-0 block focus:outline-none cursor-pointer"
+              aria-label="View Profile Settings"
+            >
+              <UserAvatar
+                src={userProfile.avatar}
+                alt={userProfile.name}
+                size="w-9 h-9"
+                className="border-2 border-zinc-800 hover:border-[#ff8b66] transition-colors"
+              />
+            </button>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={() => setSubView("transactions")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/[0.08] text-xs font-sans font-medium transition-all cursor-pointer shadow-sm"
-          aria-label="View Transactions History"
-        >
-          <History className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Transactions</span>
-        </button>
+
+        {/* Center Column: Perfectly Centered Title */}
+        <div className="flex-shrink-0 flex items-center justify-center z-10">
+          <h1 className="text-stone-100 font-sans font-black text-xl tracking-[0.25em] leading-none text-center uppercase">
+            WALLET
+          </h1>
+        </div>
+
+        {/* Right Column: Empty spacer for horizontal balance */}
+        <div className="flex-1 flex items-center justify-end z-10" />
       </div>
 
       {/* Segmented Control: People vs Plans */}
@@ -275,6 +274,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
                   type={rel.netBalance >= 0 ? "owed" : "owe"}
                   planTitle={rel.expenses[0]?.planTitle}
                   onClick={() => {
+                    console.log("[WalletNavigation] screen = peopleBalances, personId =", rel.userId);
                     setSelectedUserId(rel.userId);
                     setSubView("relationship");
                   }}
@@ -304,7 +304,8 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
                   key={planRel.expenseId}
                   plan={planRel}
                   onClick={() => {
-                    setSelectedExpenseId(planRel.expenseId);
+                    console.log("[WalletNavigation] screen = planBalances, planId =", planRel.planId);
+                    setSelectedExpenseId(null);
                     setSelectedPlanOverallCostId(planRel.planId);
                     setSubView("planOverallCost");
                   }}
@@ -350,6 +351,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
                     type="owed"
                     planTitle="Settled Up"
                     onClick={() => {
+                      console.log("[WalletNavigation] screen = peopleBalances, personId =", rel.userId);
                       setSelectedUserId(rel.userId);
                       setSubView("relationship");
                     }}
@@ -389,7 +391,8 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
                     key={planRel.expenseId}
                     plan={planRel}
                     onClick={() => {
-                      setSelectedExpenseId(planRel.expenseId);
+                      console.log("[WalletNavigation] screen = planBalances, planId =", planRel.planId);
+                      setSelectedExpenseId(null);
                       setSelectedPlanOverallCostId(planRel.planId);
                       setSubView("planOverallCost");
                     }}

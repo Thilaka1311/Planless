@@ -1030,9 +1030,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       await requestPaidPlanLeave(selectedPlan.id);
       showToast("Leave request sent to host");
       setShowPaidLeaveConfirmation(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error("[handleConfirmPaidLeaveRequest] Failed:", err);
-      showToast("Failed to send leave request");
+      showToast(err?.message || "Failed to send leave request");
     } finally {
       setIsSubmittingPaidLeave(false);
     }
@@ -1234,19 +1234,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onEditCoverImage={async (newCoverUrl) => {
           await updatePlanDetails(selectedPlan.id, { cover_image: newCoverUrl });
         }}
-        onLeavePlan={async () => {
-          try {
-            await leavePlan(selectedPlan.id, activeUserId);
-            if (onLeavePlan) {
-              onLeavePlan();
-            } else {
-              onClose();
-            }
-          } catch (err) {
-            console.error("Failed to leave plan from PlansPreviewScreen:", err);
-            throw err;
-          }
-        }}
+        onLeavePlan={handleSkip}
         onCancelPlan={handleDitchConfirm}
       />
     );

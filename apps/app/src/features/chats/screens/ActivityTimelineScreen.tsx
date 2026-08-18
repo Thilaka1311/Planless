@@ -54,6 +54,9 @@ export interface ActivityEvent {
   dateText: string; // "Today", "Yesterday", "Jul 31, 2026"
   dateGroup: string; // Grouping key
   rawDate: Date;
+  rawTargetUserId?: string | null;
+  rawSkipReason?: string | null;
+  rawMetadata?: any;
 }
 
 interface ActivityTimelineScreenProps {
@@ -436,14 +439,14 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
 
   // Helper to resolve user details (name & avatar) by UUID or public_id
   const resolveUserDetails = useCallback(
-    (userId?: string | null, isTargetUser: boolean = false): { name: string; avatar?: string | null } => {
+    (userId?: string | null, isTargetUser: boolean = false, forceDisplayName: boolean = false): { name: string; avatar?: string | null } => {
       if (!userId) return { name: "" };
 
       // 1. Current logged-in user profile
       const userProfId = userProfile?.dbUuid || (userProfile as any)?.id || (userProfile as any)?.user_id || activeUserId;
       if (userId === userProfId || userId === activeUserId) {
         return {
-          name: isTargetUser ? (userProfile?.name || "You") : (userProfile?.name || "You"),
+          name: forceDisplayName ? (userProfile?.name || "You") : (isTargetUser ? (userProfile?.name || "You") : (userProfile?.name || "You")),
           avatar:
             (userProfile as any)?.avatar ||
             (userProfile as any)?.profile_photo ||
@@ -522,6 +525,16 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
   // Format description strings from DbPlanActivity rows & collapse consecutive capacity events
   const activities = useMemo<ActivityEvent[]>(() => {
     const planName = plan?.title || "Plan";
+    const currentUserId = userProfile?.dbUuid || (userProfile as any)?.id || (userProfile as any)?.user_id || activeUserId;
+
+    console.log("[ACTIVITY DEBUG] raw plan_activity rows count:", rawActivities.length);
+    const leaveReqRows = rawActivities.filter(a => a.activity_type === "leave_requested");
+    if (leaveReqRows.length > 0) {
+      console.log("[ACTIVITY DEBUG] leave_requested rows:", leaveReqRows);
+      leaveReqRows.forEach(row => {
+        console.log("[ACTIVITY DEBUG] leave_requested metadata:", row.metadata, "currentUserId:", currentUserId);
+      });
+    }
 
     // Convert raw activities into uncollapsed items (newest to oldest)
     const uncollapsed: ActivityEvent[] = rawActivities.map((act) => {
@@ -554,13 +567,24 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           secondaryDescription = "Joined the plan";
           isUserEvent = true;
           userAvatarSrc = targetDetails.avatar;
+          accentEdgeColor = "#22c55e"; // Green left edge
           break;
-        case "participant_left":
+        case "participant_left": {
+          if (meta.skip_reason === 'REPLACED') {
+            // Suppress raw trigger event when participant was replaced; leave_requested handles single outcome card
+            return null;
+          }
           primaryTitle = targetDetails.name || actorDetails.name || "Someone";
           secondaryDescription = "Left the plan";
           isUserEvent = true;
           userAvatarSrc = targetDetails.avatar;
+          leaveRequestData = {
+            targetUserId: act.target_user_id || act.actor_id || "",
+            participantName: primaryTitle,
+            isPending: false,
+          };
           break;
+        }
         case "participant_added": {
           const participantName = meta.participant_name || targetDetails.name || "Participant";
           const participantAvatar = meta.participant_avatar_url ?? targetDetails.avatar;
@@ -621,6 +645,10 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           userAvatarSrc = targetDetails.avatar;
           break;
         case "participant_removed": {
+          if (meta.skip_reason === 'REPLACED') {
+            // Suppress raw trigger event when participant was replaced
+            return null;
+          }
           const isSelfRemoval = !act.actor_id || act.actor_id === act.target_user_id;
           primaryTitle = targetDetails.name || actorDetails.name || "Participant";
           if (isSelfRemoval) {
@@ -632,6 +660,11 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           }
           isUserEvent = true;
           userAvatarSrc = targetDetails.avatar;
+          leaveRequestData = {
+            targetUserId: act.target_user_id || act.actor_id || "",
+            participantName: primaryTitle,
+            isPending: false,
+          };
           break;
         }
         case "invitation_accepted":
@@ -681,22 +714,26 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
             return null;
           }
 
-          const participantName = targetDetails.name || actorDetails.name || "Participant";
+          const originalUserId = act.target_user_id || act.actor_id || "";
+          const originalName = targetDetails.name || actorDetails.name || "Participant";
           const resolution = meta.resolution;
 
           if (resolution === 'REPLACED') {
             const replacementUserId = meta.replacement_user_id;
             const replacementDetails = replacementUserId
-              ? resolveUserDetails(replacementUserId, true)
+              ? resolveUserDetails(replacementUserId, true, true)
               : { name: "Replacement", avatar: null };
 
-            primaryTitle = `Replaced with ${replacementDetails.name || "Replacement"}`;
-            secondaryDescription = `${participantName} was replaced`;
-            accentEdgeColor = "#22c55e"; // Green badge
-            userAvatarSrc = replacementDetails.avatar;
+            primaryTitle = `${originalName} was replaced`;
+            secondaryDescription = `By ${replacementDetails.name || "Replacement"}`;
+            userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
+            accentEdgeColor = "#ef4444"; // Red left edge for replacement
           } else {
             // KEEP_PAYMENT or default
-            primaryTitle = `${participantName} left`;
+            const currentUserId = userProfile?.dbUuid || (userProfile as any)?.id || (userProfile as any)?.user_id || activeUserId;
+            const isViewerOriginal = Boolean(originalUserId && currentUserId && (currentUserId === originalUserId));
+
+            primaryTitle = isViewerOriginal ? "You left" : `${originalName} left`;
             secondaryDescription = "Payment Kept";
             accentEdgeColor = "#ef4444"; // Red badge
             userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
@@ -704,8 +741,8 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
 
           isUserEvent = true;
           leaveRequestData = {
-            targetUserId: act.target_user_id || act.actor_id || "",
-            participantName,
+            targetUserId: originalUserId,
+            participantName: originalName,
             isPending: false,
             resolution: resolution as any,
           };
@@ -815,6 +852,9 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
         dateText: formatDateSubtext(validDate),
         dateGroup: formatDateGroup(validDate),
         rawDate: validDate,
+        rawTargetUserId: act.target_user_id || act.actor_id || null,
+        rawSkipReason: meta.skip_reason || null,
+        rawMetadata: meta,
       };
     }).filter(Boolean) as ActivityEvent[];
 
@@ -832,9 +872,37 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       }
     });
 
+    // Collect set of target user IDs that have a resolved leave_requested event
+    const resolvedLeaveTargetUserIds = new Set<string>();
+    const replacementUserIds = new Set<string>();
+    uncollapsed.forEach((evt) => {
+      if (evt.type === 'leave_requested') {
+        if (evt.leaveRequestData?.targetUserId) {
+          resolvedLeaveTargetUserIds.add(evt.leaveRequestData.targetUserId);
+        }
+        if (evt.rawTargetUserId) {
+          resolvedLeaveTargetUserIds.add(evt.rawTargetUserId);
+        }
+        // Extract replacement user ID from metadata
+        const repId = (evt as any).rawMetadata?.replacement_user_id;
+        if (repId) {
+          replacementUserIds.add(repId);
+        }
+      }
+    });
+
     const filtered = uncollapsed.filter((evt) => {
       if (evt.type === 'participant_invite_others') {
         return evt.id === latestInviteOthersId;
+      }
+      // Suppress raw participant_left / participant_removed for users with a resolved leave request or skip_reason
+      if (evt.type === 'participant_left' || evt.type === 'participant_removed') {
+        if (evt.rawSkipReason === 'REPLACED' || evt.rawSkipReason === 'LEFT') {
+          return false;
+        }
+        if (evt.rawTargetUserId && resolvedLeaveTargetUserIds.has(evt.rawTargetUserId)) {
+          return false;
+        }
       }
       return true;
     });

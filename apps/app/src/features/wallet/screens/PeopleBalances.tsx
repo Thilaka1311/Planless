@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useRef } from "react";
-import { ArrowLeft, Plus, Check, Edit2, CheckCircle2, AlertCircle, HandCoins, ArrowUpRight, ArrowDownLeft } from "lucide-react";
-import { WalletRelationship, ExpenseBreakdown, settleWalletExpenseParticipant } from "../services/walletService";
+import { ArrowLeft, Plus, Check, Edit2, CheckCircle2, AlertCircle, HandCoins, ArrowUpRight, ArrowDownLeft, Trash2 } from "lucide-react";
+import { WalletRelationship, ExpenseBreakdown, settleWalletExpenseParticipant, settleWalletRelationship, deleteWalletExpense, updateWalletExpense } from "../services/walletService";
 import { useWalletStore } from "../state/WalletContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
+import { ExpenseDetails, PlanBalancesDetail } from "./ExpenseDetail";
 
 interface RelationshipDetailsScreenProps {
   relationship: WalletRelationship;
@@ -24,6 +25,9 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
   onSelectExpense,
 }) => {
   const { dbPlansLocal, dbPlanParticipantsLocal, dbUsersLocal, dbWalletPaidTransactions } = useWalletStore();
+
+  // Selected expense ID for PlanBalancesDetail navigation
+  const [selectedExpenseIdForDetail, setSelectedExpenseIdForDetail] = useState<string | null>(null);
 
   // Add Cost state
   const [showAddCostSheet, setShowAddCostSheet] = useState(false);
@@ -57,6 +61,11 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
   const [submittingSettle, setSubmittingSettle] = useState(false);
   const [settleError, setSettleError] = useState<string | null>(null);
 
+  // Delete Expense state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [submittingDelete, setSubmittingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   // Long-press timer ref
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const isLongPressRef = useRef(false);
@@ -67,9 +76,9 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
   // Filter plans relevant to BOTH current user and this relationship person (or plans the user is in)
   const relevantPlans = useMemo(() => {
     if (!dbPlansLocal || dbPlansLocal.length === 0) return [];
-    
+
     const activeUserPlans = (dbPlanParticipantsLocal || [])
-      .filter((pp) => (pp.user_id === activeUserId || pp.user_id === otherUserId) && String(pp.rsvp_status || "").toUpperCase() === "JOINED")
+      .filter((pp) => (pp.user_id === activeUserId || pp.user_id === otherUserId) && ["JOINED", "WAITLISTED"].includes(String(pp.rsvp_status || "").toUpperCase()))
       .map((pp) => pp.plan_id);
 
     const planSet = new Set(activeUserPlans);
@@ -82,7 +91,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     if (!targetPlan) return [];
 
     const planPartRows = (dbPlanParticipantsLocal || []).filter(
-      (pp) => pp.plan_id === targetPlan && String(pp.rsvp_status || "").toUpperCase() === "JOINED"
+      (pp) => pp.plan_id === targetPlan && ["JOINED", "WAITLISTED"].includes(String(pp.rsvp_status || "").toUpperCase())
     );
 
     const userMap = new Map<string, any>();
@@ -134,7 +143,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     if (!targetPlan) return [];
 
     const planPartRows = (dbPlanParticipantsLocal || []).filter(
-      (pp) => pp.plan_id === targetPlan && String(pp.rsvp_status || "").toUpperCase() === "JOINED"
+      (pp) => pp.plan_id === targetPlan && ["JOINED", "WAITLISTED"].includes(String(pp.rsvp_status || "").toUpperCase())
     );
 
     const userMap = new Map<string, any>();
@@ -214,8 +223,14 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     ? Math.round((parsedEditAmount / finalEditParticipantIds.length) * 100) / 100
     : 0;
 
-  // Long press handler functions
+  // Long press handler functions - ONLY expense payer can long-press to open action sheet
   const handleTouchStart = (expense: ExpenseBreakdown) => {
+    const isPayer = expense.payerId
+      ? (expense.payerId === activeUserId)
+      : expense.role === "creditor";
+
+    if (!isPayer) return;
+
     isLongPressRef.current = false;
     timerRef.current = setTimeout(() => {
       isLongPressRef.current = true;
@@ -236,11 +251,12 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
       isLongPressRef.current = false;
       return;
     }
-    if (onSelectExpense) {
-      onSelectExpense(expense.id, expense.planId);
-    } else {
-      onSelectPlan(expense.planId);
+    if (!expense?.id) {
+      console.warn("[PeopleBalances] Expense row missing valid wallet_expenses.id");
+      return;
     }
+    console.log("[WalletNavigation] screen = expenseDetails, expenseId =", expense.id, "source = people");
+    setSelectedExpenseIdForDetail(expense.id);
   };
 
   const handleOpenAddCostSheet = () => {
@@ -250,9 +266,9 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     const initialPlan = relevantPlans[0]?.id || dbPlansLocal[0]?.id || "";
     setSelectedPlanId(initialPlan);
 
-    // Initial participant selection: all members of initialPlan (or active + other)
+    // Initial participant selection: all active members of initialPlan (JOINED or WAITLISTED)
     const planPartRows = (dbPlanParticipantsLocal || []).filter(
-      (pp) => pp.plan_id === initialPlan && String(pp.rsvp_status || "").toUpperCase() === "JOINED"
+      (pp) => pp.plan_id === initialPlan && ["JOINED", "WAITLISTED"].includes(String(pp.rsvp_status || "").toUpperCase())
     );
     const initialUserIds = planPartRows.length > 0
       ? Array.from(new Set(planPartRows.map((pp) => pp.user_id)))
@@ -267,7 +283,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
 
     // Refresh participant list checkmarks for newly selected plan
     const planPartRows = (dbPlanParticipantsLocal || []).filter(
-      (pp) => pp.plan_id === planId && String(pp.rsvp_status || "").toUpperCase() === "JOINED"
+      (pp) => pp.plan_id === planId && ["JOINED", "WAITLISTED"].includes(String(pp.rsvp_status || "").toUpperCase())
     );
     const newPlanUserIds = planPartRows.length > 0
       ? Array.from(new Set(planPartRows.map((pp) => pp.user_id)))
@@ -304,19 +320,23 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     setFormError(null);
 
     try {
-      // Step 1: Create a plan_message of type "cost" to preserve flow integrity
-      const { data: msgData, error: msgError } = await (supabase as any)
-        .from("plan_messages")
-        .insert({
-          plan_id: selectedPlanId,
-          user_id: activeUserId,
-          content: JSON.stringify({ title: costTitle.trim(), amount: parsedAmount }),
-          message_type: "cost",
-        })
-        .select()
-        .single();
-
-      const messageId = msgData?.id || null;
+      // Step 1: Optional plan_message insertion (non-blocking)
+      let messageId: string | null = null;
+      try {
+        const { data: msgData } = await (supabase as any)
+          .from("plan_messages")
+          .insert({
+            plan_id: selectedPlanId,
+            user_id: activeUserId,
+            content: JSON.stringify({ title: costTitle.trim(), amount: parsedAmount }),
+            message_type: "cost",
+          })
+          .select()
+          .single();
+        messageId = msgData?.id || null;
+      } catch (msgErr) {
+        console.warn("[RelationshipDetailsScreen] Non-fatal error inserting plan_messages:", msgErr);
+      }
 
       const resolveUserUuid = (rawId: string): string => {
         const u = (dbUsersLocal || []).find(
@@ -389,7 +409,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     setShowEditSheet(true);
   };
 
-  // Save Edit Expense modifications with exact participant updates
+  // Save Edit Expense modifications with RPC enforcing strict payer-only authorization
   const handleEditExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedExpense || !isEditFormValid || submittingEdit) return;
@@ -398,55 +418,13 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     setEditError(null);
 
     try {
-      const count = finalEditParticipantIds.length;
-      const newShare = Math.round((parsedEditAmount / count) * 100) / 100;
-
-      // 1. Update wallet_expenses record
-      const { error: expUpdateErr } = await (supabase as any)
-        .from("wallet_expenses")
-        .update({
-          title: editTitle.trim(),
-          total_amount: parsedEditAmount,
-          plan_id: editPlanId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", selectedExpense.id);
-
-      if (expUpdateErr) {
-        console.error("[RelationshipDetailsScreen] Update wallet_expenses failed:", expUpdateErr);
-        setEditError(expUpdateErr.message || "Failed to update expense.");
-        setSubmittingEdit(false);
-        return;
-      }
-
-      // 2. Delete removed participant rows from wallet_expense_participants
-      const { error: delErr } = await (supabase as any)
-        .from("wallet_expense_participants")
-        .delete()
-        .eq("expense_id", selectedExpense.id)
-        .not("user_id", "in", `(${finalEditParticipantIds.join(",")})`);
-
-      if (delErr) {
-        console.error("[RelationshipDetailsScreen] Delete removed participants failed:", delErr);
-      }
-
-      // 3. Upsert selected participant rows with updated amount_owed
-      const upsertRows = finalEditParticipantIds.map((uid) => ({
-        expense_id: selectedExpense.id,
-        user_id: uid,
-        amount_owed: newShare,
-        amount_paid: 0,
-        status: "PENDING",
-        updated_at: new Date().toISOString(),
-      }));
-
-      const { error: upsertErr } = await (supabase as any)
-        .from("wallet_expense_participants")
-        .upsert(upsertRows, { onConflict: "expense_id,user_id" });
-
-      if (upsertErr) {
-        console.error("[RelationshipDetailsScreen] Upsert participants failed:", upsertErr);
-      }
+      await updateWalletExpense({
+        expenseId: selectedExpense.id,
+        title: editTitle.trim(),
+        totalAmount: parsedEditAmount,
+        planId: editPlanId,
+        participantIds: finalEditParticipantIds,
+      });
 
       // Close edit sheet & refresh
       setShowEditSheet(false);
@@ -472,12 +450,16 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
   const handleConfirmSettle = async () => {
     if (!selectedExpense || submittingSettle) return;
 
+    if (selectedExpense.role !== "creditor") {
+      setSettleError("Only the creditor can settle this expense.");
+      return;
+    }
+
     setSubmittingSettle(true);
     setSettleError(null);
 
     try {
-      const expenseIsOwed = selectedExpense.role === "creditor";
-      const participantUserId = expenseIsOwed ? otherUserId : activeUserId;
+      const participantUserId = otherUserId;
 
       const success = await settleWalletExpenseParticipant({
         expenseId: selectedExpense.id,
@@ -503,41 +485,22 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
 
   // Open Overall Settle Up sheet
   const handleOpenOverallSettleSheet = () => {
+    if (!isOwed || absNetBalance <= 0) return;
     setOverallSettleError(null);
     setShowOverallSettleSheet(true);
   };
 
-  // Execute settlement across all outstanding expenses for this relationship
+  // Execute settlement across all outstanding expenses for this relationship atomically via RPC
   const handleConfirmOverallSettle = async () => {
-    if (submittingOverallSettle || absNetBalance <= 0) return;
+    if (submittingOverallSettle || absNetBalance <= 0 || !isOwed) return;
 
     setSubmittingOverallSettle(true);
     setOverallSettleError(null);
 
     try {
-      // Outstanding expenses where money is owed to/from this relationship person
-      const creditorExps = relationship.creditorExpenses || (relationship.expenses || []).filter((e) => e.role === "creditor");
-      const debtorExps = relationship.debtorExpenses || (relationship.expenses || []).filter((e) => e.role === "debtor");
+      const success = await settleWalletRelationship(otherUserId);
 
-      const targetExpenses = isOwed
-        ? creditorExps.filter((e) => e.outstandingAmount > 0)
-        : debtorExps.filter((e) => e.outstandingAmount > 0);
-
-      // Settle participant record for all outstanding expenses in sequence
-      const settlePromises = targetExpenses.map((exp) => {
-        const expenseIsOwed = exp.role === "creditor";
-        const participantUserId = expenseIsOwed ? otherUserId : activeUserId;
-
-        return settleWalletExpenseParticipant({
-          expenseId: exp.id,
-          participantUserId,
-        });
-      });
-
-      const results = await Promise.all(settlePromises);
-      const failedCount = results.filter((r) => r === false).length;
-
-      if (failedCount > 0 && failedCount === targetExpenses.length) {
+      if (!success) {
         setOverallSettleError("Failed to record settlements. Please try again.");
         setSubmittingOverallSettle(false);
         return;
@@ -552,6 +515,52 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
       setSubmittingOverallSettle(false);
     }
   };
+
+  // Open Delete Expense confirmation modal
+  const handleOpenDeleteModal = () => {
+    if (!selectedExpense) return;
+    setDeleteError(null);
+    setShowActionMenu(false);
+    setShowDeleteModal(true);
+  };
+
+  // Execute deletion of selected expense atomically via RPC
+  const handleConfirmDelete = async () => {
+    if (!selectedExpense || submittingDelete) return;
+
+    setSubmittingDelete(true);
+    setDeleteError(null);
+
+    try {
+      await deleteWalletExpense(selectedExpense.id);
+      setShowDeleteModal(false);
+      setSelectedExpense(null);
+      await onRefreshBalances();
+    } catch (err: any) {
+      console.error("[RelationshipDetailsScreen] Exception deleting expense:", err);
+      setDeleteError(err.message || "Failed to delete expense.");
+    } finally {
+      setSubmittingDelete(false);
+    }
+  };
+
+  // Render ExpenseDetails if an expense is tapped
+  if (selectedExpenseIdForDetail) {
+    return (
+      <ExpenseDetails
+        expenseId={selectedExpenseIdForDetail}
+        source="people"
+        onBack={() => {
+          console.log("[WalletNavigation] screen = peopleBalances, personId =", relationship.userId);
+          setSelectedExpenseIdForDetail(null);
+        }}
+        onRefreshBalances={async () => {
+          await onRefreshBalances();
+        }}
+        activeUserId={activeUserId}
+      />
+    );
+  }
 
   return (
     <div
@@ -570,11 +579,8 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
         </button>
         <div>
           <h2 className="text-xl font-display font-semibold text-zinc-100 tracking-tight">
-            Details
+            Balances
           </h2>
-          <p className="text-[10px] text-zinc-550 font-sans mt-0.5">
-            Outstanding balance breakdown
-          </p>
         </div>
       </div>
 
@@ -591,14 +597,17 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
             {relationship.fullName}
           </h3>
           <p className="text-zinc-500 font-sans text-xs font-medium uppercase tracking-wider">
-            {isOwed ? "Owes you" : "You owe"}
+            {absNetBalance === 0 ? "SETTLED UP" : isOwed ? "OWES YOU" : "YOU OWE"}
           </p>
           <div className="flex items-center justify-center gap-2 mt-1">
-            <h1 className={`font-sans font-black text-4xl leading-none ${isOwed ? "text-emerald-400" : "text-[#FF6B2C]"}`}>
+            <h1
+              className={`font-sans font-black text-4xl leading-none ${absNetBalance === 0 ? "text-zinc-300" : isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
+                }`}
+            >
               {formattedNetBalance}
             </h1>
           </div>
-          {absNetBalance > 0 && (
+          {absNetBalance > 0 && isOwed && (
             <div className="pt-2">
               <button
                 type="button"
@@ -616,8 +625,8 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
       {/* Expense Timeline section header with + Add Cost button */}
       <div className="flex-1 flex flex-col pt-4 mt-2">
         <div className="flex items-center justify-between px-1 mb-4">
-          <h4 className="text-[11px] font-sans font-semibold uppercase tracking-[0.12em] text-zinc-500">
-            Expenses Timeline
+          <h4 className="text-[11px] font-sans font-semibold text-zinc-500">
+            Expenses
           </h4>
           <button
             type="button"
@@ -653,12 +662,6 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
               const expenseIsOwed = expense.role === "creditor";
               const isSettled = expense.status === "SETTLED" || expense.participantStatus === "SETTLED";
 
-              // Format date: Short month & day e.g. "Aug 12"
-              const dateObj = new Date(expense.date);
-              const formattedDate = !isNaN(dateObj.getTime())
-                ? dateObj.toLocaleDateString("en-US", { month: "short", day: "2-digit" })
-                : "Recent";
-
               const formattedShare = expense.yourShare.toLocaleString("en-IN", {
                 style: "currency",
                 currency: "INR",
@@ -674,19 +677,17 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                   onMouseUp={handleTouchEnd}
                   onMouseLeave={handleTouchEnd}
                   onClick={() => handleCardClick(expense)}
-                  className="w-full flex items-center justify-between py-4 text-left group hover:bg-white/[0.01] transition-all cursor-pointer px-1 select-none"
+                  className={`w-full flex items-center justify-between py-4 text-left group transition-all cursor-pointer px-1 select-none ${isSettled ? "opacity-60 hover:opacity-90" : "hover:bg-white/[0.01]"
+                    }`}
                 >
-                  {/* Left block: Date -> Cover -> Expense Info */}
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <span className="text-xs font-sans text-zinc-500 w-12 shrink-0 font-medium">
-                      {formattedDate}
-                    </span>
-
+                  {/* Left block: Cover -> Expense Info */}
+                  <div className="flex items-center gap-3.5 flex-1 min-w-0">
                     {expense.planCover ? (
                       <DiscoveryImages
                         src={expense.planCover}
                         alt={expense.planTitle}
-                        className="w-10 h-10 rounded-lg object-cover bg-zinc-900 border border-white/[0.05] shrink-0"
+                        className={`w-10 h-10 rounded-lg object-cover bg-zinc-900 border border-white/[0.05] shrink-0 ${isSettled ? "grayscale-30" : ""
+                          }`}
                       />
                     ) : (
                       <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] text-zinc-650 font-black">
@@ -694,16 +695,22 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                       </div>
                     )}
 
-                    <div className="min-w-0">
-                      <h5 className="font-sans font-semibold text-[13px] text-zinc-200 group-hover:text-white transition-colors truncate">
-                        {expense.planTitle}
+                    <div className="min-w-0 flex flex-col justify-center">
+                      <h5 className={`font-sans font-semibold text-[13.5px] truncate leading-tight ${isSettled ? "text-zinc-400 group-hover:text-zinc-200" : "text-zinc-100 group-hover:text-white"
+                        }`}>
+                        {expense.expenseTitle || expense.title || "Plan Fee"}
                       </h5>
-                      <span className="text-[10px] font-sans text-zinc-550 block truncate mt-0.5">
+                      <span className="text-[11.5px] font-sans font-medium text-zinc-400 block truncate leading-tight mt-0.5">
+                        {expense.planTitle}
+                      </span>
+                      <span className="text-[10px] font-sans text-zinc-500 block truncate leading-tight mt-0.5">
                         {isSettled
-                          ? "Settled Up"
+                          ? expenseIsOwed
+                            ? `${relationship.fullName} paid you`
+                            : `You paid ${relationship.fullName}`
                           : expenseIsOwed
-                          ? `${relationship.fullName} Owes You`
-                          : `You Owe ${relationship.fullName}`}
+                            ? `${relationship.fullName} owes you`
+                            : `You owe ${relationship.fullName}`}
                       </span>
                     </div>
                   </div>
@@ -711,14 +718,13 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                   {/* Right block: Amount or Settled Tag */}
                   <div className="text-right shrink-0">
                     {isSettled ? (
-                      <span className="font-mono text-xs font-bold tracking-tight text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">
-                        Settled Up
+                      <span className="font-sans text-[11px] font-medium tracking-tight text-zinc-500 bg-zinc-900/60 px-2 py-0.5 rounded border border-white/[0.04]">
+                        Settled
                       </span>
                     ) : (
                       <span
-                        className={`font-mono text-sm font-bold tracking-tight ${
-                          expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                        }`}
+                        className={`font-mono text-sm font-bold tracking-tight ${expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
+                          }`}
                       >
                         {expenseIsOwed ? "+" : "-"}
                         {formattedShare}
@@ -776,13 +782,25 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                 <span>Edit Cost</span>
               </button>
 
+              {selectedExpense.role === "creditor" && (
+                <button
+                  type="button"
+                  onClick={handleOpenSettleModal}
+                  className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 border border-white/[0.04] text-zinc-200 hover:text-white text-sm font-medium transition cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-[#FF6B2C]" />
+                  <span>Settle Up</span>
+                </button>
+              )}
+
+              {/* DELETE EXPENSE ACTION BUTTON */}
               <button
                 type="button"
-                onClick={handleOpenSettleModal}
-                className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 border border-white/[0.04] text-zinc-200 hover:text-white text-sm font-medium transition cursor-pointer"
+                onClick={handleOpenDeleteModal}
+                className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 hover:text-rose-300 text-sm font-medium transition cursor-pointer"
               >
-                <CheckCircle2 className="w-4 h-4 text-[#FF6B2C]" />
-                <span>Settle Up</span>
+                <Trash2 className="w-4 h-4 text-rose-400" />
+                <span>Delete Expense</span>
               </button>
             </div>
           </div>
@@ -885,11 +903,10 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                         key={p.id}
                         type="button"
                         onClick={() => toggleEditParticipantSelection(p.id)}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer text-left ${
-                          isSelected
+                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer text-left ${isSelected
                             ? "bg-zinc-900 border-[#FF6B2C]/60 text-white"
                             : "bg-zinc-900/40 border-zinc-800/60 text-zinc-400 hover:bg-zinc-900/80"
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <UserAvatar
@@ -908,11 +925,10 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                             {isSelected ? `₹${editPerPersonShare}` : "₹0"}
                           </span>
                           <div
-                            className={`w-5 h-5 rounded-full flex items-center justify-center border transition ${
-                              isSelected
+                            className={`w-5 h-5 rounded-full flex items-center justify-center border transition ${isSelected
                                 ? "bg-[#FF6B2C] border-[#FF6B2C] text-white"
                                 : "border-zinc-700 bg-transparent text-transparent"
-                            }`}
+                              }`}
                           >
                             <Check className="w-3 h-3 stroke-[3]" />
                           </div>
@@ -1214,11 +1230,10 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                         key={p.id}
                         type="button"
                         onClick={() => toggleParticipantSelection(p.id)}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer text-left ${
-                          isSelected
+                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer text-left ${isSelected
                             ? "bg-zinc-900 border-[#FF6B2C]/60 text-white"
                             : "bg-zinc-900/40 border-zinc-800/60 text-zinc-400 hover:bg-zinc-900/80"
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <UserAvatar
@@ -1237,11 +1252,10 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                             {isSelected ? `₹${perPersonShare}` : "₹0"}
                           </span>
                           <div
-                            className={`w-5 h-5 rounded-full flex items-center justify-center border transition ${
-                              isSelected
+                            className={`w-5 h-5 rounded-full flex items-center justify-center border transition ${isSelected
                                 ? "bg-[#FF6B2C] border-[#FF6B2C] text-white"
                                 : "border-zinc-700 bg-transparent text-transparent"
-                            }`}
+                              }`}
                           >
                             <Check className="w-3 h-3 stroke-[3]" />
                           </div>
@@ -1270,6 +1284,68 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE EXPENSE CONFIRMATION MODAL */}
+      {showDeleteModal && selectedExpense && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-fade-in"
+          onClick={() => {
+            if (!submittingDelete) {
+              setShowDeleteModal(false);
+              setSelectedExpense(null);
+              setDeleteError(null);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-3xl p-6 shadow-2xl space-y-4 text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="w-10 h-10 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-display font-bold text-white">Delete Expense?</h3>
+                <p className="text-xs text-zinc-400 font-sans mt-0.5">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-300 font-sans leading-relaxed">
+              Are you sure you want to delete <strong className="text-white font-semibold">{selectedExpense.expenseTitle || selectedExpense.planTitle}</strong>? This expense will be removed and wallet balances will be updated.
+            </p>
+
+            {deleteError && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                disabled={submittingDelete}
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setSelectedExpense(null);
+                  setDeleteError(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/[0.06] text-xs font-sans font-semibold text-zinc-300 hover:text-white transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submittingDelete}
+                onClick={handleConfirmDelete}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-sans font-semibold text-white transition cursor-pointer disabled:opacity-50"
+              >
+                {submittingDelete ? "Deleting..." : "Delete"}
+              </button>
+            </div>
           </div>
         </div>
       )}

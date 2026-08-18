@@ -6,6 +6,7 @@ import { updateParticipantStatus, insertParticipant, deleteParticipant, syncUser
 import { cleanPlanId, isUuid as isUuidUtil, resolveUserUuid as resolveUserUuidUtil } from "../utils/planUtils";
 import { syncPlanFriendships } from "../../friendships/services/friendshipService";
 import { recalculateWalletExpenses } from "../../wallet/services/walletSyncService";
+import { invalidatePlanCache } from "../../chats/hooks/useChatCache";
 import * as api from "../api/plans";
 
 export interface JoinOptions {
@@ -598,7 +599,12 @@ export function usePlanParticipants({
       });
 
       if (error) {
-        console.error(`[requestPaidPlanLeave] RPC failed:`, error);
+        console.error(`[requestPaidPlanLeave] RPC error details:`, {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
         throw error;
       }
 
@@ -756,6 +762,11 @@ export function usePlanParticipants({
       }
 
       renumberWaitlistPositions(planUuid).catch(() => {});
+      // Recalculate wallet expenses when a participant is removed
+      recalculateWalletExpenses(planUuid).catch(err =>
+        console.error("[removeParticipant] recalculateWalletExpenses failed:", err)
+      );
+      await refreshPlans(["plans", "plan_participants", "wallet_expenses", "wallet_expense_participants"]);
     } catch (rpcError: any) {
       console.error("[PlansContext removeParticipant] removeParticipantRPC failed.", rpcError);
       await refreshPlans(); // Rollback optimistic state on failure
@@ -1087,26 +1098,23 @@ export function usePlanParticipants({
       }
     }
 
-    // Optimistic state update: update assigned_group to GOING and sync rsvp_status where accepted
+    // Optimistic state update: update assigned_group to GOING and sync rsvp_status to JOINED
     setDbPlanParticipants(prev => prev.map(pp => {
       if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedUserUuid || pp.user_id === participantUserUuid)) {
-        const nextStatus = pp.rsvp_status === 'WAITLISTED' ? 'JOINED' : pp.rsvp_status;
+        const nextStatus = 'JOINED';
         return {
           ...pp,
           assigned_group: 'GOING' as const,
           waitlist_position: null,
-          rsvp_status: nextStatus,
-          responded_at: nextStatus === 'JOINED' ? (pp.responded_at || new Date().toISOString()) : pp.responded_at
+          rsvp_status: nextStatus as any,
+          responded_at: pp.responded_at || new Date().toISOString()
         };
       }
       return pp;
     }));
 
     try {
-      const existingPp = dbPlanParticipants.find(
-        pp => (pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedUserUuid || pp.user_id === participantUserUuid)
-      );
-      const nextRsvp = existingPp?.rsvp_status === 'WAITLISTED' ? 'JOINED' : (existingPp?.rsvp_status || 'INVITED');
+      const nextRsvp = 'JOINED';
 
       const { error: updateErr } = await (supabase as any)
         .from("plan_participants")
@@ -1661,7 +1669,8 @@ export function usePlanParticipants({
       throw rpcError;
     }
 
-    // Refresh local state
+    // Refresh local state and invalidate in-memory activity cache
+    invalidatePlanCache(planUuid, 'activities');
     refreshPlans(['plan_participants', 'plan_activity', 'wallet_expenses', 'wallet_expense_participants']);
     return rpcResult;
   }, [plans, resolveUserUuid, refreshPlans]);

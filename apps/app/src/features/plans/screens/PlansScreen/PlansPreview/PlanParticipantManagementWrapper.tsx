@@ -46,13 +46,21 @@ interface PlanParticipantManagementWrapperProps {
   onConfirmReplacement?: (planId: string, targetUserId: string, replacementUserId: string) => Promise<void>;
 }
 
-/** Maps a plan member to the shared Friend shape */
-function memberToFriend(m: any, hostId: string, activeUserId?: string): Friend {
+function memberToFriend(m: any, hostId: string, activeUserId?: string, dbPlanParticipants: any[] = []): Friend {
   const id = m.userId || m.userUuid || m.user_id || m.id;
   const isHostRole = (m.role || '').toUpperCase() === 'HOST';
   const isCurrentUser = activeUserId && (id === activeUserId || m.userUuid === activeUserId || m.userId === activeUserId || m.user_id === activeUserId);
   const status = normalizeStatus(m.joinState || m.rsvp_status);
   const isAccepted = status !== 'INVITED';
+
+  const dbPp = dbPlanParticipants.find((pp: any) => pp.user_id === id);
+  const isLeaveRequested = dbPp
+    ? dbPp.leave_requested === true
+    : (m.leave_requested === true || (m as any).leaveRequested === true);
+  const leaveRequestedAt = dbPp
+    ? dbPp.leave_requested_at
+    : (m.leave_requested_at || (m as any).leaveRequestedAt || null);
+
   return {
     id,
     dbUuid: m.userUuid || m.userId || m.user_id || m.id,
@@ -63,7 +71,8 @@ function memberToFriend(m: any, hostId: string, activeUserId?: string): Friend {
     isAccepted,
     rsvpStatus: status,
     assignedGroup: m.assignedGroup || m.assigned_group || (status === 'WAITLISTED' ? 'WAITLIST' : 'GOING'),
-    waitlistPosition: m.waitlistPosition ?? m.waitlist_position ?? null,
+    leave_requested: isLeaveRequested,
+    leave_requested_at: leaveRequestedAt,
   };
 }
 
@@ -688,22 +697,22 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     }
     const rawInvited = allPlanMembers
       .filter((m) => normalizeStatus(m.joinState || m.rsvp_status) === 'INVITED')
-      .map((m) => memberToFriend(m, hostId, activeUserId));
+      .map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants));
     return prioritizeCurrentUserAndSort(rawInvited);
-  }, [allPlanMembers, hostId, activeUserId, waitlistMode, isAutomaticFull, prioritizeCurrentUserAndSort]);
+  }, [allPlanMembers, hostId, activeUserId, dbPlanParticipants, waitlistMode, isAutomaticFull, prioritizeCurrentUserAndSort]);
 
   const rawGoingList: Friend[] = useMemo(() => {
-    return goingMembers.map((m) => memberToFriend(m, hostId, activeUserId));
-  }, [goingMembers, hostId, activeUserId]);
+    return goingMembers.map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants));
+  }, [goingMembers, hostId, activeUserId, dbPlanParticipants]);
 
   const goingList: Friend[] = useMemo(() => {
     return prioritizeCurrentUserAndSort(rawGoingList);
   }, [rawGoingList, prioritizeCurrentUserAndSort]);
 
   const waitlistList: Friend[] = useMemo(() => {
-    const rawList = waitlistMembers.map((m) => memberToFriend(m, hostId, activeUserId));
+    const rawList = waitlistMembers.map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants));
     return sortByWaitlistOrder(rawList);
-  }, [waitlistMembers, hostId, activeUserId, sortByWaitlistOrder]);
+  }, [waitlistMembers, hostId, activeUserId, dbPlanParticipants, sortByWaitlistOrder]);
 
   // Determine which tab to show by default: the one containing the current user
   const initialTab: 'going' | 'waitlist' | 'invited' = useMemo(() => {

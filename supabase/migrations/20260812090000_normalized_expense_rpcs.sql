@@ -53,7 +53,7 @@ BEGIN
 
   IF v_expense_id IS NULL THEN
     INSERT INTO wallet_expenses (plan_id, payer_id, title, total_amount, status)
-    VALUES (p_plan_id, v_host_id, COALESCE(v_plan_title, 'Plan Expense'), v_total_cost, 'PENDING')
+    VALUES (p_plan_id, v_host_id, 'Plan Fee', v_total_cost, 'PENDING')
     RETURNING id INTO v_expense_id;
   ELSE
     UPDATE wallet_expenses

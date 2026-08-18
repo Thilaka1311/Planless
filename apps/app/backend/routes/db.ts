@@ -1100,13 +1100,7 @@ async function recalculatePlanParticipantsCosts(client: any, planUuid: string): 
     return;
   }
 
-  // Fetch the plan title for the expense record
-  const { data: planDetails } = await client
-    .from("plans")
-    .select("title")
-    .eq("id", planUuid)
-    .single();
-  const planTitle = planDetails?.title || "Plan Expense";
+  const planTitle = "Plan Fee";
 
   // Find or create the single plan-level wallet_expense (message_id IS NULL = plan default)
   const { data: existingExpense } = await client
