@@ -11,6 +11,7 @@ export interface SettledExpenseItem {
   amount: number;
   settledDate: string; // ISO timestamp or date string
   planId?: string;
+  isPaymentKept?: boolean;
 }
 
 interface SettlementHistoryScreenProps {
@@ -62,7 +63,7 @@ export const SettlementHistoryScreen: React.FC<SettlementHistoryScreenProps> = (
   }, [sortedSettled]);
 
   return (
-    <div className="min-h-screen bg-black text-white p-4 max-w-md mx-auto flex flex-col font-sans">
+    <div className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-20 text-left bg-[#050505] animate-fade-in select-none">
       {/* Navigation Header */}
       <div className="flex items-center gap-3 mb-6">
         <button
@@ -171,7 +172,7 @@ export const SettlementHistoryScreen: React.FC<SettlementHistoryScreenProps> = (
                               </span>
                             )}
                             <span className="text-[10px] font-sans text-zinc-550 block truncate leading-tight mt-0.5">
-                              Settled up
+                              {exp.isPaymentKept ? "Payment kept · Settled" : "Settled up"}
                             </span>
                           </div>
                         </div>

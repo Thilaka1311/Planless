@@ -500,7 +500,7 @@ export function useParticipantsCache(targetPlanUuid: string) {
           console.error("[useParticipantsCache] Error fetching plan_participants:", error);
         } else if (data) {
           planCache.participants.set(targetPlanUuid, {
-            data: data as DbPlanParticipant[],
+            data: data as unknown as DbPlanParticipant[],
             loading: false,
             lastSynced: Date.now(),
           });

@@ -881,6 +881,7 @@ export type Database = {
       wallet_expenses: {
         Row: {
           created_at: string
+          expense_type: "PLAN_EXPENSE" | "ADDITIONAL_EXPENSE"
           id: string
           message_id: string | null
           payer_id: string
@@ -893,6 +894,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          expense_type?: "PLAN_EXPENSE" | "ADDITIONAL_EXPENSE"
           id?: string
           message_id?: string | null
           payer_id: string
@@ -905,6 +907,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          expense_type?: "PLAN_EXPENSE" | "ADDITIONAL_EXPENSE"
           id?: string
           message_id?: string | null
           payer_id?: string
@@ -1220,7 +1223,7 @@ export type Database = {
         | "host_promoted"
       plan_status: "LIVE" | "COMPLETED" | "CANCELLED"
       rsvp_status: "INVITED" | "JOINED" | "SKIPPED" | "WAITLISTED"
-      skip_reason: "LEFT" | "REMOVED"
+      skip_reason: "LEFT" | "REMOVED" | "REPLACED" | "PAYMENT_KEPT"
       sports_subcategory:
         | "FOOTBALL"
         | "BADMINTON"
@@ -1508,7 +1511,7 @@ export const Constants = {
       ],
       plan_status: ["LIVE", "COMPLETED", "CANCELLED"],
       rsvp_status: ["INVITED", "JOINED", "SKIPPED", "WAITLISTED"],
-      skip_reason: ["LEFT", "REMOVED", "REPLACED"],
+      skip_reason: ["LEFT", "REMOVED", "REPLACED", "PAYMENT_KEPT"],
       sports_subcategory: [
         "FOOTBALL",
         "BADMINTON",
@@ -1523,6 +1526,7 @@ export const Constants = {
       team_type: ["TEAM_1", "TEAM_2"],
       participant_payment_status: ["PENDING", "SETTLED"],
       wallet_expense_status: ["PENDING", "SETTLED"],
+      wallet_expense_type: ["PLAN_EXPENSE", "ADDITIONAL_EXPENSE"],
       wallet_status: ["PENDING", "PAID"],
 
     },

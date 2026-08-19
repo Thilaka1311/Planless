@@ -6,6 +6,7 @@ import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import { ExpenseDetails, PlanBalancesDetail } from "./ExpenseDetail";
 import { SettlementHistoryScreen, SettledExpenseItem } from "./SettlementHistory";
+import { getParticipantFinancialState, isJoinedParticipantStatus } from "../services/walletService";
 
 interface PlanDetailsScreenProps {
   planId?: string;
@@ -24,6 +25,7 @@ interface ExpenseGroupedRow {
   payerId: string;
   payerName: string;
   userNetShare: number; // + if owed to user, - if user owes
+  settledDisplayAmount: number; // original split / settlement amount before settlement
   isOwed: boolean;
   isSettled: boolean;
   participantCount: number;
@@ -58,6 +60,9 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
   const [dbParticipants, setDbParticipants] = useState<any[]>([]);
   const [dbProfiles, setDbProfiles] = useState<any[]>([]);
   const [userPostgresUuid, setUserPostgresUuid] = useState<string>("");
+  const [financiallyIncludedUserIds, setFinanciallyIncludedUserIds] = useState<Set<string>>(new Set());
+  const [joinedUserIds, setJoinedUserIds] = useState<Set<string>>(new Set());
+  const [hasLoadedPlanParticipants, setHasLoadedPlanParticipants] = useState(false);
 
   // Add Cost modal state
   const [showAddCostSheet, setShowAddCostSheet] = useState(false);
@@ -152,6 +157,31 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
       setDbParticipants(fetchedPts);
 
+      // 5b. Fetch plan_participants to build financiallyIncludedUserIds set
+      const { data: rawPlanPts } = await supabase
+        .from("plan_participants")
+        .select("user_id, rsvp_status, skip_reason")
+        .eq("plan_id", resolvedPlanId);
+
+      const includedSet = new Set<string>();
+      const joinedSet = new Set<string>();
+      (rawPlanPts || []).forEach((p: any) => {
+        const finState = getParticipantFinancialState(p.rsvp_status || p.status, p.skip_reason || p.skipReason);
+        if (finState === "ACTIVE") {
+          joinedSet.add(p.user_id);
+          includedSet.add(p.user_id);
+        } else if (finState === "PAYMENT_KEPT") {
+          includedSet.add(p.user_id);
+        }
+      });
+      // Always include users with existing split entries so historical splits contribute consistently
+      fetchedPts.forEach((pt: any) => {
+        if (pt.user_id) includedSet.add(pt.user_id);
+      });
+      setFinanciallyIncludedUserIds(includedSet);
+      setJoinedUserIds(joinedSet);
+      setHasLoadedPlanParticipants(true);
+
       // 6. Fetch profiles for all involved users
       const payerUserIds = fetchedExp.map((e: any) => e.payer_id).filter(Boolean);
       const ptUserIds = fetchedPts.map((p: any) => p.user_id).filter(Boolean);
@@ -213,17 +243,34 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
       const rawTitle = exp.title ? String(exp.title).trim() : "";
       const isPlanJoining =
+        exp.expense_type === "PLAN_EXPENSE" ||
         rawTitle === "Plan Fee" ||
         rawTitle === "Plan Expense" ||
         (!rawTitle && !exp.message_id);
       const expenseTitle = isPlanJoining ? "Plan Fee" : (rawTitle || "Shared Expense");
 
-      const expPts = dbParticipants.filter((p) => p.expense_id === exp.id);
+      const expPts = dbParticipants.filter((p) => {
+        if (p.expense_id !== exp.id) return false;
+        // Strictly exclude users who are not financially included in plan_participants
+        if (hasLoadedPlanParticipants && !financiallyIncludedUserIds.has(p.user_id)) {
+          return false;
+        }
+        const isPayer = p.user_id === exp.payer_id || (payerIsMe && isMe(p.user_id));
+        if (!isPayer) {
+          const amountOwed = Number(p.amount_owed || 0);
+          const pStatus = String(p.status || "PENDING").toUpperCase();
+          if (amountOwed <= 0 && pStatus !== "SETTLED") {
+            return false;
+          }
+        }
+        return true;
+      });
       const isUserInvolved = payerIsMe || expPts.some((p) => isMe(p.user_id));
 
       if (!isUserInvolved) return; // Only show expenses where user is financially involved
 
       let userNetShare = 0;
+      let originalNetShare = 0;
       let hasDebtors = expPts.length > 0;
       let allDebtorsSettled = hasDebtors;
 
@@ -240,13 +287,16 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
         if (payerIsMe && !ptIsMe) {
           userNetShare += remaining;
+          originalNetShare += amountOwed;
         } else if (!payerIsMe && ptIsMe) {
           userNetShare -= remaining;
+          originalNetShare -= amountOwed;
         }
       });
 
-      // An expense is fully settled ONLY when all debtor participants have settled their shares
-      const isFullySettled = String(exp.status || "").toUpperCase() === "SETTLED" || (hasDebtors && allDebtorsSettled);
+      // An expense is fully settled when all debtor participants have settled their shares, or expense status is SETTLED, or user's net share is 0
+      const isFullySettled = String(exp.status || "").toUpperCase() === "SETTLED" || (hasDebtors && allDebtorsSettled) || userNetShare === 0;
+      const settledDisplayAmount = Math.abs(originalNetShare) || Number(exp.total_amount || 0);
 
       totalNetBalance += userNetShare;
 
@@ -296,6 +346,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         payerId: exp.payer_id,
         payerName,
         userNetShare,
+        settledDisplayAmount,
         isOwed: userNetShare > 0 || (userNetShare === 0 && payerIsMe),
         isSettled: isFullySettled,
         participantCount: expPts.length,
@@ -312,7 +363,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
     rows.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
 
     return { planNetBalance: totalNetBalance, groupedExpenseRows: rows };
-  }, [dbExpenses, dbParticipants, dbProfiles, userPostgresUuid]);
+  }, [dbExpenses, dbParticipants, dbProfiles, userPostgresUuid, financiallyIncludedUserIds, hasLoadedPlanParticipants]);
 
   const planTitle = planDetails?.title || "Plan";
   const planCover = planDetails?.cover_image || undefined;
@@ -321,17 +372,19 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
   const isOwed = planNetBalance > 0;
   const isSettled = planNetBalance === 0;
 
-  // Available participants for Add Cost
+  // Available participants for Add Cost (ONLY active JOINED participants!)
   const availablePlanParticipants = useMemo(() => {
-    return dbProfiles.map((p) => {
-      const isUserMe = p.id === userPostgresUuid;
-      return {
-        id: p.id,
-        name: isUserMe ? "You" : p.full_name || p.username || "Participant",
-        avatar: p.profile_photo_path || "",
-      };
-    });
-  }, [dbProfiles, userPostgresUuid]);
+    return dbProfiles
+      .filter((p) => joinedUserIds.has(p.id))
+      .map((p) => {
+        const isUserMe = p.id === userPostgresUuid;
+        return {
+          id: p.id,
+          name: isUserMe ? "You" : p.full_name || p.username || "Participant",
+          avatar: p.profile_photo_path || "",
+        };
+      });
+  }, [dbProfiles, userPostgresUuid, joinedUserIds]);
 
   // Open Add Cost Sheet
   const handleOpenAddCostSheet = () => {
@@ -364,7 +417,8 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
     setFormError(null);
 
     try {
-      const finalParticipants = Array.from(new Set([userPostgresUuid, ...selectedParticipantIds]));
+      const validJoinedUserIds = selectedParticipantIds.filter((uid) => joinedUserIds.has(uid));
+      const finalParticipants = Array.from(new Set([userPostgresUuid, ...validJoinedUserIds]));
 
       const { error: rpcError } = await (supabase as any).rpc("insert_cost_expense", {
         p_plan_id: planDetails.id,
@@ -403,7 +457,6 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         expenseId={selectedExpenseIdForDetail}
         source="plan"
         onBack={() => {
-          console.log("[WalletNavigation] screen = planBalances, planId =", planDetails?.id || planId);
           setSelectedExpenseIdForDetail(null);
         }}
         onRefreshBalances={async () => {
@@ -417,13 +470,13 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
   if (showSettlementHistory) {
     const settledItems: SettledExpenseItem[] = groupedExpenseRows
-      .filter((r) => r.isSettled)
+      .filter((r) => r.isSettled || r.userNetShare === 0)
       .map((r) => ({
         id: r.id,
         title: r.expenseTitle,
         planTitle: planDetails?.title,
         planCover: planDetails?.cover_image,
-        amount: r.totalAmount || Math.abs(r.userNetShare) || 0,
+        amount: r.settledDisplayAmount || r.totalAmount || 0,
         settledDate: r.updatedAt || r.createdAt || new Date().toISOString(),
         planId: planDetails?.id || planId,
       }));
@@ -491,18 +544,17 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
                 ? "YOU ARE OWED"
                 : "YOU OWE"}
           </p>
-          <div className="flex items-center justify-center gap-2 mt-1">
-            <h1
-              className={`font-sans font-black text-4xl leading-none ${isSettled
-                  ? "text-zinc-300"
-                  : isOwed
-                    ? "text-emerald-400"
-                    : "text-[#FF6B2C]"
+          {!isSettled && (
+            <div className="flex items-center justify-center gap-2 mt-1">
+              <h1
+                className={`font-sans font-black text-4xl leading-none ${
+                  isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
                 }`}
-            >
-              ₹{absNetBalance.toLocaleString("en-IN")}
-            </h1>
-          </div>
+              >
+                ₹{absNetBalance.toLocaleString("en-IN")}
+              </h1>
+            </div>
+          )}
         </div>
       </div>
 
@@ -534,30 +586,26 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
             <div className="p-4 text-center bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
               {dataError}
             </div>
-          ) : (() => {
-            const activeRows = groupedExpenseRows.filter((r) => !r.isSettled);
-            const settledRows = groupedExpenseRows.filter((r) => r.isSettled);
-
-            if (activeRows.length === 0) {
-              return (
-                <div className="py-8 text-center text-xs text-zinc-500 font-sans">
-                  {settledRows.length > 0 ? "No outstanding expenses" : "No expenses for this plan yet"}
-                </div>
-              );
-            }
-
-            return activeRows.map((row) => {
+          ) : groupedExpenseRows.length === 0 ? (
+            <div className="py-8 text-center text-xs text-zinc-500 font-sans">
+              No expenses for this plan yet
+            </div>
+          ) : (
+            groupedExpenseRows.map((row) => {
+              const isRowSettled = row.isSettled || row.userNetShare === 0;
               const expenseIsOwed = row.userNetShare > 0;
               const absShare = Math.abs(row.userNetShare);
+              const displayAmount = isRowSettled ? row.settledDisplayAmount : absShare;
 
               return (
                 <div
                   key={row.id}
                   onClick={() => {
-                    console.log("[WalletNavigation] screen = expenseDetails, expenseId =", row.id, "source = plan");
                     setSelectedExpenseIdForDetail(row.id);
                   }}
-                  className="py-3.5 flex items-center text-left group transition-all cursor-pointer px-1 select-none hover:bg-white/[0.01]"
+                  className={`py-3.5 flex items-center text-left group transition-all cursor-pointer px-1 select-none hover:bg-white/[0.01] ${
+                    isRowSettled ? "opacity-60" : "opacity-100"
+                  }`}
                 >
                   {/* COLUMN 1: Fixed-Width Avatar Column (w-[105px] shrink-0) */}
                   <div className="w-[105px] shrink-0 flex items-center pr-3">
@@ -568,7 +616,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
                           src={p.avatar}
                           alt={p.name}
                           size="w-8 h-8"
-                          className="ring-2 ring-black rounded-full shrink-0"
+                          className={`ring-2 ring-black rounded-full shrink-0 ${isRowSettled ? "grayscale-30" : ""}`}
                           style={{ zIndex: 10 - idx }}
                         />
                       ))}
@@ -580,32 +628,53 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
                     )}
                   </div>
 
-                  {/* COLUMN 2: Flexible Content Column (Title & Payment Context) */}
+                  {/* COLUMN 2: Flexible Content Column (Title & Subtitle) */}
                   <div className="flex-1 min-w-0 flex flex-col justify-center">
-                    <h5 className="font-sans font-semibold text-[13.5px] truncate leading-tight text-zinc-100 group-hover:text-white">
+                    <h5 className={`font-sans text-[13.5px] truncate leading-tight ${
+                      isRowSettled ? "font-medium text-zinc-400 group-hover:text-zinc-200" : "font-semibold text-white group-hover:text-white"
+                    }`}>
                       {row.expenseTitle}
                     </h5>
 
                     {/* Payment Context Subtitle */}
-                    <span className="text-[11.5px] font-sans font-medium text-zinc-400 block truncate leading-tight mt-0.5">
-                      {row.subtitleText}
-                    </span>
+                    {isRowSettled ? (
+                      <>
+                        {planTitle && (
+                          <span className="text-[11.5px] font-sans font-medium text-zinc-500 block truncate leading-tight mt-0.5">
+                            {planTitle}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-sans text-zinc-550 block truncate leading-tight mt-0.5">
+                          Settled up
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[11.5px] font-sans font-medium text-zinc-300 block truncate leading-tight mt-0.5">
+                        {row.subtitleText}
+                      </span>
+                    )}
                   </div>
 
                   {/* COLUMN 3: Far-Right Amount Column (w-[90px] shrink-0 text-right) */}
                   <div className="w-[90px] shrink-0 text-right flex items-center justify-end">
-                    <span
-                      className={`font-mono text-sm font-bold tracking-tight ${
-                        expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                      }`}
-                    >
-                      {expenseIsOwed ? "+" : "-"}₹{absShare.toLocaleString("en-IN")}
-                    </span>
+                    {isRowSettled ? (
+                      <span className="font-mono text-sm font-medium tracking-tight text-zinc-400">
+                        ₹{displayAmount.toLocaleString("en-IN")}
+                      </span>
+                    ) : (
+                      <span
+                        className={`font-mono text-sm font-bold tracking-tight ${
+                          expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
+                        }`}
+                      >
+                        {expenseIsOwed ? "+" : "-"}₹{absShare.toLocaleString("en-IN")}
+                      </span>
+                    )}
                   </div>
                 </div>
               );
-            });
-          })()}
+            })
+          )}
         </div>
 
         {/* SETTLEMENT HISTORY NAVIGATION LINK (Anchored at bottom) */}

@@ -639,6 +639,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       (p) => (p.plan_id === planUuid || p.plan_id === planId) && p.user_id === userUuid
     );
 
+    const existingSr = (existing as any)?.skip_reason === "PAYMENT_KEPT" ? "PAYMENT_KEPT" : null;
+
     if (existing) {
       await updateParticipantStatus(
         planUuid,
@@ -646,7 +648,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         targetDbState as any,
         undefined,
         new Date().toISOString(),
-        null
+        existingSr
       );
     } else {
       await insertParticipant({

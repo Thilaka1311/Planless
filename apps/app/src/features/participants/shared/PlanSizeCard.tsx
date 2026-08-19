@@ -157,9 +157,29 @@ export const PlanSizeCard: React.FC<PlanSizeCardProps> = ({
                 Plan Size
               </span>
             </div>
-            <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)', fontFamily: 'Inter, sans-serif' }}>
-              Maximum {tempCapacity} {tempCapacity === 1 ? 'participant' : 'participants'}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)', fontFamily: 'Inter, sans-serif' }}>
+                Maximum {tempCapacity} {tempCapacity === 1 ? 'participant' : 'participants'}
+              </span>
+              <button
+                type="button"
+                onClick={handleExitEditing}
+                style={{
+                  padding: '4px 10px',
+                  background: '#FF6B2C',
+                  border: 'none',
+                  borderRadius: 8,
+                  color: '#FFFFFF',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif',
+                  flexShrink: 0,
+                }}
+              >
+                Done
+              </button>
+            </div>
           </div>
           <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
             <PlanSizeSlider
