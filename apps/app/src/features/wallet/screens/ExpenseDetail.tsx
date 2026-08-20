@@ -3,9 +3,81 @@ import { ArrowLeft, Edit2, Trash2, HandCoins, CheckCircle2, MoreHorizontal, Chec
 import { settleWalletExpenseParticipant, deleteWalletExpense, updateWalletExpense, removeExpenseParticipant, getParticipantFinancialState, sortExpenseParticipants } from "../services/walletService";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { usePlansStore } from "../../plans/state/PlansContext";
+import { useWalletStore } from "../state/WalletContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
+import { EditCost } from "../components/EditCost";
+
+interface ExpenseDetailCacheEntry {
+  userPostgresUuid: string;
+  expenseData: any;
+  planData: any;
+  participantsData: any[];
+  rawPlanParticipants: any[];
+  paymentKeptUserIds: string[];
+  financiallyIncludedUserIds: string[];
+  userProfiles: any[];
+  timestamp: number;
+}
+
+const expenseDetailCache = new Map<string, ExpenseDetailCacheEntry>();
+const inFlightExpenseFetches = new Map<string, Promise<ExpenseDetailCacheEntry>>();
+const deletedExpenseIds = new Set<string>();
+
+export const invalidateExpenseDetailCache = (expenseId?: string) => {
+  if (expenseId) {
+    expenseDetailCache.delete(expenseId);
+    inFlightExpenseFetches.delete(expenseId);
+  } else {
+    expenseDetailCache.clear();
+    inFlightExpenseFetches.clear();
+  }
+};
+
+export const updateExpenseDetailCache = (
+  expenseId: string,
+  updatedFields: {
+    title?: string;
+    total_amount?: number;
+    plan_id?: string;
+    participants?: any[];
+  },
+  updateTimestamp: number = Date.now()
+) => {
+  const existing = expenseDetailCache.get(expenseId);
+  if (!existing) return;
+
+  // Stale update guard: don't overwrite if existing cache entry has a newer timestamp
+  if (existing.timestamp > updateTimestamp) {
+    return;
+  }
+
+  const nextExpenseData = {
+    ...existing.expenseData,
+    ...(updatedFields.title !== undefined
+      ? { title: updatedFields.title, expenseTitle: updatedFields.title }
+      : {}),
+    ...(updatedFields.total_amount !== undefined
+      ? { total_amount: updatedFields.total_amount, totalAmount: updatedFields.total_amount }
+      : {}),
+    ...(updatedFields.plan_id !== undefined
+      ? { plan_id: updatedFields.plan_id, planId: updatedFields.plan_id }
+      : {}),
+  };
+
+  const nextParticipants =
+    updatedFields.participants !== undefined
+      ? updatedFields.participants
+      : existing.participantsData;
+
+  expenseDetailCache.set(expenseId, {
+    ...existing,
+    expenseData: nextExpenseData,
+    participantsData: nextParticipants,
+    timestamp: updateTimestamp,
+  });
+};
 
 interface ExpenseDetailsProps {
   expenseId: string;
@@ -24,18 +96,43 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
 }) => {
   const { activeUserUuid, userProfile } = useProfileStore();
   const { refreshPlans } = usePlansStore();
+  const { dbWalletTransactions, updateExpenseInStore } = useWalletStore();
 
-  const [loading, setLoading] = useState(true);
+  const storeExpense = useMemo(() => {
+    return (dbWalletTransactions || []).find((e: any) => e.id === expenseId);
+  }, [dbWalletTransactions, expenseId]);
+
+  useEffect(() => {
+    if (storeExpense) {
+      setExpenseData((prev: any) => ({ ...prev, ...storeExpense }));
+      const storeParts = storeExpense.participants || storeExpense.wallet_expense_participants;
+      if (Array.isArray(storeParts) && storeParts.length > 0) {
+        setParticipantsData(storeParts);
+      }
+      // Synchronize in-memory cache with canonical storeExpense
+      updateExpenseDetailCache(expenseId, {
+        title: storeExpense.title,
+        total_amount: storeExpense.total_amount,
+        plan_id: storeExpense.plan_id,
+        participants: storeParts,
+      });
+    }
+  }, [storeExpense, expenseId]);
+
+  // Synchronously read initial cache if available to guarantee zero loading flash on Cache HIT
+  const getInitialCache = () => (expenseId ? expenseDetailCache.get(expenseId) || null : null);
+
+  const [loading, setLoading] = useState<boolean>(() => !getInitialCache());
   const [error, setError] = useState<string | null>(null);
-  const [expenseData, setExpenseData] = useState<any | null>(null);
-  const [planData, setPlanData] = useState<any | null>(null);
-  const [participantsData, setParticipantsData] = useState<any[]>([]);
-  const [userProfiles, setUserProfiles] = useState<any[]>([]);
-  const [userPostgresUuid, setUserPostgresUuid] = useState<string>("");
-  const [financiallyIncludedUserIds, setFinanciallyIncludedUserIds] = useState<Set<string>>(new Set());
-  const [rawPlanParticipants, setRawPlanParticipants] = useState<any[]>([]);
-  const [paymentKeptUserIds, setPaymentKeptUserIds] = useState<Set<string>>(new Set());
-  const [hasLoadedPlanParticipants, setHasLoadedPlanParticipants] = useState(false);
+  const [expenseData, setExpenseData] = useState<any | null>(() => getInitialCache()?.expenseData || null);
+  const [planData, setPlanData] = useState<any | null>(() => getInitialCache()?.planData || null);
+  const [participantsData, setParticipantsData] = useState<any[]>(() => getInitialCache()?.participantsData || []);
+  const [userProfiles, setUserProfiles] = useState<any[]>(() => getInitialCache()?.userProfiles || []);
+  const [userPostgresUuid, setUserPostgresUuid] = useState<string>(() => getInitialCache()?.userPostgresUuid || "");
+  const [financiallyIncludedUserIds, setFinanciallyIncludedUserIds] = useState<Set<string>>(() => new Set(getInitialCache()?.financiallyIncludedUserIds || []));
+  const [rawPlanParticipants, setRawPlanParticipants] = useState<any[]>(() => getInitialCache()?.rawPlanParticipants || []);
+  const [paymentKeptUserIds, setPaymentKeptUserIds] = useState<Set<string>>(() => new Set(getInitialCache()?.paymentKeptUserIds || []));
+  const [hasLoadedPlanParticipants, setHasLoadedPlanParticipants] = useState<boolean>(() => !!getInitialCache());
 
   // Modals & Action Menu state
   const [showActionMenu, setShowActionMenu] = useState(false);
@@ -53,7 +150,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
   const [showParticipantActionSheet, setShowParticipantActionSheet] = useState(false);
 
   const handleParticipantClick = (pt: any) => {
-    if (!payerIsMe) return;
+    if (pt.isMe) return; // 'You' row is untappable
     setSelectedParticipantForAction(pt);
     setShowParticipantActionSheet(true);
   };
@@ -64,15 +161,60 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
   const [editParticipantIds, setEditParticipantIds] = useState<string[]>([]);
   const [submittingEdit, setSubmittingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const [editTitleError, setEditTitleError] = useState(false);
   const [editAmountError, setEditAmountError] = useState(false);
+  const editTitleInputRef = useRef<HTMLInputElement>(null);
 
-  // Load single expense details directly from database by exact expenseId
-  const loadExpenseDetail = useCallback(async () => {
+  // Last local mutation timestamp tracker to prevent local edit race condition
+  const lastLocalMutationRef = useRef<number>(0);
+
+  const applyCachedData = useCallback((cached: ExpenseDetailCacheEntry) => {
+    setUserPostgresUuid(cached.userPostgresUuid);
+    setExpenseData(cached.expenseData);
+    setPlanData(cached.planData);
+    setParticipantsData(cached.participantsData);
+    setRawPlanParticipants(cached.rawPlanParticipants);
+    setPaymentKeptUserIds(new Set(cached.paymentKeptUserIds));
+    setFinanciallyIncludedUserIds(new Set(cached.financiallyIncludedUserIds));
+    setUserProfiles(cached.userProfiles);
+    setHasLoadedPlanParticipants(true);
+    setLoading(false);
+    setError(null);
+  }, []);
+
+  // Load single expense details directly from database by exact expenseId (Cache-First & Deduplicated)
+  const loadExpenseDetail = useCallback(async (forceRefetch = false) => {
+    if (!expenseId || deletedExpenseIds.has(expenseId)) return;
+
+    // 1. Cache-First Check: Serve from cache if available and refetch is not forced
+    if (!forceRefetch) {
+      const cached = expenseDetailCache.get(expenseId);
+      if (cached) {
+        applyCachedData(cached);
+        return;
+      }
+
+      // 2. In-Flight Check: Reuse existing in-flight database request if running
+      const inFlightPromise = inFlightExpenseFetches.get(expenseId);
+      if (inFlightPromise) {
+        setLoading(true);
+        setError(null);
+        try {
+          const cached = await inFlightPromise;
+          applyCachedData(cached);
+        } catch (err: any) {
+          setError(err?.message || "Failed to load expense details.");
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
 
-    try {
+    // 3. Create single shared fetch promise and register synchronously BEFORE starting async work
+    const fetchPromise = (async (): Promise<ExpenseDetailCacheEntry> => {
       // 1. Resolve active user's Postgres UUID
       let userUuid = activeUserId || activeUserUuid || "";
       const isUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -87,8 +229,6 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         if (uMatch?.id) userUuid = uMatch.id;
       }
 
-      setUserPostgresUuid(userUuid);
-
       // 2. Query target expense by exact wallet_expenses.id
       const { data: exp, error: expErr } = await supabase
         .from("wallet_expenses")
@@ -98,21 +238,20 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
 
       if (expErr) throw expErr;
       if (!exp) {
-        setError("Expense not found.");
-        setLoading(false);
-        return;
+        throw new Error("Expense not found.");
       }
 
-      setExpenseData(exp);
-
       // 3. Query Plan Details
+      let fetchedPlan: any = null;
       if (exp.plan_id) {
         const { data: plan } = await supabase
           .from("plans")
           .select("id, title, cover_image")
           .eq("id", exp.plan_id)
           .maybeSingle();
-        if (plan) setPlanData(plan);
+        if (plan) {
+          fetchedPlan = plan;
+        }
       }
 
       // 4. Query Participants STRICTLY for this expenseId from wallet_expense_participants
@@ -132,11 +271,10 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       if (exp.plan_id) {
         const { data: rawPlanPts } = await supabase
           .from("plan_participants")
-          .select("user_id, rsvp_status, skip_reason")
+          .select("plan_id, user_id, rsvp_status, skip_reason")
           .eq("plan_id", exp.plan_id);
 
         planParticipantList = rawPlanPts || [];
-        setRawPlanParticipants(planParticipantList);
 
         planParticipantList.forEach((p: any) => {
           const finState = getParticipantFinancialState(p.rsvp_status || p.status, p.skip_reason || p.skipReason);
@@ -148,42 +286,75 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
           }
         });
 
-        // Always include users with existing split entries in ptList so historical obligations remain visible after leaving
         ptList.forEach((pt: any) => {
           if (pt.user_id) includedSet.add(pt.user_id);
         });
       }
-      setPaymentKeptUserIds(pkSet);
-      setFinanciallyIncludedUserIds(includedSet);
-      setHasLoadedPlanParticipants(true);
 
-      setParticipantsData(ptList);
-
-      // 5. Query user profiles for all involved/eligible users (payer + participants + plan participants + current user)
+      // 5. Query user profiles for all involved/eligible users
       const allEligibleUserIds = planParticipantList.map((p: any) => p.user_id).filter(Boolean);
       const userIds = Array.from(
         new Set([exp.payer_id, ...ptList.map((p: any) => p.user_id), ...allEligibleUserIds, userUuid].filter(Boolean))
       );
 
+      let fetchedProfiles: any[] = [];
       if (userIds.length > 0) {
         const { data: profs } = await supabase
           .from("users")
           .select("id, full_name, profile_photo_path, username, public_id")
           .in("id", userIds);
 
-        setUserProfiles(profs || []);
+        fetchedProfiles = profs || [];
       }
+
+      const cacheEntry: ExpenseDetailCacheEntry = {
+        userPostgresUuid: userUuid,
+        expenseData: exp,
+        planData: fetchedPlan,
+        participantsData: ptList,
+        rawPlanParticipants: planParticipantList,
+        paymentKeptUserIds: Array.from(pkSet),
+        financiallyIncludedUserIds: Array.from(includedSet),
+        userProfiles: fetchedProfiles,
+        timestamp: Date.now(),
+      };
+
+      // Store in client-side cache
+      expenseDetailCache.set(expenseId, cacheEntry);
+      return cacheEntry;
+    })();
+
+    // Synchronously register in-flight promise before any microtask
+    inFlightExpenseFetches.set(expenseId, fetchPromise);
+
+    try {
+      const result = await fetchPromise;
+      applyCachedData(result);
     } catch (err: any) {
       console.error("[PlanBalancesDetail] Error loading expense details:", err);
       setError(err.message || "Failed to load expense details.");
     } finally {
+      inFlightExpenseFetches.delete(expenseId);
       setLoading(false);
     }
-  }, [expenseId, activeUserId, activeUserUuid]);
+  }, [expenseId, activeUserId, activeUserUuid, applyCachedData]);
+
+  const loadExpenseDetailRef = useRef(loadExpenseDetail);
+  useEffect(() => {
+    loadExpenseDetailRef.current = loadExpenseDetail;
+  }, [loadExpenseDetail]);
+
+  const onBackRef = useRef(onBack);
+  useEffect(() => {
+    onBackRef.current = onBack;
+  }, [onBack]);
 
   useEffect(() => {
     loadExpenseDetail();
   }, [loadExpenseDetail]);
+
+  // Consolidated Single Source of Truth: Realtime events are handled by WalletContext ("wallet_expenses_changes").
+  // ExpenseDetails consumes storeExpense directly from WalletContext above.
 
   // Profile Map for fast lookup
   const profMap = useMemo(() => {
@@ -250,7 +421,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       }
 
       // Non-payer participants with 0 amount_owed and not settled are excluded
-      const amountOwed = Number(pt.amount_owed || 0);
+      const amountOwed = Number(pt.amount_owed ?? pt.amount ?? 0);
       const ptStatus = String(pt.status || "PENDING").toUpperCase();
       if (amountOwed <= 0 && ptStatus !== "SETTLED") {
         return false;
@@ -290,7 +461,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       const isPtExcluded = hasLoadedPlanParticipants && !financiallyIncludedUserIds.has(pt.user_id);
       const u = profMap.get(pt.user_id);
 
-      const amountOwed = Number(pt.amount_owed || 0);
+      const amountOwed = Number(pt.amount_owed ?? pt.amount ?? 0);
       const ptStatus = String(pt.status || "PENDING").toUpperCase();
       const isPtSettled = ptStatus === "SETTLED";
       const remaining = isPtSettled ? 0 : amountOwed;
@@ -404,15 +575,15 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       };
     });
 
-    // Sort: selected participants first, then alphabetical by name
+    // Sort: 'You' always first, all other participants alphabetically A -> Z
     return list.sort((a, b) => {
-      const aSel = editParticipantIds.includes(a.userId);
-      const bSel = editParticipantIds.includes(b.userId);
-      if (aSel && !bSel) return -1;
-      if (!aSel && bSel) return 1;
-      return a.name.localeCompare(b.name);
+      const aIsMe = isMe(a.userId) || a.name === "You";
+      const bIsMe = isMe(b.userId) || b.name === "You";
+      if (aIsMe) return -1;
+      if (bIsMe) return 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     });
-  }, [participantsData, rawPlanParticipants, profMap, userPostgresUuid, editParticipantIds]);
+  }, [participantsData, rawPlanParticipants, profMap, userPostgresUuid]);
 
   const toggleParticipantSelection = (userId: string) => {
     setEditParticipantIds((prev) => {
@@ -438,11 +609,16 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
   const handleOpenEditSheet = () => {
     if (!expenseData) return;
     setEditError(null);
-    setEditTitleError(false);
     setEditAmountError(false);
     const initTitle = expenseTitle;
     const initAmount = String(expenseData.total_amount || "");
-    const initPts = participantsData.map((p) => p.user_id);
+    let initPts = participantsData
+      .filter((p) => Number(p.amount_owed ?? p.amount ?? 0) > 0 || String(p.status).toUpperCase() === "SETTLED")
+      .map((p) => p.user_id);
+
+    if (initPts.length === 0) {
+      initPts = participantsData.map((p) => p.user_id);
+    }
 
     initialEditTitleRef.current = initTitle;
     initialEditAmountRef.current = initAmount;
@@ -458,7 +634,6 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     if (!expenseData) {
       setShowEditSheet(false);
       setEditError(null);
-      setEditTitleError(false);
       setEditAmountError(false);
       return;
     }
@@ -471,15 +646,13 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     const initialAmountParsed = parseFloat(initialEditAmountRef.current) || 0;
     const initialPts = initialEditParticipantIdsRef.current;
 
-    let hasValidationError = false;
-
-    // Inline error check: if title is empty, highlight input & keep sheet open
+    // 1. If title is empty, keep user inside input state & focus field without red error or default fallback
     if (!currentTitle) {
-      setEditTitleError(true);
-      hasValidationError = true;
-    } else {
-      setEditTitleError(false);
+      editTitleInputRef.current?.focus();
+      return;
     }
+
+    let hasValidationError = false;
 
     // Inline error check: if amount <= 0 or invalid, highlight input & keep sheet open
     if (currentAmountParsed <= 0) {
@@ -505,7 +678,6 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     if (!hasChanges) {
       setShowEditSheet(false);
       setEditError(null);
-      setEditTitleError(false);
       setEditAmountError(false);
       return;
     }
@@ -519,6 +691,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     setEditError(null);
 
     try {
+      lastLocalMutationRef.current = Date.now();
       // Single atomic database update upon closing sheet
       await updateWalletExpense({
         expenseId: expenseData.id,
@@ -528,14 +701,17 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         participantIds: currentPts,
       });
 
-      // Refresh application state & balances
-      await loadExpenseDetail();
+      // Close bottom sheet IMMEDIATELY after successful update so it unmounts before background refreshes
+      setShowEditSheet(false);
+      setSubmittingEdit(false);
+
+      // Invalidate cache entry & force database refetch
+      invalidateExpenseDetailCache(expenseData.id);
+      await loadExpenseDetail(true);
       await onRefreshBalances();
       if (refreshPlans) {
         await refreshPlans(["plans", "wallet_expenses"]);
       }
-
-      setShowEditSheet(false);
     } catch (err: any) {
       console.error("[ExpenseDetail] Exception persisting edits on close:", err);
       setEditError(err.message || "Failed to save changes.");
@@ -552,14 +728,26 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     setDeleteError(null);
 
     try {
-      await deleteWalletExpense(expenseData.id);
+      const deletedId = expenseData.id;
+      lastLocalMutationRef.current = Date.now();
+      deletedExpenseIds.add(deletedId);
+
+      await deleteWalletExpense(deletedId);
+      invalidateExpenseDetailCache(deletedId);
+
       setShowDeleteModal(false);
-      await onRefreshBalances();
+
+      // Exit ExpenseDetails screen IMMEDIATELY so parent unmounts it before running background balance refreshes
       onBack();
+
+      // Refresh parent balances asynchronously
+      await onRefreshBalances();
+      if (refreshPlans) {
+        await refreshPlans(["plans", "wallet_expenses"]);
+      }
     } catch (err: any) {
       console.error("[PlanBalancesDetail] Exception deleting expense:", err);
       setDeleteError(err.message || "Failed to delete expense.");
-    } finally {
       setSubmittingDelete(false);
     }
   };
@@ -578,6 +766,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     setSettleError(null);
 
     try {
+      lastLocalMutationRef.current = Date.now();
       const success = await settleWalletExpenseParticipant({
         expenseId: expenseData.id,
         participantUserId: selectedSettleParticipant.userId,
@@ -589,9 +778,10 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         return;
       }
 
+      invalidateExpenseDetailCache(expenseData.id);
       setShowSettleModal(false);
       setSelectedSettleParticipant(null);
-      await loadExpenseDetail();
+      await loadExpenseDetail(true);
       await onRefreshBalances();
     } catch (err: any) {
       console.error("[PlanBalancesDetail] Exception settling expense:", err);
@@ -640,6 +830,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     setRemoveParticipantError(null);
 
     try {
+      lastLocalMutationRef.current = Date.now();
       const res = await removeExpenseParticipant({
         expenseId: expenseData.id,
         participantUserId: selectedParticipantForRemove.userId,
@@ -652,9 +843,10 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         return;
       }
 
+      invalidateExpenseDetailCache(expenseData.id);
       setShowRemoveParticipantModal(false);
       setSelectedParticipantForRemove(null);
-      await loadExpenseDetail();
+      await loadExpenseDetail(true);
       await onRefreshBalances();
       if (refreshPlans) {
         await refreshPlans(["plans", "wallet_expenses"]);
@@ -667,11 +859,79 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     }
   };
 
-  if (loading) {
+  // Compute data readiness: screen stays in Skeleton state until required expense + user profiles data are ready
+  const isDataReady = useMemo(() => {
+    if (!expenseData) return false;
+    if (getInitialCache()) return true;
+    if (loading) return false;
+
+    // Check if user profiles for payer + participants are loaded
+    const payerId = expenseData.payer_id;
+    const participantUids = (participantsData || []).map((p: any) => p.user_id || p.userId || p.id).filter(Boolean);
+    const requiredUserIds = Array.from(new Set([payerId, ...participantUids].filter(Boolean)));
+
+    if (requiredUserIds.length > 0 && userProfiles.length === 0) {
+      return false;
+    }
+
+    return true;
+  }, [expenseData, participantsData, userProfiles, loading]);
+
+  if (!isDataReady) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-[#050505] text-white p-6">
-        <div className="w-6 h-6 border-2 border-[#FF6B2C] border-t-transparent rounded-full animate-spin mb-3" />
-        <p className="text-xs text-zinc-500 font-sans">Loading expense details…</p>
+      <div className="w-full h-full flex flex-col justify-between overflow-y-auto scrollbar-none px-6 pt-3 animate-fade-in text-left bg-[#050505] pb-20 select-none">
+        <div className="space-y-6">
+          {/* Header Row: Back button */}
+          <div className="pb-1.5 pt-1.5 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={onBack}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 border border-zinc-900/60 shrink-0 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div className="w-8 h-8 rounded-full bg-zinc-900/40 border border-white/[0.04] animate-pulse" />
+          </div>
+
+          {/* Hero Section Skeleton: Title, Payer Avatar, Payer Name, Amount */}
+          <div className="flex flex-col items-center text-center py-4 space-y-3 shrink-0 animate-pulse">
+            {/* Title Skeleton */}
+            <div className="w-40 h-6 bg-zinc-800/80 rounded-full" />
+
+            {/* Payer Avatar Skeleton */}
+            <div className="w-16 h-16 rounded-full bg-zinc-800/80 shrink-0 mt-1" />
+
+            {/* Payer Name Skeleton */}
+            <div className="w-32 h-4 bg-zinc-800/80 rounded-full" />
+
+            {/* Paid Amount Skeleton */}
+            <div className="w-24 h-3 bg-zinc-800/50 rounded-full" />
+          </div>
+
+          {/* Participants List Section Skeleton */}
+          <div className="space-y-3 pt-2">
+            <div className="w-24 h-3 bg-zinc-900/80 rounded-full animate-pulse" />
+
+            {/* 3 Participant Row Skeletons */}
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="w-full bg-zinc-950/40 border border-white/[0.04] rounded-[20px] p-4 flex items-center justify-between animate-pulse"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-zinc-800/80 shrink-0" />
+                    <div className="space-y-2">
+                      <div className="w-28 h-3.5 bg-zinc-800/80 rounded-full" />
+                      <div className="w-36 h-2.5 bg-zinc-800/50 rounded-full" />
+                    </div>
+                  </div>
+                  <div className="w-16 h-4 bg-zinc-800/80 rounded-full" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -687,7 +947,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <h2 className="text-xl font-display font-semibold text-zinc-100">
+          <h2 className="text-xl font-sans font-bold text-zinc-100">
             Plan balances Detail
           </h2>
         </div>
@@ -703,32 +963,29 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       id="subview_plan_balances_detail"
       className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-24 text-left bg-[#050505] select-none animate-fade-in"
     >
-      {/* HEADER BAR — "Expense Details" WITH TOP-RIGHT EDIT & DELETE ICONS */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60"
-            aria-label="Back"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <h2 className="text-xl font-display font-semibold text-zinc-100 tracking-tight leading-tight">
-              Expense Details
-            </h2>
-            {planData?.title && (
-              <span className="text-xs font-sans text-zinc-400 font-medium block truncate leading-tight mt-0.5">
-                {planData.title}
-              </span>
-            )}
-          </div>
-        </div>
+      {/* TOP NAVIGATION BAR WITH PLAN NAME CENTERED */}
+      <div className="flex items-center justify-between mb-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60 shrink-0"
+          aria-label="Back"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
 
-        {/* Top-Right Single Subtle "More" Action Button (Payer Permission Only) */}
-        {payerIsMe && (
-          <div className="relative">
+        {/* Center: Contextual Plan Name */}
+        {planData?.title ? (
+          <span className="text-xs font-sans font-medium text-zinc-400 tracking-wide truncate max-w-[220px] text-center px-2">
+            {planData.title}
+          </span>
+        ) : (
+          <div />
+        )}
+
+        {/* Right: Top-Right Single Subtle "More" Action Button (Payer Permission Only) */}
+        {payerIsMe ? (
+          <div className="relative shrink-0">
             <button
               type="button"
               onClick={() => setShowActionMenu((prev) => !prev)}
@@ -774,18 +1031,20 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
               </>
             )}
           </div>
+        ) : (
+          <div className="w-8 shrink-0" />
         )}
       </div>
 
-      {/* EXPENSE HERO BANNER */}
-      <div className="flex flex-col items-center text-center py-6 mt-2 space-y-2 bg-zinc-950/40 border border-white/[0.04] rounded-3xl p-6 mb-6">
+      {/* EXPENSE SUMMARY SECTION — DIRECTLY ON PAGE BACKGROUND */}
+      <div className="flex flex-col items-center text-center pt-2 pb-6 space-y-1.5 mb-2">
         {/* 1. Expense Title */}
-        <h3 className="font-display font-bold text-2xl text-zinc-100">
+        <h3 className="font-sans font-bold text-2xl text-zinc-100 leading-snug">
           {expenseTitle}
         </h3>
 
         {/* 2. Centered Payer Avatar */}
-        <div className="pt-2 pb-1">
+        <div className="pt-2 pb-0.5">
           <UserAvatar
             src={payerIsMe ? (userProfile?.profile_photo_path || payerPhoto) : payerPhoto}
             alt={payerName}
@@ -842,13 +1101,20 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
 
               <div className="flex items-center gap-3 shrink-0">
                 {(() => {
-                  const activePtsCount = formattedParticipants.filter((p) => !p.isPtWaitlisted).length || 1;
-                  const fallbackSplit = Math.round(Number(expenseData.total_amount || 0) / activePtsCount);
-                  const displayAmt = pt.isPtWaitlisted ? 0 : (pt.amountOwed > 0 ? pt.amountOwed : fallbackSplit);
+                  let displayAmt = 0;
+                  if (pt.isPayer) {
+                    const totalOwedByOthers = formattedParticipants
+                      .filter((p) => !p.isPayer && !p.isPtWaitlisted)
+                      .reduce((sum, p) => sum + (p.amountOwed || 0), 0);
+                    const totalCost = Number(expenseData.total_amount || 0);
+                    displayAmt = Math.max(0, totalCost - totalOwedByOthers);
+                  } else {
+                    displayAmt = pt.isPtWaitlisted ? 0 : Number(pt.amountOwed || 0);
+                  }
 
                   return (
-                    <span className={`font-mono text-sm tracking-tight ${
-                      isRowMuted ? "font-medium text-zinc-400" : "font-bold text-white"
+                    <span className={`font-sans text-sm tracking-tight ${
+                      isRowMuted ? "font-semibold text-zinc-400" : "font-bold text-white"
                     }`}>
                       ₹{displayAmt.toLocaleString("en-IN")}
                     </span>
@@ -860,142 +1126,93 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         })}
       </div>
 
-      {/* EDIT COST SHEET */}
-      {showEditSheet && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-xs animate-fade-in"
-          onClick={() => handleCloseEditSheet()}
-        >
-          <div
-            className="w-full bg-[#1c1c1e] border-t border-white/[0.08] rounded-t-3xl p-6 pb-8 shadow-2xl space-y-4 max-h-[90vh] flex flex-col text-left font-sans"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Sheet Handle Indicator */}
-            <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-2 shrink-0" />
+      {/* EDIT COST BOTTOM SHEET COMPONENT */}
+      <EditCost
+        isOpen={showEditSheet}
+        selectedExpense={{
+          id: expenseId,
+          expenseTitle,
+          totalAmount: expenseData?.total_amount || 0,
+          planId: expenseData?.plan_id,
+          participantIds: participantsData.map((pt: any) => pt.user_id || pt.id).filter(Boolean),
+          participants: participantsData,
+        }}
+        onClose={() => setShowEditSheet(false)}
+        onOptimisticUpdate={(opt) => {
+          lastLocalMutationRef.current = Date.now();
+          if (opt.participantIds.length > 0 && opt.totalAmount > 0) {
+            const count = opt.participantIds.length;
+            const totalCents = Math.round(opt.totalAmount * 100);
+            const baseCents = Math.floor(totalCents / count);
+            let remainderCents = totalCents - baseCents * count;
 
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3 shrink-0">
-              <h3 className="text-lg font-display font-semibold text-white">Edit Cost</h3>
-              <button
-                type="button"
-                onClick={() => handleCloseEditSheet()}
-                className="text-zinc-400 hover:text-white text-xs font-semibold cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
+            const sharesMap: Record<string, number> = {};
+            opt.participantIds.forEach((uid) => {
+              let extra = 0;
+              if (remainderCents > 0) {
+                extra = 1;
+                remainderCents -= 1;
+              }
+              sharesMap[uid] = (baseCents + extra) / 100;
+            });
 
-            <div className="space-y-4 flex-1 overflow-y-auto pr-1 text-left">
-              <div>
-                <input
-                  type="text"
-                  value={editTitle}
-                  onChange={(e) => {
-                    setEditTitle(e.target.value);
-                    if (e.target.value.trim()) {
-                      setEditTitleError(false);
-                    }
-                  }}
-                  placeholder="Expense"
-                  className={`w-full h-12 rounded-xl px-4 text-sm font-medium text-white placeholder-zinc-500 focus:outline-none transition ${
-                    editTitleError
-                      ? "bg-rose-500/[0.04] border border-rose-500/80 focus:border-rose-500"
-                      : "bg-zinc-900/90 border border-white/[0.08] focus:border-[#FF6B2C]"
-                  }`}
-                />
-                {editTitleError && (
-                  <p className="text-xs text-rose-400 font-sans mt-1.5 pl-1">
-                    Please enter an expense name
-                  </p>
-                )}
-              </div>
+            const updatedParticipants = opt.participantIds.map((uid: string) => {
+              const share = sharesMap[uid] || 0;
+              const existing = (participantsData || []).find((p: any) => p.user_id === uid);
+              if (existing) {
+                return { ...existing, amount: share, amount_owed: share };
+              }
+              const prof = userProfiles.find((u: any) => u.id === uid);
+              return {
+                user_id: uid,
+                expense_id: opt.expenseId,
+                amount: share,
+                amount_owed: share,
+                name: prof?.full_name || prof?.username || "Participant",
+                avatar: prof?.profile_photo_path || "",
+              };
+            });
 
-              <div>
-                <div className="relative flex items-center">
-                  <span className={`absolute left-4 text-sm font-medium select-none pointer-events-none ${
-                    editAmountError ? "text-rose-400" : "text-zinc-400"
-                  }`}>
-                    ₹
-                  </span>
-                  <input
-                    type="number"
-                    value={editAmount}
-                    onChange={(e) => {
-                      setEditAmount(e.target.value);
-                      if ((parseFloat(e.target.value) || 0) > 0) {
-                        setEditAmountError(false);
-                      }
-                    }}
-                    placeholder="0"
-                    className={`w-full h-12 rounded-xl pl-8 pr-4 text-sm font-medium text-white placeholder-zinc-500 focus:outline-none transition ${
-                      editAmountError
-                        ? "bg-rose-500/[0.04] border border-rose-500/80 focus:border-rose-500"
-                        : "bg-zinc-900/90 border border-white/[0.08] focus:border-[#FF6B2C]"
-                    }`}
-                    min="1"
-                    step="any"
-                  />
-                </div>
-                {editAmountError && (
-                  <p className="text-xs text-rose-400 font-sans mt-1.5 pl-1">
-                    Enter an amount
-                  </p>
-                )}
-              </div>
+            // Update canonical WalletContext store optimistically
+            updateExpenseInStore(opt.expenseId, {
+              title: opt.title,
+              total_amount: opt.totalAmount,
+              plan_id: opt.planId,
+              participants: updatedParticipants,
+            });
 
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Participants
-                  </label>
-                  <span className="text-xs font-medium text-zinc-500 font-sans">
-                    {editParticipantIds.length} selected
-                  </span>
-                </div>
-                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1 border border-white/[0.08] rounded-2xl p-2 bg-zinc-900/50">
-                  {eligibleParticipantsList.map((pt) => {
-                    const isSelected = editParticipantIds.includes(pt.userId);
-                    return (
-                      <div
-                        key={pt.userId}
-                        onClick={() => toggleParticipantSelection(pt.userId)}
-                        className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition ${
-                          isSelected
-                            ? "bg-zinc-800/80 border border-white/[0.1]"
-                            : "bg-transparent hover:bg-zinc-900/60 border border-transparent"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <UserAvatar
-                            src={pt.profilePhoto}
-                            alt={pt.name}
-                            size="w-9 h-9"
-                            className="shrink-0 ring-1 ring-white/10"
-                          />
-                          <div className="min-w-0 flex flex-col justify-center">
-                            <span className="text-sm font-medium text-white truncate block">
-                              {pt.name}
-                            </span>
-                          </div>
-                        </div>
+            // Update in-memory expense detail cache directly with new values
+            updateExpenseDetailCache(opt.expenseId, {
+              title: opt.title,
+              total_amount: opt.totalAmount,
+              plan_id: opt.planId,
+              participants: updatedParticipants,
+            });
 
-                        <div
-                          className={`w-5 h-5 rounded-full flex items-center justify-center border transition ${
-                            isSelected
-                              ? "bg-[#FF6B2C] border-[#FF6B2C] text-white"
-                              : "border-zinc-700 text-transparent"
-                          }`}
-                        >
-                          <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+            // Update local state atomically
+            setExpenseData((prev: any) =>
+              prev ? { ...prev, title: opt.title, total_amount: opt.totalAmount } : prev
+            );
+
+            setParticipantsData(updatedParticipants);
+
+            setFinanciallyIncludedUserIds((prevSet) => {
+              const nextSet = new Set(prevSet);
+              opt.participantIds.forEach((uid) => nextSet.add(uid));
+              return nextSet;
+            });
+          }
+        }}
+        onRefreshBalances={async () => {
+          invalidateExpenseDetailCache(expenseId);
+          await loadExpenseDetail(true);
+          onRefreshBalances();
+        }}
+        activeUserId={userPostgresUuid || activeUserId}
+        relevantPlans={planData ? [{ id: planData.id, title: planData.title }] : []}
+        dbPlanParticipants={rawPlanParticipants}
+        dbProfiles={userProfiles}
+      />
 
       {/* DELETE CONFIRMATION MODAL */}
       {showDeleteModal && (
@@ -1017,7 +1234,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-display font-bold text-white">Delete Expense?</h3>
+                <h3 className="text-base font-sans font-bold text-white">Delete Expense?</h3>
                 <p className="text-xs text-zinc-400 font-sans mt-0.5">This action cannot be undone.</p>
               </div>
             </div>
@@ -1078,7 +1295,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 <CheckCircle2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-display font-bold text-white">Record Settlement</h3>
+                <h3 className="text-base font-sans font-bold text-white">Record Settlement</h3>
                 <p className="text-xs text-zinc-400 font-sans mt-0.5">{selectedSettleParticipant.fullName}</p>
               </div>
             </div>
@@ -1144,7 +1361,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 className="shrink-0 ring-1 ring-white/10"
               />
               <div className="min-w-0 flex flex-col justify-center">
-                <h3 className="text-base font-display font-semibold text-white truncate leading-tight">
+                <h3 className="text-base font-sans font-semibold text-white truncate leading-tight">
                   {selectedParticipantForAction.fullName}
                 </h3>
                 <p className="text-xs text-zinc-400 font-sans mt-0.5 truncate leading-tight">
@@ -1153,21 +1370,9 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
               </div>
             </div>
 
-            {/* Actions List */}
+            {/* Actions List: Only Settle and Cancel */}
             <div className="space-y-2.5 pt-1">
-              {/* 1. Edit split — Yellow/Orange */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowParticipantActionSheet(false);
-                  handleOpenEditSheet();
-                }}
-                className="w-full h-13 flex items-center px-4 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 text-sm font-semibold transition cursor-pointer text-left"
-              >
-                <span>Edit split</span>
-              </button>
-
-              {/* 2. Settle — Green */}
+              {/* 1. Settle — Green */}
               <button
                 type="button"
                 onClick={() => {
@@ -1187,17 +1392,16 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 </span>
               </button>
 
-              {/* 3. Remove from expense — Red */}
+              {/* 2. Cancel — Simple centered text action without background or border */}
               <button
                 type="button"
                 onClick={() => {
-                  const pt = selectedParticipantForAction;
                   setShowParticipantActionSheet(false);
-                  handleOpenRemoveParticipantModal(pt);
+                  setSelectedParticipantForAction(null);
                 }}
-                className="w-full h-13 flex items-center px-4 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 hover:text-rose-300 text-sm font-semibold transition cursor-pointer text-left"
+                className="w-full pt-3 pb-1 text-center text-sm font-medium text-zinc-400 hover:text-white transition cursor-pointer focus:outline-none"
               >
-                <span>Remove from expense</span>
+                Cancel
               </button>
             </div>
           </div>
@@ -1244,7 +1448,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
               <div className="w-10 h-1 bg-zinc-800 rounded-full mx-auto mb-1 sm:hidden" />
 
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-white tracking-tight font-display">
+                <h3 className="text-lg font-bold text-white tracking-tight font-sans">
                   Remove {selectedParticipantForRemove.fullName}?
                 </h3>
                 <p className="text-xs text-zinc-400 leading-relaxed">
@@ -1346,7 +1550,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="space-y-1.5">
-              <h3 className="text-lg font-bold text-white tracking-tight font-display">
+              <h3 className="text-lg font-bold text-white tracking-tight font-sans">
                 {errorModalConfig.title}
               </h3>
               <p className="text-xs text-zinc-400 leading-relaxed">

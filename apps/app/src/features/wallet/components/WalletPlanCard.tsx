@@ -31,7 +31,7 @@ export const WalletPlanCard: React.FC<WalletPlanCardProps> = ({ plan, onClick })
           className="w-10 h-10 rounded-xl object-cover bg-zinc-900 border border-white/[0.08] shrink-0 opacity-90"
         />
         <div className="min-w-0">
-          <h4 className="font-display font-medium text-sm text-zinc-200 group-hover:text-white transition-colors truncate">
+          <h4 className="font-sans font-semibold text-sm text-zinc-200 group-hover:text-white transition-colors truncate">
             {plan.planTitle}
           </h4>
           {!isSettled && (
@@ -46,7 +46,7 @@ export const WalletPlanCard: React.FC<WalletPlanCardProps> = ({ plan, onClick })
           <Check className="w-5 h-5 text-emerald-400 stroke-[2.5]" />
         ) : (
           <span
-            className={`font-mono text-sm font-bold tracking-tight ${
+            className={`font-sans text-sm font-bold tracking-tight ${
               isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
             }`}
           >

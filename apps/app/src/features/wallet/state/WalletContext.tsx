@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback, useMemo } from "react";
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback, useMemo, useRef } from "react";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { supabase } from "../../../../lib/supabaseClient";
+import { updateExpenseDetailCache } from "../screens/ExpenseDetail";
 
 interface WalletState {
   dbWalletTransactions: any[];
@@ -12,6 +13,12 @@ interface WalletState {
   loading: boolean;
   error: string | null;
   refreshTransactions: () => Promise<void>;
+  updateExpenseInStore: (expenseId: string, updatedFields: {
+    title?: string;
+    total_amount?: number;
+    plan_id?: string;
+    participants?: any[];
+  }) => void;
 }
 
 const WalletContext = createContext<WalletState | undefined>(undefined);
@@ -34,7 +41,36 @@ export const WalletProvider = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshTransactions = useCallback(async () => {
+  const updateExpenseInStore = useCallback((expenseId: string, updatedFields: {
+    title?: string;
+    total_amount?: number;
+    plan_id?: string;
+    participants?: any[];
+  }) => {
+    setDbWalletTransactions((prevExpenses) => {
+      return prevExpenses.map((exp) => {
+        if (exp.id !== expenseId) return exp;
+        const nextTitle = updatedFields.title ?? exp.title;
+        const nextTotalAmount = updatedFields.total_amount ?? exp.total_amount;
+        const nextPlanId = updatedFields.plan_id ?? exp.plan_id;
+        const nextParticipants = updatedFields.participants ?? exp.participants ?? exp.wallet_expense_participants;
+
+        return {
+          ...exp,
+          title: nextTitle,
+          total_amount: nextTotalAmount,
+          plan_id: nextPlanId,
+          participants: nextParticipants,
+          wallet_expense_participants: nextParticipants,
+        };
+      });
+    });
+
+    // Synchronize in-memory expense detail cache
+    updateExpenseDetailCache(expenseId, updatedFields);
+  }, []);
+
+  const refreshTransactions = useCallback(async (reason: string = "initial_load", sourceEvent: string = "") => {
     setLoading(true);
     setError(null);
 
@@ -70,8 +106,6 @@ export const WalletProvider = ({
         plan:plans!plan_id(id, title, total_cost, cover_image)
       `;
 
-      let expenses: any[] = [];
-
       const { data: allExp, error: allErr } = await supabase
         .from("wallet_expenses")
         .select(selectQuery);
@@ -79,9 +113,9 @@ export const WalletProvider = ({
       if (allErr) {
         console.error("[Wallet ERROR] Supabase error in wallet_expenses query:", allErr);
         setError(allErr.message);
-      } else {
-        expenses = allExp || [];
       }
+
+      let expenses: any[] = allExp || [];
 
       // 2b. Direct query to wallet_expense_participants to guarantee participant rows reach state
       const expIds: string[] = expenses.map((e: any) => e.id).filter(Boolean);
@@ -111,6 +145,18 @@ export const WalletProvider = ({
       });
 
       setDbWalletTransactions(expenses || []);
+
+      // Synchronize in-memory expense detail cache for all refreshed expenses from DB / Realtime
+      (expenses || []).forEach((exp: any) => {
+        if (exp && exp.id) {
+          updateExpenseDetailCache(exp.id, {
+            title: exp.title,
+            total_amount: exp.total_amount,
+            plan_id: exp.plan_id,
+            participants: exp.participants || exp.wallet_expense_participants,
+          });
+        }
+      });
 
       setDbWalletPaidTransactions([]);
 
@@ -153,28 +199,49 @@ export const WalletProvider = ({
     }
   }, [activeUserUuid]);
 
+  const hasInitialLoadedRef = useRef<string | null>(null);
+
   useEffect(() => {
-    refreshTransactions();
+    if (hasInitialLoadedRef.current !== activeUserUuid) {
+      hasInitialLoadedRef.current = activeUserUuid;
+      refreshTransactions("initial_load");
+    }
+
+    const channelName = "wallet_expenses_changes";
+    let realtimeCoalesceTimer: NodeJS.Timeout | null = null;
+
+    const triggerCoalescedRefresh = (reason: string, sourceEvent: string) => {
+      if (realtimeCoalesceTimer) clearTimeout(realtimeCoalesceTimer);
+      realtimeCoalesceTimer = setTimeout(() => {
+        realtimeCoalesceTimer = null;
+        refreshTransactions(reason, sourceEvent);
+      }, 50);
+    };
 
     // Subscribe to realtime updates on wallet_expenses and wallet_expense_participants
     const channel = supabase
-      .channel("wallet_expenses_changes")
+      .channel(channelName)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "wallet_expenses" },
-        () => { refreshTransactions(); }
+        () => {
+          triggerCoalescedRefresh("realtime", "wallet_expenses");
+        }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "wallet_expense_participants" },
-        () => { refreshTransactions(); }
+        () => {
+          triggerCoalescedRefresh("realtime", "wallet_expense_participants");
+        }
       )
       .subscribe();
 
     return () => {
+      if (realtimeCoalesceTimer) clearTimeout(realtimeCoalesceTimer);
       supabase.removeChannel(channel);
     };
-  }, [refreshTransactions]);
+  }, [refreshTransactions, activeUserUuid]);
 
   const contextValue = useMemo(() => ({
     dbWalletTransactions,
@@ -185,9 +252,10 @@ export const WalletProvider = ({
     dbUsersLocal,
     loading,
     error,
-    refreshTransactions
+    refreshTransactions,
+    updateExpenseInStore,
   }), [
-    dbWalletTransactions, dbWalletPaidTransactions, dbPlansLocal, dbCirclesLocal, dbPlanParticipantsLocal, dbUsersLocal, loading, error, refreshTransactions
+    dbWalletTransactions, dbWalletPaidTransactions, dbPlansLocal, dbCirclesLocal, dbPlanParticipantsLocal, dbUsersLocal, loading, error, refreshTransactions, updateExpenseInStore
   ]);
 
   return (

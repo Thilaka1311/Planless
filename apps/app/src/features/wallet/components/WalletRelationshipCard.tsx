@@ -41,7 +41,7 @@ export const WalletRelationshipCard: React.FC<WalletRelationshipCardProps> = ({
           className="ring-1 ring-white/10 shrink-0 opacity-90"
         />
         <div className="min-w-0">
-          <h4 className="font-display font-medium text-sm text-zinc-200 group-hover:text-white transition-colors truncate">
+          <h4 className="font-sans font-semibold text-sm text-zinc-200 group-hover:text-white transition-colors truncate">
             {fullName}
           </h4>
           {!settled && (
@@ -56,7 +56,7 @@ export const WalletRelationshipCard: React.FC<WalletRelationshipCardProps> = ({
           <Check className="w-5 h-5 text-emerald-400 stroke-[2.5]" />
         ) : (
           <span
-            className={`font-mono text-sm font-bold tracking-tight ${
+            className={`font-sans text-sm font-bold tracking-tight ${
               isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
             }`}
           >

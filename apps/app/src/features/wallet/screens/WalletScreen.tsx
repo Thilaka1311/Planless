@@ -382,27 +382,46 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
           </div>
         )}
 
-        {/* Summary Card — Only render when NOT searching and active balances exist */}
-        {!isSearching && hasActiveBalances && (
-          <div className="bg-zinc-950/40 border border-white/[0.04] rounded-[24px] p-6 text-center select-none">
-            <span className="text-[10px] font-sans font-semibold uppercase tracking-[0.14em] text-zinc-500 block">
-              OVERALL BALANCE
-            </span>
-            <div className="mt-2 flex items-center justify-center">
-              <span
-                className={`text-[42px] font-display font-bold leading-none ${
-                  isPositive
-                    ? "text-emerald-400"
-                    : isNegative
-                    ? "text-[#FF6B2C]"
-                    : "text-white"
-                }`}
-              >
-                {isNegative ? `-${formatINR(netBalanceVal)}` : formatINR(netBalanceVal)}
-              </span>
-            </div>
-          </div>
-        )}
+        {/* Summary Card / Skeleton */}
+        {(() => {
+          const isInitialLoading = loading && visibleRelationships.length === 0 && settledRelationships.length === 0 && visiblePlanRelationships.length === 0;
+
+          if (isInitialLoading && !isSearching) {
+            return (
+              <div className="bg-zinc-950/40 border border-white/[0.04] rounded-[24px] p-6 text-center select-none space-y-3 animate-pulse">
+                <span className="text-[10px] font-sans font-semibold uppercase tracking-[0.14em] text-zinc-500 block">
+                  OVERALL BALANCE
+                </span>
+                <div className="w-36 h-10 bg-zinc-800/80 rounded-2xl mx-auto" />
+              </div>
+            );
+          }
+
+          if (!isSearching && hasActiveBalances) {
+            return (
+              <div className="bg-zinc-950/40 border border-white/[0.04] rounded-[24px] p-6 text-center select-none">
+                <span className="text-[10px] font-sans font-semibold uppercase tracking-[0.14em] text-zinc-500 block">
+                  OVERALL BALANCE
+                </span>
+                <div className="mt-2 flex items-center justify-center">
+                  <span
+                    className={`text-[42px] font-display font-bold leading-none ${
+                      isPositive
+                        ? "text-emerald-400"
+                        : isNegative
+                        ? "text-[#FF6B2C]"
+                        : "text-white"
+                    }`}
+                  >
+                    {isNegative ? `-${formatINR(netBalanceVal)}` : formatINR(netBalanceVal)}
+                  </span>
+                </div>
+              </div>
+            );
+          }
+
+          return null;
+        })()}
 
         {/* Balances Section */}
         <div className="space-y-3">
@@ -416,9 +435,22 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
 
           {viewMode === "people" ? (
             loading && visibleRelationships.length === 0 && settledRelationships.length === 0 ? (
-              <div className="p-8 text-center bg-zinc-950/20 border border-dashed border-zinc-900 rounded-[24px] space-y-2">
-                <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                <p className="text-xs text-zinc-500 font-sans">Loading balances…</p>
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="w-full bg-zinc-950/40 border border-white/[0.04] rounded-[20px] p-4 flex items-center justify-between animate-pulse"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-zinc-800/80 shrink-0" />
+                      <div className="space-y-2">
+                        <div className="w-28 h-3.5 bg-zinc-800/80 rounded-full" />
+                        <div className="w-20 h-2.5 bg-zinc-800/50 rounded-full" />
+                      </div>
+                    </div>
+                    <div className="w-16 h-4 bg-zinc-800/80 rounded-full" />
+                  </div>
+                ))}
               </div>
             ) : isSearching ? (
               filteredPeople.length === 0 ? (

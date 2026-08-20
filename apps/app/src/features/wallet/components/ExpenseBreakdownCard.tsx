@@ -63,7 +63,7 @@ export const ExpenseBreakdownCard: React.FC<ExpenseBreakdownCardProps> = ({
     <div className="w-full p-5 bg-[#0a0a0c] border border-white/[0.04] rounded-2xl flex flex-col space-y-4 text-left">
       <div className="flex items-start justify-between">
         <div>
-          <h4 className="font-display font-medium text-[13.5px] text-zinc-100 tracking-wide">
+          <h4 className="font-sans font-semibold text-[13.5px] text-zinc-100 tracking-wide">
             {expense.planTitle}
           </h4>
           <span className="inline-block mt-1 px-2 py-0.5 rounded bg-white/[0.03] text-[9.5px] font-sans font-medium text-zinc-550 border border-white/[0.02]">
@@ -72,7 +72,7 @@ export const ExpenseBreakdownCard: React.FC<ExpenseBreakdownCardProps> = ({
         </div>
         <div className="text-right">
           <span
-            className={`font-mono text-xs font-semibold ${isDebtor ? "text-[#FF6B2C]" : "text-emerald-400"
+            className={`font-sans text-xs font-semibold ${isDebtor ? "text-[#FF6B2C]" : "text-emerald-400"
               }`}
           >
             {isDebtor ? "You owe" : "You are owed"} {formattedShare}

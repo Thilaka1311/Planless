@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { ArrowLeft, Plus, Check, CheckCircle2, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Check, CheckCircle2, ChevronRight, BanknoteArrowUp, MoreVertical } from "lucide-react";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
@@ -7,6 +7,7 @@ import { supabase } from "../../../../lib/supabaseClient";
 import { ExpenseDetails, PlanBalancesDetail } from "./ExpenseDetail";
 import { SettlementHistoryScreen, SettledExpenseItem } from "./SettlementHistory";
 import { getParticipantFinancialState, isJoinedParticipantStatus } from "../services/walletService";
+import { AddCost } from "../components/AddCost";
 
 interface PlanDetailsScreenProps {
   planId?: string;
@@ -48,9 +49,12 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 }) => {
   const { activeUserUuid } = useProfileStore();
 
-  // Selected expense ID for navigating to Plan balances Detail view
   const [selectedExpenseIdForDetail, setSelectedExpenseIdForDetail] = useState<string | null>(null);
   const [showSettlementHistory, setShowSettlementHistory] = useState(false);
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
+  const scrollThreshold = 90;
+  const progress = Math.min(1, Math.max(0, scrollTop / scrollThreshold));
 
   // Dedicated Database State
   const [dataLoading, setDataLoading] = useState(true);
@@ -66,11 +70,6 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
   // Add Cost modal state
   const [showAddCostSheet, setShowAddCostSheet] = useState(false);
-  const [costTitle, setCostTitle] = useState("");
-  const [costAmount, setCostAmount] = useState("");
-  const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
-  const [submittingCost, setSubmittingCost] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
 
   // Dedicated Supabase Data Fetcher for Plan Balances
   const loadPlanData = useCallback(async () => {
@@ -300,27 +299,16 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
       totalNetBalance += userNetShare;
 
-      // Construct Subtitle Payment Context:
-      // - If user owes money (userNetShare < 0): "Paid by <Payer Name>"
-      // - If user is owed money (userNetShare > 0) or settled: list debtors
+      const expTotalAmt = Number(exp.total_amount || 0);
+      const formattedTotalAmt = expTotalAmt > 0
+        ? `₹${expTotalAmt.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "";
+
       let subtitleText = "";
-      if (userNetShare < 0 && !payerIsMe) {
-        subtitleText = `Paid by ${payerName}`;
+      if (payerIsMe) {
+        subtitleText = `You paid ${formattedTotalAmt}`.trim();
       } else {
-        const otherPts = expPts.filter((pt) => !isMe(pt.user_id));
-        const displayPts = otherPts.length > 0 ? otherPts : expPts;
-
-        const names = displayPts.slice(0, 2).map((pt) => {
-          const u = profMap.get(pt.user_id);
-          return isMe(pt.user_id) ? "You" : u?.full_name || u?.username || "Participant";
-        });
-
-        const extraCount = displayPts.length > 2 ? displayPts.length - 2 : 0;
-        if (extraCount > 0) {
-          subtitleText = `${names.join(", ")} + ${extraCount} ${extraCount === 1 ? 'other' : 'others'}`;
-        } else {
-          subtitleText = names.join(", ");
-        }
+        subtitleText = `${payerName} paid ${formattedTotalAmt}`.trim();
       }
 
       // Build participant avatars preview list
@@ -388,66 +376,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
   // Open Add Cost Sheet
   const handleOpenAddCostSheet = () => {
-    setFormError(null);
-    setCostTitle("");
-    setCostAmount("");
-    setSelectedParticipantIds(availablePlanParticipants.map((p) => p.id));
     setShowAddCostSheet(true);
-  };
-
-  const toggleParticipantSelection = (uid: string) => {
-    setSelectedParticipantIds((prev) =>
-      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
-    );
-  };
-
-  const parsedAmount = parseFloat(costAmount) || 0;
-  const isValidAmount = parsedAmount > 0;
-  const isFormValid = costTitle.trim().length > 0 && isValidAmount && selectedParticipantIds.length > 0;
-  const perPersonShare = selectedParticipantIds.length > 0 && isValidAmount
-    ? Math.round((parsedAmount / selectedParticipantIds.length) * 100) / 100
-    : 0;
-
-  // Add Cost Submit Handler
-  const handleAddCostSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isFormValid || submittingCost || !userPostgresUuid || !planDetails) return;
-
-    setSubmittingCost(true);
-    setFormError(null);
-
-    try {
-      const validJoinedUserIds = selectedParticipantIds.filter((uid) => joinedUserIds.has(uid));
-      const finalParticipants = Array.from(new Set([userPostgresUuid, ...validJoinedUserIds]));
-
-      const { error: rpcError } = await (supabase as any).rpc("insert_cost_expense", {
-        p_plan_id: planDetails.id,
-        p_message_id: null,
-        p_payer_id: userPostgresUuid,
-        p_title: costTitle.trim(),
-        p_total_amount: parsedAmount,
-        p_participant_ids: finalParticipants,
-      });
-
-      if (rpcError) {
-        console.error("[PlanBalances] insert_cost_expense failed:", rpcError);
-        setFormError(rpcError.message || "Failed to create expense.");
-        setSubmittingCost(false);
-        return;
-      }
-
-      setShowAddCostSheet(false);
-      setCostTitle("");
-      setCostAmount("");
-      setSelectedParticipantIds([]);
-      await loadPlanData();
-      await onRefreshBalances();
-    } catch (err: any) {
-      console.error("[PlanBalances] Exception adding cost:", err);
-      setFormError(err.message || "An error occurred.");
-    } finally {
-      setSubmittingCost(false);
-    }
   };
 
   // If an expense is selected for detail view, render ExpenseDetails screen
@@ -498,28 +427,54 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
   return (
     <div
       id="subview_plan_balances"
-      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-20 text-left bg-[#050505] select-none animate-fade-in"
+      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-36 text-left bg-[#050505] select-none animate-fade-in relative"
     >
-      {/* HEADER BAR — TOP LEFT "Plan balances" */}
-      <div className="flex items-center gap-3">
+      {/* STICKY HEADER BAR — BACK BUTTON, COMPACT CENTERED PLAN TITLE, & TOP RIGHT OPTIONS */}
+      <div className="sticky top-0 z-20 bg-[#050505]/90 backdrop-blur-md -mx-6 px-6 pt-3 pb-3 flex items-center justify-between border-b border-white/[0.04]">
         <button
           type="button"
           onClick={onBack}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60 shrink-0"
           aria-label="Back to Wallet"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <div>
-          <h2 className="text-xl font-display font-semibold text-zinc-100 tracking-tight">
-            Plan balances
-          </h2>
+
+        {/* Compact Centered Header Title (Perfectly synchronized with plan cover fade) */}
+        <div
+          className="flex-1 min-w-0 px-2 text-center transition-all duration-75"
+          style={{
+            opacity: progress,
+            transform: `translateY(${(1 - progress) * 6}px)`,
+            pointerEvents: progress > 0.5 ? "auto" : "none",
+          }}
+        >
+          <h3 className="font-sans font-bold text-base text-zinc-100 truncate">
+            {planTitle}
+          </h3>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setShowHeaderMenu(true)}
+          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60 shrink-0"
+          aria-label="More options"
+        >
+          <MoreVertical className="w-4 h-4" />
+        </button>
       </div>
 
-      {/* PLAN AVATAR & BALANCE HERO (PLAN COVER IMAGE REMAINS HERE IN THE HEADER) */}
-      <div className="flex flex-col items-center text-center py-6 mt-2 space-y-3">
-        <div className="relative">
+      {/* PLAN AVATAR & BALANCE HERO SECTION */}
+      <div className="flex flex-col items-center text-center py-3 mt-1 space-y-3">
+        {/* Plan Cover Image - Synchronized opacity & transform complement */}
+        <div
+          className="relative transition-all duration-75 origin-top"
+          style={{
+            opacity: 1 - progress,
+            transform: `translateY(-${progress * 12}px) scale(${1 - progress * 0.15})`,
+          }}
+        >
           {planCover ? (
             <DiscoveryImages
               src={planCover}
@@ -533,8 +488,15 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
           )}
         </div>
 
+        {/* Main Content Info (Title fades smoothly as sticky name fades in, while status & balance stay unaffected) */}
         <div className="space-y-1">
-          <h3 className="font-display font-bold text-xl text-zinc-100">
+          <h3
+            className="font-sans font-bold text-xl text-zinc-100 transition-all duration-75"
+            style={{
+              opacity: 1 - progress,
+              transform: `translateY(-${progress * 6}px)`,
+            }}
+          >
             {planTitle}
           </h3>
           <p className="text-zinc-500 font-sans text-xs font-medium uppercase tracking-wider">
@@ -547,278 +509,253 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
           {!isSettled && (
             <div className="flex items-center justify-center gap-2 mt-1">
               <h1
-                className={`font-sans font-black text-4xl leading-none ${
+                className={`font-sans font-black text-3xl sm:text-4xl leading-none ${
                   isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
                 }`}
               >
-                ₹{absNetBalance.toLocaleString("en-IN")}
+                ₹{absNetBalance.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h1>
             </div>
           )}
         </div>
       </div>
 
-      {/* EXPENSES SECTION HEADER */}
-      <div className="flex items-center justify-between mb-4 px-1">
-        <h3 className="text-sm font-display font-semibold text-zinc-300">
-          Expenses
-        </h3>
-        <button
-          type="button"
-          onClick={handleOpenAddCostSheet}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 text-[#FF6B2C] hover:bg-[#FF6B2C]/20 rounded-xl text-xs font-semibold transition cursor-pointer"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Add Cost</span>
-        </button>
-      </div>
-
       {/* EXPENSES CONTENT CONTAINER */}
-      <div className="flex-1 flex flex-col justify-between">
-        {/* EXPENSES LISTING */}
-        <div className="divide-y divide-white/[0.04]">
-          {dataLoading ? (
+      <div className="flex-1 flex flex-col pt-1 mt-2">
+        {/* Expenses Timeline */}
+        {dataLoading ? (
             <div className="py-12 text-center bg-zinc-950/20 border border-dashed border-zinc-900 rounded-[24px] space-y-2">
               <div className="w-5 h-5 border-2 border-[#FF6B2C] border-t-transparent rounded-full animate-spin mx-auto" />
               <p className="text-xs text-zinc-500 font-sans">Loading plan wallet data…</p>
             </div>
           ) : dataError ? (
-            <div className="p-4 text-center bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
-              {dataError}
-            </div>
-          ) : groupedExpenseRows.length === 0 ? (
-            <div className="py-8 text-center text-xs text-zinc-500 font-sans">
-              No expenses for this plan yet
-            </div>
-          ) : (
-            groupedExpenseRows.map((row) => {
-              const isRowSettled = row.isSettled || row.userNetShare === 0;
-              const expenseIsOwed = row.userNetShare > 0;
-              const absShare = Math.abs(row.userNetShare);
-              const displayAmount = isRowSettled ? row.settledDisplayAmount : absShare;
+          <div className="py-8 text-center text-xs text-rose-400 font-sans bg-rose-500/10 border border-rose-500/20 rounded-xl my-4">
+            {dataError}
+          </div>
+        ) : groupedExpenseRows.length === 0 ? (
+          <div className="py-8 text-center text-xs text-zinc-500 font-sans">
+            No expenses for this plan yet
+          </div>
+        ) : (
+          (() => {
+            // Group expenses by Month + Year section (e.g. "August 2026")
+            const groupedPlanExpenses = (() => {
+              const groups: { sectionTitle: string; yearMonthKey: string; rows: typeof groupedExpenseRows }[] = [];
+              const map = new Map<string, typeof groupedExpenseRows>();
 
-              return (
-                <div
-                  key={row.id}
-                  onClick={() => {
-                    setSelectedExpenseIdForDetail(row.id);
-                  }}
-                  className={`py-3.5 flex items-center text-left group transition-all cursor-pointer px-1 select-none hover:bg-white/[0.01] ${
-                    isRowSettled ? "opacity-60" : "opacity-100"
-                  }`}
-                >
-                  {/* COLUMN 1: Fixed-Width Avatar Column (w-[105px] shrink-0) */}
-                  <div className="w-[105px] shrink-0 flex items-center pr-3">
-                    <div className="flex items-center -space-x-2">
-                      {row.participantsPreview.map((p, idx) => (
-                        <UserAvatar
-                          key={p.userId}
-                          src={p.avatar}
-                          alt={p.name}
-                          size="w-8 h-8"
-                          className={`ring-2 ring-black rounded-full shrink-0 ${isRowSettled ? "grayscale-30" : ""}`}
-                          style={{ zIndex: 10 - idx }}
-                        />
-                      ))}
+              groupedExpenseRows.forEach((row) => {
+                const dateStr = row.updatedAt || row.createdAt || row.rawExpense?.updated_at || row.rawExpense?.created_at;
+                const d = dateStr ? new Date(dateStr) : new Date();
+                const validD = isNaN(d.getTime()) ? new Date() : d;
+                const fullMonth = validD.toLocaleString("en-US", { month: "long" });
+                const year = validD.getFullYear();
+                const key = `${year}-${String(validD.getMonth() + 1).padStart(2, "0")}`;
+                const sectionTitle = `${fullMonth} ${year}`;
+
+                if (!map.has(key)) {
+                  map.set(key, []);
+                  groups.push({ sectionTitle, yearMonthKey: key, rows: map.get(key)! });
+                }
+                map.get(key)!.push(row);
+              });
+
+              return groups;
+            })();
+
+            return (
+              <div className="space-y-3">
+                {groupedPlanExpenses.map((group) => (
+                  <div key={`plan-month-group-${group.yearMonthKey}`} className="space-y-0 text-left">
+                    {/* Month / Year Section Header */}
+                    <div className="py-2.5 pt-3 text-left border-b border-white/[0.04]">
+                      <h4 className="font-sans font-semibold text-xs text-zinc-400 tracking-wide">
+                        {group.sectionTitle}
+                      </h4>
                     </div>
-                    {row.extraParticipantsCount > 0 && (
-                      <span className="text-[9.5px] font-mono font-bold text-zinc-300 bg-zinc-900 border border-white/[0.1] px-1.5 py-0.5 rounded-full ml-1 shrink-0">
-                        +{row.extraParticipantsCount}
-                      </span>
-                    )}
-                  </div>
 
-                  {/* COLUMN 2: Flexible Content Column (Title & Subtitle) */}
-                  <div className="flex-1 min-w-0 flex flex-col justify-center">
-                    <h5 className={`font-sans text-[13.5px] truncate leading-tight ${
-                      isRowSettled ? "font-medium text-zinc-400 group-hover:text-zinc-200" : "font-semibold text-white group-hover:text-white"
-                    }`}>
-                      {row.expenseTitle}
-                    </h5>
+                    <div className="divide-y divide-white/[0.04]">
+                      {group.rows.map((row) => {
+                        const isRowSettled = row.isSettled || row.userNetShare === 0;
+                        const expenseIsOwed = row.userNetShare > 0;
+                        const absShare = Math.abs(row.userNetShare);
+                        const displayAmount = isRowSettled ? row.settledDisplayAmount : absShare;
 
-                    {/* Payment Context Subtitle */}
-                    {isRowSettled ? (
-                      <>
-                        {planTitle && (
-                          <span className="text-[11.5px] font-sans font-medium text-zinc-500 block truncate leading-tight mt-0.5">
-                            {planTitle}
-                          </span>
-                        )}
-                        <span className="text-[10px] font-sans text-zinc-550 block truncate leading-tight mt-0.5">
-                          Settled up
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-[11.5px] font-sans font-medium text-zinc-300 block truncate leading-tight mt-0.5">
-                        {row.subtitleText}
-                      </span>
-                    )}
-                  </div>
+                        const dateStr = row.updatedAt || row.createdAt || row.rawExpense?.updated_at || row.rawExpense?.created_at;
+                        const d = dateStr ? new Date(dateStr) : new Date();
+                        const validD = isNaN(d.getTime()) ? new Date() : d;
+                        const monthUpper = validD.toLocaleString("en-US", { month: "short" }).toUpperCase();
+                        const dayStr = String(validD.getDate()).padStart(2, "0");
 
-                  {/* COLUMN 3: Far-Right Amount Column (w-[90px] shrink-0 text-right) */}
-                  <div className="w-[90px] shrink-0 text-right flex items-center justify-end">
-                    {isRowSettled ? (
-                      <span className="font-mono text-sm font-medium tracking-tight text-zinc-400">
-                        ₹{displayAmount.toLocaleString("en-IN")}
-                      </span>
-                    ) : (
-                      <span
-                        className={`font-mono text-sm font-bold tracking-tight ${
-                          expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                        }`}
-                      >
-                        {expenseIsOwed ? "+" : "-"}₹{absShare.toLocaleString("en-IN")}
-                      </span>
-                    )}
-                  </div>
+                        return (
+                          <div
+                            key={row.id}
+                            onClick={() => {
+                              setSelectedExpenseIdForDetail(row.id);
+                            }}
+                            className={`py-3.5 flex items-center text-left group transition-all cursor-pointer px-0.5 select-none hover:bg-white/[0.01] ${
+                              isRowSettled ? "opacity-60" : "opacity-100"
+                            }`}
+                          >
+                            {/* VERTICAL DATE COLUMN (Leftmost element, month on top, day below) */}
+                            <div className="w-8 shrink-0 flex flex-col items-center justify-center text-center select-none mr-0.5">
+                              <span className="text-[9.5px] font-sans font-semibold tracking-wider text-zinc-500 uppercase leading-none">
+                                {monthUpper}
+                              </span>
+                              <span className="text-[13px] font-sans font-bold text-zinc-300 leading-none mt-1">
+                                {dayStr}
+                              </span>
+                            </div>
+
+                            {/* COLUMN 1: Fixed-Width Avatar Column (w-[105px] shrink-0) */}
+                            <div className="w-[105px] shrink-0 flex items-center pr-3">
+                              <div className="flex items-center -space-x-2">
+                                {row.participantsPreview.map((p, idx) => (
+                                  <UserAvatar
+                                    key={p.userId}
+                                    src={p.avatar}
+                                    alt={p.name}
+                                    size="w-8 h-8"
+                                    className={`ring-2 ring-black rounded-full shrink-0 ${isRowSettled ? "grayscale-30" : ""}`}
+                                    style={{ zIndex: 10 - idx }}
+                                  />
+                                ))}
+                              </div>
+                              {row.extraParticipantsCount > 0 && (
+                                <span className="text-[9.5px] font-sans font-bold text-zinc-300 bg-zinc-900 border border-white/[0.1] px-1.5 py-0.5 rounded-full ml-1 shrink-0">
+                                  +{row.extraParticipantsCount}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* COLUMN 2: Flexible Content Column (Title & Subtitle) */}
+                            <div className="flex-1 min-w-0 flex flex-col justify-center pr-3">
+                              <h5 className={`font-sans text-[13.5px] truncate leading-tight ${
+                                isRowSettled ? "font-medium text-zinc-400 group-hover:text-zinc-200" : "font-semibold text-white group-hover:text-white"
+                              }`}>
+                                {row.expenseTitle}
+                              </h5>
+
+                              {/* Payment Context Subtitle */}
+                              {isRowSettled ? (
+                                <>
+                                  {planTitle && (
+                                    <span className="text-[11.5px] font-sans font-medium text-zinc-500 block truncate leading-tight mt-0.5">
+                                      {planTitle}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] font-sans text-zinc-550 block truncate leading-tight mt-0.5">
+                                    Settled up
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-[11.5px] font-sans font-medium text-zinc-300 block truncate leading-tight mt-0.5">
+                                  {row.subtitleText}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* COLUMN 3: Far-Right Amount Column */}
+                            <div className="shrink-0 text-right min-w-max pl-2 flex items-center justify-end">
+                              {isRowSettled ? (
+                                <span className="font-sans text-sm font-medium tracking-tight text-zinc-400">
+                                  ₹{displayAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              ) : (
+                                <span
+                                  className={`font-sans text-sm font-bold tracking-tight ${
+                                    expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
+                                  }`}
+                                >
+                                  {expenseIsOwed ? "+" : "-"}₹{absShare.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              )}
+                            </div>      
+                          </div>
+                        );
+                      })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               );
-            })
+            })()
           )}
         </div>
 
-        {/* SETTLEMENT HISTORY NAVIGATION LINK (Anchored at bottom) */}
-        <div className="pt-4 border-t border-white/[0.06] mt-auto pb-2">
-          <button
-            type="button"
-            onClick={() => setShowSettlementHistory(true)}
-            className="w-full flex items-center justify-between h-14 px-1 text-left group cursor-pointer transition-colors hover:bg-white/[0.01]"
-          >
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="font-sans font-medium text-sm text-zinc-200 group-hover:text-white transition-colors">
-                Settlement History
-              </span>
-            </div>
-            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
-          </button>
-        </div>
-      </div>
-
-      {/* ADD COST BOTTOM SHEET */}
-      {showAddCostSheet && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-xs animate-fade-in">
+      {/* HEADER THREE-DOTS MENU BOTTOM SHEET */}
+      {showHeaderMenu && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 backdrop-blur-xs animate-fade-in"
+          onClick={() => setShowHeaderMenu(false)}
+        >
           <div
-            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-left"
+            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800/80 rounded-t-3xl p-6 shadow-2xl space-y-4 text-left animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-zinc-900 pb-3 shrink-0">
-              <h3 className="text-lg font-display font-bold text-white">Add Cost</h3>
+              <h3 className="text-base font-sans font-bold text-white">Options</h3>
               <button
                 type="button"
-                onClick={() => {
-                  setShowAddCostSheet(false);
-                  setFormError(null);
-                }}
-                className="text-zinc-500 hover:text-white text-xs font-semibold"
+                onClick={() => setShowHeaderMenu(false)}
+                className="text-zinc-400 hover:text-white text-xs font-semibold cursor-pointer"
               >
                 Close
               </button>
             </div>
 
-            {formError && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
-                {formError}
-              </div>
-            )}
-
-            <form onSubmit={handleAddCostSubmit} className="space-y-4 overflow-y-auto pr-1">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                  Title
-                </label>
-                <input
-                  type="text"
-                  value={costTitle}
-                  onChange={(e) => setCostTitle(e.target.value)}
-                  placeholder="e.g., Water, Dinner, Carpool"
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                  Total Amount (₹)
-                </label>
-                <input
-                  type="number"
-                  value={costAmount}
-                  onChange={(e) => setCostAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                  min="1"
-                  step="any"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Split Between ({selectedParticipantIds.length})
-                  </label>
-                  {isValidAmount && selectedParticipantIds.length > 0 && (
-                    <span className="text-xs font-mono font-semibold text-[#FF6B2C]">
-                      ₹{perPersonShare} / person
-                    </span>
-                  )}
+            <div className="space-y-2 py-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHeaderMenu(false);
+                  setShowSettlementHistory(true);
+                }}
+                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800/80 transition-all cursor-pointer group text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-sans font-semibold text-sm text-zinc-100 group-hover:text-white transition-colors">
+                      Settlement History
+                    </h4>
+                    <p className="text-[11px] font-sans text-zinc-400">
+                      View past settled payments and expenses
+                    </p>
+                  </div>
                 </div>
-
-                <div className="space-y-2 max-h-44 overflow-y-auto scrollbar-none">
-                  {availablePlanParticipants.map((p) => {
-                    const isSelected = selectedParticipantIds.includes(p.id);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => toggleParticipantSelection(p.id)}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer text-left ${isSelected
-                            ? "bg-zinc-900 border-[#FF6B2C]/60 text-white"
-                            : "bg-zinc-900/40 border-zinc-800/60 text-zinc-400 hover:bg-zinc-900/80"
-                          }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <UserAvatar src={p.avatar} alt={p.name} size="w-8 h-8" className="shrink-0" />
-                          <span className="font-sans font-medium text-xs truncate">{p.name}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-xs text-zinc-400">
-                            {isSelected ? `₹${perPersonShare}` : "₹0"}
-                          </span>
-                          <div
-                            className={`w-5 h-5 rounded-full flex items-center justify-center border transition ${isSelected
-                                ? "bg-[#FF6B2C] border-[#FF6B2C] text-white"
-                                : "border-zinc-700 bg-transparent text-transparent"
-                              }`}
-                          >
-                            <Check className="w-3 h-3 stroke-[3]" />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="pt-3">
-                <button
-                  type="submit"
-                  disabled={!isFormValid || submittingCost}
-                  className="w-full h-12 rounded-xl bg-[#FF6B2C] text-white font-semibold text-sm hover:bg-[#e05a1f] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-[#FF6B2C]/20"
-                >
-                  {submittingCost ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Adding Cost...</span>
-                    </>
-                  ) : (
-                    <span>Add Cost</span>
-                  )}
-                </button>
-              </div>
-            </form>
+                <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      {/* FLOATING ADD COST ACTION BUTTON */}
+      <button
+        type="button"
+        onClick={handleOpenAddCostSheet}
+        className="fixed bottom-[102px] right-6 z-30 w-13 h-13 rounded-full bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-[#FF6B2C]/30 transition-all cursor-pointer border border-white/10"
+        aria-label="Add Cost"
+      >
+        <BanknoteArrowUp className="w-6 h-6 stroke-[2.2]" />
+      </button>
+
+      {/* ADD COST BOTTOM SHEET COMPONENT */}
+      <AddCost
+        isOpen={showAddCostSheet}
+        onClose={() => setShowAddCostSheet(false)}
+        onRefreshBalances={async () => {
+          await loadPlanData();
+          await onRefreshBalances();
+        }}
+        activeUserId={userPostgresUuid || activeUserId}
+        initialPlanId={planDetails?.id || planId}
+        relevantPlans={planDetails ? [{ id: planDetails.id, title: planDetails.title }] : []}
+        dbPlanParticipants={dbParticipants}
+        dbProfiles={dbProfiles}
+      />
     </div>
   );
 };

@@ -75,7 +75,7 @@ export const SettlementHistoryScreen: React.FC<SettlementHistoryScreenProps> = (
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div>
-          <h2 className="text-xl font-display font-semibold text-zinc-100 tracking-tight">
+          <h2 className="text-xl font-sans font-bold text-zinc-100 tracking-tight">
             Settlement History
           </h2>
           <p className="text-xs font-sans text-zinc-500 font-medium truncate">
@@ -101,7 +101,7 @@ export const SettlementHistoryScreen: React.FC<SettlementHistoryScreenProps> = (
           />
         )}
         <div className="min-w-0">
-          <h3 className="font-display font-semibold text-sm text-zinc-200 truncate">
+          <h3 className="font-sans font-semibold text-sm text-zinc-200 truncate">
             {contextType === "person" ? personName : planTitle}
           </h3>
           <p className="text-[11px] font-sans text-zinc-500 uppercase tracking-wider font-semibold">
@@ -116,7 +116,7 @@ export const SettlementHistoryScreen: React.FC<SettlementHistoryScreenProps> = (
         {dateGroups.length === 0 ? (
           <div className="py-16 text-center space-y-2">
             <CheckCircle2 className="w-10 h-10 text-zinc-700 mx-auto stroke-[1.5]" />
-            <h4 className="font-display font-semibold text-sm text-zinc-400">
+            <h4 className="font-sans font-semibold text-sm text-zinc-400">
               No settlement history
             </h4>
             <p className="text-xs font-sans text-zinc-600">
@@ -178,7 +178,7 @@ export const SettlementHistoryScreen: React.FC<SettlementHistoryScreenProps> = (
                         </div>
 
                         <div className="text-right shrink-0 flex items-center justify-end">
-                          <span className="font-mono text-sm font-bold tracking-tight text-zinc-400">
+                          <span className="font-sans text-sm font-bold tracking-tight text-zinc-400">
                             {formattedAmount}
                           </span>
                         </div>
