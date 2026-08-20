@@ -1065,7 +1065,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       </div>
 
       {/* UNIFIED PARTICIPANTS LIST — DIRECTLY BELOW EXPENSE CARD */}
-      <div className="divide-y divide-white/[0.04]">
+      <div className="space-y-0.5">
         {formattedParticipants.map((pt) => {
           const isRowMuted = pt.isPtSettled || pt.isPayer || pt.isPtWaitlisted;
 

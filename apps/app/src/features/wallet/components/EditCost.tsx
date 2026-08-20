@@ -350,7 +350,7 @@ export const EditCost: React.FC<EditCostProps> = ({
         {/* Hero Amount Display & "What's the split?" Indicator */}
         <div className="flex flex-col items-center text-center py-2 space-y-1.5 shrink-0">
           {/* "Total" Secondary Label */}
-          <span className="text-xs sm:text-sm font-sans font-medium text-zinc-400">
+          <span className="text-sm sm:text-base font-sans font-semibold text-white">
             Total
           </span>
 
@@ -507,7 +507,7 @@ export const EditCost: React.FC<EditCostProps> = ({
           <button
             type="submit"
             disabled={!isFormValid || submittingEdit}
-            className="w-full h-13 rounded-2xl bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed text-white font-sans font-semibold text-base transition cursor-pointer mt-4 shrink-0 flex items-center justify-center gap-2 shadow-lg shadow-[#FF6B2C]/20"
+            className="w-full py-2.5 rounded-2xl bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed text-white font-sans font-semibold text-sm transition cursor-pointer mt-4 shrink-0 flex items-center justify-center gap-2 shadow-lg shadow-[#FF6B2C]/20"
           >
             {submittingEdit ? (
               <>

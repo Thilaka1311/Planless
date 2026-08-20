@@ -154,10 +154,10 @@ export const SettlementHistoryScreen: React.FC<SettlementHistoryScreenProps> = (
                             <DiscoveryImages
                               src={exp.planCover}
                               alt={exp.planTitle || ""}
-                              className="w-10 h-10 rounded-lg object-cover bg-zinc-900 border border-white/[0.05] shrink-0 grayscale-30"
+                              className="w-10 h-10 rounded-full object-cover bg-zinc-900 border border-white/[0.05] shrink-0 grayscale-30"
                             />
                           ) : (
-                            <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] text-zinc-650 font-black">
+                            <div className="w-10 h-10 rounded-full bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] text-zinc-650 font-black">
                               PLAN
                             </div>
                           )}

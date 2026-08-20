@@ -48,8 +48,8 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
   const [showSettlementHistory, setShowSettlementHistory] = useState(false);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
-  const scrollThreshold = 90;
-  const progress = Math.min(1, Math.max(0, scrollTop / scrollThreshold));
+  const avatarOpacity = Math.max(0, 1 - scrollTop / 75);
+  const stickyProgress = Math.min(1, Math.max(0, (scrollTop - 75) / 30));
 
   // Settle Up state
   const [submittingSettle, setSubmittingSettle] = useState(false);
@@ -81,12 +81,16 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
 
   const isOwed = relationship.netBalance >= 0;
   const absNetBalance = Math.abs(relationship.netBalance);
-  const formattedNetBalance = absNetBalance.toLocaleString("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  const formattedNetBalance = (() => {
+    const rounded = Math.round(absNetBalance * 100) / 100;
+    if (Number.isInteger(rounded)) {
+      return `₹${rounded.toLocaleString("en-IN")}`;
+    }
+    return `₹${rounded.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  })();
 
   const handleCardClick = (expense: ExpenseBreakdown) => {
     if (!expense?.id) {
@@ -263,100 +267,82 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-36 text-left bg-[#050505] relative"
     >
-      {/* Sticky Header Bar with Back Button, Centered Compact User Name, & Three Dots Menu */}
-      <div className="sticky top-0 z-20 bg-[#050505]/90 backdrop-blur-md -mx-6 px-6 pt-3 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+      {/* Sticky Header Bar with Back Button, Centered Fixed Profile Avatar, & Three Dots Menu */}
+      <div
+        className="sticky top-0 z-50 -mx-6 px-6 pt-3 pb-3 flex items-center justify-between pointer-events-none transition-colors duration-150 relative h-14"
+        style={{
+          backgroundColor: `rgba(5, 5, 5, ${stickyProgress})`,
+        }}
+      >
         <button
           type="button"
           onClick={onBack}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60 shrink-0"
+          className="p-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 z-50 pointer-events-auto"
           aria-label="Back to Wallet"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
 
-        {/* Compact Centered Header Name (Perfectly synchronized with profile photo fade) */}
+        {/* Centered Fixed Profile Avatar (Fixed 25x25 / 100px x 100px, Pinned at top-11 for breathing room, translateY = 0, dissolves away in place) */}
         <div
-          className="flex-1 min-w-0 px-2 text-center transition-all duration-75"
+          className="absolute left-1/2 -translate-x-1/2 top-11 transition-opacity duration-75 pointer-events-none z-40"
           style={{
-            opacity: progress,
-            transform: `translateY(${(1 - progress) * 6}px)`,
-            pointerEvents: progress > 0.5 ? "auto" : "none",
-          }}
-        >
-          <h3 className="font-sans font-bold text-base text-zinc-100 truncate">
-            {relationship.fullName}
-          </h3>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setShowHeaderMenu(true)}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60 shrink-0"
-          aria-label="More options"
-        >
-          <MoreVertical className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Relationship Header Banner / Profile Hero Section */}
-      <div className="flex flex-col items-center text-center py-1 mt-1 space-y-2">
-        {/* Profile Photo - Synchronized opacity & transform complement */}
-        <div
-          className="transition-all duration-75 origin-top"
-          style={{
-            opacity: 1 - progress,
-            transform: `translateY(-${progress * 12}px) scale(${1 - progress * 0.15})`,
+            opacity: avatarOpacity,
           }}
         >
           <UserAvatar
             src={relationship.profilePhoto}
             alt={relationship.fullName}
-            size="w-20 h-20"
-            className="ring-2 ring-white/10"
+            size="w-25 h-25"
+            className="ring-2 ring-white/10 shadow-lg"
           />
         </div>
 
-        {/* Main Content Info (Name fades smoothly as sticky name fades in, while OWES YOU, Balance & Settle Up stay unaffected) */}
-        <div className="space-y-1">
-          <h3
-            className="font-sans font-bold text-xl text-zinc-100 transition-all duration-75"
-            style={{
-              opacity: 1 - progress,
-              transform: `translateY(-${progress * 6}px)`,
-            }}
-          >
-            {relationship.fullName}
-          </h3>
-          <p className="text-zinc-500 font-sans text-xs font-medium uppercase tracking-wider">
-            {absNetBalance === 0 ? "SETTLED UP" : isOwed ? "OWES YOU" : "YOU OWE"}
-          </p>
-          {absNetBalance > 0 && (
-            <>
-              <div className="flex items-center justify-center gap-2 mt-1">
-                <h1
-                  className={`font-sans font-black text-4xl leading-none ${isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                    }`}
-                >
-                  {formattedNetBalance}
-                </h1>
-              </div>
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={handleOpenOverallSettleSheet}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-white/[0.1] text-xs font-sans font-semibold text-zinc-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
-                >
-                  <HandCoins className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Settle Up</span>
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowHeaderMenu(true)}
+          className="p-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 z-50 pointer-events-auto"
+          aria-label="More options"
+        >
+          <MoreVertical className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* THE SINGLE USER-NAME ELEMENT - Scrolls upward and pins natively at sticky top-[15px] z-50 */}
+      <h3 className="sticky top-[15px] z-50 font-sans font-bold text-base text-zinc-100 leading-tight text-center truncate px-12 mt-24 mb-1 pointer-events-auto shrink-0 self-center">
+        {relationship.fullName}
+      </h3>
+
+      {/* Relationship Header Banner / Profile Hero Section */}
+      <div className="flex flex-col items-center text-center pb-3 space-y-1.5 shrink-0 relative z-10">
+        <p className="text-zinc-500 font-sans text-[10px] font-semibold uppercase tracking-widest pt-0.5">
+          {absNetBalance === 0 ? "SETTLED UP" : isOwed ? "OWES YOU" : "YOU OWE"}
+        </p>
+        {absNetBalance > 0 && (
+          <>
+            <div className="flex items-center justify-center gap-2 mt-0.5">
+              <h1
+                className={`font-sans font-extrabold text-2xl sm:text-3xl leading-none ${isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
+                  }`}
+              >
+                {formattedNetBalance}
+              </h1>
+            </div>
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={handleOpenOverallSettleSheet}
+                className="inline-flex items-center px-3.5 py-1 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-white/[0.1] text-xs font-sans font-semibold text-zinc-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                <span>Settle Up</span>
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Expenses Timeline container */}
-      <div className="flex-1 flex flex-col pt-1 mt-2">
+      <div className="flex-1 flex flex-col pt-1 mt-1">
 
         {/* Expenses Timeline */}
         {(() => {
@@ -418,13 +404,13 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                 groupedActive.map((group) => (
                   <div key={`month-group-${group.yearMonthKey}`} className="space-y-0 text-left">
                     {/* Month / Year Section Header */}
-                    <div className="py-2.5 pt-3 text-left border-b border-white/[0.04]">
+                    <div className="py-2.5 pt-3 text-left">
                       <h4 className="font-sans font-semibold text-xs text-zinc-400 tracking-wide">
                         {group.sectionTitle}
                       </h4>
                     </div>
 
-                    <div className="divide-y divide-white/[0.04]">
+                    <div className="space-y-0.5 pt-1">
                       {group.expenses.map((expense) => {
                         const expenseIsOwed = expense.role === "creditor";
                         const formattedShare = expense.yourShare.toLocaleString("en-IN", {
@@ -452,7 +438,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                                 <span className="text-[9.5px] font-sans font-semibold tracking-wider text-zinc-500 uppercase leading-none">
                                   {monthUpper}
                                 </span>
-                                <span className="text-[13px] font-sans font-bold text-zinc-300 leading-none mt-1">
+                                <span className="text-[13px] font-sans font-bold text-zinc-500 leading-none mt-1">
                                   {dayStr}
                                 </span>
                               </div>
@@ -461,10 +447,10 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                                 <DiscoveryImages
                                   src={expense.planCover}
                                   alt={expense.planTitle}
-                                  className="w-10 h-10 rounded-lg object-cover bg-zinc-900 border border-white/[0.05] shrink-0"
+                                  className="w-10 h-10 rounded-full object-cover bg-zinc-900 border border-white/[0.05] shrink-0"
                                 />
                               ) : (
-                                <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] text-zinc-650 font-black">
+                                <div className="w-10 h-10 rounded-full bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] text-zinc-650 font-black">
                                   PLAN
                                 </div>
                               )}
