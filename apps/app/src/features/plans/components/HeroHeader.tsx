@@ -1,5 +1,6 @@
 import React from "react";
-import { ChevronLeft, Edit, MoreVertical, Settings, Users, Activity } from "lucide-react";
+import { ChevronLeft, Edit, MoreVertical, Settings, Users, Activity, CreditCard } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 
@@ -46,6 +47,8 @@ interface HeroHeaderProps {
   onOpenParticipants?: () => void;
   /** Called when the user taps the activity history icon in the chat header */
   onOpenActivity?: () => void;
+  /** Called when the user taps Expenses in the chat header menu */
+  onOpenExpenses?: () => void;
 }
 
 export const HeroHeader: React.FC<HeroHeaderProps> = ({
@@ -66,6 +69,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   onHeaderPress,
   onOpenParticipants,
   onOpenActivity,
+  onOpenExpenses,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
@@ -186,49 +190,124 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               </h1>
             </button>
 
-            {/* Header action buttons — right side (Participants -> Activity -> Settings) */}
+            {/* Header action buttons — right side (Single Three-dot Overflow Menu) */}
             <div className="flex items-center gap-0.5 flex-shrink-0 -mr-2">
-              {onOpenParticipants && (
-                <button
-                  id="immersive-plan-participants-btn"
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onOpenParticipants(); }}
-                  className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
-                  style={{ minWidth: "40px", minHeight: "40px" }}
-                  title="Participants"
-                >
-                  <Users className="w-5 h-5" />
-                </button>
-              )}
-
-              {onOpenActivity && (
-                <button
-                  id="immersive-plan-activity-btn"
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onOpenActivity(); }}
-                  className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
-                  style={{ minWidth: "40px", minHeight: "40px" }}
-                  title="Activity Timeline"
-                >
-                  <Activity className="w-5 h-5" />
-                </button>
-              )}
-
-              {onOpenSettings && (
-                <button
-                  id="immersive-plan-settings-btn"
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onOpenSettings(); }}
-                  className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
-                  style={{ minWidth: "40px", minHeight: "40px" }}
-                  title="Settings"
-                >
-                  <Settings className="w-5 h-5" />
-                </button>
-              )}
+              <button
+                id="immersive-plan-menu-btn"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(true);
+                }}
+                className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
+                style={{ minWidth: "40px", minHeight: "40px" }}
+                title="Menu"
+              >
+                <MoreVertical className="w-5 h-5" />
+              </button>
             </div>
           </div>
         </div>
+
+        {/* Clean Native Planless 4-Item Action Sheet */}
+        <AnimatePresence>
+          {menuOpen && (
+            <div className="fixed inset-0 z-[100] flex items-end justify-center pointer-events-auto">
+              {/* Backdrop Overlay */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                }}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              />
+
+              {/* Action Sheet Card */}
+              <motion.div
+                initial={{ y: "100%" }}
+                animate={{ y: 0 }}
+                exit={{ y: "100%" }}
+                transition={{ type: "spring", damping: 28, stiffness: 350 }}
+                onClick={(e) => e.stopPropagation()}
+                className="relative w-full max-w-md bg-[#0d0d11] border-t border-white/10 rounded-t-3xl p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-2xl z-10 flex flex-col space-y-1 text-left"
+              >
+                {/* Top Handle Bar */}
+                <div className="w-10 h-1 rounded-full bg-zinc-700/80 mx-auto mb-4 shrink-0" />
+
+                {/* 1. Participants */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenParticipants?.();
+                  }}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl hover:bg-white/[0.06] active:bg-white/10 transition-colors text-left group cursor-pointer"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-zinc-800/80 border border-white/10 flex items-center justify-center text-zinc-300 group-hover:text-white shrink-0">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <span className="text-sm font-semibold text-white tracking-tight">
+                    Participants
+                  </span>
+                </button>
+
+                {/* 2. Activity */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenActivity?.();
+                  }}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl hover:bg-white/[0.06] active:bg-white/10 transition-colors text-left group cursor-pointer"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-zinc-800/80 border border-white/10 flex items-center justify-center text-zinc-300 group-hover:text-white shrink-0">
+                    <Activity className="w-5 h-5" />
+                  </div>
+                  <span className="text-sm font-semibold text-white tracking-tight">
+                    Activity
+                  </span>
+                </button>
+
+                {/* 3. Expenses */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenExpenses?.();
+                  }}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl hover:bg-white/[0.06] active:bg-white/10 transition-colors text-left group cursor-pointer"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-zinc-800/80 border border-white/10 flex items-center justify-center text-zinc-300 group-hover:text-white shrink-0">
+                    <CreditCard className="w-5 h-5" />
+                  </div>
+                  <span className="text-sm font-semibold text-white tracking-tight">
+                    Expenses
+                  </span>
+                </button>
+
+                {/* 4. Settings */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenSettings?.();
+                  }}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl hover:bg-white/[0.06] active:bg-white/10 transition-colors text-left group cursor-pointer"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-zinc-800/80 border border-white/10 flex items-center justify-center text-zinc-300 group-hover:text-white shrink-0">
+                    <Settings className="w-5 h-5" />
+                  </div>
+                  <span className="text-sm font-semibold text-white tracking-tight">
+                    Settings
+                  </span>
+                </button>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }

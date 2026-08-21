@@ -6,6 +6,7 @@ import { updateExpenseDetailCache } from "../screens/ExpenseDetail";
 interface WalletState {
   dbWalletTransactions: any[];
   dbWalletPaidTransactions: any[];
+  dbWalletSettlements: any[];
   dbPlansLocal: any[];
   dbCirclesLocal: any[];
   dbPlanParticipantsLocal: any[];
@@ -34,6 +35,7 @@ export const WalletProvider = ({
 
   const [dbWalletTransactions, setDbWalletTransactions] = useState<any[]>([]);
   const [dbWalletPaidTransactions, setDbWalletPaidTransactions] = useState<any[]>([]);
+  const [dbWalletSettlements, setDbWalletSettlements] = useState<any[]>([]);
   const [dbPlansLocal, setDbPlansLocal] = useState<any[]>([]);
   const [dbCirclesLocal, setDbCirclesLocal] = useState<any[]>([]);
   const [dbPlanParticipantsLocal, setDbPlanParticipantsLocal] = useState<any[]>([]);
@@ -160,9 +162,22 @@ export const WalletProvider = ({
 
       setDbWalletPaidTransactions([]);
 
+      // 3. Query wallet_settlements
+      const { data: settlementsData, error: settlementsErr } = await (supabase as any)
+        .from("wallet_settlements")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (settlementsErr) {
+        console.error("[Wallet ERROR] Supabase error fetching wallet_settlements:", settlementsErr);
+      } else {
+        setDbWalletSettlements(settlementsData || []);
+      }
+
       // 4. Extract unique plan and user IDs to fetch additional context
       const planIds = Array.from(new Set((expenses || []).map((e: any) => e.plan_id).filter(Boolean)));
       const payerIds = Array.from(new Set((expenses || []).map((e: any) => e.payer_id).filter(Boolean)));
+      const settlementUserIds = (settlementsData || []).flatMap((s: any) => [s.payer_id, s.receiver_id]).filter(Boolean);
       const participantUserIds = Array.from(
         new Set(
           (expenses || [])
@@ -170,7 +185,7 @@ export const WalletProvider = ({
             .filter(Boolean)
         )
       );
-      const userIds = Array.from(new Set([...payerIds, ...participantUserIds]));
+      const userIds = Array.from(new Set([...payerIds, ...participantUserIds, ...settlementUserIds]));
 
       const fetchPromises: Promise<any>[] = [
         userIds.length > 0
@@ -218,7 +233,7 @@ export const WalletProvider = ({
       }, 50);
     };
 
-    // Subscribe to realtime updates on wallet_expenses and wallet_expense_participants
+    // Subscribe to realtime updates on wallet_expenses, wallet_expense_participants, and wallet_settlements
     const channel = supabase
       .channel(channelName)
       .on(
@@ -235,6 +250,13 @@ export const WalletProvider = ({
           triggerCoalescedRefresh("realtime", "wallet_expense_participants");
         }
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "wallet_settlements" },
+        () => {
+          triggerCoalescedRefresh("realtime", "wallet_settlements");
+        }
+      )
       .subscribe();
 
     return () => {
@@ -246,6 +268,7 @@ export const WalletProvider = ({
   const contextValue = useMemo(() => ({
     dbWalletTransactions,
     dbWalletPaidTransactions,
+    dbWalletSettlements,
     dbPlansLocal,
     dbCirclesLocal,
     dbPlanParticipantsLocal,
@@ -255,7 +278,7 @@ export const WalletProvider = ({
     refreshTransactions,
     updateExpenseInStore,
   }), [
-    dbWalletTransactions, dbWalletPaidTransactions, dbPlansLocal, dbCirclesLocal, dbPlanParticipantsLocal, dbUsersLocal, loading, error, refreshTransactions, updateExpenseInStore
+    dbWalletTransactions, dbWalletPaidTransactions, dbWalletSettlements, dbPlansLocal, dbCirclesLocal, dbPlanParticipantsLocal, dbUsersLocal, loading, error, refreshTransactions, updateExpenseInStore
   ]);
 
   return (

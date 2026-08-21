@@ -5,9 +5,20 @@ import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import { ExpenseDetails, PlanBalancesDetail } from "./ExpenseDetail";
-import { SettlementHistoryScreen, SettledExpenseItem } from "./SettlementHistory";
 import { getParticipantFinancialState, isJoinedParticipantStatus, getEffectiveExpenseDate } from "../services/walletService";
-import { AddCost } from "../components/AddCost";
+import { AddCost } from "./AddCost";
+
+const formatSmartINR = (amount: number): string => {
+  const absVal = Math.abs(amount);
+  const rounded = Math.round(absVal * 100) / 100;
+  if (Number.isInteger(rounded)) {
+    return `₹${rounded.toLocaleString("en-IN")}`;
+  }
+  return `₹${rounded.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
 
 interface PlanDetailsScreenProps {
   planId?: string;
@@ -25,6 +36,7 @@ interface ExpenseGroupedRow {
   totalAmount: number;
   payerId: string;
   payerName: string;
+  payerAvatar: string;
   userNetShare: number; // + if owed to user, - if user owes
   settledDisplayAmount: number; // original split / settlement amount before settlement
   isOwed: boolean;
@@ -50,11 +62,9 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
   const { activeUserUuid } = useProfileStore();
 
   const [selectedExpenseIdForDetail, setSelectedExpenseIdForDetail] = useState<string | null>(null);
-  const [showSettlementHistory, setShowSettlementHistory] = useState(false);
-  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
-  const scrollThreshold = 90;
-  const progress = Math.min(1, Math.max(0, scrollTop / scrollThreshold));
+  const avatarOpacity = Math.max(0, 1 - scrollTop / 75);
+  const stickyProgress = Math.min(1, Math.max(0, (scrollTop - 75) / 30));
 
   // Dedicated Database State
   const [dataLoading, setDataLoading] = useState(true);
@@ -62,6 +72,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
   const [planDetails, setPlanDetails] = useState<{ id: string; title: string; cover_image?: string } | null>(null);
   const [dbExpenses, setDbExpenses] = useState<any[]>([]);
   const [dbParticipants, setDbParticipants] = useState<any[]>([]);
+  const [dbPlanParticipants, setDbPlanParticipants] = useState<any[]>([]);
   const [dbProfiles, setDbProfiles] = useState<any[]>([]);
   const [userPostgresUuid, setUserPostgresUuid] = useState<string>("");
   const [financiallyIncludedUserIds, setFinanciallyIncludedUserIds] = useState<Set<string>>(new Set());
@@ -156,11 +167,13 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
       setDbParticipants(fetchedPts);
 
-      // 5b. Fetch plan_participants to build financiallyIncludedUserIds set
+      // 5b. Fetch plan_participants to build financiallyIncludedUserIds set and participant list
       const { data: rawPlanPts } = await supabase
         .from("plan_participants")
-        .select("user_id, rsvp_status, skip_reason")
+        .select("user_id, plan_id, rsvp_status, skip_reason, status")
         .eq("plan_id", resolvedPlanId);
+
+      setDbPlanParticipants(rawPlanPts || []);
 
       const includedSet = new Set<string>();
       const joinedSet = new Set<string>();
@@ -181,10 +194,11 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
       setJoinedUserIds(joinedSet);
       setHasLoadedPlanParticipants(true);
 
-      // 6. Fetch profiles for all involved users
+      // 6. Fetch profiles for all involved users (payers, split participants, joined plan members, current user)
       const payerUserIds = fetchedExp.map((e: any) => e.payer_id).filter(Boolean);
       const ptUserIds = fetchedPts.map((p: any) => p.user_id).filter(Boolean);
-      const allUserIds = Array.from(new Set([...payerUserIds, ...ptUserIds, userUuid]));
+      const planPtUserIds = (rawPlanPts || []).map((p: any) => p.user_id).filter(Boolean);
+      const allUserIds = Array.from(new Set([...payerUserIds, ...ptUserIds, ...planPtUserIds, userUuid]));
 
       if (allUserIds.length > 0) {
         const { data: profData } = await supabase
@@ -239,6 +253,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
       const payerIsMe = isMe(exp.payer_id);
       const payerUser = profMap.get(exp.payer_id);
       const payerName = payerIsMe ? "You" : payerUser?.full_name || payerUser?.username || "Payer";
+      const payerAvatar = payerUser?.profile_photo_path || "";
 
       const rawTitle = exp.title ? String(exp.title).trim() : "";
       const isPlanJoining =
@@ -301,7 +316,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
       const expTotalAmt = Number(exp.total_amount || 0);
       const formattedTotalAmt = expTotalAmt > 0
-        ? `₹${expTotalAmt.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        ? formatSmartINR(expTotalAmt)
         : "";
 
       let subtitleText = "";
@@ -333,6 +348,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         totalAmount: Number(exp.total_amount || 0),
         payerId: exp.payer_id,
         payerName,
+        payerAvatar,
         userNetShare,
         settledDisplayAmount,
         isOwed: userNetShare > 0 || (userNetShare === 0 && payerIsMe),
@@ -397,30 +413,71 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
     );
   }
 
-  if (showSettlementHistory) {
-    const settledItems: SettledExpenseItem[] = groupedExpenseRows
-      .filter((r) => r.isSettled || r.userNetShare === 0)
-      .map((r) => ({
-        id: r.id,
-        title: r.expenseTitle,
-        planTitle: planDetails?.title,
-        planCover: planDetails?.cover_image,
-        amount: r.settledDisplayAmount || r.totalAmount || 0,
-        settledDate: r.updatedAt || r.createdAt || new Date().toISOString(),
-        planId: planDetails?.id || planId,
-      }));
-
+  // Full Screen Skeleton Loading State
+  if (dataLoading) {
     return (
-      <SettlementHistoryScreen
-        contextType="plan"
-        planTitle={planDetails?.title}
-        planCover={planDetails?.cover_image}
-        settledExpenses={settledItems}
-        onBack={() => setShowSettlementHistory(false)}
-        onSelectExpense={(expId) => {
-          setSelectedExpenseIdForDetail(expId);
-        }}
-      />
+      <div
+        id="subview_plan_balances_skeleton"
+        className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-36 text-left bg-[#050505] select-none animate-fade-in relative"
+      >
+        {/* Sticky Header Bar — Back Arrow */}
+        <div className="sticky top-0 z-50 -mx-6 px-6 pt-3 pb-3 flex items-center justify-between h-16 bg-[#050505]/90 backdrop-blur-md">
+          <button
+            type="button"
+            onClick={onBack}
+            className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 z-50 active:scale-95"
+            aria-label="Back to Wallet"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Centered Fixed Circular Plan Avatar Skeleton */}
+        <div className="absolute left-1/2 -translate-x-1/2 top-11 z-40">
+          <div className="w-25 h-25 rounded-full bg-zinc-800/80 ring-2 ring-white/10 shadow-lg animate-pulse" />
+        </div>
+
+        {/* Plan Title Skeleton */}
+        <div className="w-48 h-5 bg-zinc-800/80 rounded-md mx-auto mt-24 shrink-0 self-center animate-pulse" />
+
+        {/* Plan Balance Status & Amount Skeleton */}
+        <div className="flex flex-col items-center text-center shrink-0 relative z-10 space-y-2 mt-4">
+          <div className="w-24 h-3 bg-zinc-800/60 rounded animate-pulse" />
+          <div className="w-36 h-9 bg-zinc-800/80 rounded-xl mt-1 animate-pulse" />
+        </div>
+
+        {/* Month Section Header Skeleton */}
+        <div className="py-2.5 pt-6 text-left border-b border-white/[0.04] shrink-0">
+          <div className="w-28 h-3.5 bg-zinc-800/60 rounded animate-pulse" />
+        </div>
+
+        {/* 6 Skeleton Expense Rows */}
+        <div className="space-y-0 divide-y divide-white/[0.04] mt-1">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={`plan-skeleton-row-${i}`} className="py-3.5 flex items-center justify-between px-0.5 animate-pulse">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                {/* Date Skeleton */}
+                <div className="w-8 shrink-0 flex flex-col items-center justify-center space-y-1">
+                  <div className="w-6 h-2 bg-zinc-800/60 rounded" />
+                  <div className="w-4 h-3 bg-zinc-800/80 rounded" />
+                </div>
+
+                {/* Avatar Skeleton */}
+                <div className="w-8 h-8 rounded-full bg-zinc-800/80 shrink-0" />
+
+                {/* Title & Subtitle Skeleton */}
+                <div className="flex-1 space-y-1.5 min-w-0">
+                  <div className="w-28 h-3.5 bg-zinc-800/80 rounded" />
+                  <div className="w-36 h-3 bg-zinc-800/60 rounded" />
+                </div>
+              </div>
+
+              {/* Amount Skeleton */}
+              <div className="w-14 h-4 bg-zinc-800/80 rounded shrink-0" />
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
 
@@ -430,105 +487,70 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-36 text-left bg-[#050505] select-none animate-fade-in relative"
     >
-      {/* STICKY HEADER BAR — BACK BUTTON, COMPACT CENTERED PLAN TITLE, & TOP RIGHT OPTIONS */}
-      <div className="sticky top-0 z-20 bg-[#050505]/90 backdrop-blur-md -mx-6 px-6 pt-3 pb-3 flex items-center justify-between border-b border-white/[0.04]">
+      {/* Sticky Header Bar with Back Button & Centered Fixed Plan Avatar */}
+      <div
+        className="sticky top-0 z-50 -mx-6 px-6 pt-3 pb-3 flex items-center justify-between pointer-events-none transition-colors duration-150 relative h-16"
+        style={{
+          backgroundColor: `rgba(5, 5, 5, ${stickyProgress})`,
+        }}
+      >
         <button
           type="button"
           onClick={onBack}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60 shrink-0"
+          className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 z-50 pointer-events-auto active:scale-95"
           aria-label="Back to Wallet"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
 
-        {/* Compact Centered Header Title (Perfectly synchronized with plan cover fade) */}
+        {/* Centered Fixed Plan Avatar (Fixed 25x25 / 100px x 100px, Pinned at top-11, translateY = 0, dissolves away in place) */}
         <div
-          className="flex-1 min-w-0 px-2 text-center transition-all duration-75"
+          className="absolute left-1/2 -translate-x-1/2 top-11 transition-opacity duration-75 pointer-events-none z-40"
           style={{
-            opacity: progress,
-            transform: `translateY(${(1 - progress) * 6}px)`,
-            pointerEvents: progress > 0.5 ? "auto" : "none",
-          }}
-        >
-          <h3 className="font-sans font-bold text-base text-zinc-100 truncate">
-            {planTitle}
-          </h3>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setShowHeaderMenu(true)}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60 shrink-0"
-          aria-label="More options"
-        >
-          <MoreVertical className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* PLAN AVATAR & BALANCE HERO SECTION */}
-      <div className="flex flex-col items-center text-center py-3 mt-1 space-y-3">
-        {/* Plan Cover Image - Synchronized opacity & transform complement */}
-        <div
-          className="relative transition-all duration-75 origin-top"
-          style={{
-            opacity: 1 - progress,
-            transform: `translateY(-${progress * 12}px) scale(${1 - progress * 0.15})`,
+            opacity: avatarOpacity,
           }}
         >
           {planCover ? (
             <DiscoveryImages
               src={planCover}
               alt={planTitle}
-              className="w-20 h-20 rounded-2xl object-cover ring-2 ring-white/10 shadow-xl"
+              className="w-25 h-25 rounded-full object-cover ring-2 ring-white/10 shadow-lg aspect-square overflow-hidden"
             />
           ) : (
-            <div className="w-20 h-20 rounded-2xl bg-zinc-900 ring-2 ring-white/10 flex items-center justify-center text-xs text-zinc-650 font-black">
+            <div className="w-25 h-25 rounded-full bg-zinc-900 ring-2 ring-white/10 flex items-center justify-center text-xs text-zinc-650 font-black aspect-square overflow-hidden">
               PLAN
-            </div>
-          )}
-        </div>
-
-        {/* Main Content Info (Title fades smoothly as sticky name fades in, while status & balance stay unaffected) */}
-        <div className="space-y-1">
-          <h3
-            className="font-sans font-bold text-xl text-zinc-100 transition-all duration-75"
-            style={{
-              opacity: 1 - progress,
-              transform: `translateY(-${progress * 6}px)`,
-            }}
-          >
-            {planTitle}
-          </h3>
-          <p className="text-zinc-500 font-sans text-xs font-medium uppercase tracking-wider">
-            {isSettled
-              ? "SETTLED UP"
-              : isOwed
-                ? "YOU ARE OWED"
-                : "YOU OWE"}
-          </p>
-          {!isSettled && (
-            <div className="flex items-center justify-center gap-2 mt-1">
-              <h1
-                className={`font-sans font-black text-3xl sm:text-4xl leading-none ${
-                  isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                }`}
-              >
-                ₹{absNetBalance.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </h1>
             </div>
           )}
         </div>
       </div>
 
+      {/* THE SINGLE PLAN-NAME ELEMENT - Scrolls upward and pins natively at sticky top-[15px] z-50 */}
+      <h3 className="sticky top-[15px] z-50 font-sans font-bold text-base text-zinc-100 leading-tight text-center truncate px-12 mt-24 pointer-events-auto shrink-0 self-center">
+        {planTitle}
+      </h3>
+
+      {/* Plan Balance Hero Section */}
+      <div className={`flex flex-col items-center text-center shrink-0 relative z-10 ${isSettled ? "my-4" : "pb-3 space-y-1.5"}`}>
+        <p className="text-zinc-500 font-sans text-xs font-medium uppercase tracking-wider">
+          {isSettled
+            ? "SETTLED UP"
+            : isOwed
+              ? "YOU ARE OWED"
+              : "YOU OWE"}
+        </p>
+        {!isSettled && (
+          <div className="flex items-center justify-center gap-2 mt-1">
+            <h1 className="font-sans font-black text-3xl sm:text-4xl leading-none text-white">
+              {formatSmartINR(absNetBalance)}
+            </h1>
+          </div>
+        )}
+      </div>
+
       {/* EXPENSES CONTENT CONTAINER */}
       <div className="flex-1 flex flex-col pt-1 mt-2">
         {/* Expenses Timeline */}
-        {dataLoading ? (
-            <div className="py-12 text-center bg-zinc-950/20 border border-dashed border-zinc-900 rounded-[24px] space-y-2">
-              <div className="w-5 h-5 border-2 border-[#FF6B2C] border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-xs text-zinc-500 font-sans">Loading plan wallet data…</p>
-            </div>
-          ) : dataError ? (
+        {dataError ? (
           <div className="py-8 text-center text-xs text-rose-400 font-sans bg-rose-500/10 border border-rose-500/20 rounded-xl my-4">
             {dataError}
           </div>
@@ -565,13 +587,13 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
                 {groupedPlanExpenses.map((group) => (
                   <div key={`plan-month-group-${group.yearMonthKey}`} className="space-y-0 text-left">
                     {/* Month / Year Section Header */}
-                    <div className="py-2.5 pt-3 text-left border-b border-white/[0.04]">
+                    <div className="py-2.5 pt-3 text-left">
                       <h4 className="font-sans font-semibold text-xs text-zinc-400 tracking-wide">
                         {group.sectionTitle}
                       </h4>
                     </div>
 
-                    <div className="divide-y divide-white/[0.04]">
+                    <div className="space-y-0">
                       {group.rows.map((row) => {
                         const isRowSettled = row.isSettled || row.userNetShare === 0;
                         const expenseIsOwed = row.userNetShare > 0;
@@ -588,9 +610,8 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
                             onClick={() => {
                               setSelectedExpenseIdForDetail(row.id);
                             }}
-                            className={`py-3.5 flex items-center text-left group transition-all cursor-pointer px-0.5 select-none hover:bg-white/[0.01] ${
-                              isRowSettled ? "opacity-45" : "opacity-100"
-                            }`}
+                            className={`py-3.5 flex items-center text-left group transition-all cursor-pointer px-0.5 select-none hover:bg-white/[0.01] ${isRowSettled ? "opacity-45" : "opacity-100"
+                              }`}
                           >
                             {/* VERTICAL DATE COLUMN (Leftmost element, month on top, day below) */}
                             <div className="w-8 shrink-0 flex flex-col items-center justify-center text-center select-none mr-0.5">
@@ -602,32 +623,20 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
                               </span>
                             </div>
 
-                            {/* COLUMN 1: Fixed-Width Avatar Column (w-[105px] shrink-0) */}
-                            <div className="w-[105px] shrink-0 flex items-center pr-3">
-                              <div className="flex items-center -space-x-2">
-                                {row.participantsPreview.map((p, idx) => (
-                                  <UserAvatar
-                                    key={p.userId}
-                                    src={p.avatar}
-                                    alt={p.name}
-                                    size="w-8 h-8"
-                                    className={`ring-2 ring-black rounded-full shrink-0 ${isRowSettled ? "grayscale-30" : ""}`}
-                                    style={{ zIndex: 10 - idx }}
-                                  />
-                                ))}
-                              </div>
-                              {row.extraParticipantsCount > 0 && (
-                                <span className="text-[9.5px] font-sans font-bold text-zinc-300 bg-zinc-900 border border-white/[0.1] px-1.5 py-0.5 rounded-full ml-1 shrink-0">
-                                  +{row.extraParticipantsCount}
-                                </span>
-                              )}
+                            {/* COLUMN 1: Payer Avatar Only */}
+                            <div className="w-10 shrink-0 flex items-center justify-center mr-2">
+                              <UserAvatar
+                                src={row.payerAvatar}
+                                alt={row.payerName}
+                                size="w-8 h-8"
+                                className={`ring-2 ring-black rounded-full shrink-0 ${isRowSettled ? "grayscale-30" : ""}`}
+                              />
                             </div>
 
                             {/* COLUMN 2: Flexible Content Column (Title & Subtitle) */}
                             <div className="flex-1 min-w-0 flex flex-col justify-center pr-3">
-                              <h5 className={`font-sans text-[13.5px] truncate leading-tight ${
-                                isRowSettled ? "font-medium text-zinc-400 group-hover:text-zinc-200" : "font-semibold text-white group-hover:text-white"
-                              }`}>
+                              <h5 className={`font-sans text-[13.5px] truncate leading-tight ${isRowSettled ? "font-medium text-zinc-400 group-hover:text-zinc-200" : "font-semibold text-white group-hover:text-white"
+                                }`}>
                                 {row.expenseTitle}
                               </h5>
 
@@ -657,76 +666,22 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
                                   Settled Up
                                 </span>
                               ) : (
-                                <span
-                                  className={`font-sans text-sm font-bold tracking-tight ${
-                                    expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                                  }`}
-                                >
-                                  {expenseIsOwed ? "+" : "-"}₹{absShare.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                <span className="font-sans text-sm font-bold tracking-tight text-white">
+                                  {formatSmartINR(absShare)}
                                 </span>
                               )}
-                            </div>      
+                            </div>
                           </div>
                         );
                       })}
-                      </div>
                     </div>
-                  ))}
-                </div>
-              );
-            })()
-          )}
-        </div>
-
-      {/* HEADER THREE-DOTS MENU BOTTOM SHEET */}
-      {showHeaderMenu && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 backdrop-blur-xs animate-fade-in"
-          onClick={() => setShowHeaderMenu(false)}
-        >
-          <div
-            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800/80 rounded-t-3xl p-6 shadow-2xl space-y-4 text-left animate-slide-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-zinc-900 pb-3 shrink-0">
-              <h3 className="text-base font-sans font-bold text-white">Options</h3>
-              <button
-                type="button"
-                onClick={() => setShowHeaderMenu(false)}
-                className="text-zinc-400 hover:text-white text-xs font-semibold cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="space-y-2 py-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowHeaderMenu(false);
-                  setShowSettlementHistory(true);
-                }}
-                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800/80 transition-all cursor-pointer group text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-                    <CheckCircle2 className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h4 className="font-sans font-semibold text-sm text-zinc-100 group-hover:text-white transition-colors">
-                      Settlement History
-                    </h4>
-                    <p className="text-[11px] font-sans text-zinc-400">
-                      View past settled payments and expenses
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                ))}
+              </div>
+            );
+          })()
+        )}
+      </div>
 
       {/* FLOATING ADD COST ACTION BUTTON */}
       <button
@@ -738,7 +693,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         <BanknoteArrowUp className="w-6 h-6 stroke-[2.2]" />
       </button>
 
-      {/* ADD COST BOTTOM SHEET COMPONENT */}
+      {/* ADD COST FULL SCREEN COMPONENT */}
       <AddCost
         isOpen={showAddCostSheet}
         onClose={() => setShowAddCostSheet(false)}
@@ -748,8 +703,9 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         }}
         activeUserId={userPostgresUuid || activeUserId}
         initialPlanId={planDetails?.id || planId}
-        relevantPlans={planDetails ? [{ id: planDetails.id, title: planDetails.title }] : []}
-        dbPlanParticipants={dbParticipants}
+        relevantPlans={planDetails ? [{ id: planDetails.id, title: planDetails.title, cover_image: planDetails.cover_image }] : []}
+        dbPlanParticipants={dbPlanParticipants}
+        dbUsers={dbProfiles}
         dbProfiles={dbProfiles}
       />
     </div>

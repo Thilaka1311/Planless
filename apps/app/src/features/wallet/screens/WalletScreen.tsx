@@ -14,11 +14,13 @@ import { PeopleSettledUpScreen, PlansSettledUpScreen } from "./WalletSettledUp";
 interface WalletScreenProps {
   setActiveTab?: (tab: string) => void;
   setSelectedPlanId?: (planId: string | null) => void;
+  onToggleBottomNav?: (hidden: boolean) => void;
 }
 
 export const WalletScreen: React.FC<WalletScreenProps> = ({
   setActiveTab,
   setSelectedPlanId,
+  onToggleBottomNav,
 }) => {
   const [subView, setSubView] = useState<"main" | "relationship" | "planOverallCost" | "peopleSettledUp" | "plansSettledUp">("main");
   // We store only the person's UUID — the detail view always shows the FULL relationship.
@@ -34,6 +36,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
   const {
     dbWalletTransactions,
     dbWalletPaidTransactions,
+    dbWalletSettlements,
     dbPlansLocal,
     dbCirclesLocal,
     dbPlanParticipantsLocal,
@@ -59,16 +62,22 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
       dbPlansLocal,
       dbCirclesLocal,
       dbPlanParticipantsLocal,
-      dbWalletPaidTransactions
+      dbWalletPaidTransactions,
+      dbWalletSettlements
     );
-  }, [activeUserUuid, dbWalletTransactions, mergedUsers, dbPlansLocal, dbCirclesLocal, dbPlanParticipantsLocal, dbWalletPaidTransactions]);
+  }, [activeUserUuid, dbWalletTransactions, mergedUsers, dbPlansLocal, dbCirclesLocal, dbPlanParticipantsLocal, dbWalletPaidTransactions, dbWalletSettlements]);
 
-  // All active net person relationships
+  // Unified list of all person relationships (active unsettled + settled)
   const visibleRelationships = useMemo(() => {
-    return (walletSummary.personRelationships || [])
+    const active = (walletSummary.personRelationships || [])
       .slice()
       .sort((a, b) => Math.abs(b.netBalance) - Math.abs(a.netBalance));
-  }, [walletSummary.personRelationships]);
+    const settled = (walletSummary.settledRelationships || [])
+      .slice()
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+    return [...active, ...settled];
+  }, [walletSummary.personRelationships, walletSummary.settledRelationships]);
 
   // Settled Up relationships (net balance = 0, but has transaction history)
   const settledRelationships = useMemo(() => {
@@ -77,12 +86,17 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [walletSummary.settledRelationships]);
 
-  // Active plan relationships
+  // Unified list of all plan relationships (active unsettled + settled)
   const visiblePlanRelationships = useMemo(() => {
-    return (walletSummary.planRelationships || [])
+    const active = (walletSummary.planRelationships || [])
       .slice()
       .sort((a, b) => Math.abs(b.netBalance) - Math.abs(a.netBalance));
-  }, [walletSummary.planRelationships]);
+    const settled = (walletSummary.settledPlanRelationships || [])
+      .slice()
+      .sort((a, b) => (a.planTitle || "").localeCompare(b.planTitle || ""));
+
+    return [...active, ...settled];
+  }, [walletSummary.planRelationships, walletSummary.settledPlanRelationships]);
 
   // Settled plan relationships
   const settledPlanRelationships = useMemo(() => {
@@ -253,6 +267,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
         onSelectExpense={(expId) => {
           setSelectedExpenseId(expId);
         }}
+        onToggleBottomNav={onToggleBottomNav}
       />
     );
   }
@@ -273,52 +288,62 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
     ? visibleRelationships.length > 0
     : visiblePlanRelationships.length > 0;
 
+  const balanceSummaryLabel = isPositive
+    ? "You're owed"
+    : isNegative
+    ? "You owe"
+    : "All settled";
+
   return (
-    <div id="subview_payments_wallet" className="w-full h-full flex flex-col justify-between overflow-y-auto scrollbar-none px-6 pt-3 animate-fade-in text-left bg-[#050505] pb-20 select-none">
-      <div className="space-y-5">
-        {/* Header — Centered title WALLET with Profile Avatar on Top-Left & Search on Top-Right */}
-        <div className="pb-1.5 pt-1.5 flex items-center justify-between relative">
-          {/* Left Column: Avatar */}
-          <div className="flex-1 flex items-center justify-start z-10">
-            {userProfile && (
-              <button
-                onClick={() => setActiveTab?.("profile")}
-                className="relative group shrink-0 block focus:outline-none cursor-pointer"
-                aria-label="View Profile Settings"
-              >
-                <UserAvatar
-                  src={userProfile.avatar}
-                  alt={userProfile.name}
-                  size="w-9 h-9"
-                  className="border-2 border-zinc-800 hover:border-[#ff8b66] transition-colors"
-                />
-              </button>
-            )}
-          </div>
-
-          {/* Center Column: Perfectly Centered Title */}
-          <div className="flex-shrink-0 flex items-center justify-center z-10">
-            <h1 className="text-stone-100 font-sans font-black text-xl tracking-[0.25em] leading-none text-center uppercase">
-              WALLET
-            </h1>
-          </div>
-
-          {/* Right Column: Search Button */}
-          <div className="flex-1 flex items-center justify-end z-10">
+    <div id="subview_payments_wallet" className="flex-1 flex flex-col relative overflow-hidden h-full bg-[#050505] text-left select-none animate-fade-in">
+      {/* Header: Clean with no bottom divider */}
+      <header
+        id="wallet_screen_header"
+        className="h-16 shrink-0 bg-[#09090b]/99 backdrop-blur-md flex items-center justify-between px-4 z-30 select-none relative"
+      >
+        {/* Left Column: Avatar */}
+        <div className="flex-1 flex items-center justify-start z-10">
+          {userProfile && (
             <button
-              type="button"
-              onClick={() => {
-                setIsSearchOpen((prev) => !prev);
-                if (isSearchOpen) setSearchQuery("");
-              }}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60"
-              aria-label="Search Wallet"
+              onClick={() => setActiveTab?.("profile")}
+              className="relative group shrink-0 block focus:outline-none cursor-pointer"
+              aria-label="View Profile Settings"
             >
-              {isSearchOpen ? <X className="w-4 h-4" /> : <Search className="w-4 h-4" />}
+              <UserAvatar
+                src={userProfile.avatar}
+                alt={userProfile.name}
+                size="w-10 h-10"
+                className="border-2 border-zinc-800 hover:border-[#ff8b66] transition-colors"
+              />
             </button>
-          </div>
+          )}
         </div>
 
+        {/* Center Column: Perfectly Centered Title */}
+        <div className="flex-shrink-0 flex items-center justify-center z-10">
+          <h1 className="text-stone-100 font-sans font-bold text-xl tracking-tight leading-none text-center">
+            Wallet
+          </h1>
+        </div>
+
+        {/* Right Column: Plain Search Action Icon */}
+        <div className="flex-1 flex items-center justify-end z-10">
+          <button
+            type="button"
+            onClick={() => {
+              setIsSearchOpen((prev) => !prev);
+              if (isSearchOpen) setSearchQuery("");
+            }}
+            aria-label="Search Wallet"
+            className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer active:scale-95"
+          >
+            {isSearchOpen ? <X className="w-5.5 h-5.5" /> : <Search className="w-5.5 h-5.5" />}
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-y-auto scrollbar-none px-6 pt-3 pb-20 space-y-3.5">
         {/* Search Input Bar (Visible when Search is toggled) */}
         {isSearchOpen && (
           <div className="w-full relative flex items-center animate-fade-in">
@@ -343,15 +368,15 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
           </div>
         )}
 
-        {/* Segmented Control: People vs Plans */}
-        <div className="w-full bg-zinc-900/90 p-1 rounded-xl border border-white/[0.06] flex items-center gap-1">
+        {/* Clean Full-Width Navigation Control: People vs Plans (Subtle Outer Border) */}
+        <div className="w-full flex items-center p-0.5 rounded-2xl border border-white/[0.08]">
           <button
             type="button"
             onClick={() => setViewMode("people")}
-            className={`flex-1 py-2 rounded-lg text-xs font-sans font-semibold transition-all cursor-pointer text-center ${
+            className={`w-1/2 py-2 rounded-xl text-xs font-sans font-semibold transition-all cursor-pointer text-center ${
               viewMode === "people"
                 ? "bg-zinc-800 text-white shadow-sm border border-white/10"
-                : "text-zinc-400 hover:text-zinc-200"
+                : "bg-transparent text-zinc-400 hover:text-zinc-200"
             }`}
           >
             People
@@ -359,10 +384,10 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
           <button
             type="button"
             onClick={() => setViewMode("plans")}
-            className={`flex-1 py-2 rounded-lg text-xs font-sans font-semibold transition-all cursor-pointer text-center ${
+            className={`w-1/2 py-2 rounded-xl text-xs font-sans font-semibold transition-all cursor-pointer text-center ${
               viewMode === "plans"
                 ? "bg-zinc-800 text-white shadow-sm border border-white/10"
-                : "text-zinc-400 hover:text-zinc-200"
+                : "bg-transparent text-zinc-400 hover:text-zinc-200"
             }`}
           >
             Plans
@@ -382,38 +407,32 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
           </div>
         )}
 
-        {/* Summary Card / Skeleton */}
+        {/* Summary Flat Display / Skeleton (Only for People view) */}
         {(() => {
+          if (viewMode === "plans") return null;
+
           const isInitialLoading = loading && visibleRelationships.length === 0 && settledRelationships.length === 0 && visiblePlanRelationships.length === 0;
 
           if (isInitialLoading && !isSearching) {
             return (
-              <div className="bg-zinc-950/40 border border-white/[0.04] rounded-[24px] p-6 text-center select-none space-y-3 animate-pulse">
-                <span className="text-[10px] font-sans font-semibold uppercase tracking-[0.14em] text-zinc-500 block">
-                  OVERALL BALANCE
+              <div className="py-1 text-center select-none space-y-1 animate-pulse">
+                <span className="text-xs font-display font-medium tracking-normal text-zinc-400 block">
+                  {balanceSummaryLabel}
                 </span>
-                <div className="w-36 h-10 bg-zinc-800/80 rounded-2xl mx-auto" />
+                <div className="w-28 h-8 bg-zinc-800/80 rounded-xl mx-auto" />
               </div>
             );
           }
 
           if (!isSearching && hasActiveBalances) {
             return (
-              <div className="bg-zinc-950/40 border border-white/[0.04] rounded-[24px] p-6 text-center select-none">
-                <span className="text-[10px] font-sans font-semibold uppercase tracking-[0.14em] text-zinc-500 block">
-                  OVERALL BALANCE
+              <div className="py-1 text-center select-none">
+                <span className="text-xs font-display font-medium tracking-normal text-zinc-400 block">
+                  {balanceSummaryLabel}
                 </span>
-                <div className="mt-2 flex items-center justify-center">
-                  <span
-                    className={`text-[42px] font-display font-bold leading-none ${
-                      isPositive
-                        ? "text-emerald-400"
-                        : isNegative
-                        ? "text-[#FF6B2C]"
-                        : "text-white"
-                    }`}
-                  >
-                    {isNegative ? `-${formatINR(netBalanceVal)}` : formatINR(netBalanceVal)}
+                <div className="mt-1 flex items-center justify-center">
+                  <span className="text-3xl font-display font-bold leading-tight text-white tracking-tight">
+                    {formatINR(netBalanceVal)}
                   </span>
                 </div>
               </div>
@@ -424,14 +443,12 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
         })()}
 
         {/* Balances Section */}
-        <div className="space-y-3">
-          <h3 className="text-[11px] font-sans font-semibold uppercase tracking-[0.12em] text-zinc-500 px-1">
-            {isSearching
-              ? "SEARCH RESULTS"
-              : viewMode === "people"
-              ? "BALANCES BY PERSON"
-              : "BALANCES BY PLAN"}
-          </h3>
+        <div className="space-y-1">
+          {isSearching && (
+            <h3 className="text-[11px] font-sans font-semibold uppercase tracking-[0.12em] text-zinc-500 px-1 mb-2">
+              SEARCH RESULTS
+            </h3>
+          )}
 
           {viewMode === "people" ? (
             loading && visibleRelationships.length === 0 && settledRelationships.length === 0 ? (
@@ -598,31 +615,6 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
           )}
         </div>
       </div>
-
-      {/* Settled Up Navigation Row (Bottom Anchored, hidden while actively searching) */}
-      {!isSearching && (
-        <div className="pt-4 border-t border-white/[0.06] mt-auto">
-          <button
-            type="button"
-            onClick={() => {
-              if (viewMode === "people") {
-                setSubView("peopleSettledUp");
-              } else {
-                setSubView("plansSettledUp");
-              }
-            }}
-            className="w-full flex items-center justify-between h-14 px-1 text-left group cursor-pointer transition-colors hover:bg-white/[0.01]"
-          >
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="font-sans font-medium text-sm text-zinc-200 group-hover:text-white transition-colors">
-                Settled Up
-              </span>
-            </div>
-            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-zinc-300 transition-colors" />
-          </button>
-        </div>
-      )}
     </div>
   );
 };

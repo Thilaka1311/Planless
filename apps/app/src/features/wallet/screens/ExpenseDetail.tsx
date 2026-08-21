@@ -1,13 +1,13 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { ArrowLeft, Edit2, Trash2, HandCoins, CheckCircle2, MoreHorizontal, Check } from "lucide-react";
-import { settleWalletExpenseParticipant, unsettleWalletExpenseParticipant, deleteWalletExpense, updateWalletExpense, removeExpenseParticipant, getParticipantFinancialState, sortExpenseParticipants } from "../services/walletService";
+import { ArrowLeft, Edit2, Trash2, HandCoins, CheckCircle2, MoreHorizontal, MoreVertical, Check } from "lucide-react";
+import { unsettleWalletExpenseParticipant, deleteWalletExpense, updateWalletExpense, removeExpenseParticipant, getParticipantFinancialState, sortExpenseParticipants } from "../services/walletService";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useWalletStore } from "../state/WalletContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
-import { EditCost } from "../components/EditCost";
+import { EditCost } from "./EditCost";
 
 interface ExpenseDetailCacheEntry {
   userPostgresUuid: string;
@@ -136,12 +136,9 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
 
   // Modals & Action Menu state
   const [showActionMenu, setShowActionMenu] = useState(false);
+  const [showOverflowMenu, setShowOverflowMenu] = useState(false);
   const [showEditSheet, setShowEditSheet] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showSettleModal, setShowSettleModal] = useState(false);
-  const [selectedSettleParticipant, setSelectedSettleParticipant] = useState<any | null>(null);
-  const [submittingSettle, setSubmittingSettle] = useState(false);
-  const [settleError, setSettleError] = useState<string | null>(null);
   const [submittingDelete, setSubmittingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -153,6 +150,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
 
   const handleParticipantClick = (pt: any) => {
     if (pt.isMe) return; // 'You' row is untappable
+    if (!pt.isPtSettled) return; // Pending participants have no expense-level settle action
     setUnsettleError(null);
     setSelectedParticipantForAction(pt);
     setShowParticipantActionSheet(true);
@@ -755,44 +753,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     }
   };
 
-  // Settle Participant Handler
-  const handleOpenSettleModal = (pt: any) => {
-    setSelectedSettleParticipant(pt);
-    setSettleError(null);
-    setShowSettleModal(true);
-  };
 
-  const handleConfirmSettle = async () => {
-    if (!expenseData || !selectedSettleParticipant || submittingSettle) return;
-
-    setSubmittingSettle(true);
-    setSettleError(null);
-
-    try {
-      lastLocalMutationRef.current = Date.now();
-      const success = await settleWalletExpenseParticipant({
-        expenseId: expenseData.id,
-        participantUserId: selectedSettleParticipant.userId,
-      });
-
-      if (!success) {
-        setSettleError("Failed to record settlement.");
-        setSubmittingSettle(false);
-        return;
-      }
-
-      invalidateExpenseDetailCache(expenseData.id);
-      setShowSettleModal(false);
-      setSelectedSettleParticipant(null);
-      await loadExpenseDetail(true);
-      await onRefreshBalances();
-    } catch (err: any) {
-      console.error("[PlanBalancesDetail] Exception settling expense:", err);
-      setSettleError(err.message || "Failed to settle expense.");
-    } finally {
-      setSubmittingSettle(false);
-    }
-  };
 
   // Undo Settlement Handler
   const handleConfirmUnsettle = async () => {
@@ -929,7 +890,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
             </button>
             <div className="w-5 h-5 rounded-full bg-zinc-900/40 border border-white/[0.04] animate-pulse" />
           </div>
- 
+
           {/* Hero Section Skeleton: Title, Payer Avatar, Payer Name, Amount */}
           <div className="flex flex-col items-center text-center py-4 space-y-3 shrink-0 animate-pulse">
             {/* Title Skeleton */}
@@ -1020,20 +981,57 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
           <div />
         )}
 
-        {/* Right: Red Delete/Trash Icon (Payer Permission Only) */}
-        {payerIsMe ? (
+        {/* Right: Subtle Three-dot Overflow Menu (⋮) with Anchored Popover */}
+        <div className="relative shrink-0">
           <button
             type="button"
-            onClick={() => setShowDeleteModal(true)}
-            className="p-1 text-rose-500 hover:text-rose-400 transition-colors cursor-pointer shrink-0 focus:outline-none"
-            title="Delete Expense"
-            aria-label="Delete Expense"
+            onClick={() => setShowOverflowMenu((prev) => !prev)}
+            className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer focus:outline-none"
+            title="Options"
+            aria-label="Options"
           >
-            <Trash2 className="w-5 h-5 text-rose-500 hover:text-rose-400" />
+            <MoreVertical className="w-5 h-5" />
           </button>
-        ) : (
-          <div className="w-5 shrink-0" />
-        )}
+
+          {showOverflowMenu && (
+            <>
+              {/* Backdrop overlay to dismiss on click outside */}
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowOverflowMenu(false)}
+              />
+
+              {/* Anchored Popover Menu */}
+              <div className="absolute right-0 top-full mt-2 w-48 bg-[#1c1c1e] border border-white/[0.1] rounded-2xl p-1.5 shadow-2xl z-50 animate-fade-in flex flex-col gap-0.5 font-sans select-none">
+                {/* 1. Edit Split */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowOverflowMenu(false);
+                    handleOpenEditSheet();
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.06] active:bg-white/[0.1] text-zinc-200 hover:text-white text-xs font-semibold font-sans transition-colors cursor-pointer text-left"
+                >
+                  <Edit2 className="w-4 h-4 text-zinc-400 shrink-0" />
+                  <span>Edit Split</span>
+                </button>
+
+                {/* 2. Delete expense */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowOverflowMenu(false);
+                    setShowDeleteModal(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-rose-500/10 active:bg-rose-500/20 text-rose-500 hover:text-rose-400 text-xs font-semibold font-sans transition-colors cursor-pointer text-left"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-500 shrink-0" />
+                  <span>Delete expense</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* EXPENSE SUMMARY SECTION — DIRECTLY ON PAGE BACKGROUND */}
@@ -1073,9 +1071,8 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
             <div
               key={`${pt.userId}-${pt.isPayer ? 'payer' : 'pt'}`}
               onClick={() => handleParticipantClick(pt)}
-              className={`py-3.5 flex items-center justify-between text-left px-1 select-none hover:bg-white/[0.02] active:bg-white/[0.04] transition-all cursor-pointer rounded-xl ${
-                isRowMuted ? "opacity-60" : "opacity-100"
-              }`}
+              className={`py-3.5 flex items-center justify-between text-left px-1 select-none hover:bg-white/[0.02] active:bg-white/[0.04] transition-all cursor-pointer rounded-xl ${isRowMuted ? "opacity-60" : "opacity-100"
+                }`}
             >
               <div className="flex items-center gap-3.5 min-w-0">
                 <UserAvatar
@@ -1086,14 +1083,12 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 />
 
                 <div className="min-w-0 flex flex-col justify-center">
-                  <h5 className={`font-sans text-[13.5px] truncate leading-tight ${
-                    isRowMuted ? "font-medium text-zinc-400" : "font-semibold text-white"
-                  }`}>
+                  <h5 className={`font-sans text-[13.5px] truncate leading-tight ${isRowMuted ? "font-medium text-zinc-400" : "font-semibold text-white"
+                    }`}>
                     {pt.fullName}
                   </h5>
-                  <span className={`text-[11px] font-sans block truncate leading-tight mt-0.5 ${
-                    isRowMuted ? "font-normal text-zinc-550" : "font-medium text-zinc-300"
-                  }`}>
+                  <span className={`text-[11px] font-sans block truncate leading-tight mt-0.5 ${isRowMuted ? "font-normal text-zinc-550" : "font-medium text-zinc-300"
+                    }`}>
                     {pt.subtitle}
                   </span>
                 </div>
@@ -1113,9 +1108,8 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                   }
 
                   return (
-                    <span className={`font-sans text-sm tracking-tight ${
-                      isRowMuted ? "font-semibold text-zinc-400" : "font-bold text-white"
-                    }`}>
+                    <span className={`font-sans text-sm tracking-tight ${isRowMuted ? "font-semibold text-zinc-400" : "font-bold text-white"
+                      }`}>
                       ₹{displayAmt.toLocaleString("en-IN")}
                     </span>
                   );
@@ -1274,67 +1268,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         </div>
       )}
 
-      {/* SETTLE PARTICIPANT MODAL */}
-      {showSettleModal && selectedSettleParticipant && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-fade-in"
-          onClick={() => {
-            if (!submittingSettle) {
-              setShowSettleModal(false);
-              setSelectedSettleParticipant(null);
-              setSettleError(null);
-            }
-          }}
-        >
-          <div
-            className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-3xl p-6 shadow-2xl space-y-4 text-left"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 text-emerald-400">
-              <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-sans font-bold text-white">Record Settlement</h3>
-                <p className="text-xs text-zinc-400 font-sans mt-0.5">{selectedSettleParticipant.fullName}</p>
-              </div>
-            </div>
 
-            <p className="text-xs text-zinc-300 font-sans leading-relaxed">
-              Mark ₹{selectedSettleParticipant.amountOwed.toLocaleString("en-IN")} from <strong className="text-white font-semibold">{selectedSettleParticipant.fullName}</strong> as settled?
-            </p>
-
-            {settleError && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
-                {settleError}
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-2">
-              <button
-                type="button"
-                disabled={submittingSettle}
-                onClick={() => {
-                  setShowSettleModal(false);
-                  setSelectedSettleParticipant(null);
-                  setSettleError(null);
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/[0.06] text-xs font-sans font-semibold text-zinc-300 hover:text-white transition cursor-pointer disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={submittingSettle}
-                onClick={handleConfirmSettle}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-sans font-semibold text-white transition cursor-pointer disabled:opacity-50"
-              >
-                {submittingSettle ? "Settling..." : "Confirm Settlement"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* PARTICIPANT ACTIONS BOTTOM SHEET */}
       {showParticipantActionSheet && selectedParticipantForAction && (
@@ -1381,8 +1315,8 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 </div>
               )}
 
-              {/* 1. Primary Action: Undo Settlement (if settled) OR Settle (if pending) */}
-              {selectedParticipantForAction.isPtSettled ? (
+              {/* 1. Primary Action: Undo Settlement (if settled) */}
+              {selectedParticipantForAction.isPtSettled && (
                 <button
                   type="button"
                   disabled={submittingUnsettle}
@@ -1392,18 +1326,6 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                   <span>
                     {submittingUnsettle ? "Undoing..." : "Undo Settlement"}
                   </span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const pt = selectedParticipantForAction;
-                    setShowParticipantActionSheet(false);
-                    handleOpenSettleModal(pt);
-                  }}
-                  className="w-full h-13 flex items-center justify-center px-4 rounded-2xl text-sm font-semibold transition cursor-pointer text-center bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 active:scale-[0.99]"
-                >
-                  <span>Settle</span>
                 </button>
               )}
 
@@ -1479,11 +1401,10 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedRemoveStrategy("SPLIT_SHARE")}
-                  className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer space-y-1 ${
-                    selectedRemoveStrategy === "SPLIT_SHARE"
+                  className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer space-y-1 ${selectedRemoveStrategy === "SPLIT_SHARE"
                       ? "bg-emerald-500/10 border-emerald-500/50 ring-1 ring-emerald-500/30"
                       : "bg-zinc-900/60 border-zinc-800/80 hover:bg-zinc-900 hover:border-zinc-700"
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-sm text-white">Split their share</span>
@@ -1503,11 +1424,10 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedRemoveStrategy("KEEP_SAME_SHARE")}
-                  className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer space-y-1 ${
-                    selectedRemoveStrategy === "KEEP_SAME_SHARE"
+                  className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer space-y-1 ${selectedRemoveStrategy === "KEEP_SAME_SHARE"
                       ? "bg-emerald-500/10 border-emerald-500/50 ring-1 ring-emerald-500/30"
                       : "bg-zinc-900/60 border-zinc-800/80 hover:bg-zinc-900 hover:border-zinc-700"
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-sm text-white">Keep the same share</span>

@@ -36,6 +36,17 @@ export interface ExpenseBreakdown {
   skipReason?: string;
 }
 
+export interface WalletSettlement {
+  id: string;
+  payer_id: string;
+  receiver_id: string;
+  amount: number;
+  created_at: string;
+  updated_at: string;
+  plan_id?: string;
+  planId?: string;
+}
+
 export interface WalletRelationship {
   userId: string;
   fullName: string;
@@ -48,6 +59,7 @@ export interface WalletRelationship {
   netBalance: number;
   type: "owe" | "owed";
   expenses: ExpenseBreakdown[];
+  settlements?: WalletSettlement[];
 }
 
 export interface PlanParticipantContribution {
@@ -57,6 +69,8 @@ export interface PlanParticipantContribution {
   amount: number;
   role: "creditor" | "debtor";
   status: "PENDING" | "SETTLED";
+  owedToMe?: number;
+  iOweThem?: number;
 }
 
 export interface PlanRelationship {
@@ -225,7 +239,8 @@ export const calculateWalletSummary = (
   dbPlans: any[],
   dbCircles: any[],
   dbPlanParticipants: any[],
-  _dbTransactions: any[] = [] // Unused — kept for backwards-compatible parameter signature
+  _dbTransactions: any[] = [],
+  dbWalletSettlements: any[] = []
 ): WalletSummary => {
   if (!currentUserId) {
     return {
@@ -252,6 +267,7 @@ export const calculateWalletSummary = (
     userObj: any;
     creditorExpenses: ExpenseBreakdown[];
     debtorExpenses: ExpenseBreakdown[];
+    settlements: WalletSettlement[];
   }> = {};
 
   const planMap: Record<string, {
@@ -265,15 +281,32 @@ export const calculateWalletSummary = (
     updatedAt: string;
   }> = {};
 
-  const ensureBalance = (uid: string, uObj: any) => {
-    if (!balances[uid]) {
-      balances[uid] = { owedToMe: 0, iOweThem: 0, userObj: uObj, creditorExpenses: [], debtorExpenses: [] };
-    }
-    if (!balances[uid].userObj && uObj) balances[uid].userObj = uObj;
-  };
-
   const resolveUser = (uid: string) =>
     dbUsers.find((u) => u.id === uid || u.user_id === uid || u.public_id === uid) || null;
+
+  const getCanonicalUserId = (uid: string): string => {
+    if (!uid) return "";
+    const u = resolveUser(uid);
+    return u?.id || uid;
+  };
+
+  const ensureBalance = (uid: string, uObj?: any) => {
+    const canonicalId = getCanonicalUserId(uid);
+    if (!balances[canonicalId]) {
+      balances[canonicalId] = {
+        owedToMe: 0,
+        iOweThem: 0,
+        userObj: uObj || resolveUser(canonicalId),
+        creditorExpenses: [],
+        debtorExpenses: [],
+        settlements: [],
+      };
+    }
+    if (!balances[canonicalId].userObj && uObj) {
+      balances[canonicalId].userObj = uObj;
+    }
+    return canonicalId;
+  };
 
   const isMe = (uid: string) => {
     if (!uid) return false;
@@ -365,25 +398,17 @@ export const calculateWalletSummary = (
         const amountOwed = Number(pt.amount_owed || 0);
         if (amountOwed <= 0) return;
 
-        const ptStatus = String(pt.status || "PENDING").toUpperCase();
         const ptIsMe = isMe(ptUserId);
-        const isParticipantSettled = ptStatus === "SETTLED";
-
-        // Canonical Outstanding Calculation:
-        // A settled split contributes ₹0 to current outstanding balance.
-        const remaining = isParticipantSettled ? 0 : amountOwed;
-
         const ptUpdatedAt = pt.updated_at || pt.created_at || exp.updated_at || exp.created_at || new Date().toISOString();
 
-        // 1. Person Balances Aggregation
+        // Expenses always represent underlying debt obligations
         if (payerIsMe && !ptIsMe) {
           // I paid — this participant owes me their share
           const ptUser = resolveUser(ptUserId);
-          ensureBalance(ptUserId, ptUser);
-          if (remaining > 0) {
-            balances[ptUserId].owedToMe += remaining;
-          }
-          balances[ptUserId].creditorExpenses.push({
+          const ptCanonical = ensureBalance(ptUserId, ptUser);
+          balances[ptCanonical].owedToMe += amountOwed;
+
+          balances[ptCanonical].creditorExpenses.push({
             id: exp.id,
             publicId: exp.public_id || undefined,
             planId: exp.plan_id || "",
@@ -397,9 +422,9 @@ export const calculateWalletSummary = (
             updatedAt: ptUpdatedAt || exp.updated_at || exp.created_at || dateStr,
             totalAmount: Number(exp.total_amount || 0),
             yourShare: amountOwed,
-            outstandingAmount: remaining,
-            status: isParticipantSettled ? "SETTLED" : (exp.status || "PENDING"),
-            participantStatus: isParticipantSettled ? "SETTLED" : "PENDING",
+            outstandingAmount: amountOwed,
+            status: "PENDING",
+            participantStatus: "PENDING",
             role: "creditor",
             payerId: payerUuid,
             isPaymentKept: ptIsPaymentKept,
@@ -408,11 +433,10 @@ export const calculateWalletSummary = (
         } else if (!payerIsMe && ptIsMe) {
           // Someone else paid — I owe them my share
           const payerUser = resolveUser(payerUuid) || exp.payer;
-          ensureBalance(payerUuid, payerUser);
-          if (remaining > 0) {
-            balances[payerUuid].iOweThem += remaining;
-          }
-          balances[payerUuid].debtorExpenses.push({
+          const payerCanonical = ensureBalance(payerUuid, payerUser);
+          balances[payerCanonical].iOweThem += amountOwed;
+
+          balances[payerCanonical].debtorExpenses.push({
             id: exp.id,
             publicId: exp.public_id || undefined,
             planId: exp.plan_id || "",
@@ -426,9 +450,9 @@ export const calculateWalletSummary = (
             updatedAt: ptUpdatedAt || exp.updated_at || exp.created_at || dateStr,
             totalAmount: Number(exp.total_amount || 0),
             yourShare: amountOwed,
-            outstandingAmount: remaining,
-            status: isParticipantSettled ? "SETTLED" : (exp.status || "PENDING"),
-            participantStatus: isParticipantSettled ? "SETTLED" : "PENDING",
+            outstandingAmount: amountOwed,
+            status: "PENDING",
+            participantStatus: "PENDING",
             role: "debtor",
             payerId: payerUuid,
             isPaymentKept: ptIsPaymentKept,
@@ -447,43 +471,69 @@ export const calculateWalletSummary = (
           const profilePhoto = ptUser?.profile_photo_path || ptUser?.profile_photo || ptUser?.avatar || "";
 
           if (payerIsMe && !ptIsMe) {
-            pEntry.netBalance += remaining;
-            const existingPt = pEntry.participantMap.get(ptUserId) || {
-              userId: ptUserId,
+            pEntry.netBalance += amountOwed;
+            const ptCanonical = getCanonicalUserId(ptUserId);
+            const existingPt: PlanParticipantContribution = pEntry.participantMap.get(ptCanonical) || {
+              userId: ptCanonical,
               fullName,
               profilePhoto,
               amount: 0,
-              role: "creditor" as const,
-              status: "SETTLED" as const,
+              role: "creditor",
+              status: "PENDING",
+              owedToMe: 0,
+              iOweThem: 0,
             };
-            const nextAmount = existingPt.amount + (isParticipantSettled ? amountOwed : remaining);
-            const nextStatus = (!isParticipantSettled || existingPt.status === "PENDING") ? ("PENDING" as const) : ("SETTLED" as const);
 
-            pEntry.participantMap.set(ptUserId, {
+            pEntry.participantMap.set(ptCanonical, {
               ...existingPt,
-              amount: nextAmount,
-              status: nextStatus,
+              owedToMe: (existingPt.owedToMe || 0) + amountOwed,
             });
           } else if (!payerIsMe && ptIsMe) {
-            pEntry.netBalance -= remaining;
-            const existingPt = pEntry.participantMap.get(payerUuid) || {
-              userId: payerUuid,
+            pEntry.netBalance -= amountOwed;
+            const payerCanonical = getCanonicalUserId(payerUuid);
+            const existingPt: PlanParticipantContribution = pEntry.participantMap.get(payerCanonical) || {
+              userId: payerCanonical,
               fullName,
               profilePhoto,
               amount: 0,
-              role: "debtor" as const,
-              status: "SETTLED" as const,
+              role: "debtor",
+              status: "PENDING",
+              owedToMe: 0,
+              iOweThem: 0,
             };
-            const nextAmount = existingPt.amount + (isParticipantSettled ? amountOwed : remaining);
-            const nextStatus = (!isParticipantSettled || existingPt.status === "PENDING") ? ("PENDING" as const) : ("SETTLED" as const);
 
-            pEntry.participantMap.set(payerUuid, {
+            pEntry.participantMap.set(payerCanonical, {
               ...existingPt,
-              amount: nextAmount,
-              status: nextStatus,
+              iOweThem: (existingPt.iOweThem || 0) + amountOwed,
             });
           }
         }
+      });
+    }
+  });
+
+  // Attach Wallet Settlements to relevant person relationships
+  (dbWalletSettlements || []).forEach((st) => {
+    const payerId = st.payer_id || st.payerId;
+    const receiverId = st.receiver_id || st.receiverId;
+    const amount = Number(st.amount || 0);
+    if (!payerId || !receiverId || amount <= 0) return;
+
+    const payerIsMe = isMe(payerId);
+    const receiverIsMe = isMe(receiverId);
+
+    if (payerIsMe || receiverIsMe) {
+      const otherUserId = payerIsMe ? receiverId : payerId;
+      const otherUser = resolveUser(otherUserId);
+      const otherCanonical = ensureBalance(otherUserId, otherUser);
+      balances[otherCanonical].settlements.push({
+        id: st.id,
+        payer_id: payerId,
+        receiver_id: receiverId,
+        amount,
+        created_at: st.created_at || new Date().toISOString(),
+        updated_at: st.updated_at || st.created_at || new Date().toISOString(),
+        plan_id: st.plan_id || st.planId,
       });
     }
   });
@@ -503,43 +553,60 @@ export const calculateWalletSummary = (
     const resolvedId = otherUser?.id || otherUserId;
 
     const allExpenses = [...bal.creditorExpenses, ...bal.debtorExpenses];
-    const personNet = bal.owedToMe - bal.iOweThem;
+    const allSettlements = bal.settlements || [];
+
+    // Sum settlements paid by otherUser to me (reduces what they owe me)
+    const settlementsToMe = allSettlements
+      .filter((s) => !isMe(s.payer_id) && isMe(s.receiver_id))
+      .reduce((sum, s) => sum + Number(s.amount || 0), 0);
+
+    // Sum settlements paid by me to otherUser (reduces what I owe them)
+    const settlementsByMe = allSettlements
+      .filter((s) => isMe(s.payer_id) && !isMe(s.receiver_id))
+      .reduce((sum, s) => sum + Number(s.amount || 0), 0);
+
+    // Calculate relationship level net balance with non-negative lower bound
+    const netOwedToMe = Math.max(0, bal.owedToMe - settlementsToMe);
+    const netIOweThem = Math.max(0, bal.iOweThem - settlementsByMe);
+
+    const personNet = netOwedToMe - netIOweThem;
 
     const relObj: WalletRelationship = {
       userId: resolvedId,
       fullName,
       profilePhoto,
       netBalance: personNet,
-      type: personNet > 0 ? "owed" : "owe",
+      type: personNet >= 0 ? "owed" : "owe",
       expenses: allExpenses,
+      settlements: allSettlements,
     };
 
     if (personNet !== 0) {
       personRelationships.push(relObj);
       netOverallSum += personNet;
-    } else if (allExpenses.length > 0) {
-      // Net balance is 0, but historical expenses exist -> belongs to Settled Up section
+    } else if (allExpenses.length > 0 || allSettlements.length > 0) {
+      // Net balance is 0, but historical expenses or settlements exist -> belongs to Settled Up section
       settledRelationships.push(relObj);
     }
 
-    if (bal.owedToMe > 0) {
+    if (netOwedToMe > 0) {
       youAreOwedList.push({
         ...relObj,
-        netBalance: bal.owedToMe,
+        netBalance: netOwedToMe,
         type: "owed",
         expenses: bal.creditorExpenses,
       });
-      totalYouAreOwed += bal.owedToMe;
+      totalYouAreOwed += netOwedToMe;
     }
 
-    if (bal.iOweThem > 0) {
+    if (netIOweThem > 0) {
       youOweList.push({
         ...relObj,
-        netBalance: -bal.iOweThem,
+        netBalance: -netIOweThem,
         type: "owe",
         expenses: bal.debtorExpenses,
       });
-      totalYouOwe += bal.iOweThem;
+      totalYouOwe += netIOweThem;
     }
   });
 
@@ -547,21 +614,59 @@ export const calculateWalletSummary = (
   const settledPlanRelationships: PlanRelationship[] = [];
 
   Object.values(planMap).forEach((pData) => {
-    const participantsList = Array.from(pData.participantMap.values());
+    let planNetOwedToMe = 0;
+    let planNetIOweThem = 0;
+
+    pData.participantMap.forEach((ptData, ptUserId) => {
+      const ptCanonical = getCanonicalUserId(ptUserId);
+      const balObj = balances[ptCanonical] || balances[ptUserId];
+
+      const settlementsToMe = balObj
+        ? (balObj.settlements || [])
+            .filter((s) => !isMe(s.payer_id) && isMe(s.receiver_id))
+            .reduce((sum, s) => sum + Number(s.amount || 0), 0)
+        : 0;
+
+      const settlementsByMe = balObj
+        ? (balObj.settlements || [])
+            .filter((s) => isMe(s.payer_id) && !isMe(s.receiver_id))
+            .reduce((sum, s) => sum + Number(s.amount || 0), 0)
+        : 0;
+
+      const netPtOwed = Math.max(0, (ptData.owedToMe || 0) - settlementsToMe);
+      const netIOwePt = Math.max(0, (ptData.iOweThem || 0) - settlementsByMe);
+
+      planNetOwedToMe += netPtOwed;
+      planNetIOweThem += netIOwePt;
+    });
+
+    const netPlanBalance = planNetOwedToMe - planNetIOweThem;
+    const participantsList = Array.from(pData.participantMap.values()).map((pt) => {
+      const owed = pt.owedToMe || 0;
+      const owe = pt.iOweThem || 0;
+      return {
+        userId: pt.userId,
+        fullName: pt.fullName,
+        profilePhoto: pt.profilePhoto,
+        amount: Math.abs(owed - owe),
+        role: owed >= owe ? ("creditor" as const) : ("debtor" as const),
+        status: "PENDING" as const,
+      };
+    });
 
     const item: PlanRelationship = {
       planId: pData.planId,
       expenseId: pData.expenseId,
       planTitle: pData.planTitle,
       planCover: pData.planCover,
-      netBalance: pData.netBalance,
-      type: pData.netBalance >= 0 ? "owed" : "owe",
+      netBalance: netPlanBalance,
+      type: netPlanBalance >= 0 ? "owed" : "owe",
       totalCost: pData.totalCost,
       participants: participantsList,
       updatedAt: pData.updatedAt,
     };
 
-    if (pData.netBalance !== 0) {
+    if (Math.abs(netPlanBalance) >= 0.01) {
       planRelationships.push(item);
     } else {
       settledPlanRelationships.push(item);
@@ -582,6 +687,52 @@ export const calculateWalletSummary = (
     youOweList,
     youAreOwedList,
   };
+};
+
+/**
+ * Server-side RPC wrapper: Creates a new wallet settlement record between the authenticated user and receiver.
+ */
+export const createWalletSettlement = async (params: {
+  receiverId: string;
+  amount: number;
+}): Promise<{ success: boolean; data?: any; error?: string }> => {
+  try {
+    const { data, error } = await (supabase as any).rpc("create_wallet_settlement", {
+      p_other_user_id: params.receiverId,
+      p_amount: params.amount,
+    });
+
+    if (error) {
+      console.error("[walletService] createWalletSettlement RPC failed:", error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, data };
+  } catch (err: any) {
+    console.error("[walletService] createWalletSettlement exception:", err);
+    return { success: false, error: err.message || "Failed to create settlement" };
+  }
+};
+
+/**
+ * Server-side RPC wrapper: Deletes a wallet settlement record.
+ */
+export const deleteWalletSettlement = async (
+  settlementId: string
+): Promise<{ success: boolean; data?: any; error?: string }> => {
+  try {
+    const { data, error } = await (supabase as any).rpc("delete_wallet_settlement", {
+      p_settlement_id: settlementId,
+    });
+
+    if (error) {
+      console.error("[walletService] deleteWalletSettlement RPC failed:", error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, data };
+  } catch (err: any) {
+    console.error("[walletService] deleteWalletSettlement exception:", err);
+    return { success: false, error: err.message || "Failed to delete settlement" };
+  }
 };
 
 /**
