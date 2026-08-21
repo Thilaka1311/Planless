@@ -23,6 +23,7 @@ export interface ExpenseBreakdown {
   circleId: string;
   circleName: string;
   date: string;
+  createdAt?: string;
   updatedAt?: string;
   totalAmount: number;
   yourShare: number;
@@ -117,6 +118,43 @@ export type ParticipantFinancialState = "ACTIVE" | "PAYMENT_KEPT" | "EXCLUDED";
 export const isJoinedParticipantStatus = (status?: string | null): boolean => {
   const clean = String(status || "").trim().toUpperCase();
   return clean === "JOINED" || clean === "CONFIRMED" || clean === "ACCEPTED" || clean === "HOST";
+};
+
+/**
+ * Returns the effective date for an expense based on its settlement state:
+ * - Pending / Unsettled: created_at
+ * - Settled: updated_at
+ */
+export const getEffectiveExpenseDate = (expense: any): Date => {
+  if (!expense) return new Date();
+  const isSettled =
+    String(expense.status || "").toUpperCase() === "SETTLED" ||
+    String(expense.participantStatus || "").toUpperCase() === "SETTLED" ||
+    Boolean(expense.isSettled);
+
+  let dateStr: string | undefined;
+
+  if (isSettled) {
+    // Settled expense -> use updated_at / updatedAt timestamp
+    dateStr =
+      expense.updatedAt ||
+      expense.updated_at ||
+      expense.date ||
+      expense.createdAt ||
+      expense.created_at;
+  } else {
+    // Pending / Unsettled expense -> use created_at / createdAt timestamp
+    dateStr =
+      expense.createdAt ||
+      expense.created_at ||
+      expense.date ||
+      expense.updatedAt ||
+      expense.updated_at;
+  }
+
+  if (!dateStr) return new Date();
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? new Date() : d;
 };
 
 /**
@@ -355,7 +393,8 @@ export const calculateWalletSummary = (
             circleId: "",
             circleName: "Group",
             date: dateStr,
-            updatedAt: ptUpdatedAt,
+            createdAt: exp.created_at || exp.date || dateStr,
+            updatedAt: ptUpdatedAt || exp.updated_at || exp.created_at || dateStr,
             totalAmount: Number(exp.total_amount || 0),
             yourShare: amountOwed,
             outstandingAmount: remaining,
@@ -383,7 +422,8 @@ export const calculateWalletSummary = (
             circleId: "",
             circleName: "Group",
             date: dateStr,
-            updatedAt: ptUpdatedAt,
+            createdAt: exp.created_at || exp.date || dateStr,
+            updatedAt: ptUpdatedAt || exp.updated_at || exp.created_at || dateStr,
             totalAmount: Number(exp.total_amount || 0),
             yourShare: amountOwed,
             outstandingAmount: remaining,
@@ -806,6 +846,61 @@ export const settleWalletExpenseParticipant = async (params: {
     return true;
   } catch (err) {
     console.error("[walletService] settleWalletExpenseParticipant exception:", err);
+    return false;
+  }
+};
+
+/**
+ * Reverses a participant's settlement status back to PENDING for an expense.
+ */
+export const unsettleWalletExpenseParticipant = async (params: {
+  expenseId: string;
+  participantUserId: string;
+}): Promise<boolean> => {
+  try {
+    // 1. Try SECURITY DEFINER RPC first if available
+    const { error: rpcErr } = await (supabase as any).rpc("unsettle_wallet_expense", {
+      p_expense_id: params.expenseId,
+      p_debtor_id: params.participantUserId,
+    });
+
+    if (!rpcErr) {
+      return true;
+    }
+
+    console.warn("[walletService] unsettle_wallet_expense RPC fallback to direct DB update:", rpcErr);
+
+    // 2. Direct DB update fallback
+    const { error: ptErr } = await supabase
+      .from("wallet_expense_participants")
+      .update({
+        status: "PENDING",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("expense_id", params.expenseId)
+      .eq("user_id", params.participantUserId);
+
+    if (ptErr) {
+      console.error("[walletService] unsettleWalletExpenseParticipant direct update failed:", ptErr);
+      return false;
+    }
+
+    // 3. Mark parent expense as PENDING as well
+    const { error: expErr } = await supabase
+      .from("wallet_expenses")
+      .update({
+        status: "PENDING",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", params.expenseId);
+
+    if (expErr) {
+      console.error("[walletService] unsettleWalletExpenseParticipant update parent expense failed:", expErr);
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[walletService] unsettleWalletExpenseParticipant exception:", err);
     return false;
   }
 };

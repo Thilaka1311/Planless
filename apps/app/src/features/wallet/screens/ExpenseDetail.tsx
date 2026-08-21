@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { ArrowLeft, Edit2, Trash2, HandCoins, CheckCircle2, MoreHorizontal, Check } from "lucide-react";
-import { settleWalletExpenseParticipant, deleteWalletExpense, updateWalletExpense, removeExpenseParticipant, getParticipantFinancialState, sortExpenseParticipants } from "../services/walletService";
+import { settleWalletExpenseParticipant, unsettleWalletExpenseParticipant, deleteWalletExpense, updateWalletExpense, removeExpenseParticipant, getParticipantFinancialState, sortExpenseParticipants } from "../services/walletService";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useWalletStore } from "../state/WalletContext";
@@ -148,9 +148,12 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
   // Participant Tap Action Sheet State
   const [selectedParticipantForAction, setSelectedParticipantForAction] = useState<any | null>(null);
   const [showParticipantActionSheet, setShowParticipantActionSheet] = useState(false);
+  const [submittingUnsettle, setSubmittingUnsettle] = useState(false);
+  const [unsettleError, setUnsettleError] = useState<string | null>(null);
 
   const handleParticipantClick = (pt: any) => {
     if (pt.isMe) return; // 'You' row is untappable
+    setUnsettleError(null);
     setSelectedParticipantForAction(pt);
     setShowParticipantActionSheet(true);
   };
@@ -791,6 +794,40 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     }
   };
 
+  // Undo Settlement Handler
+  const handleConfirmUnsettle = async () => {
+    if (!expenseData || !selectedParticipantForAction || submittingUnsettle) return;
+
+    setSubmittingUnsettle(true);
+    setUnsettleError(null);
+
+    try {
+      lastLocalMutationRef.current = Date.now();
+      const success = await unsettleWalletExpenseParticipant({
+        expenseId: expenseData.id,
+        participantUserId: selectedParticipantForAction.userId,
+      });
+
+      if (!success) {
+        setUnsettleError("Failed to undo settlement. Please try again.");
+        setSubmittingUnsettle(false);
+        return;
+      }
+
+      invalidateExpenseDetailCache(expenseData.id);
+      setShowParticipantActionSheet(false);
+      setSelectedParticipantForAction(null);
+      setUnsettleError(null);
+      await loadExpenseDetail(true);
+      await onRefreshBalances();
+    } catch (err: any) {
+      console.error("[ExpenseDetail] Exception undoing settlement:", err);
+      setUnsettleError(err.message || "Failed to undo settlement.");
+    } finally {
+      setSubmittingUnsettle(false);
+    }
+  };
+
   // Remove Participant Handlers
   const [showRemoveParticipantModal, setShowRemoveParticipantModal] = useState(false);
   const [selectedParticipantForRemove, setSelectedParticipantForRemove] = useState<any | null>(null);
@@ -886,13 +923,13 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
             <button
               type="button"
               onClick={onBack}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 border border-zinc-900/60 shrink-0 cursor-pointer"
+              className="p-1 text-zinc-400 shrink-0 cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="w-8 h-8 rounded-full bg-zinc-900/40 border border-white/[0.04] animate-pulse" />
+            <div className="w-5 h-5 rounded-full bg-zinc-900/40 border border-white/[0.04] animate-pulse" />
           </div>
-
+ 
           {/* Hero Section Skeleton: Title, Payer Avatar, Payer Name, Amount */}
           <div className="flex flex-col items-center text-center py-4 space-y-3 shrink-0 animate-pulse">
             {/* Title Skeleton */}
@@ -943,9 +980,9 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
           <button
             type="button"
             onClick={onBack}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 border border-zinc-900/60"
+            className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
           <h2 className="text-xl font-sans font-bold text-zinc-100">
             Plan balances Detail
@@ -968,10 +1005,10 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         <button
           type="button"
           onClick={onBack}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60 shrink-0"
+          className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0"
           aria-label="Back"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
 
         {/* Center: Contextual Plan Name */}
@@ -983,56 +1020,19 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
           <div />
         )}
 
-        {/* Right: Top-Right Single Subtle "More" Action Button (Payer Permission Only) */}
+        {/* Right: Red Delete/Trash Icon (Payer Permission Only) */}
         {payerIsMe ? (
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowActionMenu((prev) => !prev)}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 border border-zinc-900/60 transition cursor-pointer"
-              title="More options"
-              aria-label="More options"
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-
-            {/* Action Menu Dropdown */}
-            {showActionMenu && (
-              <>
-                {/* Backdrop to close menu on click outside */}
-                <div
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowActionMenu(false)}
-                />
-                <div className="absolute right-0 top-10 z-50 w-44 bg-zinc-950 border border-zinc-800 rounded-2xl p-1.5 shadow-2xl backdrop-blur-md animate-fade-in space-y-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowActionMenu(false);
-                      handleOpenEditSheet();
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-zinc-900 text-xs font-medium text-zinc-200 hover:text-white transition cursor-pointer text-left"
-                  >
-                    <Edit2 className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>Edit Expense</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowActionMenu(false);
-                      setShowDeleteModal(true);
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-rose-500/10 text-xs font-medium text-rose-400 hover:text-rose-300 transition cursor-pointer text-left"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Delete Expense</span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowDeleteModal(true)}
+            className="p-1 text-rose-500 hover:text-rose-400 transition-colors cursor-pointer shrink-0 focus:outline-none"
+            title="Delete Expense"
+            aria-label="Delete Expense"
+          >
+            <Trash2 className="w-5 h-5 text-rose-500 hover:text-rose-400" />
+          </button>
         ) : (
-          <div className="w-8 shrink-0" />
+          <div className="w-5 shrink-0" />
         )}
       </div>
 
@@ -1341,8 +1341,11 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-xs animate-fade-in"
           onClick={() => {
-            setShowParticipantActionSheet(false);
-            setSelectedParticipantForAction(null);
+            if (!submittingUnsettle) {
+              setShowParticipantActionSheet(false);
+              setSelectedParticipantForAction(null);
+              setUnsettleError(null);
+            }
           }}
         >
           <div
@@ -1352,7 +1355,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
             {/* Sheet Handle Indicator */}
             <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-2" />
 
-            {/* Header: Avatar, Name & Subtitle */}
+            {/* Header: Avatar, Name & Subtitle (Left Aligned) */}
             <div className="flex items-center gap-3.5 pb-4 border-b border-white/[0.06]">
               <UserAvatar
                 src={selectedParticipantForAction.profilePhoto}
@@ -1360,7 +1363,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 size="w-11 h-11"
                 className="shrink-0 ring-1 ring-white/10"
               />
-              <div className="min-w-0 flex flex-col justify-center">
+              <div className="min-w-0 flex flex-col justify-center text-left">
                 <h3 className="text-base font-sans font-semibold text-white truncate leading-tight">
                   {selectedParticipantForAction.fullName}
                 </h3>
@@ -1370,36 +1373,50 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
               </div>
             </div>
 
-            {/* Actions List: Only Settle and Cancel */}
+            {/* Actions List */}
             <div className="space-y-2.5 pt-1">
-              {/* 1. Settle — Green */}
-              <button
-                type="button"
-                onClick={() => {
-                  const pt = selectedParticipantForAction;
-                  setShowParticipantActionSheet(false);
-                  handleOpenSettleModal(pt);
-                }}
-                disabled={selectedParticipantForAction.isPtSettled}
-                className={`w-full h-13 flex items-center px-4 rounded-2xl text-sm font-semibold transition cursor-pointer text-left ${
-                  selectedParticipantForAction.isPtSettled
-                    ? "bg-zinc-900/40 border border-white/[0.04] text-zinc-600 cursor-not-allowed"
-                    : "bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400"
-                }`}
-              >
-                <span>
-                  {selectedParticipantForAction.isPtSettled ? "Settled" : "Settle"}
-                </span>
-              </button>
+              {unsettleError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
+                  {unsettleError}
+                </div>
+              )}
 
-              {/* 2. Cancel — Simple centered text action without background or border */}
+              {/* 1. Primary Action: Undo Settlement (if settled) OR Settle (if pending) */}
+              {selectedParticipantForAction.isPtSettled ? (
+                <button
+                  type="button"
+                  disabled={submittingUnsettle}
+                  onClick={handleConfirmUnsettle}
+                  className="w-full h-13 flex items-center justify-center px-4 rounded-2xl text-sm font-semibold transition cursor-pointer text-white bg-zinc-800 hover:bg-zinc-700 border border-white/[0.08] active:scale-[0.99] disabled:opacity-50"
+                >
+                  <span>
+                    {submittingUnsettle ? "Undoing..." : "Undo Settlement"}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pt = selectedParticipantForAction;
+                    setShowParticipantActionSheet(false);
+                    handleOpenSettleModal(pt);
+                  }}
+                  className="w-full h-13 flex items-center justify-center px-4 rounded-2xl text-sm font-semibold transition cursor-pointer text-center bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 active:scale-[0.99]"
+                >
+                  <span>Settle</span>
+                </button>
+              )}
+
+              {/* 2. Cancel — Dismiss Action */}
               <button
                 type="button"
+                disabled={submittingUnsettle}
                 onClick={() => {
                   setShowParticipantActionSheet(false);
                   setSelectedParticipantForAction(null);
+                  setUnsettleError(null);
                 }}
-                className="w-full pt-3 pb-1 text-center text-sm font-medium text-zinc-400 hover:text-white transition cursor-pointer focus:outline-none"
+                className="w-full pt-3 pb-1 text-center text-sm font-medium text-zinc-400 hover:text-white transition cursor-pointer focus:outline-none disabled:opacity-50"
               >
                 Cancel
               </button>

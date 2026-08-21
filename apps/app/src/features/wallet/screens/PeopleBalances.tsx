@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from "react";
 import { ArrowLeft, Plus, Check, Edit2, CheckCircle2, ChevronDown, ChevronUp, ChevronRight, AlertCircle, HandCoins, ArrowUpRight, ArrowDownLeft, Trash2, BanknoteArrowUp, MoreVertical } from "lucide-react";
-import { WalletRelationship, ExpenseBreakdown, settleWalletExpenseParticipant, settleWalletRelationship, deleteWalletExpense, updateWalletExpense, isJoinedParticipantStatus } from "../services/walletService";
+import { WalletRelationship, ExpenseBreakdown, settleWalletExpenseParticipant, settleWalletRelationship, deleteWalletExpense, updateWalletExpense, isJoinedParticipantStatus, getEffectiveExpenseDate } from "../services/walletService";
 import { useWalletStore } from "../state/WalletContext";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
@@ -347,37 +347,20 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
         {/* Expenses Timeline */}
         {(() => {
           const allExpenses = relationship.expenses || [];
-          const activeExpenses = allExpenses.filter((e) => {
-            const isSettled = e.status === "SETTLED" || e.participantStatus === "SETTLED";
-            return !isSettled;
-          });
 
-          const settledExpenses = allExpenses.filter((e) => {
-            const isSettled = e.status === "SETTLED" || e.participantStatus === "SETTLED";
-            return isSettled;
-          });
-
-          const sortedActive = [...activeExpenses].sort((a, b) => {
-            const timeA = new Date(a.updatedAt || a.date).getTime();
-            const timeB = new Date(b.updatedAt || b.date).getTime();
+          const sortedExpenses = [...allExpenses].sort((a, b) => {
+            const timeA = getEffectiveExpenseDate(a).getTime();
+            const timeB = getEffectiveExpenseDate(b).getTime();
             return timeB - timeA;
           });
 
-          const sortedSettled = [...settledExpenses].sort((a, b) => {
-            const timeA = new Date(a.updatedAt || a.date).getTime();
-            const timeB = new Date(b.updatedAt || b.date).getTime();
-            return timeB - timeA;
-          });
+          // Group expenses by Month + Year section (e.g. "August 2026")
+          const groupedExpenses = (() => {
+            const groups: { sectionTitle: string; yearMonthKey: string; expenses: typeof sortedExpenses }[] = [];
+            const map = new Map<string, typeof sortedExpenses>();
 
-          // Group active expenses by Month + Year section (e.g. "August 2026")
-          const groupedActive = (() => {
-            const groups: { sectionTitle: string; yearMonthKey: string; expenses: typeof sortedActive }[] = [];
-            const map = new Map<string, typeof sortedActive>();
-
-            sortedActive.forEach((expense) => {
-              const dateStr = expense.updatedAt || (expense as any).updated_at || expense.date || (expense as any).created_at;
-              const d = dateStr ? new Date(dateStr) : new Date();
-              const validD = isNaN(d.getTime()) ? new Date() : d;
+            sortedExpenses.forEach((expense) => {
+              const validD = getEffectiveExpenseDate(expense);
               const fullMonth = validD.toLocaleString("en-US", { month: "long" });
               const year = validD.getFullYear();
               const key = `${year}-${String(validD.getMonth() + 1).padStart(2, "0")}`;
@@ -395,13 +378,13 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
 
           return (
             <div className="flex-1 flex flex-col space-y-3">
-              {/* Active Expenses List grouped by Month */}
-              {sortedActive.length === 0 ? (
+              {/* Expenses List grouped by Month */}
+              {sortedExpenses.length === 0 ? (
                 <div className="py-5 text-center text-xs text-zinc-500 font-sans">
-                  {settledExpenses.length > 0 ? "No outstanding expenses" : "No expense history yet"}
+                  No expense history yet
                 </div>
               ) : (
-                groupedActive.map((group) => (
+                groupedExpenses.map((group) => (
                   <div key={`month-group-${group.yearMonthKey}`} className="space-y-0 text-left">
                     {/* Month / Year Section Header */}
                     <div className="py-2.5 pt-3 text-left">
@@ -412,6 +395,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
 
                     <div className="space-y-0.5 pt-1">
                       {group.expenses.map((expense) => {
+                        const isSettled = expense.status === "SETTLED" || expense.participantStatus === "SETTLED";
                         const expenseIsOwed = expense.role === "creditor";
                         const formattedShare = expense.yourShare.toLocaleString("en-IN", {
                           style: "currency",
@@ -420,25 +404,29 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                           maximumFractionDigits: 2,
                         });
 
-                        const dateStr = expense.updatedAt || (expense as any).updated_at || expense.date || (expense as any).created_at;
-                        const d = dateStr ? new Date(dateStr) : new Date();
-                        const validD = isNaN(d.getTime()) ? new Date() : d;
+                        const validD = getEffectiveExpenseDate(expense);
                         const monthUpper = validD.toLocaleString("en-US", { month: "short" }).toUpperCase();
                         const dayStr = String(validD.getDate()).padStart(2, "0");
 
                         return (
                           <div
-                            key={`active-expense-${expense.id}`}
+                            key={`expense-item-${expense.id}`}
                             onClick={() => handleCardClick(expense)}
-                            className="w-full flex items-center justify-between py-3.5 text-left group transition-all cursor-pointer px-0.5 select-none hover:bg-white/[0.01]"
+                            className={`w-full flex items-center justify-between py-3.5 text-left group transition-all cursor-pointer px-0.5 select-none hover:bg-white/[0.01] ${
+                              isSettled ? "opacity-45" : "opacity-100"
+                            }`}
                           >
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                               {/* VERTICAL DATE COLUMN (Leftmost element, month on top, day below) */}
                               <div className="w-8 shrink-0 flex flex-col items-center justify-center text-center select-none mr-0.5">
-                                <span className="text-[9.5px] font-sans font-semibold tracking-wider text-zinc-500 uppercase leading-none">
+                                <span className={`text-[9.5px] font-sans font-semibold tracking-wider uppercase leading-none ${
+                                  isSettled ? "text-zinc-600" : "text-zinc-500"
+                                }`}>
                                   {monthUpper}
                                 </span>
-                                <span className="text-[13px] font-sans font-bold text-zinc-500 leading-none mt-1">
+                                <span className={`text-[13px] font-sans font-bold leading-none mt-1 ${
+                                  isSettled ? "text-zinc-600" : "text-zinc-500"
+                                }`}>
                                   {dayStr}
                                 </span>
                               </div>
@@ -447,22 +435,34 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                                 <DiscoveryImages
                                   src={expense.planCover}
                                   alt={expense.planTitle}
-                                  className="w-10 h-10 rounded-full object-cover bg-zinc-900 border border-white/[0.05] shrink-0"
+                                  className={`w-10 h-10 rounded-full object-cover bg-zinc-900 border border-white/[0.05] shrink-0 ${
+                                    isSettled ? "opacity-60 grayscale-[0.3]" : ""
+                                  }`}
                                 />
                               ) : (
-                                <div className="w-10 h-10 rounded-full bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] text-zinc-650 font-black">
+                                <div className={`w-10 h-10 rounded-full bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] font-black ${
+                                  isSettled ? "text-zinc-700 opacity-60" : "text-zinc-650"
+                                }`}>
                                   PLAN
                                 </div>
                               )}
 
                               <div className="min-w-0 flex flex-col justify-center flex-1 pr-3">
-                                <h5 className="font-sans font-semibold text-[13.5px] truncate leading-tight text-zinc-100 group-hover:text-white">
+                                <h5 className={`font-sans text-[13.5px] truncate leading-tight ${
+                                  isSettled
+                                    ? "font-medium text-zinc-500 group-hover:text-zinc-400"
+                                    : "font-semibold text-zinc-100 group-hover:text-white"
+                                }`}>
                                   {expense.expenseTitle || expense.title || "Plan Fee"}
                                 </h5>
-                                <span className="text-[11.5px] font-sans font-medium text-zinc-400 block truncate leading-tight mt-0.5">
+                                <span className={`text-[11.5px] font-sans font-medium block truncate leading-tight mt-0.5 ${
+                                  isSettled ? "text-zinc-600" : "text-zinc-400"
+                                }`}>
                                   {expense.planTitle}
                                 </span>
-                                <span className="text-[10px] font-sans text-zinc-550 block truncate leading-tight mt-0.5">
+                                <span className={`text-[10px] font-sans block truncate leading-tight mt-0.5 ${
+                                  isSettled ? "text-zinc-600" : "text-zinc-550"
+                                }`}>
                                   {(() => {
                                     const otherPlanPart = (dbPlanParticipantsLocal || []).find(
                                       (p: any) =>
@@ -490,14 +490,20 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                             </div>
 
                             <div className="text-right shrink-0 min-w-max pl-2 flex items-center justify-end">
-                              <span
-                                className={`font-sans text-sm font-bold tracking-tight ${
-                                  expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                                }`}
-                              >
-                                {expenseIsOwed ? "+" : "-"}
-                                {formattedShare}
-                              </span>
+                              {isSettled ? (
+                                <span className="font-sans text-xs font-semibold text-zinc-500">
+                                  Settled up
+                                </span>
+                              ) : (
+                                <span
+                                  className={`font-sans text-sm font-bold tracking-tight ${
+                                    expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
+                                  }`}
+                                >
+                                  {expenseIsOwed ? "+" : "-"}
+                                  {formattedShare}
+                                </span>
+                              )}
                             </div>
                           </div>
                         );

@@ -6,7 +6,7 @@ import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import { ExpenseDetails, PlanBalancesDetail } from "./ExpenseDetail";
 import { SettlementHistoryScreen, SettledExpenseItem } from "./SettlementHistory";
-import { getParticipantFinancialState, isJoinedParticipantStatus } from "../services/walletService";
+import { getParticipantFinancialState, isJoinedParticipantStatus, getEffectiveExpenseDate } from "../services/walletService";
 import { AddCost } from "../components/AddCost";
 
 interface PlanDetailsScreenProps {
@@ -347,8 +347,8 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
       });
     });
 
-    // Sort newest first
-    rows.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+    // Sort newest first based on effective date (pending: created_at, settled: updated_at)
+    rows.sort((a, b) => getEffectiveExpenseDate(b).getTime() - getEffectiveExpenseDate(a).getTime());
 
     return { planNetBalance: totalNetBalance, groupedExpenseRows: rows };
   }, [dbExpenses, dbParticipants, dbProfiles, userPostgresUuid, financiallyIncludedUserIds, hasLoadedPlanParticipants]);
@@ -544,9 +544,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
               const map = new Map<string, typeof groupedExpenseRows>();
 
               groupedExpenseRows.forEach((row) => {
-                const dateStr = row.updatedAt || row.createdAt || row.rawExpense?.updated_at || row.rawExpense?.created_at;
-                const d = dateStr ? new Date(dateStr) : new Date();
-                const validD = isNaN(d.getTime()) ? new Date() : d;
+                const validD = getEffectiveExpenseDate(row);
                 const fullMonth = validD.toLocaleString("en-US", { month: "long" });
                 const year = validD.getFullYear();
                 const key = `${year}-${String(validD.getMonth() + 1).padStart(2, "0")}`;
@@ -580,9 +578,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
                         const absShare = Math.abs(row.userNetShare);
                         const displayAmount = isRowSettled ? row.settledDisplayAmount : absShare;
 
-                        const dateStr = row.updatedAt || row.createdAt || row.rawExpense?.updated_at || row.rawExpense?.created_at;
-                        const d = dateStr ? new Date(dateStr) : new Date();
-                        const validD = isNaN(d.getTime()) ? new Date() : d;
+                        const validD = getEffectiveExpenseDate(row);
                         const monthUpper = validD.toLocaleString("en-US", { month: "short" }).toUpperCase();
                         const dayStr = String(validD.getDate()).padStart(2, "0");
 
@@ -593,7 +589,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
                               setSelectedExpenseIdForDetail(row.id);
                             }}
                             className={`py-3.5 flex items-center text-left group transition-all cursor-pointer px-0.5 select-none hover:bg-white/[0.01] ${
-                              isRowSettled ? "opacity-60" : "opacity-100"
+                              isRowSettled ? "opacity-45" : "opacity-100"
                             }`}
                           >
                             {/* VERTICAL DATE COLUMN (Leftmost element, month on top, day below) */}
@@ -657,8 +653,8 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
                             {/* COLUMN 3: Far-Right Amount Column */}
                             <div className="shrink-0 text-right min-w-max pl-2 flex items-center justify-end">
                               {isRowSettled ? (
-                                <span className="font-sans text-sm font-medium tracking-tight text-zinc-400">
-                                  ₹{displayAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                <span className="font-sans text-xs font-semibold text-zinc-500">
+                                  Settled Up
                                 </span>
                               ) : (
                                 <span
