@@ -31,7 +31,7 @@ interface PlanParticipantManagementWrapperProps {
   onChangePlanHost?: (planId: string, newHostId: string, currentHostId: string) => Promise<void>;
   onPromoteToHost?: (planId: string, userId: string) => Promise<void>;
   onDemoteFromHost?: (planId: string, userId: string) => Promise<void>;
-  onUpdatePlanCapacity?: (planId: string, capacity: number) => Promise<void> | void;
+  onUpdatePlanCapacity?: (planId: string, capacity: number, options?: { totalCost?: number }) => Promise<void> | void;
   onAddParticipants?: (planId: string, userIds: string[], circleIds: string[], targetGroup?: 'GOING' | 'WAITLIST') => Promise<void>;
   onReorderWaitlist?: (planId: string, orderedUserUuids: string[]) => Promise<void>;
   onSwitchToAutomaticMode?: (planId: string, promotedUserUuids?: string[]) => Promise<void>;
@@ -109,12 +109,66 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 }) => {
   const { circles } = useCirclesStore();
   const { friends } = useFriendshipStore();
-  const { dbPlanParticipants, resolvePaidPlanLeaveRequest } = usePlansStore();
+  const { dbPlans, dbPlanParticipants, resolvePaidPlanLeaveRequest } = usePlansStore();
   const { showToast } = useToast();
   const hostId = plan.hostId || '';
   const members: any[] = plan.members || [];
 
   const targetPlanUuid = plan.dbUuid || plan.id;
+
+  const [planFeeTotalCostOverride, setPlanFeeTotalCostOverride] = useState<number | null>(null);
+
+  const matchedDbPlan = useMemo(() => {
+    return (dbPlans || []).find(
+      (p) => p.id === targetPlanUuid || p.id === plan.id || (p as any).dbUuid === targetPlanUuid || (p as any).dbUuid === plan.id
+    );
+  }, [dbPlans, targetPlanUuid, plan.id]);
+
+  const currentTotalCost = useMemo(() => {
+    if (planFeeTotalCostOverride !== null) return planFeeTotalCostOverride;
+    const rawVal =
+      matchedDbPlan?.total_cost ??
+      (plan as any)?.total_cost ??
+      (plan as any)?.totalCost ??
+      (plan as any)?.cost ??
+      0;
+    return Number(rawVal || 0);
+  }, [matchedDbPlan, plan, planFeeTotalCostOverride]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPlanFeeCost = async () => {
+      if (planFeeTotalCostOverride === null && plan.id) {
+        const localCost = Number(
+          matchedDbPlan?.total_cost ??
+          (plan as any)?.total_cost ??
+          (plan as any)?.totalCost ??
+          (plan as any)?.cost ??
+          0
+        );
+        if (localCost <= 0) {
+          try {
+            const { data: expRow } = await (supabase as any)
+              .from("wallet_expenses")
+              .select("total_amount")
+              .eq("plan_id", plan.id)
+              .or("expense_type.eq.PLAN_EXPENSE,message_id.is.null")
+              .maybeSingle();
+
+            if (isMounted && expRow && Number(expRow.total_amount || 0) > 0) {
+              setPlanFeeTotalCostOverride(Number(expRow.total_amount));
+            }
+          } catch (err) {
+            console.error("[fetchPlanFeeCost] Error:", err);
+          }
+        }
+      }
+    };
+    fetchPlanFeeCost();
+    return () => {
+      isMounted = false;
+    };
+  }, [plan.id, matchedDbPlan, planFeeTotalCostOverride]);
 
 
 
@@ -1013,22 +1067,25 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     [plan.id, onDemoteFromHost, showToast],
   );
 
+  const [showUpdatePlanFeeModal, setShowUpdatePlanFeeModal] = useState(false);
+  const [pendingCapacityTarget, setPendingCapacityTarget] = useState<number | null>(null);
+  const [selectedPlanFeeOption, setSelectedPlanFeeOption] = useState<"change_per_person" | "keep_total">("change_per_person");
+  const [isSubmittingPlanFeeUpdate, setIsSubmittingPlanFeeUpdate] = useState(false);
+
   const [guidedAdjustmentState, setGuidedAdjustmentState] = useState<{
     mode: 'promote' | 'demote';
     targetCapacity: number;
     requiredCount: number;
     candidates: Friend[];
+    options?: { totalCost?: number };
   } | null>(null);
 
-  const handleAdjustCapacity = useCallback(
-    async (newVal: number) => {
-      const clampedVal = Math.min(maxCapacity, Math.max(2, newVal));
-      if (clampedVal === capacity || !onUpdatePlanCapacity) return;
-
+  const executeCapacityUpdate = useCallback(
+    async (targetCapacity: number, options?: { totalCost?: number }) => {
       if (waitlistMode === 'assigned') {
-        if (clampedVal > capacity) {
+        if (targetCapacity > capacity) {
           // Guided Increase: Host must choose who to promote from WAITLIST
-          const requiredCount = clampedVal - capacity;
+          const requiredCount = targetCapacity - capacity;
           const candidates = waitlistList;
           if (candidates.length === 0) {
             showToast("No waitlisted participants available to promote");
@@ -1036,23 +1093,24 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           }
           setGuidedAdjustmentState({
             mode: 'promote',
-            targetCapacity: clampedVal,
+            targetCapacity,
             requiredCount: Math.min(requiredCount, candidates.length),
             candidates,
+            options,
           });
         } else {
           // Guided Decrease: Host must choose who to demote from GOING
-          const requiredCount = capacity - clampedVal;
-          // Filter candidates to prevent sole host self-demotion if restricted
+          const requiredCount = capacity - targetCapacity;
           const candidates = goingList.filter(f => {
             const uId = f.dbUuid || f.id;
             return !(f.isHost && activeUserId && uId === activeUserId);
           });
           setGuidedAdjustmentState({
             mode: 'demote',
-            targetCapacity: clampedVal,
+            targetCapacity,
             requiredCount: Math.min(requiredCount, candidates.length),
             candidates,
+            options,
           });
         }
         return;
@@ -1060,7 +1118,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
       // Automatic mode: direct capacity update
       try {
-        await onUpdatePlanCapacity(plan.id, clampedVal);
+        await onUpdatePlanCapacity!(plan.id, targetCapacity, options);
         if (pendingPromoteToGoing) {
           const friendToMove = pendingPromoteToGoing;
           setPendingPromoteToGoing(null);
@@ -1080,23 +1138,86 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         showToast(msg);
       }
     },
-    [plan.id, capacity, maxCapacity, waitlistMode, waitlistList, goingList, activeUserId, onUpdatePlanCapacity, showToast, pendingPromoteToGoing, onMoveToGoing]
+    [capacity, waitlistMode, waitlistList, goingList, activeUserId, onUpdatePlanCapacity, plan.id, pendingPromoteToGoing, onMoveToGoing, showToast]
   );
+
+  const handleAdjustCapacity = useCallback(
+    async (newVal: number) => {
+      const clampedVal = Math.min(maxCapacity, Math.max(2, newVal));
+      if (clampedVal === capacity || !onUpdatePlanCapacity) return;
+
+      let planCost = currentTotalCost;
+
+      // Fallback check to database wallet_expenses table if local planCost is 0
+      if (planCost <= 0) {
+        try {
+          const { data: expRow } = await (supabase as any)
+            .from("wallet_expenses")
+            .select("total_amount")
+            .eq("plan_id", plan.id)
+            .or("expense_type.eq.PLAN_EXPENSE,message_id.is.null")
+            .maybeSingle();
+
+          if (expRow && Number(expRow.total_amount || 0) > 0) {
+            planCost = Number(expRow.total_amount);
+            setPlanFeeTotalCostOverride(planCost);
+          }
+        } catch (err) {
+          console.error("[handleAdjustCapacity] Error checking wallet_expenses fallback:", err);
+        }
+      }
+
+      if (planCost > 0) {
+        setPendingCapacityTarget(clampedVal);
+        setSelectedPlanFeeOption("change_per_person");
+        setShowUpdatePlanFeeModal(true);
+        return;
+      }
+
+      await executeCapacityUpdate(clampedVal);
+    },
+    [capacity, maxCapacity, onUpdatePlanCapacity, plan.id, currentTotalCost, executeCapacityUpdate]
+  );
+
+  const handleConfirmPlanFeeOption = async () => {
+    if (pendingCapacityTarget === null || !onUpdatePlanCapacity || isSubmittingPlanFeeUpdate) return;
+
+    setIsSubmittingPlanFeeUpdate(true);
+    const targetCap = pendingCapacityTarget;
+    const planCost = currentTotalCost;
+    const currentPerPerson = capacity > 0 ? Math.round((planCost / capacity) * 100) / 100 : 0;
+
+    let targetTotalCost = planCost;
+    if (selectedPlanFeeOption === "change_per_person") {
+      targetTotalCost = Math.round(targetCap * currentPerPerson * 100) / 100;
+    }
+
+    try {
+      setShowUpdatePlanFeeModal(false);
+      setPendingCapacityTarget(null);
+      await executeCapacityUpdate(targetCap, { totalCost: targetTotalCost });
+    } catch (err: any) {
+      console.error("[handleConfirmPlanFeeOption] Failed:", err);
+      showToast("Failed to update Plan Fee");
+    } finally {
+      setIsSubmittingPlanFeeUpdate(false);
+    }
+  };
 
   const handleConfirmGuidedAdjustment = useCallback(async (selectedUserIds: string[]) => {
     if (!guidedAdjustmentState || !onUpdatePlanCapacity) return;
-    const { mode, targetCapacity } = guidedAdjustmentState;
+    const { mode, targetCapacity, options } = guidedAdjustmentState;
     try {
       if (mode === 'promote') {
         // 1. Expand plan capacity first
-        await onUpdatePlanCapacity(plan.id, targetCapacity);
+        await onUpdatePlanCapacity(plan.id, targetCapacity, options);
         // 2. Promote selected waitlisted participants with capacity validation bypass
         for (const uId of selectedUserIds) {
           await onMoveToGoing(plan.id, uId, { bypassCapacityCheck: true });
         }
       } else {
         // 1. Reduce plan capacity first (so capacity_changed activity is logged first)
-        await onUpdatePlanCapacity(plan.id, targetCapacity);
+        await onUpdatePlanCapacity(plan.id, targetCapacity, options);
         // 2. Demote selected going participants to waitlist second
         for (const uId of selectedUserIds) {
           await onMoveToWaitlist(plan.id, uId);
@@ -1173,6 +1294,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
   const isAnyBottomSheetOpen = Boolean(
     isActionSheetOpen ||
+    showUpdatePlanFeeModal ||
     pendingCapacityInvite ||
     pendingPromoteToGoing ||
     pendingMoveToWaitlist ||
@@ -1189,6 +1311,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       onBottomSheetStateChange(isAnyBottomSheetOpen);
     }
   }, [isAnyBottomSheetOpen, onBottomSheetStateChange]);
+
+  const planFeeCurrentTotal = currentTotalCost;
+  const planFeeCurrentPerPerson = capacity > 0 ? Math.round((planFeeCurrentTotal / capacity) * 100) / 100 : 0;
+  const planFeeOptionANewTotal = pendingCapacityTarget ? Math.round(pendingCapacityTarget * planFeeCurrentPerPerson * 100) / 100 : planFeeCurrentTotal;
+  const planFeeOptionBPerPerson = (pendingCapacityTarget && pendingCapacityTarget > 0) ? Math.round((planFeeCurrentTotal / pendingCapacityTarget) * 100) / 100 : 0;
 
   const vacantSpots = Math.max(0, capacity - goingMembers.length);
 
@@ -1425,6 +1552,123 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         onConfirm={handleConfirmSwap}
         onClose={() => setSwapState(null)}
       />
+
+      {/* Update Plan Fee Confirmation Modal */}
+      {showUpdatePlanFeeModal && pendingCapacityTarget !== null && (
+        <div
+          onClick={() => {
+            if (!isSubmittingPlanFeeUpdate) {
+              setShowUpdatePlanFeeModal(false);
+              setPendingCapacityTarget(null);
+            }
+          }}
+          className="fixed inset-0 z-[100] bg-black/70 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-md bg-[#111111] border border-white/10 rounded-t-3xl sm:rounded-2xl p-5 text-left font-sans shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-white tracking-tight">
+                Update Plan Fee?
+              </h3>
+              <p className="text-xs text-zinc-400">
+                Plan size: <span className="font-semibold text-white">{capacity}</span> → <span className="font-semibold text-[#FF6B2C]">{pendingCapacityTarget}</span>
+              </p>
+            </div>
+
+            <div className="space-y-3 pt-1">
+              {/* Option A: Change cost per person */}
+              <button
+                type="button"
+                onClick={() => setSelectedPlanFeeOption("change_per_person")}
+                className={`w-full p-4 rounded-xl border text-left transition cursor-pointer flex items-start gap-3 ${
+                  selectedPlanFeeOption === "change_per_person"
+                    ? "bg-zinc-900 border-[#FF6B2C] text-white"
+                    : "bg-zinc-900/40 border-zinc-800 text-zinc-400 hover:bg-zinc-900/80"
+                }`}
+              >
+                <div className="pt-0.5">
+                  <div
+                    className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                      selectedPlanFeeOption === "change_per_person"
+                        ? "border-[#FF6B2C] bg-[#FF6B2C]"
+                        : "border-zinc-600"
+                    }`}
+                  >
+                    {selectedPlanFeeOption === "change_per_person" && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-1 min-w-0 flex-1">
+                  <span className="text-sm font-semibold text-white block">
+                    Change cost per person
+                  </span>
+                  <span className="text-xs text-zinc-400 block leading-relaxed">
+                    Keep ₹{planFeeCurrentPerPerson}/person and update the Plan Fee to <span className="text-white font-medium">₹{planFeeOptionANewTotal}</span>.
+                  </span>
+                </div>
+              </button>
+
+              {/* Option B: Keep total Plan Fee */}
+              <button
+                type="button"
+                onClick={() => setSelectedPlanFeeOption("keep_total")}
+                className={`w-full p-4 rounded-xl border text-left transition cursor-pointer flex items-start gap-3 ${
+                  selectedPlanFeeOption === "keep_total"
+                    ? "bg-zinc-900 border-[#FF6B2C] text-white"
+                    : "bg-zinc-900/40 border-zinc-800 text-zinc-400 hover:bg-zinc-900/80"
+                }`}
+              >
+                <div className="pt-0.5">
+                  <div
+                    className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                      selectedPlanFeeOption === "keep_total"
+                        ? "border-[#FF6B2C] bg-[#FF6B2C]"
+                        : "border-zinc-600"
+                    }`}
+                  >
+                    {selectedPlanFeeOption === "keep_total" && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-1 min-w-0 flex-1">
+                  <span className="text-sm font-semibold text-white block">
+                    Keep total Plan Fee
+                  </span>
+                  <span className="text-xs text-zinc-400 block leading-relaxed">
+                    Keep the Plan Fee at ₹{planFeeCurrentTotal} and redistribute it across the new size (<span className="text-white font-medium">₹{planFeeOptionBPerPerson}/person</span>).
+                  </span>
+                </div>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 pt-3">
+              <button
+                type="button"
+                disabled={isSubmittingPlanFeeUpdate}
+                onClick={() => {
+                  setShowUpdatePlanFeeModal(false);
+                  setPendingCapacityTarget(null);
+                }}
+                className="flex-1 h-11 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 font-semibold text-sm hover:bg-zinc-800 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingPlanFeeUpdate}
+                onClick={handleConfirmPlanFeeOption}
+                className="flex-1 h-11 rounded-xl bg-[#FF6B2C] text-white font-semibold text-sm hover:bg-[#e05a1f] active:scale-[0.99] disabled:opacity-40 transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-[#FF6B2C]/20"
+              >
+                {isSubmittingPlanFeeUpdate ? "Updating..." : "Continue"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

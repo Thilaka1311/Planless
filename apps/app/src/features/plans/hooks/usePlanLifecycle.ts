@@ -273,6 +273,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
               max_participants: newMax,
               joinLimit: newMax,
               capacity: newMax,
+              ...(planUpdate.total_cost !== undefined ? { total_cost: planUpdate.total_cost, totalCost: planUpdate.total_cost } : {}),
             };
           }
           return p;

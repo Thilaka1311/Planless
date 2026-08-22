@@ -1,11 +1,23 @@
-import React, { useState, useMemo, useRef } from "react";
-import { ArrowLeft, Plus, Check, Edit2, CheckCircle2, AlertCircle, HandCoins, ArrowUpRight, ArrowDownLeft, Trash2 } from "lucide-react";
-import { WalletRelationship, ExpenseBreakdown, settleWalletExpenseParticipant, settleWalletRelationship, deleteWalletExpense, updateWalletExpense } from "../services/walletService";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { ArrowLeft, Plus, Check, Edit2, CheckCircle2, ChevronDown, ChevronUp, ChevronRight, AlertCircle, HandCoins, ArrowUpRight, ArrowDownLeft, Trash2, BanknoteArrowUp, MoreVertical, AlertTriangle, Banknote, createLucideIcon } from "lucide-react";
+
+// Lucide BanknoteCheck Icon Definition
+export const BanknoteCheck = createLucideIcon("BanknoteCheck", [
+  ["rect", { width: "20", height: "12", x: "2", y: "6", rx: "2", key: "r1" }],
+  ["circle", { cx: "9", cy: "12", r: "2", key: "c1" }],
+  ["path", { d: "M5 12h.01", key: "p1" }],
+  ["path", { d: "m14 11 2 2 4-4", key: "p2" }],
+]);
+import { WalletRelationship, ExpenseBreakdown, WalletSettlement, createWalletSettlement, deleteWalletSettlement, deleteWalletExpense, updateWalletExpense, isJoinedParticipantStatus, getEffectiveExpenseDate } from "../services/walletService";
 import { useWalletStore } from "../state/WalletContext";
+import { usePlansStore } from "../../plans/state/PlansContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import { ExpenseDetails, PlanBalancesDetail } from "./ExpenseDetail";
+import { AddCost } from "./AddCost";
+import { EditCost } from "./EditCost";
+import { SettleUpScreen } from "./SettleUpScreen";
 
 interface RelationshipDetailsScreenProps {
   relationship: WalletRelationship;
@@ -14,6 +26,7 @@ interface RelationshipDetailsScreenProps {
   activeUserId: string;
   onSelectPlan: (planId: string) => void;
   onSelectExpense?: (expenseId: string, planId: string) => void;
+  onToggleBottomNav?: (hidden: boolean) => void;
 }
 
 export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps> = ({
@@ -23,43 +36,39 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
   activeUserId,
   onSelectPlan,
   onSelectExpense,
+  onToggleBottomNav,
 }) => {
   const { dbPlansLocal, dbPlanParticipantsLocal, dbUsersLocal, dbWalletPaidTransactions } = useWalletStore();
+  const { refreshPlans } = usePlansStore();
 
   // Selected expense ID for PlanBalancesDetail navigation
   const [selectedExpenseIdForDetail, setSelectedExpenseIdForDetail] = useState<string | null>(null);
 
-  // Add Cost state
+  // Add Cost & Edit Cost modal states
   const [showAddCostSheet, setShowAddCostSheet] = useState(false);
-  const [costTitle, setCostTitle] = useState("");
-  const [costAmount, setCostAmount] = useState("");
-  const [selectedPlanId, setSelectedPlanId] = useState("");
-  const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
-  const [submittingCost, setSubmittingCost] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  // Long-press & Action sheets state
+  const [showEditSheet, setShowEditSheet] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<ExpenseBreakdown | null>(null);
   const [showActionMenu, setShowActionMenu] = useState(false);
-  const [showEditSheet, setShowEditSheet] = useState(false);
-  const [showSettleModal, setShowSettleModal] = useState(false);
 
-  // Overall Settle Up sheet state
-  const [showOverallSettleSheet, setShowOverallSettleSheet] = useState(false);
-  const [submittingOverallSettle, setSubmittingOverallSettle] = useState(false);
-  const [overallSettleError, setOverallSettleError] = useState<string | null>(null);
+  // Settle Up full-screen navigation state
+  const [showSettleUpScreen, setShowSettleUpScreen] = useState(false);
 
-  // Edit Expense form state
-  const [editTitle, setEditTitle] = useState("");
-  const [editAmount, setEditAmount] = useState("");
-  const [editPlanId, setEditPlanId] = useState("");
-  const [editParticipantIds, setEditParticipantIds] = useState<string[]>([]);
-  const [submittingEdit, setSubmittingEdit] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
+  // Delete Settlement state
+  const [confirmDeleteSettlementId, setConfirmDeleteSettlementId] = useState<string | null>(null);
+  const [deletingSettlementId, setDeletingSettlementId] = useState<string | null>(null);
+  const [deleteSettlementError, setDeleteSettlementError] = useState<string | null>(null);
 
-  // Settle Up state
-  const [submittingSettle, setSubmittingSettle] = useState(false);
-  const [settleError, setSettleError] = useState<string | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const avatarOpacity = Math.max(0, 1 - scrollTop / 75);
+  const stickyProgress = Math.min(1, Math.max(0, (scrollTop - 75) / 30));
+
+  // Hide bottom navigation bar for dedicated Person Balance screen
+  useEffect(() => {
+    onToggleBottomNav?.(true);
+    return () => {
+      onToggleBottomNav?.(false);
+    };
+  }, [onToggleBottomNav]);
 
   // Delete Expense state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -85,434 +94,65 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     return dbPlansLocal.filter((p) => planSet.size === 0 || planSet.has(p.id));
   }, [dbPlansLocal, dbPlanParticipantsLocal, activeUserId, otherUserId]);
 
-  // Compute available participants for selected plan in Add Cost sheet (STRICTLY members of selected plan)
-  const availablePlanParticipants = useMemo(() => {
-    const targetPlan = selectedPlanId || (relevantPlans[0]?.id) || (dbPlansLocal[0]?.id);
-    if (!targetPlan) return [];
-
-    const planPartRows = (dbPlanParticipantsLocal || []).filter(
-      (pp) => pp.plan_id === targetPlan && ["JOINED", "WAITLISTED"].includes(String(pp.rsvp_status || "").toUpperCase())
-    );
-
-    const userMap = new Map<string, any>();
-    (dbUsersLocal || []).forEach((u) => {
-      if (u.id) userMap.set(u.id, u);
-      if (u.user_id) userMap.set(u.user_id, u);
-      if (u.public_id) userMap.set(u.public_id, u);
-    });
-
-    (dbPlanParticipantsLocal || []).forEach((pp) => {
-      if (pp.user && pp.user_id && !userMap.has(pp.user_id)) {
-        userMap.set(pp.user_id, pp.user);
-      }
-    });
-
-    // Extract unique user_ids strictly from joined plan participants (plus activeUserId/otherUserId if they belong to this plan)
-    const rawUserIds = planPartRows.map((pp) => pp.user_id);
-    // If planPartRows is empty in local memory, fallback to activeUserId and otherUserId for this relationship context
-    const pUserIds = rawUserIds.length > 0
-      ? Array.from(new Set(rawUserIds))
-      : Array.from(new Set([activeUserId, otherUserId]));
-
-    return pUserIds.map((uid) => {
-      const u = userMap.get(uid);
-      const isMe = uid === activeUserId;
-      const isRelationshipUser = uid === otherUserId;
-
-      const photo =
-        u?.profile_photo_path ||
-        u?.profile_photo ||
-        u?.avatar ||
-        (isRelationshipUser ? relationship.profilePhoto : "");
-
-      const name = isMe
-        ? "You"
-        : u?.full_name || u?.name || u?.username || (isRelationshipUser ? relationship.fullName : "Participant");
-
-      return {
-        id: uid,
-        name,
-        avatar: photo,
-      };
-    });
-  }, [selectedPlanId, relevantPlans, dbPlansLocal, dbPlanParticipantsLocal, dbUsersLocal, activeUserId, otherUserId, relationship]);
-
-  // Compute available participants for editPlanId in Edit Cost sheet
-  const availableEditParticipants = useMemo(() => {
-    const targetPlan = editPlanId || selectedExpense?.planId;
-    if (!targetPlan) return [];
-
-    const planPartRows = (dbPlanParticipantsLocal || []).filter(
-      (pp) => pp.plan_id === targetPlan && ["JOINED", "WAITLISTED"].includes(String(pp.rsvp_status || "").toUpperCase())
-    );
-
-    const userMap = new Map<string, any>();
-    (dbUsersLocal || []).forEach((u) => {
-      if (u.id) userMap.set(u.id, u);
-      if (u.user_id) userMap.set(u.user_id, u);
-      if (u.public_id) userMap.set(u.public_id, u);
-    });
-
-    (dbPlanParticipantsLocal || []).forEach((pp) => {
-      if (pp.user && pp.user_id && !userMap.has(pp.user_id)) {
-        userMap.set(pp.user_id, pp.user);
-      }
-    });
-
-    const rawUserIds = planPartRows.map((pp) => pp.user_id);
-    const pUserIds = rawUserIds.length > 0
-      ? Array.from(new Set(rawUserIds))
-      : Array.from(new Set([activeUserId, otherUserId]));
-
-    return pUserIds.map((uid) => {
-      const u = userMap.get(uid);
-      const isMe = uid === activeUserId;
-      const isRelationshipUser = uid === otherUserId;
-
-      const photo =
-        u?.profile_photo_path ||
-        u?.profile_photo ||
-        u?.avatar ||
-        (isRelationshipUser ? relationship.profilePhoto : "");
-
-      const name = isMe
-        ? "You"
-        : u?.full_name || u?.name || u?.username || (isRelationshipUser ? relationship.fullName : "Participant");
-
-      return {
-        id: uid,
-        name,
-        avatar: photo,
-      };
-    });
-  }, [editPlanId, selectedExpense, dbPlanParticipantsLocal, dbUsersLocal, activeUserId, otherUserId, relationship]);
-
   const isOwed = relationship.netBalance >= 0;
   const absNetBalance = Math.abs(relationship.netBalance);
-  const formattedNetBalance = absNetBalance.toLocaleString("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  });
-
-  const parsedAmount = parseFloat(costAmount);
-  const isValidAmount = !isNaN(parsedAmount) && parsedAmount > 0;
-  // Final split participants = Payer (activeUserId) + explicitly selected participants
-  const finalParticipantIds = useMemo(() => {
-    return Array.from(new Set([activeUserId, ...selectedParticipantIds]));
-  }, [activeUserId, selectedParticipantIds]);
-
-  const isFormValid = costTitle.trim().length > 0 && isValidAmount && selectedPlanId.length > 0 && selectedParticipantIds.length > 0;
-
-  // Calculated share per person in the final split (Payer + Selected)
-  const perPersonShare = isValidAmount && finalParticipantIds.length > 0
-    ? Math.round((parsedAmount / finalParticipantIds.length) * 100) / 100
-    : 0;
-
-  // Edit form validation
-  const parsedEditAmount = parseFloat(editAmount);
-  const isValidEditAmount = !isNaN(parsedEditAmount) && parsedEditAmount > 0;
-  const isEditFormValid = editTitle.trim().length > 0 && isValidEditAmount && editPlanId.length > 0 && editParticipantIds.length > 0;
-
-  const finalEditParticipantIds = useMemo(() => {
-    return Array.from(new Set([activeUserId, ...editParticipantIds]));
-  }, [activeUserId, editParticipantIds]);
-
-  // Calculated share per selected participant in Edit Cost
-  const editPerPersonShare = isValidEditAmount && finalEditParticipantIds.length > 0
-    ? Math.round((parsedEditAmount / finalEditParticipantIds.length) * 100) / 100
-    : 0;
-
-  // Long press handler functions - ONLY expense payer can long-press to open action sheet
-  const handleTouchStart = (expense: ExpenseBreakdown) => {
-    const isPayer = expense.payerId
-      ? (expense.payerId === activeUserId)
-      : expense.role === "creditor";
-
-    if (!isPayer) return;
-
-    isLongPressRef.current = false;
-    timerRef.current = setTimeout(() => {
-      isLongPressRef.current = true;
-      setSelectedExpense(expense);
-      setShowActionMenu(true);
-    }, 500);
-  };
-
-  const handleTouchEnd = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+  const formattedNetBalance = (() => {
+    const rounded = Math.round(absNetBalance * 100) / 100;
+    if (Number.isInteger(rounded)) {
+      return `₹${rounded.toLocaleString("en-IN")}`;
     }
-  };
+    return `₹${rounded.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  })();
 
   const handleCardClick = (expense: ExpenseBreakdown) => {
-    if (isLongPressRef.current) {
-      isLongPressRef.current = false;
-      return;
-    }
     if (!expense?.id) {
       console.warn("[PeopleBalances] Expense row missing valid wallet_expenses.id");
       return;
     }
-    console.log("[WalletNavigation] screen = expenseDetails, expenseId =", expense.id, "source = people");
     setSelectedExpenseIdForDetail(expense.id);
   };
 
   const handleOpenAddCostSheet = () => {
-    setFormError(null);
-    setCostTitle("");
-    setCostAmount("");
-    const initialPlan = relevantPlans[0]?.id || dbPlansLocal[0]?.id || "";
-    setSelectedPlanId(initialPlan);
-
-    // Initial participant selection: all active members of initialPlan (JOINED or WAITLISTED)
-    const planPartRows = (dbPlanParticipantsLocal || []).filter(
-      (pp) => pp.plan_id === initialPlan && ["JOINED", "WAITLISTED"].includes(String(pp.rsvp_status || "").toUpperCase())
-    );
-    const initialUserIds = planPartRows.length > 0
-      ? Array.from(new Set(planPartRows.map((pp) => pp.user_id)))
-      : Array.from(new Set([activeUserId, otherUserId]));
-
-    setSelectedParticipantIds(initialUserIds);
     setShowAddCostSheet(true);
   };
 
-  const handleSelectPlanChange = (planId: string) => {
-    setSelectedPlanId(planId);
-
-    // Refresh participant list checkmarks for newly selected plan
-    const planPartRows = (dbPlanParticipantsLocal || []).filter(
-      (pp) => pp.plan_id === planId && ["JOINED", "WAITLISTED"].includes(String(pp.rsvp_status || "").toUpperCase())
-    );
-    const newPlanUserIds = planPartRows.length > 0
-      ? Array.from(new Set(planPartRows.map((pp) => pp.user_id)))
-      : Array.from(new Set([activeUserId, otherUserId]));
-
-    setSelectedParticipantIds(newPlanUserIds);
-  };
-
-  const toggleParticipantSelection = (uid: string) => {
-    setSelectedParticipantIds((prev) => {
-      if (prev.includes(uid)) {
-        return prev.filter((id) => id !== uid);
-      } else {
-        return [...prev, uid];
-      }
-    });
-  };
-
-  const toggleEditParticipantSelection = (uid: string) => {
-    setEditParticipantIds((prev) => {
-      if (prev.includes(uid)) {
-        return prev.filter((id) => id !== uid);
-      } else {
-        return [...prev, uid];
-      }
-    });
-  };
-
-  const handleAddCostSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isFormValid || submittingCost) return;
-
-    setSubmittingCost(true);
-    setFormError(null);
-
-    try {
-      // Step 1: Optional plan_message insertion (non-blocking)
-      let messageId: string | null = null;
-      try {
-        const { data: msgData } = await (supabase as any)
-          .from("plan_messages")
-          .insert({
-            plan_id: selectedPlanId,
-            user_id: activeUserId,
-            content: JSON.stringify({ title: costTitle.trim(), amount: parsedAmount }),
-            message_type: "cost",
-          })
-          .select()
-          .single();
-        messageId = msgData?.id || null;
-      } catch (msgErr) {
-        console.warn("[RelationshipDetailsScreen] Non-fatal error inserting plan_messages:", msgErr);
-      }
-
-      const resolveUserUuid = (rawId: string): string => {
-        const u = (dbUsersLocal || []).find(
-          (usr) => usr.id === rawId || usr.user_id === rawId || usr.public_id === rawId
-        );
-        return u?.id || rawId;
-      };
-
-      const resolvedPayerUuid = resolveUserUuid(activeUserId);
-      const resolvedParticipantUuids = selectedParticipantIds.map(resolveUserUuid);
-      const finalParticipantUuids = Array.from(new Set([resolvedPayerUuid, ...resolvedParticipantUuids]));
-
-      // Step 2: Invoke insert_cost_expense RPC to create wallet_expenses + wallet_expense_participants
-      // Use finalParticipantUuids (Payer + Selected) as the source of truth
-      const { error: rpcError } = await (supabase as any).rpc("insert_cost_expense", {
-        p_plan_id: selectedPlanId,
-        p_message_id: messageId,
-        p_payer_id: resolvedPayerUuid,
-        p_title: costTitle.trim(),
-        p_total_amount: parsedAmount,
-        p_participant_ids: finalParticipantUuids,
-      });
-
-      if (rpcError) {
-        console.error("[RelationshipDetailsScreen] insert_cost_expense failed:", rpcError);
-        setFormError(rpcError.message || "Failed to create expense. Please try again.");
-        setSubmittingCost(false);
-        return;
-      }
-
-      // Close bottom sheet & refresh balances
-      setShowAddCostSheet(false);
-      setCostTitle("");
-      setCostAmount("");
-      setSelectedParticipantIds([]);
-      await onRefreshBalances();
-    } catch (err: any) {
-      console.error("[RelationshipDetailsScreen] Exception adding cost:", err);
-      setFormError(err.message || "An unexpected error occurred.");
-    } finally {
-      setSubmittingCost(false);
-    }
-  };
-
-  // Open Edit Sheet & pre-fill values including exact expense participants
-  const handleOpenEditSheet = async () => {
+  const handleOpenEditSheet = () => {
     if (!selectedExpense) return;
     setShowActionMenu(false);
-    setEditError(null);
-    setEditTitle(selectedExpense.planTitle || "");
-    setEditAmount(String(selectedExpense.totalAmount || ""));
-    setEditPlanId(selectedExpense.planId || "");
-
-    // Fetch existing participants of this expense from wallet_expense_participants
-    try {
-      const { data: existingParts, error: partsErr } = await (supabase as any)
-        .from("wallet_expense_participants")
-        .select("user_id")
-        .eq("expense_id", selectedExpense.id);
-
-      if (!partsErr && existingParts && existingParts.length > 0) {
-        setEditParticipantIds(existingParts.map((p: any) => p.user_id));
-      } else {
-        setEditParticipantIds([activeUserId, otherUserId]);
-      }
-    } catch (err) {
-      setEditParticipantIds([activeUserId, otherUserId]);
-    }
-
     setShowEditSheet(true);
   };
 
-  // Save Edit Expense modifications with RPC enforcing strict payer-only authorization
-  const handleEditExpenseSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedExpense || !isEditFormValid || submittingEdit) return;
 
-    setSubmittingEdit(true);
-    setEditError(null);
 
-    try {
-      await updateWalletExpense({
-        expenseId: selectedExpense.id,
-        title: editTitle.trim(),
-        totalAmount: parsedEditAmount,
-        planId: editPlanId,
-        participantIds: finalEditParticipantIds,
-      });
-
-      // Close edit sheet & refresh
-      setShowEditSheet(false);
-      setSelectedExpense(null);
-      await onRefreshBalances();
-    } catch (err: any) {
-      console.error("[RelationshipDetailsScreen] Exception editing expense:", err);
-      setEditError(err.message || "An error occurred while updating the expense.");
-    } finally {
-      setSubmittingEdit(false);
-    }
+  // Navigate to Settle Up full screen
+  const handleOpenSettleUpScreen = () => {
+    if (absNetBalance <= 0) return;
+    setShowSettleUpScreen(true);
   };
 
-  // Open Settle Confirmation modal
-  const handleOpenSettleModal = () => {
-    if (!selectedExpense) return;
-    setShowActionMenu(false);
-    setSettleError(null);
-    setShowSettleModal(true);
-  };
 
-  // Execute Settle Up (Individual expense)
-  const handleConfirmSettle = async () => {
-    if (!selectedExpense || submittingSettle) return;
-
-    if (selectedExpense.role !== "creditor") {
-      setSettleError("Only the creditor can settle this expense.");
-      return;
-    }
-
-    setSubmittingSettle(true);
-    setSettleError(null);
+  // Execute deletion of settlement atomically via RPC
+  const handleConfirmDeleteSettlement = async (settlementId: string) => {
+    if (deletingSettlementId) return;
+    setDeletingSettlementId(settlementId);
+    setDeleteSettlementError(null);
 
     try {
-      const participantUserId = otherUserId;
-
-      const success = await settleWalletExpenseParticipant({
-        expenseId: selectedExpense.id,
-        participantUserId,
-      });
-
-      if (!success) {
-        setSettleError("Failed to record settlement. Please try again.");
-        setSubmittingSettle(false);
+      const res = await deleteWalletSettlement(settlementId);
+      if (!res.success) {
+        setDeleteSettlementError(res.error || "Failed to delete settlement.");
         return;
       }
-
-      setShowSettleModal(false);
-      setSelectedExpense(null);
+      setConfirmDeleteSettlementId(null);
       await onRefreshBalances();
     } catch (err: any) {
-      console.error("[RelationshipDetailsScreen] Exception settling expense:", err);
-      setSettleError(err.message || "Failed to settle expense.");
+      console.error("[RelationshipDetailsScreen] Error deleting settlement:", err);
+      setDeleteSettlementError(err.message || "Failed to delete settlement.");
     } finally {
-      setSubmittingSettle(false);
-    }
-  };
-
-  // Open Overall Settle Up sheet
-  const handleOpenOverallSettleSheet = () => {
-    if (!isOwed || absNetBalance <= 0) return;
-    setOverallSettleError(null);
-    setShowOverallSettleSheet(true);
-  };
-
-  // Execute settlement across all outstanding expenses for this relationship atomically via RPC
-  const handleConfirmOverallSettle = async () => {
-    if (submittingOverallSettle || absNetBalance <= 0 || !isOwed) return;
-
-    setSubmittingOverallSettle(true);
-    setOverallSettleError(null);
-
-    try {
-      const success = await settleWalletRelationship(otherUserId);
-
-      if (!success) {
-        setOverallSettleError("Failed to record settlements. Please try again.");
-        setSubmittingOverallSettle(false);
-        return;
-      }
-
-      setShowOverallSettleSheet(false);
-      await onRefreshBalances();
-    } catch (err: any) {
-      console.error("[RelationshipDetailsScreen] Exception performing overall settle up:", err);
-      setOverallSettleError(err.message || "Failed to complete settlement.");
-    } finally {
-      setSubmittingOverallSettle(false);
+      setDeletingSettlementId(null);
     }
   };
 
@@ -544,20 +184,33 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     }
   };
 
+  // Navigate to Settle Up full screen
+  if (showSettleUpScreen) {
+    return (
+      <SettleUpScreen
+        relationship={relationship}
+        activeUserId={activeUserId}
+        onBack={() => {
+          onToggleBottomNav?.(false);
+          setShowSettleUpScreen(false);
+        }}
+        onSettled={async () => {
+          onToggleBottomNav?.(false);
+          setShowSettleUpScreen(false);
+          await onRefreshBalances();
+        }}
+        onMount={() => onToggleBottomNav?.(true)}
+      />
+    );
+  }
+
   // Render ExpenseDetails if an expense is tapped
   if (selectedExpenseIdForDetail) {
     return (
       <ExpenseDetails
         expenseId={selectedExpenseIdForDetail}
-        source="people"
-        onBack={() => {
-          console.log("[WalletNavigation] screen = peopleBalances, personId =", relationship.userId);
-          setSelectedExpenseIdForDetail(null);
-        }}
-        onRefreshBalances={async () => {
-          await onRefreshBalances();
-        }}
-        activeUserId={activeUserId}
+        onBack={() => setSelectedExpenseIdForDetail(null)}
+        onRefreshBalances={onRefreshBalances}
       />
     );
   }
@@ -565,728 +218,358 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
   return (
     <div
       id="subview_relationship_details"
-      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-24 text-left bg-[#050505]"
+      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-32 text-left bg-[#050505] relative"
     >
-      {/* Header with Back Button */}
-      <div className="flex items-center gap-3">
+      {/* Sticky Header Bar with Back Button, Centered Fixed Profile Avatar, & Three Dots Menu */}
+      <div
+        className="sticky top-0 z-50 -mx-6 px-6 pt-3 pb-3 flex items-center justify-between pointer-events-none transition-colors duration-150 relative h-16"
+        style={{
+          backgroundColor: `rgba(5, 5, 5, ${stickyProgress})`,
+        }}
+      >
         <button
           type="button"
-          onClick={onBack}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60"
+          onClick={() => {
+            onToggleBottomNav?.(false);
+            onBack();
+          }}
+          className="p-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 z-50 pointer-events-auto"
           aria-label="Back to Wallet"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
-        <div>
-          <h2 className="text-xl font-display font-semibold text-zinc-100 tracking-tight">
-            Balances
-          </h2>
+
+        {/* Centered Fixed Profile Avatar (Fixed 25x25 / 100px x 100px, Pinned at top-11 for breathing room, translateY = 0, dissolves away in place) */}
+        <div
+          className="absolute left-1/2 -translate-x-1/2 top-11 transition-opacity duration-75 pointer-events-none z-40"
+          style={{
+            opacity: avatarOpacity,
+          }}
+        >
+          <UserAvatar
+            src={relationship.profilePhoto}
+            alt={relationship.fullName}
+            size="w-25 h-25"
+            className="ring-2 ring-white/10 shadow-lg"
+          />
         </div>
+
+        <div className="w-8 shrink-0 pointer-events-none" />
       </div>
 
-      {/* Relationship Header Banner */}
-      <div className="flex flex-col items-center text-center py-6 mt-2 space-y-3">
-        <UserAvatar
-          src={relationship.profilePhoto}
-          alt={relationship.fullName}
-          size="w-20 h-20"
-          className="ring-2 ring-white/10"
-        />
-        <div className="space-y-1">
-          <h3 className="font-display font-bold text-xl text-zinc-100">
-            {relationship.fullName}
-          </h3>
-          <p className="text-zinc-500 font-sans text-xs font-medium uppercase tracking-wider">
-            {absNetBalance === 0 ? "SETTLED UP" : isOwed ? "OWES YOU" : "YOU OWE"}
+      {/* THE SINGLE USER-NAME ELEMENT - Scrolls upward and pins natively at sticky top-[15px] z-50 */}
+      <h3 className="sticky top-[15px] z-50 font-sans font-bold text-base text-zinc-100 leading-tight text-center truncate px-12 mt-24 pointer-events-auto shrink-0 self-center">
+        {relationship.fullName}
+      </h3>
+
+      {/* Relationship Header Banner / Profile Hero Section */}
+      <div className={`flex flex-col items-center text-center shrink-0 relative z-10 ${absNetBalance === 0 ? "my-4" : "pb-3 space-y-1.5"}`}>
+        {absNetBalance === 0 ? (
+          <span className="inline-flex items-center px-3.5 py-1 rounded-full bg-zinc-900 border border-white/[0.1] text-xs font-sans font-semibold text-white shadow-sm">
+            Settled up
+          </span>
+        ) : (
+          <p className="text-zinc-500 font-sans text-[10px] font-semibold uppercase tracking-widest pt-0.5">
+            {isOwed ? "OWES YOU" : "YOU OWE"}
           </p>
-          <div className="flex items-center justify-center gap-2 mt-1">
-            <h1
-              className={`font-sans font-black text-4xl leading-none ${absNetBalance === 0 ? "text-zinc-300" : isOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                }`}
-            >
-              {formattedNetBalance}
-            </h1>
-          </div>
-          {absNetBalance > 0 && isOwed && (
-            <div className="pt-2">
+        )}
+        {absNetBalance > 0 && (
+          <>
+            <div className="flex items-center justify-center gap-2 mt-0.5">
+              <h1 className="font-sans font-extrabold text-2xl sm:text-3xl leading-none text-white">
+                {formattedNetBalance}
+              </h1>
+            </div>
+            <div className="pt-1">
               <button
                 type="button"
-                onClick={handleOpenOverallSettleSheet}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-white/[0.1] text-xs font-sans font-semibold text-zinc-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
+                onClick={handleOpenSettleUpScreen}
+                className="inline-flex items-center px-3.5 py-1 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-white/[0.1] text-xs font-sans font-semibold text-zinc-200 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
               >
-                <HandCoins className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Settle Up</span>
               </button>
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
-      {/* Expense Timeline section header with + Add Cost button */}
-      <div className="flex-1 flex flex-col pt-4 mt-2">
-        <div className="flex items-center justify-between px-1 mb-4">
-          <h4 className="text-[11px] font-sans font-semibold text-zinc-500">
-            Expenses
-          </h4>
-          <button
-            type="button"
-            onClick={handleOpenAddCostSheet}
-            className="flex items-center gap-1 px-3 py-1 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-white/[0.08] text-xs font-sans font-semibold text-emerald-400 hover:text-emerald-300 transition-all cursor-pointer shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Cost</span>
-          </button>
-        </div>
+      {/* Timeline container */}
+      <div className={`flex-1 flex flex-col ${absNetBalance === 0 ? "pt-0 mt-0" : "pt-1 mt-1"}`}>
 
-        {/* Expenses Timeline (Sorted newest to oldest) */}
-        <div className="divide-y divide-white/[0.04]">
-          {(() => {
-            const allExpenses = relationship.expenses || [];
+        {/* Unified Expenses & Settlements Timeline */}
+        {(() => {
+          type TimelineItem =
+            | { id: string; type: "expense"; date: Date; expense: ExpenseBreakdown }
+            | { id: string; type: "settlement"; date: Date; settlement: WalletSettlement };
 
-            if (allExpenses.length === 0) {
-              return (
-                <div className="py-8 text-center text-xs text-zinc-500 font-sans">
-                  No expense history yet
-                </div>
-              );
-            }
+          const allExpenses = relationship.expenses || [];
+          const allSettlements = relationship.settlements || [];
 
-            // Sort by wallet_expense_participants.updated_at descending (most recently updated -> top)
-            const sortedExpenses = [...allExpenses].sort((a, b) => {
-              const timeA = new Date(a.updatedAt || a.date).getTime();
-              const timeB = new Date(b.updatedAt || b.date).getTime();
-              return timeB - timeA;
+          const items: TimelineItem[] = [];
+
+          allExpenses.forEach((exp) => {
+            items.push({
+              id: `exp-${exp.id}`,
+              type: "expense",
+              date: getEffectiveExpenseDate(exp),
+              expense: exp,
+            });
+          });
+
+          allSettlements.forEach((st) => {
+            items.push({
+              id: `st-${st.id}`,
+              type: "settlement",
+              date: new Date(st.created_at || Date.now()),
+              settlement: st,
+            });
+          });
+
+          const sortedItems = items.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+          // Group timeline items by Month + Year section (e.g. "August 2026")
+          const groupedTimeline = (() => {
+            const groups: { sectionTitle: string; yearMonthKey: string; items: typeof sortedItems }[] = [];
+            const map = new Map<string, typeof sortedItems>();
+
+            sortedItems.forEach((item) => {
+              const validD = item.date;
+              const fullMonth = validD.toLocaleString("en-US", { month: "long" });
+              const year = validD.getFullYear();
+              const key = `${year}-${String(validD.getMonth() + 1).padStart(2, "0")}`;
+              const sectionTitle = `${fullMonth} ${year}`;
+
+              if (!map.has(key)) {
+                map.set(key, []);
+                groups.push({ sectionTitle, yearMonthKey: key, items: map.get(key)! });
+              }
+              map.get(key)!.push(item);
             });
 
-            return sortedExpenses.map((expense) => {
-              const expenseIsOwed = expense.role === "creditor";
-              const isSettled = expense.status === "SETTLED" || expense.participantStatus === "SETTLED";
+            return groups;
+          })();
 
-              const formattedShare = expense.yourShare.toLocaleString("en-IN", {
-                style: "currency",
-                currency: "INR",
-                maximumFractionDigits: 0,
-              });
+          return (
+            <div className="flex-1 flex flex-col space-y-3">
+              {/* Timeline List grouped by Month */}
+              {sortedItems.length === 0 ? (
+                <div className="py-5 text-center text-xs text-zinc-500 font-sans">
+                  No activity history yet
+                </div>
+              ) : (
+                groupedTimeline.map((group) => (
+                  <div key={`month-group-${group.yearMonthKey}`} className="space-y-0 text-left">
+                    {/* Month / Year Section Header */}
+                    <div className="py-2.5 pt-3 text-left">
+                      <h4 className="font-sans font-semibold text-xs text-zinc-400 tracking-wide">
+                        {group.sectionTitle}
+                      </h4>
+                    </div>
 
-              return (
-                <div
-                  key={`expense-${expense.id}`}
-                  onTouchStart={() => !isSettled && handleTouchStart(expense)}
-                  onTouchEnd={handleTouchEnd}
-                  onMouseDown={() => !isSettled && handleTouchStart(expense)}
-                  onMouseUp={handleTouchEnd}
-                  onMouseLeave={handleTouchEnd}
-                  onClick={() => handleCardClick(expense)}
-                  className={`w-full flex items-center justify-between py-4 text-left group transition-all cursor-pointer px-1 select-none ${isSettled ? "opacity-60 hover:opacity-90" : "hover:bg-white/[0.01]"
-                    }`}
-                >
-                  {/* Left block: Cover -> Expense Info */}
-                  <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                    {expense.planCover ? (
-                      <DiscoveryImages
-                        src={expense.planCover}
-                        alt={expense.planTitle}
-                        className={`w-10 h-10 rounded-lg object-cover bg-zinc-900 border border-white/[0.05] shrink-0 ${isSettled ? "grayscale-30" : ""
-                          }`}
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-lg bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] text-zinc-650 font-black">
-                        PLAN
-                      </div>
-                    )}
+                    <div className="space-y-0.5 pt-1">
+                      {group.items.map((item) => {
+                        const validD = item.date;
+                        const monthUpper = validD.toLocaleString("en-US", { month: "short" }).toUpperCase();
+                        const dayStr = String(validD.getDate()).padStart(2, "0");
 
-                    <div className="min-w-0 flex flex-col justify-center">
-                      <h5 className={`font-sans font-semibold text-[13.5px] truncate leading-tight ${isSettled ? "text-zinc-400 group-hover:text-zinc-200" : "text-zinc-100 group-hover:text-white"
-                        }`}>
-                        {expense.expenseTitle || expense.title || "Plan Fee"}
-                      </h5>
-                      <span className="text-[11.5px] font-sans font-medium text-zinc-400 block truncate leading-tight mt-0.5">
-                        {expense.planTitle}
-                      </span>
-                      <span className="text-[10px] font-sans text-zinc-500 block truncate leading-tight mt-0.5">
-                        {isSettled
-                          ? expenseIsOwed
-                            ? `${relationship.fullName} paid you`
-                            : `You paid ${relationship.fullName}`
-                          : expenseIsOwed
-                            ? `${relationship.fullName} owes you`
-                            : `You owe ${relationship.fullName}`}
-                      </span>
+                        if (item.type === "expense") {
+                          const expense = item.expense;
+                          const isSettled = expense.status === "SETTLED" || expense.participantStatus === "SETTLED";
+                          const expenseIsOwed = expense.role === "creditor";
+                          const shareNum = Number(expense.yourShare || 0);
+                          const isShareWhole = shareNum % 1 === 0;
+                          const formattedShare = `₹${shareNum.toLocaleString("en-IN", {
+                            minimumFractionDigits: isShareWhole ? 0 : 2,
+                            maximumFractionDigits: 2,
+                          })}`;
+
+                          return (
+                            <div
+                              key={`expense-item-${expense.id}`}
+                              onClick={() => handleCardClick(expense)}
+                              className={`w-full flex items-center justify-between py-3.5 text-left group transition-all cursor-pointer px-0.5 select-none hover:bg-white/[0.01] ${isSettled ? "opacity-45" : "opacity-100"
+                                }`}
+                            >
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                {/* VERTICAL DATE COLUMN */}
+                                <div className="w-8 shrink-0 flex flex-col items-center justify-center text-center select-none mr-0.5">
+                                  <span className={`text-[9.5px] font-sans font-semibold tracking-wider uppercase leading-none ${isSettled ? "text-zinc-600" : "text-zinc-500"
+                                    }`}>
+                                    {monthUpper}
+                                  </span>
+                                  <span className={`text-[13px] font-sans font-bold leading-none mt-1 ${isSettled ? "text-zinc-600" : "text-zinc-500"
+                                    }`}>
+                                    {dayStr}
+                                  </span>
+                                </div>
+
+                                {expense.planCover ? (
+                                  <DiscoveryImages
+                                    src={expense.planCover}
+                                    alt={expense.planTitle}
+                                    className={`w-10 h-10 rounded-full object-cover bg-zinc-900 border border-white/[0.05] shrink-0 ${isSettled ? "opacity-60 grayscale-[0.3]" : ""
+                                      }`}
+                                  />
+                                ) : (
+                                  <div className={`w-10 h-10 rounded-full bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] font-black ${isSettled ? "text-zinc-700 opacity-60" : "text-zinc-650"
+                                    }`}>
+                                    PLAN
+                                  </div>
+                                )}
+
+                                <div className="min-w-0 flex flex-col justify-center flex-1 pr-3">
+                                  <h5 className={`font-sans text-[13.5px] truncate leading-tight ${isSettled
+                                    ? "font-medium text-zinc-500 group-hover:text-zinc-400"
+                                    : "font-semibold text-zinc-100 group-hover:text-white"
+                                    }`}>
+                                    {expense.expenseTitle || (expense as any).title || "Plan Fee"}
+                                  </h5>
+                                  <span className={`text-[11.5px] font-sans font-medium block truncate leading-tight mt-0.5 ${isSettled ? "text-zinc-600" : "text-zinc-400"
+                                    }`}>
+                                    {expense.planTitle}
+                                  </span>
+                                  <span className={`text-[10px] font-sans block truncate leading-tight mt-0.5 ${isSettled ? "text-zinc-600" : "text-zinc-550"
+                                    }`}>
+                                    {(() => {
+                                      const otherPlanPart = (dbPlanParticipantsLocal || []).find(
+                                        (p: any) =>
+                                          String(p.plan_id || p.planId || "").trim().toLowerCase() === String(expense.planId || "").trim().toLowerCase() &&
+                                          String(p.user_id || p.userId || "").trim().toLowerCase() === String(relationship.userId || "").trim().toLowerCase()
+                                      );
+                                      const otherRsvpStatus = String(otherPlanPart?.rsvp_status || otherPlanPart?.status || "").trim().toUpperCase();
+                                      const isOtherSkipped = otherRsvpStatus === "SKIPPED";
+
+                                      const baseText = expense.isPaymentKept
+                                        ? "Payment kept"
+                                        : expenseIsOwed
+                                          ? `${relationship.fullName} owes you`
+                                          : `You owe ${relationship.fullName}`;
+
+                                      return isOtherSkipped ? `${baseText} · Left plan` : baseText;
+                                    })()}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0 min-w-max pl-2 flex items-center justify-end">
+                                {isSettled ? (
+                                  <span className="font-sans text-xs font-semibold text-zinc-500">
+                                    Settled up
+                                  </span>
+                                ) : (
+                                  <span className="font-sans text-sm font-bold tracking-tight text-zinc-100">
+                                    {formattedShare}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // SETTLEMENT TIMELINE ROW
+                        const st = item.settlement;
+                        const isPayerMe = st.payer_id === activeUserId;
+                        const amountNum = Number(st.amount || 0);
+                        const isWhole = amountNum % 1 === 0;
+                        const formattedAmount = `₹${amountNum.toLocaleString("en-IN", {
+                          minimumFractionDigits: isWhole ? 0 : 2,
+                          maximumFractionDigits: 2,
+                        })}`;
+
+                        return (
+                          <div
+                            key={`settlement-item-${st.id}`}
+                            onClick={() => setConfirmDeleteSettlementId(st.id)}
+                            className="w-full flex items-center justify-between py-3.5 text-left group transition-all px-0.5 select-none opacity-100 cursor-pointer hover:bg-white/[0.01]"
+                          >
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              {/* VERTICAL DATE COLUMN */}
+                              <div className="w-8 shrink-0 flex flex-col items-center justify-center text-center select-none mr-0.5">
+                                <span className="text-[9.5px] font-sans font-semibold tracking-wider uppercase leading-none text-zinc-500">
+                                  {monthUpper}
+                                </span>
+                                <span className="text-[13px] font-sans font-bold leading-none mt-1 text-zinc-500">
+                                  {dayStr}
+                                </span>
+                              </div>
+
+                              <div className="w-10 h-10 flex items-center justify-center text-emerald-400 shrink-0">
+                                <BanknoteCheck className="w-6 h-6 stroke-[2]" />
+                              </div>
+
+                              <div className="min-w-0 flex flex-col justify-center flex-1 pr-3">
+                                <h5 className="font-sans text-[13.5px] truncate leading-tight font-semibold text-zinc-100 group-hover:text-white">
+                                  {relationship.fullName}
+                                </h5>
+                                <span className="text-[11.5px] font-sans font-medium block truncate leading-tight mt-0.5 text-zinc-400">
+                                  {isPayerMe ? `You paid ${formattedAmount}` : `Paid you ${formattedAmount}`}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0 min-w-max pl-2 flex items-center justify-end">
+                              <span
+                                className={`font-sans text-sm font-bold tracking-tight ${isPayerMe ? "text-zinc-100" : "text-emerald-400"
+                                  }`}
+                              >
+                                {formattedAmount}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-
-                  {/* Right block: Amount or Settled Tag */}
-                  <div className="text-right shrink-0">
-                    {isSettled ? (
-                      <span className="font-sans text-[11px] font-medium tracking-tight text-zinc-500 bg-zinc-900/60 px-2 py-0.5 rounded border border-white/[0.04]">
-                        Settled
-                      </span>
-                    ) : (
-                      <span
-                        className={`font-mono text-sm font-bold tracking-tight ${expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                          }`}
-                      >
-                        {expenseIsOwed ? "+" : "-"}
-                        {formattedShare}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            });
-          })()}
-        </div>
+                ))
+              )}
+            </div>
+          );
+        })()}
       </div>
 
-      {/* LONG-PRESS ACTION MENU BOTTOM SHEET */}
-      {showActionMenu && selectedExpense && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-xs animate-fade-in"
-          onClick={() => {
-            setShowActionMenu(false);
-            setSelectedExpense(null);
-          }}
-        >
-          <div
-            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-6 shadow-2xl space-y-4 text-left"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
-              <div>
-                <h3 className="text-base font-display font-bold text-white truncate max-w-[240px]">
-                  {selectedExpense.planTitle}
-                </h3>
-                <p className="text-xs text-zinc-550 font-sans mt-0.5">
-                  Outstanding: ₹{selectedExpense.outstandingAmount.toLocaleString("en-IN")}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowActionMenu(false);
-                  setSelectedExpense(null);
-                }}
-                className="text-zinc-500 hover:text-white text-xs font-semibold"
-              >
-                Close
-              </button>
-            </div>
 
-            <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={handleOpenEditSheet}
-                className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 border border-white/[0.04] text-zinc-200 hover:text-white text-sm font-medium transition cursor-pointer"
-              >
-                <Edit2 className="w-4 h-4 text-emerald-400" />
-                <span>Edit Cost</span>
-              </button>
+      {/* FLOATING ADD COST ACTION BUTTON */}
+      <button
+        type="button"
+        onClick={handleOpenAddCostSheet}
+        className="fixed right-6 z-30 w-13 h-13 rounded-full bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-[#FF6B2C]/30 transition-all cursor-pointer border border-white/10"
+        style={{ bottom: "calc(5.75rem + env(safe-area-inset-bottom, 0px))" }}
+        aria-label="Add Cost"
+      >
+        <BanknoteArrowUp className="w-6 h-6 stroke-[2.2]" />
+      </button>
 
-              {selectedExpense.role === "creditor" && (
-                <button
-                  type="button"
-                  onClick={handleOpenSettleModal}
-                  className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 border border-white/[0.04] text-zinc-200 hover:text-white text-sm font-medium transition cursor-pointer"
-                >
-                  <CheckCircle2 className="w-4 h-4 text-[#FF6B2C]" />
-                  <span>Settle Up</span>
-                </button>
-              )}
+      {/* EDIT COST BOTTOM SHEET COMPONENT */}
+      <EditCost
+        isOpen={showEditSheet}
+        selectedExpense={selectedExpense}
+        onClose={() => {
+          setShowEditSheet(false);
+          setSelectedExpense(null);
+        }}
+        onOptimisticUpdate={(opt) => {
+          onRefreshBalances();
+        }}
+        onRefreshBalances={onRefreshBalances}
+        activeUserId={activeUserId}
+        relevantPlans={relevantPlans}
+        dbPlanParticipants={dbPlanParticipantsLocal}
+        dbUsers={dbUsersLocal}
+      />
 
-              {/* DELETE EXPENSE ACTION BUTTON */}
-              <button
-                type="button"
-                onClick={handleOpenDeleteModal}
-                className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 hover:text-rose-300 text-sm font-medium transition cursor-pointer"
-              >
-                <Trash2 className="w-4 h-4 text-rose-400" />
-                <span>Delete Expense</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT COST BOTTOM SHEET */}
-      {showEditSheet && selectedExpense && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-xs animate-fade-in">
-          <div
-            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-left"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-zinc-900 pb-3 shrink-0">
-              <h3 className="text-lg font-display font-bold text-white">Edit Cost</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEditSheet(false);
-                  setSelectedExpense(null);
-                  setEditError(null);
-                }}
-                className="text-zinc-400 hover:text-white text-sm font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-
-            {editError && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400">
-                {editError}
-              </div>
-            )}
-
-            <form onSubmit={handleEditExpenseSubmit} className="space-y-4 pt-1 overflow-y-auto scrollbar-none flex-1">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
-                  Expense Title
-                </label>
-                <input
-                  type="text"
-                  placeholder="Title"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
-                  Plan
-                </label>
-                <select
-                  value={editPlanId}
-                  onChange={(e) => setEditPlanId(e.target.value)}
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white focus:outline-none focus:border-zinc-700"
-                >
-                  {relevantPlans.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.title || "Plan"}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
-                  Total Cost (₹)
-                </label>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={editAmount}
-                  onChange={(e) => setEditAmount(e.target.value)}
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                  min="1"
-                  step="any"
-                />
-              </div>
-
-              {/* SPLIT BETWEEN SELECTION */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Split Between ({editParticipantIds.length})
-                  </label>
-                  {isValidEditAmount && editParticipantIds.length > 0 && (
-                    <span className="text-xs font-mono font-semibold text-[#FF6B2C]">
-                      ₹{editPerPersonShare} / person
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-2 max-h-44 overflow-y-auto scrollbar-none">
-                  {availableEditParticipants.map((p) => {
-                    const isSelected = editParticipantIds.includes(p.id);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => toggleEditParticipantSelection(p.id)}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer text-left ${isSelected
-                            ? "bg-zinc-900 border-[#FF6B2C]/60 text-white"
-                            : "bg-zinc-900/40 border-zinc-800/60 text-zinc-400 hover:bg-zinc-900/80"
-                          }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <UserAvatar
-                            src={p.avatar}
-                            alt={p.name}
-                            size="w-8 h-8"
-                            className="shrink-0"
-                          />
-                          <span className="font-sans font-medium text-xs truncate">
-                            {p.name}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-xs text-zinc-400">
-                            {isSelected ? `₹${editPerPersonShare}` : "₹0"}
-                          </span>
-                          <div
-                            className={`w-5 h-5 rounded-full flex items-center justify-center border transition ${isSelected
-                                ? "bg-[#FF6B2C] border-[#FF6B2C] text-white"
-                                : "border-zinc-700 bg-transparent text-transparent"
-                              }`}
-                          >
-                            <Check className="w-3 h-3 stroke-[3]" />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="pt-3">
-                <button
-                  type="submit"
-                  disabled={!isEditFormValid || submittingEdit}
-                  className="w-full h-12 rounded-xl bg-emerald-500 text-white font-semibold text-sm hover:bg-emerald-600 active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
-                >
-                  {submittingEdit ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Saving Changes...</span>
-                    </>
-                  ) : (
-                    <span>Save Changes</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* SETTLE UP CONFIRMATION MODAL */}
-      {showSettleModal && selectedExpense && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-fade-in"
-          onClick={() => {
-            setShowSettleModal(false);
-            setSelectedExpense(null);
-          }}
-        >
-          <div
-            className="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl space-y-4 text-left"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 text-emerald-400 border-b border-zinc-900 pb-3">
-              <CheckCircle2 className="w-6 h-6 shrink-0" />
-              <h3 className="text-base font-display font-bold text-white">
-                Settle Up Expense
-              </h3>
-            </div>
-
-            {settleError && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{settleError}</span>
-              </div>
-            )}
-
-            <div className="space-y-2 bg-zinc-900/60 p-4 rounded-xl border border-zinc-800/80">
-              <div className="flex justify-between text-xs text-zinc-400">
-                <span>Expense Name:</span>
-                <span className="font-semibold text-white truncate max-w-[150px]">
-                  {selectedExpense.planTitle}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs text-zinc-400">
-                <span>Person:</span>
-                <span className="font-semibold text-white">
-                  {relationship.fullName}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs text-zinc-400 pt-2 border-t border-zinc-800/60">
-                <span>Settling Amount:</span>
-                <span className="font-mono text-sm font-bold text-emerald-400">
-                  ₹{selectedExpense.outstandingAmount.toLocaleString("en-IN")}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSettleModal(false);
-                  setSelectedExpense(null);
-                }}
-                className="flex-1 h-11 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-semibold text-xs transition cursor-pointer border border-zinc-800"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConfirmSettle}
-                disabled={submittingSettle}
-                className="flex-1 h-11 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-xs transition cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-emerald-500/20 disabled:opacity-50"
-              >
-                {submittingSettle ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Settling...</span>
-                  </>
-                ) : (
-                  <span>Confirm Settle</span>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* OVERALL SETTLE UP BOTTOM SHEET */}
-      {showOverallSettleSheet && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 backdrop-blur-xs animate-fade-in"
-          onClick={() => setShowOverallSettleSheet(false)}
-        >
-          <div
-            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800/80 rounded-t-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-left animate-slide-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-zinc-900 pb-3 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <HandCoins className="w-5 h-5 text-emerald-400 shrink-0" />
-                <h3 className="text-lg font-display font-bold text-white">Settle Up</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowOverallSettleSheet(false)}
-                className="text-zinc-400 hover:text-white text-sm font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-
-            {overallSettleError && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{overallSettleError}</span>
-              </div>
-            )}
-
-            {/* Summary details */}
-            <div className="space-y-4 py-2 overflow-y-auto scrollbar-none flex-1">
-              <div className="flex items-center gap-3 p-3 bg-zinc-900/60 rounded-2xl border border-zinc-800/80">
-                <UserAvatar
-                  src={relationship.profilePhoto}
-                  alt={relationship.fullName}
-                  size="w-12 h-12"
-                  className="shrink-0 ring-1 ring-white/10"
-                />
-                <div className="min-w-0 flex-1">
-                  <h4 className="font-display font-bold text-sm text-white truncate">
-                    {relationship.fullName}
-                  </h4>
-                  <p className="text-xs text-zinc-400 font-sans mt-0.5">
-                    {isOwed ? "Owes you in total" : "You owe in total"}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className={`font-sans font-black text-xl ${isOwed ? "text-emerald-400" : "text-[#FF6B2C]"}`}>
-                    {formattedNetBalance}
-                  </span>
-                </div>
-              </div>
-
-              {/* Settlement summary notice */}
-              <div className="p-3 bg-zinc-900/40 border border-zinc-800/60 rounded-xl space-y-1">
-                <p className="text-xs font-semibold text-zinc-300">Settlement Summary</p>
-                <p className="text-[11px] text-zinc-400 leading-relaxed">
-                  {isOwed
-                    ? `Mark all outstanding shares from ${relationship.fullName} as fully paid (${formattedNetBalance}).`
-                    : `Record a payment of ${formattedNetBalance} to settle your outstanding debt with ${relationship.fullName}.`}
-                </p>
-              </div>
-            </div>
-
-            {/* CTA Button */}
-            <div className="pt-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleConfirmOverallSettle}
-                disabled={submittingOverallSettle}
-                className="w-full h-12 rounded-xl bg-emerald-500 text-white font-semibold text-sm hover:bg-emerald-600 active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
-              >
-                {submittingOverallSettle ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Settling Up...</span>
-                  </>
-                ) : (
-                  <span>Settle Up ({formattedNetBalance})</span>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ADD COST BOTTOM SHEET */}
-      {showAddCostSheet && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-xs animate-fade-in">
-          <div
-            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-left"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-zinc-900 pb-3 shrink-0">
-              <h3 className="text-lg font-display font-bold text-white">Add Cost</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddCostSheet(false);
-                  setCostTitle("");
-                  setCostAmount("");
-                  setSelectedParticipantIds([]);
-                  setFormError(null);
-                }}
-                className="text-zinc-400 hover:text-white text-sm font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-
-            {formError && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400">
-                {formError}
-              </div>
-            )}
-
-            <form onSubmit={handleAddCostSubmit} className="space-y-4 pt-1 overflow-y-auto scrollbar-none flex-1">
-              {/* Expense Name */}
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
-                  Expense Title
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Dinner, Drinks, Tickets"
-                  value={costTitle}
-                  onChange={(e) => setCostTitle(e.target.value)}
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                  autoFocus
-                />
-              </div>
-
-              {/* Plan Selection */}
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
-                  Plan
-                </label>
-                <select
-                  value={selectedPlanId}
-                  onChange={(e) => handleSelectPlanChange(e.target.value)}
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white focus:outline-none focus:border-zinc-700"
-                >
-                  {relevantPlans.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.title || "Plan"}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Cost Input */}
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
-                  Cost (₹)
-                </label>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={costAmount}
-                  onChange={(e) => setCostAmount(e.target.value)}
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                  min="1"
-                  step="any"
-                />
-              </div>
-
-              {/* SPLIT BETWEEN SELECTION */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Split Between ({selectedParticipantIds.length})
-                  </label>
-                  {isValidAmount && selectedParticipantIds.length > 0 && (
-                    <span className="text-xs font-mono font-semibold text-[#FF6B2C]">
-                      ₹{perPersonShare} / person
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-2 max-h-44 overflow-y-auto scrollbar-none">
-                  {availablePlanParticipants.map((p) => {
-                    const isSelected = selectedParticipantIds.includes(p.id);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => toggleParticipantSelection(p.id)}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer text-left ${isSelected
-                            ? "bg-zinc-900 border-[#FF6B2C]/60 text-white"
-                            : "bg-zinc-900/40 border-zinc-800/60 text-zinc-400 hover:bg-zinc-900/80"
-                          }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <UserAvatar
-                            src={p.avatar}
-                            alt={p.name}
-                            size="w-8 h-8"
-                            className="shrink-0"
-                          />
-                          <span className="font-sans font-medium text-xs truncate">
-                            {p.name}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-xs text-zinc-400">
-                            {isSelected ? `₹${perPersonShare}` : "₹0"}
-                          </span>
-                          <div
-                            className={`w-5 h-5 rounded-full flex items-center justify-center border transition ${isSelected
-                                ? "bg-[#FF6B2C] border-[#FF6B2C] text-white"
-                                : "border-zinc-700 bg-transparent text-transparent"
-                              }`}
-                          >
-                            <Check className="w-3 h-3 stroke-[3]" />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Submit Button */}
-              <div className="pt-3">
-                <button
-                  type="submit"
-                  disabled={!isFormValid || submittingCost}
-                  className="w-full h-12 rounded-xl bg-[#FF6B2C] text-white font-semibold text-sm hover:bg-[#e05a1f] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-[#FF6B2C]/20"
-                >
-                  {submittingCost ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Adding Cost...</span>
-                    </>
-                  ) : (
-                    <span>Add Cost</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* ADD COST BOTTOM SHEET COMPONENT */}
+      <AddCost
+        isOpen={showAddCostSheet}
+        onClose={() => setShowAddCostSheet(false)}
+        onRefreshBalances={onRefreshBalances}
+        activeUserId={activeUserId}
+        entryPoint="people"
+        relevantPlans={relevantPlans}
+        dbPlanParticipants={dbPlanParticipantsLocal}
+        dbUsers={dbUsersLocal}
+        otherUserId={otherUserId}
+      />
 
       {/* DELETE EXPENSE CONFIRMATION MODAL */}
       {showDeleteModal && selectedExpense && (
@@ -1309,7 +592,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-display font-bold text-white">Delete Expense?</h3>
+                <h3 className="text-base font-sans font-bold text-white">Delete Expense?</h3>
                 <p className="text-xs text-zinc-400 font-sans mt-0.5">This action cannot be undone.</p>
               </div>
             </div>
@@ -1349,6 +632,104 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
           </div>
         </div>
       )}
+
+      {/* DELETE SETTLEMENT CONFIRMATION BOTTOM SHEET */}
+      {confirmDeleteSettlementId && (() => {
+        const targetSettlement = (relationship.settlements || []).find((s) => s.id === confirmDeleteSettlementId);
+        const amountNum = targetSettlement ? Number(targetSettlement.amount || 0) : 0;
+        const isWhole = amountNum % 1 === 0;
+        const targetAmountStr = `₹${amountNum.toLocaleString("en-IN", {
+          minimumFractionDigits: isWhole ? 0 : 2,
+          maximumFractionDigits: 2,
+        })}`;
+        const isPayerMe = targetSettlement?.payer_id === activeUserId;
+        const settlementLabel = isPayerMe
+          ? `You paid ${relationship.fullName} ${targetAmountStr}`
+          : `${relationship.fullName} paid you ${targetAmountStr}`;
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-xs animate-fade-in"
+            onClick={() => {
+              if (!deletingSettlementId) {
+                setConfirmDeleteSettlementId(null);
+                setDeleteSettlementError(null);
+              }
+            }}
+          >
+            <div
+              className="w-full bg-[#1c1c1e] border-t border-white/[0.08] rounded-t-3xl p-6 pb-8 shadow-2xl space-y-4 text-center font-sans"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Drag Handle Indicator */}
+              <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-1" />
+
+              {/* Single-line Settlement Summary Row (Centered) */}
+              <div className="flex items-center justify-center gap-3 text-center pt-1">
+                <BanknoteCheck className="w-6 h-6 text-emerald-400 shrink-0" />
+                <span className="text-base font-sans font-semibold text-white truncate leading-tight">
+                  {settlementLabel}
+                </span>
+              </div>
+
+              {deleteSettlementError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans text-center">
+                  {deleteSettlementError}
+                </div>
+              )}
+
+              {/* Destructive Delete & Simple Text Cancel matching bottom-sheet system */}
+              <div className="flex flex-col gap-2 pt-2">
+                <button
+                  type="button"
+                  disabled={Boolean(deletingSettlementId)}
+                  onClick={() => handleConfirmDeleteSettlement(confirmDeleteSettlementId)}
+                  style={{
+                    width: "100%",
+                    padding: "14px",
+                    background: "rgba(239, 68, 68, 0.08)",
+                    border: "none",
+                    borderRadius: 12,
+                    color: "#EF4444",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textAlign: "center",
+                  }}
+                  className="transition active:scale-[0.98] disabled:opacity-50"
+                >
+                  {deletingSettlementId ? "Deleting..." : "Delete"}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={Boolean(deletingSettlementId)}
+                  onClick={() => {
+                    setConfirmDeleteSettlementId(null);
+                    setDeleteSettlementError(null);
+                  }}
+                  style={{
+                    width: "100%",
+                    padding: "14px",
+                    background: "none",
+                    border: "none",
+                    borderRadius: 12,
+                    color: "rgba(255, 255, 255, 0.4)",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    textAlign: "center",
+                    marginTop: 4,
+                  }}
+                  className="transition hover:text-white disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

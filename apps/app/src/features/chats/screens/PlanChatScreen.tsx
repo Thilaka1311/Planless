@@ -12,6 +12,7 @@ import { SystemMessageType } from "../../../core/types";
 import { HeroHeader } from "../../plans/components/HeroHeader";
 import { PlanSettingsScreen } from "../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
 import { PlanParticipantManagementWrapper } from "../../plans/screens/PlansScreen/PlansPreview/PlanParticipantManagementWrapper";
+import { PlanDetailsScreen } from "../../wallet/screens/PlanBalances";
 import { ActivityTimelineScreen } from "./ActivityTimelineScreen";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { useHorizontalPager } from "../hooks/useHorizontalPager";
@@ -73,6 +74,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [showSettingsScreen, setShowSettingsScreen] = useState(false);
+  const [showBalancesScreen, setShowBalancesScreen] = useState(false);
   const [replaceTargetUserId, setReplaceTargetUserId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -705,6 +707,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             onHeaderPress={isBottomSheetOpen ? undefined : onOpenPlanDetails}
             onOpenParticipants={() => { if (!isBottomSheetOpen) goToPage(0); }}
             onOpenActivity={() => { if (!isBottomSheetOpen) goToPage(2); }}
+            onOpenExpenses={() => { if (!isBottomSheetOpen) setShowBalancesScreen(true); }}
             onEditTitle={!isCancelled && !isBottomSheetOpen ? async (newTitle) => {
               try {
                 await updatePlanDetails(plan.id, { title: newTitle });
@@ -1380,6 +1383,19 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             }
           }}
         />
+      )}
+
+      {/* PLAN BALANCES SCREEN OVERLAY */}
+      {showBalancesScreen && (
+        <div className="fixed inset-0 z-[60] bg-[#050505] flex flex-col w-full h-[100dvh] overflow-hidden">
+          <PlanDetailsScreen
+            planId={targetPlanUuid}
+            onBack={() => setShowBalancesScreen(false)}
+            onRefreshBalances={() => {}}
+            activeUserId={activeUserId || currentUserId}
+            onSelectPlan={() => {}}
+          />
+        </div>
       )}
     </motion.div>
   );

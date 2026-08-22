@@ -46,7 +46,7 @@ export interface DbParticipant {
   role: 'HOST' | 'PARTICIPANT';
   rsvp_status: 'INVITED' | 'JOINED' | 'SKIPPED' | 'WAITLISTED';
   delivery_status?: 'DELIVERED';
-  skip_reason?: 'LEFT' | 'REMOVED' | 'REPLACED' | null;
+  skip_reason?: 'LEFT' | 'REMOVED' | 'REPLACED' | 'PAYMENT_KEPT' | null;
   responded_at: string | null;
   created_at: string;
   updated_at: string;

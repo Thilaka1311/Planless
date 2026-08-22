@@ -1,10 +1,24 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { ArrowLeft, Plus, Check } from "lucide-react";
+import { ArrowLeft, Plus, Check, CheckCircle2, ChevronRight, BanknoteArrowUp, MoreVertical } from "lucide-react";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import { ExpenseDetails, PlanBalancesDetail } from "./ExpenseDetail";
+import { getParticipantFinancialState, isJoinedParticipantStatus, getEffectiveExpenseDate } from "../services/walletService";
+import { AddCost } from "./AddCost";
+
+const formatSmartINR = (amount: number): string => {
+  const absVal = Math.abs(amount);
+  const rounded = Math.round(absVal * 100) / 100;
+  if (Number.isInteger(rounded)) {
+    return `₹${rounded.toLocaleString("en-IN")}`;
+  }
+  return `₹${rounded.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
 
 interface PlanDetailsScreenProps {
   planId?: string;
@@ -14,6 +28,7 @@ interface PlanDetailsScreenProps {
   activeUserId: string;
   onSelectPlan: (planId: string) => void;
   onSelectExpense?: (expenseId: string) => void;
+  onToggleBottomNav?: (hidden: boolean) => void;
 }
 
 interface ExpenseGroupedRow {
@@ -22,7 +37,9 @@ interface ExpenseGroupedRow {
   totalAmount: number;
   payerId: string;
   payerName: string;
+  payerAvatar: string;
   userNetShare: number; // + if owed to user, - if user owes
+  settledDisplayAmount: number; // original split / settlement amount before settlement
   isOwed: boolean;
   isSettled: boolean;
   participantCount: number;
@@ -42,11 +59,22 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
   activeUserId,
   onSelectPlan,
   onSelectExpense,
+  onToggleBottomNav,
 }) => {
   const { activeUserUuid } = useProfileStore();
 
-  // Selected expense ID for navigating to Plan balances Detail view
   const [selectedExpenseIdForDetail, setSelectedExpenseIdForDetail] = useState<string | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const avatarOpacity = Math.max(0, 1 - scrollTop / 75);
+  const stickyProgress = Math.min(1, Math.max(0, (scrollTop - 75) / 30));
+
+  // Hide bottom navigation bar for dedicated Plan Balance screen
+  useEffect(() => {
+    onToggleBottomNav?.(true);
+    return () => {
+      onToggleBottomNav?.(false);
+    };
+  }, [onToggleBottomNav]);
 
   // Dedicated Database State
   const [dataLoading, setDataLoading] = useState(true);
@@ -54,16 +82,15 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
   const [planDetails, setPlanDetails] = useState<{ id: string; title: string; cover_image?: string } | null>(null);
   const [dbExpenses, setDbExpenses] = useState<any[]>([]);
   const [dbParticipants, setDbParticipants] = useState<any[]>([]);
+  const [dbPlanParticipants, setDbPlanParticipants] = useState<any[]>([]);
   const [dbProfiles, setDbProfiles] = useState<any[]>([]);
   const [userPostgresUuid, setUserPostgresUuid] = useState<string>("");
+  const [financiallyIncludedUserIds, setFinanciallyIncludedUserIds] = useState<Set<string>>(new Set());
+  const [joinedUserIds, setJoinedUserIds] = useState<Set<string>>(new Set());
+  const [hasLoadedPlanParticipants, setHasLoadedPlanParticipants] = useState(false);
 
   // Add Cost modal state
   const [showAddCostSheet, setShowAddCostSheet] = useState(false);
-  const [costTitle, setCostTitle] = useState("");
-  const [costAmount, setCostAmount] = useState("");
-  const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
-  const [submittingCost, setSubmittingCost] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
 
   // Dedicated Supabase Data Fetcher for Plan Balances
   const loadPlanData = useCallback(async () => {
@@ -150,10 +177,38 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
 
       setDbParticipants(fetchedPts);
 
-      // 6. Fetch profiles for all involved users
+      // 5b. Fetch plan_participants to build financiallyIncludedUserIds set and participant list
+      const { data: rawPlanPts } = await supabase
+        .from("plan_participants")
+        .select("*")
+        .eq("plan_id", resolvedPlanId);
+
+      setDbPlanParticipants(rawPlanPts || []);
+
+      const includedSet = new Set<string>();
+      const joinedSet = new Set<string>();
+      (rawPlanPts || []).forEach((p: any) => {
+        const finState = getParticipantFinancialState(p.rsvp_status || p.status, p.skip_reason || p.skipReason);
+        if (finState === "ACTIVE") {
+          joinedSet.add(p.user_id);
+          includedSet.add(p.user_id);
+        } else if (finState === "PAYMENT_KEPT") {
+          includedSet.add(p.user_id);
+        }
+      });
+      // Always include users with existing split entries so historical splits contribute consistently
+      fetchedPts.forEach((pt: any) => {
+        if (pt.user_id) includedSet.add(pt.user_id);
+      });
+      setFinanciallyIncludedUserIds(includedSet);
+      setJoinedUserIds(joinedSet);
+      setHasLoadedPlanParticipants(true);
+
+      // 6. Fetch profiles for all involved users (payers, split participants, joined plan members, current user)
       const payerUserIds = fetchedExp.map((e: any) => e.payer_id).filter(Boolean);
       const ptUserIds = fetchedPts.map((p: any) => p.user_id).filter(Boolean);
-      const allUserIds = Array.from(new Set([...payerUserIds, ...ptUserIds, userUuid]));
+      const planPtUserIds = (rawPlanPts || []).map((p: any) => p.user_id).filter(Boolean);
+      const allUserIds = Array.from(new Set([...payerUserIds, ...ptUserIds, ...planPtUserIds, userUuid]));
 
       if (allUserIds.length > 0) {
         const { data: profData } = await supabase
@@ -208,21 +263,40 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
       const payerIsMe = isMe(exp.payer_id);
       const payerUser = profMap.get(exp.payer_id);
       const payerName = payerIsMe ? "You" : payerUser?.full_name || payerUser?.username || "Payer";
+      const payerAvatar = payerUser?.profile_photo_path || "";
 
       const rawTitle = exp.title ? String(exp.title).trim() : "";
       const isPlanJoining =
+        exp.expense_type === "PLAN_EXPENSE" ||
         rawTitle === "Plan Fee" ||
         rawTitle === "Plan Expense" ||
         (!rawTitle && !exp.message_id);
       const expenseTitle = isPlanJoining ? "Plan Fee" : (rawTitle || "Shared Expense");
 
-      const expPts = dbParticipants.filter((p) => p.expense_id === exp.id);
+      const expPts = dbParticipants.filter((p) => {
+        if (p.expense_id !== exp.id) return false;
+        // Strictly exclude users who are not financially included in plan_participants
+        if (hasLoadedPlanParticipants && !financiallyIncludedUserIds.has(p.user_id)) {
+          return false;
+        }
+        const isPayer = p.user_id === exp.payer_id || (payerIsMe && isMe(p.user_id));
+        if (!isPayer) {
+          const amountOwed = Number(p.amount_owed || 0);
+          const pStatus = String(p.status || "PENDING").toUpperCase();
+          if (amountOwed <= 0 && pStatus !== "SETTLED") {
+            return false;
+          }
+        }
+        return true;
+      });
       const isUserInvolved = payerIsMe || expPts.some((p) => isMe(p.user_id));
 
       if (!isUserInvolved) return; // Only show expenses where user is financially involved
 
       let userNetShare = 0;
-      let allParticipantsSettled = true;
+      let originalNetShare = 0;
+      let hasDebtors = expPts.length > 0;
+      let allDebtorsSettled = hasDebtors;
 
       expPts.forEach((pt) => {
         const ptIsMe = isMe(pt.user_id);
@@ -231,38 +305,35 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         const isPtSettled = ptStatus === "SETTLED";
         const remaining = isPtSettled ? 0 : amountOwed;
 
-        if (!isPtSettled) allParticipantsSettled = false;
+        if (!isPtSettled) {
+          allDebtorsSettled = false;
+        }
 
         if (payerIsMe && !ptIsMe) {
           userNetShare += remaining;
+          originalNetShare += amountOwed;
         } else if (!payerIsMe && ptIsMe) {
           userNetShare -= remaining;
+          originalNetShare -= amountOwed;
         }
       });
 
+      // An expense is fully settled when all debtor participants have settled their shares, or expense status is SETTLED, or user's net share is 0
+      const isFullySettled = String(exp.status || "").toUpperCase() === "SETTLED" || (hasDebtors && allDebtorsSettled) || userNetShare === 0;
+      const settledDisplayAmount = Math.abs(originalNetShare) || Number(exp.total_amount || 0);
+
       totalNetBalance += userNetShare;
 
-      // Construct Subtitle Payment Context:
-      // - If user owes money (userNetShare < 0): "Paid by <Payer Name>"
-      // - If user is owed money (userNetShare > 0) or settled: list debtors
+      const expTotalAmt = Number(exp.total_amount || 0);
+      const formattedTotalAmt = expTotalAmt > 0
+        ? formatSmartINR(expTotalAmt)
+        : "";
+
       let subtitleText = "";
-      if (userNetShare < 0 && !payerIsMe) {
-        subtitleText = `Paid by ${payerName}`;
+      if (payerIsMe) {
+        subtitleText = `You paid ${formattedTotalAmt}`.trim();
       } else {
-        const otherPts = expPts.filter((pt) => !isMe(pt.user_id));
-        const displayPts = otherPts.length > 0 ? otherPts : expPts;
-
-        const names = displayPts.slice(0, 2).map((pt) => {
-          const u = profMap.get(pt.user_id);
-          return isMe(pt.user_id) ? "You" : u?.full_name || u?.username || "Participant";
-        });
-
-        const extraCount = displayPts.length > 2 ? displayPts.length - 2 : 0;
-        if (extraCount > 0) {
-          subtitleText = `${names.join(", ")} + ${extraCount} ${extraCount === 1 ? 'other' : 'others'}`;
-        } else {
-          subtitleText = names.join(", ");
-        }
+        subtitleText = `${payerName} paid ${formattedTotalAmt}`.trim();
       }
 
       // Build participant avatars preview list
@@ -287,9 +358,11 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         totalAmount: Number(exp.total_amount || 0),
         payerId: exp.payer_id,
         payerName,
+        payerAvatar,
         userNetShare,
+        settledDisplayAmount,
         isOwed: userNetShare > 0 || (userNetShare === 0 && payerIsMe),
-        isSettled: allParticipantsSettled || userNetShare === 0,
+        isSettled: isFullySettled,
         participantCount: expPts.length,
         participantsPreview: first3,
         extraParticipantsCount: extraCount,
@@ -300,11 +373,11 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
       });
     });
 
-    // Sort newest first
-    rows.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime());
+    // Sort newest first based on effective date (pending: created_at, settled: updated_at)
+    rows.sort((a, b) => getEffectiveExpenseDate(b).getTime() - getEffectiveExpenseDate(a).getTime());
 
     return { planNetBalance: totalNetBalance, groupedExpenseRows: rows };
-  }, [dbExpenses, dbParticipants, dbProfiles, userPostgresUuid]);
+  }, [dbExpenses, dbParticipants, dbProfiles, userPostgresUuid, financiallyIncludedUserIds, hasLoadedPlanParticipants]);
 
   const planTitle = planDetails?.title || "Plan";
   const planCover = planDetails?.cover_image || undefined;
@@ -313,79 +386,23 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
   const isOwed = planNetBalance > 0;
   const isSettled = planNetBalance === 0;
 
-  // Available participants for Add Cost
+  // Available participants for Add Cost (ONLY active JOINED participants!)
   const availablePlanParticipants = useMemo(() => {
-    return dbProfiles.map((p) => {
-      const isUserMe = p.id === userPostgresUuid;
-      return {
-        id: p.id,
-        name: isUserMe ? "You" : p.full_name || p.username || "Participant",
-        avatar: p.profile_photo_path || "",
-      };
-    });
-  }, [dbProfiles, userPostgresUuid]);
+    return dbProfiles
+      .filter((p) => joinedUserIds.has(p.id))
+      .map((p) => {
+        const isUserMe = p.id === userPostgresUuid;
+        return {
+          id: p.id,
+          name: isUserMe ? "You" : p.full_name || p.username || "Participant",
+          avatar: p.profile_photo_path || "",
+        };
+      });
+  }, [dbProfiles, userPostgresUuid, joinedUserIds]);
 
   // Open Add Cost Sheet
   const handleOpenAddCostSheet = () => {
-    setFormError(null);
-    setCostTitle("");
-    setCostAmount("");
-    setSelectedParticipantIds(availablePlanParticipants.map((p) => p.id));
     setShowAddCostSheet(true);
-  };
-
-  const toggleParticipantSelection = (uid: string) => {
-    setSelectedParticipantIds((prev) =>
-      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
-    );
-  };
-
-  const parsedAmount = parseFloat(costAmount) || 0;
-  const isValidAmount = parsedAmount > 0;
-  const isFormValid = costTitle.trim().length > 0 && isValidAmount && selectedParticipantIds.length > 0;
-  const perPersonShare = selectedParticipantIds.length > 0 && isValidAmount
-    ? Math.round((parsedAmount / selectedParticipantIds.length) * 100) / 100
-    : 0;
-
-  // Add Cost Submit Handler
-  const handleAddCostSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isFormValid || submittingCost || !userPostgresUuid || !planDetails) return;
-
-    setSubmittingCost(true);
-    setFormError(null);
-
-    try {
-      const finalParticipants = Array.from(new Set([userPostgresUuid, ...selectedParticipantIds]));
-
-      const { error: rpcError } = await (supabase as any).rpc("insert_cost_expense", {
-        p_plan_id: planDetails.id,
-        p_message_id: null,
-        p_payer_id: userPostgresUuid,
-        p_title: costTitle.trim(),
-        p_total_amount: parsedAmount,
-        p_participant_ids: finalParticipants,
-      });
-
-      if (rpcError) {
-        console.error("[PlanBalances] insert_cost_expense failed:", rpcError);
-        setFormError(rpcError.message || "Failed to create expense.");
-        setSubmittingCost(false);
-        return;
-      }
-
-      setShowAddCostSheet(false);
-      setCostTitle("");
-      setCostAmount("");
-      setSelectedParticipantIds([]);
-      await loadPlanData();
-      await onRefreshBalances();
-    } catch (err: any) {
-      console.error("[PlanBalances] Exception adding cost:", err);
-      setFormError(err.message || "An error occurred.");
-    } finally {
-      setSubmittingCost(false);
-    }
   };
 
   // If an expense is selected for detail view, render ExpenseDetails screen
@@ -395,7 +412,6 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         expenseId={selectedExpenseIdForDetail}
         source="plan"
         onBack={() => {
-          console.log("[WalletNavigation] screen = planBalances, planId =", planDetails?.id || planId);
           setSelectedExpenseIdForDetail(null);
         }}
         onRefreshBalances={async () => {
@@ -407,94 +423,132 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
     );
   }
 
+  // Full Screen Skeleton Loading State
+  if (dataLoading) {
+    return (
+      <div
+        id="subview_plan_balances_skeleton"
+        className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-36 text-left bg-[#050505] select-none animate-fade-in relative"
+      >
+        {/* Sticky Header Bar — Back Arrow & Centered Title Skeleton */}
+        <div className="sticky top-0 z-50 -mx-6 px-6 pt-3 pb-3 flex items-center justify-between h-16 bg-[#050505]/90 backdrop-blur-md relative">
+          <button
+            type="button"
+            onClick={onBack}
+            className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 z-50 active:scale-95"
+            aria-label="Back to Wallet"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="absolute left-1/2 -translate-x-1/2 w-36 h-4 bg-zinc-800/80 rounded-md animate-pulse" />
+          <div className="w-7 shrink-0" />
+        </div>
+
+        {/* Centered Fixed Circular Plan Avatar Skeleton */}
+        <div className="absolute left-1/2 -translate-x-1/2 top-16 z-40">
+          <div className="w-25 h-25 rounded-full bg-zinc-800/80 ring-2 ring-white/10 shadow-lg animate-pulse" />
+        </div>
+
+        <div className="h-28 shrink-0" />
+
+        {/* Month Section Header Skeleton */}
+        <div className="py-2.5 pt-6 text-left border-b border-white/[0.04] shrink-0">
+          <div className="w-28 h-3.5 bg-zinc-800/60 rounded animate-pulse" />
+        </div>
+
+        {/* 6 Skeleton Expense Rows */}
+        <div className="space-y-0 divide-y divide-white/[0.04] mt-1">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={`plan-skeleton-row-${i}`} className="py-3.5 flex items-center justify-between px-0.5 animate-pulse">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                {/* Date Skeleton */}
+                <div className="w-8 shrink-0 flex flex-col items-center justify-center space-y-1">
+                  <div className="w-6 h-2 bg-zinc-800/60 rounded" />
+                  <div className="w-4 h-3 bg-zinc-800/80 rounded" />
+                </div>
+
+                {/* Avatar Skeleton */}
+                <div className="w-8 h-8 rounded-full bg-zinc-800/80 shrink-0" />
+
+                {/* Title & Subtitle Skeleton */}
+                <div className="flex-1 space-y-1.5 min-w-0">
+                  <div className="w-28 h-3.5 bg-zinc-800/80 rounded" />
+                  <div className="w-36 h-3 bg-zinc-800/60 rounded" />
+                </div>
+              </div>
+
+              {/* Amount Skeleton */}
+              <div className="w-14 h-4 bg-zinc-800/80 rounded shrink-0" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       id="subview_plan_balances"
-      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-24 text-left bg-[#050505] select-none animate-fade-in"
+      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-32 text-left bg-[#050505] select-none animate-fade-in relative"
     >
-      {/* HEADER BAR — TOP LEFT "Plan balances" */}
-      <div className="flex items-center gap-3">
+      {/* Sticky Header Bar with Back Button & Centered Plan Title */}
+      <div
+        className="sticky top-0 z-50 -mx-6 px-6 pt-3 pb-3 flex items-center justify-between pointer-events-auto transition-colors duration-150 relative h-16"
+        style={{
+          backgroundColor: `rgba(5, 5, 5, ${stickyProgress})`,
+        }}
+      >
+        {/* Back Arrow on the Far Left */}
         <button
           type="button"
-          onClick={onBack}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-900 transition-all cursor-pointer border border-zinc-900/60"
+          onClick={() => {
+            onToggleBottomNav?.(false);
+            onBack();
+          }}
+          className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 z-50 active:scale-95"
           aria-label="Back to Wallet"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
-        <div>
-          <h2 className="text-xl font-display font-semibold text-zinc-100 tracking-tight">
-            Plan balances
-          </h2>
-        </div>
-      </div>
 
-      {/* PLAN AVATAR & BALANCE HERO (PLAN COVER IMAGE REMAINS HERE IN THE HEADER) */}
-      <div className="flex flex-col items-center text-center py-6 mt-2 space-y-3">
-        <div className="relative">
+        {/* Absolutely Centered Plan Title (Centered relative to full screen width) */}
+        <h3 className="absolute left-1/2 -translate-x-1/2 font-sans font-bold text-base text-zinc-100 leading-tight truncate text-center max-w-[240px] sm:max-w-[320px] pointer-events-none z-10">
+          {planTitle}
+        </h3>
+
+        {/* Right Spacer */}
+        <div className="w-7 shrink-0 pointer-events-none" />
+
+        {/* Centered Fixed Plan Avatar (Fixed 25x25 / 100px x 100px, Pinned at top-16, dissolves away on scroll) */}
+        <div
+          className="absolute left-1/2 -translate-x-1/2 top-16 transition-opacity duration-75 pointer-events-none z-40"
+          style={{
+            opacity: avatarOpacity,
+          }}
+        >
           {planCover ? (
             <DiscoveryImages
               src={planCover}
               alt={planTitle}
-              className="w-20 h-20 rounded-2xl object-cover ring-2 ring-white/10 shadow-xl"
+              className="w-25 h-25 rounded-full object-cover ring-2 ring-white/10 shadow-lg aspect-square overflow-hidden"
             />
           ) : (
-            <div className="w-20 h-20 rounded-2xl bg-zinc-900 ring-2 ring-white/10 flex items-center justify-center text-xs text-zinc-650 font-black">
+            <div className="w-25 h-25 rounded-full bg-zinc-900 ring-2 ring-white/10 flex items-center justify-center text-xs text-zinc-650 font-black aspect-square overflow-hidden">
               PLAN
             </div>
           )}
         </div>
-
-        <div className="space-y-1">
-          <h3 className="font-display font-bold text-xl text-zinc-100">
-            {planTitle}
-          </h3>
-          <p className="text-zinc-500 font-sans text-xs font-medium uppercase tracking-wider">
-            {isSettled
-              ? "SETTLED UP"
-              : isOwed
-                ? "YOU ARE OWED"
-                : "YOU OWE"}
-          </p>
-          <div className="flex items-center justify-center gap-2 mt-1">
-            <h1
-              className={`font-sans font-black text-4xl leading-none ${isSettled
-                  ? "text-zinc-300"
-                  : isOwed
-                    ? "text-emerald-400"
-                    : "text-[#FF6B2C]"
-                }`}
-            >
-              ₹{absNetBalance.toLocaleString("en-IN")}
-            </h1>
-          </div>
-        </div>
       </div>
 
-      {/* EXPENSES SECTION HEADER */}
-      <div className="flex items-center justify-between mb-4 px-1">
-        <h3 className="text-sm font-display font-semibold text-zinc-300">
-          Expenses
-        </h3>
-        <button
-          type="button"
-          onClick={handleOpenAddCostSheet}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 text-[#FF6B2C] hover:bg-[#FF6B2C]/20 rounded-xl text-xs font-semibold transition cursor-pointer"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Add Cost</span>
-        </button>
-      </div>
+      {/* Hero Spacer for Circular Plan Avatar */}
+      <div className="h-28 shrink-0" />
 
-      {/* EXPENSES LIST — STRICT FIXED 3-COLUMN LAYOUT (w-[105px] AVATAR COLUMN) */}
-      <div className="divide-y divide-white/[0.04]">
-        {dataLoading ? (
-          <div className="py-12 text-center bg-zinc-950/20 border border-dashed border-zinc-900 rounded-[24px] space-y-2">
-            <div className="w-5 h-5 border-2 border-[#FF6B2C] border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-xs text-zinc-500 font-sans">Loading plan wallet data…</p>
-          </div>
-        ) : dataError ? (
-          <div className="p-4 text-center bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
+      {/* EXPENSES CONTENT CONTAINER */}
+      <div className="flex-1 flex flex-col pt-1 mt-2">
+        {/* Expenses Timeline */}
+        {dataError ? (
+          <div className="py-8 text-center text-xs text-rose-400 font-sans bg-rose-500/10 border border-rose-500/20 rounded-xl my-4">
             {dataError}
           </div>
         ) : groupedExpenseRows.length === 0 ? (
@@ -502,201 +556,157 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
             No expenses for this plan yet
           </div>
         ) : (
-          groupedExpenseRows.map((row) => {
-            const expIsSettled = row.isSettled || row.userNetShare === 0;
-            const expenseIsOwed = row.userNetShare > 0;
-            const absShare = Math.abs(row.userNetShare);
+          (() => {
+            // Group expenses by Month + Year section (e.g. "August 2026")
+            const groupedPlanExpenses = (() => {
+              const groups: { sectionTitle: string; yearMonthKey: string; rows: typeof groupedExpenseRows }[] = [];
+              const map = new Map<string, typeof groupedExpenseRows>();
+
+              groupedExpenseRows.forEach((row) => {
+                const validD = getEffectiveExpenseDate(row);
+                const fullMonth = validD.toLocaleString("en-US", { month: "long" });
+                const year = validD.getFullYear();
+                const key = `${year}-${String(validD.getMonth() + 1).padStart(2, "0")}`;
+                const sectionTitle = `${fullMonth} ${year}`;
+
+                if (!map.has(key)) {
+                  map.set(key, []);
+                  groups.push({ sectionTitle, yearMonthKey: key, rows: map.get(key)! });
+                }
+                map.get(key)!.push(row);
+              });
+
+              return groups;
+            })();
 
             return (
-              <div
-                key={row.id}
-                onClick={() => {
-                  console.log("[WalletNavigation] screen = expenseDetails, expenseId =", row.id, "source = plan");
-                  setSelectedExpenseIdForDetail(row.id);
-                }}
-                className={`py-3.5 flex items-center text-left group transition-all cursor-pointer px-1 select-none ${expIsSettled ? "opacity-60 hover:opacity-90" : "hover:bg-white/[0.01]"
-                  }`}
-              >
-                {/* COLUMN 1: Fixed-Width Avatar Column (w-[105px] shrink-0) */}
-                <div className="w-[105px] shrink-0 flex items-center pr-3">
-                  <div className="flex items-center -space-x-2">
-                    {row.participantsPreview.map((p, idx) => (
-                      <UserAvatar
-                        key={p.userId}
-                        src={p.avatar}
-                        alt={p.name}
-                        size="w-8 h-8"
-                        className={`ring-2 ring-black rounded-full shrink-0 ${expIsSettled ? "grayscale-30" : ""
-                          }`}
-                        style={{ zIndex: 10 - idx }}
-                      />
-                    ))}
+              <div className="space-y-3">
+                {groupedPlanExpenses.map((group) => (
+                  <div key={`plan-month-group-${group.yearMonthKey}`} className="space-y-0 text-left">
+                    {/* Month / Year Section Header */}
+                    <div className="py-2.5 pt-3 text-left">
+                      <h4 className="font-sans font-semibold text-xs text-zinc-400 tracking-wide">
+                        {group.sectionTitle}
+                      </h4>
+                    </div>
+
+                    <div className="space-y-0">
+                      {group.rows.map((row) => {
+                        const isRowSettled = row.isSettled || row.userNetShare === 0;
+                        const expenseIsOwed = row.userNetShare > 0;
+                        const absShare = Math.abs(row.userNetShare);
+                        const displayAmount = isRowSettled ? row.settledDisplayAmount : absShare;
+
+                        const validD = getEffectiveExpenseDate(row);
+                        const monthUpper = validD.toLocaleString("en-US", { month: "short" }).toUpperCase();
+                        const dayStr = String(validD.getDate()).padStart(2, "0");
+
+                        return (
+                          <div
+                            key={row.id}
+                            onClick={() => {
+                              setSelectedExpenseIdForDetail(row.id);
+                            }}
+                            className={`py-3.5 flex items-center text-left group transition-all cursor-pointer px-0.5 select-none hover:bg-white/[0.01] ${isRowSettled ? "opacity-45" : "opacity-100"
+                              }`}
+                          >
+                            {/* VERTICAL DATE COLUMN (Leftmost element, month on top, day below) */}
+                            <div className="w-8 shrink-0 flex flex-col items-center justify-center text-center select-none mr-0.5">
+                              <span className="text-[9.5px] font-sans font-semibold tracking-wider text-zinc-500 uppercase leading-none">
+                                {monthUpper}
+                              </span>
+                              <span className="text-[13px] font-sans font-bold text-zinc-300 leading-none mt-1">
+                                {dayStr}
+                              </span>
+                            </div>
+
+                            {/* COLUMN 1: Payer Avatar Only */}
+                            <div className="w-10 shrink-0 flex items-center justify-center mr-2">
+                              <UserAvatar
+                                src={row.payerAvatar}
+                                alt={row.payerName}
+                                size="w-8 h-8"
+                                className={`ring-2 ring-black rounded-full shrink-0 ${isRowSettled ? "grayscale-30" : ""}`}
+                              />
+                            </div>
+
+                            {/* COLUMN 2: Flexible Content Column (Title & Subtitle) */}
+                            <div className="flex-1 min-w-0 flex flex-col justify-center pr-3">
+                              <h5 className={`font-sans text-[13.5px] truncate leading-tight ${isRowSettled ? "font-medium text-zinc-400 group-hover:text-zinc-200" : "font-semibold text-white group-hover:text-white"
+                                }`}>
+                                {row.expenseTitle}
+                              </h5>
+
+                              {/* Payment Context Subtitle */}
+                              {isRowSettled ? (
+                                <>
+                                  {planTitle && (
+                                    <span className="text-[11.5px] font-sans font-medium text-zinc-500 block truncate leading-tight mt-0.5">
+                                      {planTitle}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] font-sans text-zinc-550 block truncate leading-tight mt-0.5">
+                                    Settled up
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-[11.5px] font-sans font-medium text-zinc-300 block truncate leading-tight mt-0.5">
+                                  {row.subtitleText}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* COLUMN 3: Far-Right Amount Column */}
+                            <div className="shrink-0 text-right min-w-max pl-2 flex items-center justify-end">
+                              {isRowSettled ? (
+                                <span className="font-sans text-xs font-semibold text-zinc-500">
+                                  Settled Up
+                                </span>
+                              ) : (
+                                <span className="font-sans text-sm font-bold tracking-tight text-white">
+                                  {formatSmartINR(absShare)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  {row.extraParticipantsCount > 0 && (
-                    <span className="text-[9.5px] font-mono font-bold text-zinc-300 bg-zinc-900 border border-white/[0.1] px-1.5 py-0.5 rounded-full ml-1 shrink-0">
-                      +{row.extraParticipantsCount}
-                    </span>
-                  )}
-                </div>
-
-                {/* COLUMN 2: Flexible Content Column (Title & Payment Context) */}
-                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                  <h5 className={`font-sans font-semibold text-[13.5px] truncate leading-tight ${expIsSettled ? "text-zinc-400 group-hover:text-zinc-200" : "text-zinc-100 group-hover:text-white"
-                    }`}>
-                    {row.expenseTitle}
-                  </h5>
-
-                  {/* Payment Context Subtitle */}
-                  <span className="text-[11.5px] font-sans font-medium text-zinc-400 block truncate leading-tight mt-0.5">
-                    {row.subtitleText}
-                  </span>
-                </div>
-
-                {/* COLUMN 3: Far-Right Amount Column (w-[90px] shrink-0 text-right) */}
-                <div className="w-[90px] shrink-0 text-right flex items-center justify-end">
-                  {expIsSettled ? (
-                    <span className="font-sans text-[11px] font-medium tracking-tight text-zinc-500 bg-zinc-900/60 px-2 py-0.5 rounded border border-white/[0.04]">
-                      Settled
-                    </span>
-                  ) : (
-                    <span
-                      className={`font-mono text-sm font-bold tracking-tight ${expenseIsOwed ? "text-emerald-400" : "text-[#FF6B2C]"
-                        }`}
-                    >
-                      {expenseIsOwed ? "+" : "-"}₹{absShare.toLocaleString("en-IN")}
-                    </span>
-                  )}
-                </div>
+                ))}
               </div>
             );
-          })
+          })()
         )}
       </div>
 
-      {/* ADD COST BOTTOM SHEET */}
-      {showAddCostSheet && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-xs animate-fade-in">
-          <div
-            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col text-left"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-zinc-900 pb-3 shrink-0">
-              <h3 className="text-lg font-display font-bold text-white">Add Cost</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddCostSheet(false);
-                  setFormError(null);
-                }}
-                className="text-zinc-500 hover:text-white text-xs font-semibold"
-              >
-                Close
-              </button>
-            </div>
+      {/* FLOATING ADD COST ACTION BUTTON */}
+      <button
+        type="button"
+        onClick={handleOpenAddCostSheet}
+        className="fixed right-6 z-30 w-13 h-13 rounded-full bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-[#FF6B2C]/30 transition-all cursor-pointer border border-white/10"
+        style={{ bottom: "calc(5.75rem + env(safe-area-inset-bottom, 0px))" }}
+        aria-label="Add Cost"
+      >
+        <BanknoteArrowUp className="w-6 h-6 stroke-[2.2]" />
+      </button>
 
-            {formError && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
-                {formError}
-              </div>
-            )}
-
-            <form onSubmit={handleAddCostSubmit} className="space-y-4 overflow-y-auto pr-1">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                  Title
-                </label>
-                <input
-                  type="text"
-                  value={costTitle}
-                  onChange={(e) => setCostTitle(e.target.value)}
-                  placeholder="e.g., Water, Dinner, Carpool"
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                  Total Amount (₹)
-                </label>
-                <input
-                  type="number"
-                  value={costAmount}
-                  onChange={(e) => setCostAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                  min="1"
-                  step="any"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Split Between ({selectedParticipantIds.length})
-                  </label>
-                  {isValidAmount && selectedParticipantIds.length > 0 && (
-                    <span className="text-xs font-mono font-semibold text-[#FF6B2C]">
-                      ₹{perPersonShare} / person
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-2 max-h-44 overflow-y-auto scrollbar-none">
-                  {availablePlanParticipants.map((p) => {
-                    const isSelected = selectedParticipantIds.includes(p.id);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => toggleParticipantSelection(p.id)}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer text-left ${isSelected
-                            ? "bg-zinc-900 border-[#FF6B2C]/60 text-white"
-                            : "bg-zinc-900/40 border-zinc-800/60 text-zinc-400 hover:bg-zinc-900/80"
-                          }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <UserAvatar src={p.avatar} alt={p.name} size="w-8 h-8" className="shrink-0" />
-                          <span className="font-sans font-medium text-xs truncate">{p.name}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-xs text-zinc-400">
-                            {isSelected ? `₹${perPersonShare}` : "₹0"}
-                          </span>
-                          <div
-                            className={`w-5 h-5 rounded-full flex items-center justify-center border transition ${isSelected
-                                ? "bg-[#FF6B2C] border-[#FF6B2C] text-white"
-                                : "border-zinc-700 bg-transparent text-transparent"
-                              }`}
-                          >
-                            <Check className="w-3 h-3 stroke-[3]" />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="pt-3">
-                <button
-                  type="submit"
-                  disabled={!isFormValid || submittingCost}
-                  className="w-full h-12 rounded-xl bg-[#FF6B2C] text-white font-semibold text-sm hover:bg-[#e05a1f] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-[#FF6B2C]/20"
-                >
-                  {submittingCost ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Adding Cost...</span>
-                    </>
-                  ) : (
-                    <span>Add Cost</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* ADD COST FULL SCREEN COMPONENT */}
+      <AddCost
+        isOpen={showAddCostSheet}
+        onClose={() => setShowAddCostSheet(false)}
+        onRefreshBalances={async () => {
+          await loadPlanData();
+          await onRefreshBalances();
+        }}
+        activeUserId={userPostgresUuid || activeUserId}
+        entryPoint="plan"
+        initialPlanId={planDetails?.id || planId}
+        relevantPlans={planDetails ? [{ id: planDetails.id, title: planDetails.title, cover_image: planDetails.cover_image }] : []}
+        dbPlanParticipants={dbPlanParticipants}
+        dbUsers={dbProfiles}
+        dbProfiles={dbProfiles}
+      />
     </div>
   );
 };

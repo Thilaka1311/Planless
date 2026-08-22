@@ -90,7 +90,7 @@ export interface DbPlanParticipant {
   role: 'HOST' | 'PARTICIPANT';
   rsvp_status: 'INVITED' | 'JOINED' | 'SKIPPED' | 'WAITLISTED';
   delivery_status?: 'DELIVERED';
-  skip_reason?: 'LEFT' | 'REMOVED' | 'REPLACED' | null;
+  skip_reason?: 'LEFT' | 'REMOVED' | 'REPLACED' | 'PAYMENT_KEPT' | null;
   responded_at: string | null;
   joined_queue_at?: string;
   assigned_group?: 'GOING' | 'WAITLIST' | null;

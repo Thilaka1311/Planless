@@ -493,6 +493,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           <WalletScreen
             setActiveTab={setActiveTab}
             setSelectedPlanId={setSelectedPlanId}
+            onToggleBottomNav={setChildrenWantBottomNavHidden}
           />
         )}
 

@@ -317,7 +317,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
       {/* TOP HEADER: Matching Home & Plans layout */}
       <header
         id="chats_screen_header"
-        className="h-14 shrink-0 bg-[#09090b]/99 backdrop-blur-md flex items-center justify-between px-4 z-30 select-none relative border-b border-white/5"
+        className="h-16 shrink-0 bg-[#09090b]/99 backdrop-blur-md flex items-center justify-between px-4 z-30 select-none relative border-b border-white/5"
       >
         {/* Left Column: Avatar */}
         <div className="flex-1 flex items-center justify-start z-10">
@@ -330,7 +330,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
               <UserAvatar
                 src={userProfile.avatar}
                 alt={userProfile.name}
-                size="w-9 h-9"
+                size="w-10 h-10"
                 className="border-2 border-zinc-800 hover:border-[#ff8b66] transition-colors"
               />
             </button>
@@ -339,8 +339,8 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
 
         {/* Center Column: Perfectly Centered Title */}
         <div className="flex-shrink-0 flex items-center justify-center z-10">
-          <h1 className="text-stone-100 font-sans font-black text-xl tracking-[0.25em] leading-none text-center uppercase">
-            CHATS
+          <h1 className="text-stone-100 font-sans font-bold text-xl tracking-tight leading-none text-center">
+            Chats
           </h1>
         </div>
 

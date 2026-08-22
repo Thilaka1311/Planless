@@ -258,7 +258,7 @@ export function usePlanParticipants({
           assigned_group: "GOING",
           waitlist_position: null,
           responded_at: new Date().toISOString(),
-          skip_reason: null
+          skip_reason: pToPromote.skip_reason === "PAYMENT_KEPT" ? "PAYMENT_KEPT" : null
         });
       }
 
@@ -368,13 +368,15 @@ export function usePlanParticipants({
         newWaitlistPos = maxPos + 1;
       }
 
+      const existingSr = existingBefore?.skip_reason === "PAYMENT_KEPT" ? "PAYMENT_KEPT" : null;
+
       // Optimistic Update
       const optimisticRecord = existingBefore ? {
         ...existingBefore,
         rsvp_status: targetDbState as any,
         waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
         responded_at: new Date().toISOString(),
-        skip_reason: null,
+        skip_reason: existingSr,
         circle_id: circleId
       } : {
         plan_id: planUuid,
@@ -397,7 +399,7 @@ export function usePlanParticipants({
               rsvp_status: targetDbState,
               waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
               responded_at: new Date().toISOString(),
-              skip_reason: null,
+              skip_reason: existingSr,
               circle_id: circleId,
               updated_at: new Date().toISOString()
             })
@@ -1116,13 +1118,16 @@ export function usePlanParticipants({
     try {
       const nextRsvp = 'JOINED';
 
+      const existingPart = (dbPlanParticipants || []).find((p: any) => p.plan_id === planUuid && p.user_id === resolvedUserUuid);
+      const existingSr = existingPart?.skip_reason === "PAYMENT_KEPT" ? "PAYMENT_KEPT" : null;
+
       const { error: updateErr } = await (supabase as any)
         .from("plan_participants")
         .update({
           assigned_group: "GOING",
           waitlist_position: null,
           rsvp_status: nextRsvp,
-          skip_reason: null,
+          skip_reason: existingSr,
           updated_at: new Date().toISOString()
         })
         .eq("plan_id", planUuid)
@@ -1221,13 +1226,16 @@ export function usePlanParticipants({
       const dbMaxPos = (dbWaitlist || []).reduce((max: number, p: any) => Math.max(max, p.waitlist_position || 0), 0);
       const dbCalculatedPos = Math.max(calculatedPos, dbMaxPos + 1);
 
+      const existingPart = (dbPlanParticipants || []).find((p: any) => p.plan_id === planUuid && p.user_id === resolvedUserUuid);
+      const existingSr = existingPart?.skip_reason === "PAYMENT_KEPT" ? "PAYMENT_KEPT" : null;
+
       const { error: updateError } = await (supabase as any)
         .from("plan_participants")
         .update({
           assigned_group: "WAITLIST",
           waitlist_position: dbCalculatedPos,
           rsvp_status: nextRsvp,
-          skip_reason: null,
+          skip_reason: existingSr,
           updated_at: new Date().toISOString()
         })
         .eq("plan_id", planUuid)

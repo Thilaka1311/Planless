@@ -28,6 +28,7 @@ import { normalizeStatus } from "../../../../../../lib/participantStatus";
 import { getPlanCover } from "../../../config/planCoverImages";
 import { formatPlanDate } from "../../../../../../lib/mappers";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
+import { getUserPlanOutstandingDues } from "../../../../wallet/services/walletService";
 import { CostBreakdownPopover } from "../../../components/CostBreakdownPopover";
 import { DiscoveryImages } from "../../../../../IMGfromDB/PlanImages";
 import TeamOrganizerModal from "../../../../../shared/modals/TeamOrganizerModal";
@@ -1005,6 +1006,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [showSkipConfirmation, setShowSkipConfirmation] = useState(false);
   const [showPaidLeaveConfirmation, setShowPaidLeaveConfirmation] = useState(false);
   const [showCancelLeaveRequestConfirmation, setShowCancelLeaveRequestConfirmation] = useState(false);
+  const [showOutstandingDuesModal, setShowOutstandingDuesModal] = useState(false);
+  const [outstandingDuesAmount, setOutstandingDuesAmount] = useState(0);
   const [isSubmittingPaidLeave, setIsSubmittingPaidLeave] = useState(false);
   const [isCancellingLeaveRequest, setIsCancellingLeaveRequest] = useState(false);
 
@@ -1059,12 +1062,21 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     });
   }, [selectedPlan, activeUserId, isSkipping, onLeavePlan, onClose, skipPlan, setShowLeftSuccess, showToast]);
 
-  const handleSkip = useCallback(() => {
+  const handleSkip = useCallback(async () => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
     if (myParticipantRecord?.leave_requested) {
       showToast("Leave request pending with host");
       return;
     }
+
+    // Check for outstanding dues in this plan
+    const dues = await getUserPlanOutstandingDues(selectedPlan.id, activeUserId);
+    if (dues > 0) {
+      setOutstandingDuesAmount(dues);
+      setShowOutstandingDuesModal(true);
+      return;
+    }
+
     if (hasCost) {
       setShowPaidLeaveConfirmation(true);
     } else {
@@ -1507,7 +1519,12 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               onRemoveParticipant={(planId, userId) => removeParticipant(planId, userId)}
               onPromoteToHost={(planId, userId) => promoteParticipantToHost(planId, userId)}
               onDemoteFromHost={(planId, userId) => demoteHostToParticipant(planId, userId)}
-              onUpdatePlanCapacity={(planId, capacity) => updatePlanDetails(planId, { max_participants: capacity })}
+              onUpdatePlanCapacity={(planId, capacity, opts) =>
+                updatePlanDetails(planId, {
+                  max_participants: capacity,
+                  ...(opts?.totalCost !== undefined ? { total_cost: opts.totalCost } : {}),
+                })
+              }
               onCancelPlan={(planId) => cancelPlan(planId)}
               onAddParticipants={(planId, userIds, circleIds, assignedGroup) => addParticipantsToPlan({
                 planId,
@@ -1689,6 +1706,54 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       />
 
       {/* Location bottom sheet removed – location editing is now inline */}
+
+      {/* OUTSTANDING DUES WARNING MODAL BEFORE LEAVING */}
+      {showOutstandingDuesModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-xs animate-fade-in p-0 sm:p-4"
+          onClick={() => setShowOutstandingDuesModal(false)}
+        >
+          <div
+            className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-t-3xl sm:rounded-2xl p-6 shadow-2xl space-y-4 text-left font-sans"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-zinc-800 rounded-full mx-auto mb-1 sm:hidden" />
+
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-bold text-white tracking-tight font-display">
+                You have outstanding expenses
+              </h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                You still owe ₹{outstandingDuesAmount.toLocaleString("en-IN")} from expenses in this plan. Leaving the plan won’t remove these expenses. You’ll still need to settle them.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowOutstandingDuesModal(false)}
+                className="flex-1 h-11 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 font-semibold text-xs hover:bg-zinc-800 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOutstandingDuesModal(false);
+                  if (hasCost) {
+                    setShowPaidLeaveConfirmation(true);
+                  } else {
+                    setShowSkipConfirmation(true);
+                  }
+                }}
+                className="flex-1 h-11 rounded-xl bg-amber-600 text-white font-semibold text-xs hover:bg-amber-500 active:scale-[0.99] transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-amber-600/20"
+              >
+                Continue Leaving
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 };
