@@ -130,8 +130,19 @@ export type ParticipantFinancialState = "ACTIVE" | "PAYMENT_KEPT" | "EXCLUDED";
  * Excluded: INVITED, WAITLIST, WAITLISTED, SKIPPED, DECLINED, LEFT, REMOVED.
  */
 export const isJoinedParticipantStatus = (status?: string | null): boolean => {
-  const clean = String(status || "").trim().toUpperCase();
-  return clean === "JOINED" || clean === "CONFIRMED" || clean === "ACCEPTED" || clean === "HOST";
+  if (!status) return true;
+  const clean = String(status).trim().toUpperCase();
+  if (
+    clean === "INVITED" ||
+    clean === "DECLINED" ||
+    clean === "LEFT" ||
+    clean === "REMOVED" ||
+    clean === "SKIPPED" ||
+    clean === "EXCLUDED"
+  ) {
+    return false;
+  }
+  return true;
 };
 
 /**

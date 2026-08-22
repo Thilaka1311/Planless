@@ -28,6 +28,7 @@ interface PlanDetailsScreenProps {
   activeUserId: string;
   onSelectPlan: (planId: string) => void;
   onSelectExpense?: (expenseId: string) => void;
+  onToggleBottomNav?: (hidden: boolean) => void;
 }
 
 interface ExpenseGroupedRow {
@@ -58,6 +59,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
   activeUserId,
   onSelectPlan,
   onSelectExpense,
+  onToggleBottomNav,
 }) => {
   const { activeUserUuid } = useProfileStore();
 
@@ -65,6 +67,14 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
   const [scrollTop, setScrollTop] = useState(0);
   const avatarOpacity = Math.max(0, 1 - scrollTop / 75);
   const stickyProgress = Math.min(1, Math.max(0, (scrollTop - 75) / 30));
+
+  // Hide bottom navigation bar for dedicated Plan Balance screen
+  useEffect(() => {
+    onToggleBottomNav?.(true);
+    return () => {
+      onToggleBottomNav?.(false);
+    };
+  }, [onToggleBottomNav]);
 
   // Dedicated Database State
   const [dataLoading, setDataLoading] = useState(true);
@@ -170,7 +180,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
       // 5b. Fetch plan_participants to build financiallyIncludedUserIds set and participant list
       const { data: rawPlanPts } = await supabase
         .from("plan_participants")
-        .select("user_id, plan_id, rsvp_status, skip_reason, status")
+        .select("*")
         .eq("plan_id", resolvedPlanId);
 
       setDbPlanParticipants(rawPlanPts || []);
@@ -420,8 +430,8 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         id="subview_plan_balances_skeleton"
         className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-36 text-left bg-[#050505] select-none animate-fade-in relative"
       >
-        {/* Sticky Header Bar — Back Arrow */}
-        <div className="sticky top-0 z-50 -mx-6 px-6 pt-3 pb-3 flex items-center justify-between h-16 bg-[#050505]/90 backdrop-blur-md">
+        {/* Sticky Header Bar — Back Arrow & Centered Title Skeleton */}
+        <div className="sticky top-0 z-50 -mx-6 px-6 pt-3 pb-3 flex items-center justify-between h-16 bg-[#050505]/90 backdrop-blur-md relative">
           <button
             type="button"
             onClick={onBack}
@@ -430,21 +440,16 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
+          <div className="absolute left-1/2 -translate-x-1/2 w-36 h-4 bg-zinc-800/80 rounded-md animate-pulse" />
+          <div className="w-7 shrink-0" />
         </div>
 
         {/* Centered Fixed Circular Plan Avatar Skeleton */}
-        <div className="absolute left-1/2 -translate-x-1/2 top-11 z-40">
+        <div className="absolute left-1/2 -translate-x-1/2 top-16 z-40">
           <div className="w-25 h-25 rounded-full bg-zinc-800/80 ring-2 ring-white/10 shadow-lg animate-pulse" />
         </div>
 
-        {/* Plan Title Skeleton */}
-        <div className="w-48 h-5 bg-zinc-800/80 rounded-md mx-auto mt-24 shrink-0 self-center animate-pulse" />
-
-        {/* Plan Balance Status & Amount Skeleton */}
-        <div className="flex flex-col items-center text-center shrink-0 relative z-10 space-y-2 mt-4">
-          <div className="w-24 h-3 bg-zinc-800/60 rounded animate-pulse" />
-          <div className="w-36 h-9 bg-zinc-800/80 rounded-xl mt-1 animate-pulse" />
-        </div>
+        <div className="h-28 shrink-0" />
 
         {/* Month Section Header Skeleton */}
         <div className="py-2.5 pt-6 text-left border-b border-white/[0.04] shrink-0">
@@ -485,27 +490,39 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
     <div
       id="subview_plan_balances"
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-36 text-left bg-[#050505] select-none animate-fade-in relative"
+      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-32 text-left bg-[#050505] select-none animate-fade-in relative"
     >
-      {/* Sticky Header Bar with Back Button & Centered Fixed Plan Avatar */}
+      {/* Sticky Header Bar with Back Button & Centered Plan Title */}
       <div
-        className="sticky top-0 z-50 -mx-6 px-6 pt-3 pb-3 flex items-center justify-between pointer-events-none transition-colors duration-150 relative h-16"
+        className="sticky top-0 z-50 -mx-6 px-6 pt-3 pb-3 flex items-center justify-between pointer-events-auto transition-colors duration-150 relative h-16"
         style={{
           backgroundColor: `rgba(5, 5, 5, ${stickyProgress})`,
         }}
       >
+        {/* Back Arrow on the Far Left */}
         <button
           type="button"
-          onClick={onBack}
-          className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 z-50 pointer-events-auto active:scale-95"
+          onClick={() => {
+            onToggleBottomNav?.(false);
+            onBack();
+          }}
+          className="p-1 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 z-50 active:scale-95"
           aria-label="Back to Wallet"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
 
-        {/* Centered Fixed Plan Avatar (Fixed 25x25 / 100px x 100px, Pinned at top-11, translateY = 0, dissolves away in place) */}
+        {/* Absolutely Centered Plan Title (Centered relative to full screen width) */}
+        <h3 className="absolute left-1/2 -translate-x-1/2 font-sans font-bold text-base text-zinc-100 leading-tight truncate text-center max-w-[240px] sm:max-w-[320px] pointer-events-none z-10">
+          {planTitle}
+        </h3>
+
+        {/* Right Spacer */}
+        <div className="w-7 shrink-0 pointer-events-none" />
+
+        {/* Centered Fixed Plan Avatar (Fixed 25x25 / 100px x 100px, Pinned at top-16, dissolves away on scroll) */}
         <div
-          className="absolute left-1/2 -translate-x-1/2 top-11 transition-opacity duration-75 pointer-events-none z-40"
+          className="absolute left-1/2 -translate-x-1/2 top-16 transition-opacity duration-75 pointer-events-none z-40"
           style={{
             opacity: avatarOpacity,
           }}
@@ -524,28 +541,8 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
         </div>
       </div>
 
-      {/* THE SINGLE PLAN-NAME ELEMENT - Scrolls upward and pins natively at sticky top-[15px] z-50 */}
-      <h3 className="sticky top-[15px] z-50 font-sans font-bold text-base text-zinc-100 leading-tight text-center truncate px-12 mt-24 pointer-events-auto shrink-0 self-center">
-        {planTitle}
-      </h3>
-
-      {/* Plan Balance Hero Section */}
-      <div className={`flex flex-col items-center text-center shrink-0 relative z-10 ${isSettled ? "my-4" : "pb-3 space-y-1.5"}`}>
-        <p className="text-zinc-500 font-sans text-xs font-medium uppercase tracking-wider">
-          {isSettled
-            ? "SETTLED UP"
-            : isOwed
-              ? "YOU ARE OWED"
-              : "YOU OWE"}
-        </p>
-        {!isSettled && (
-          <div className="flex items-center justify-center gap-2 mt-1">
-            <h1 className="font-sans font-black text-3xl sm:text-4xl leading-none text-white">
-              {formatSmartINR(absNetBalance)}
-            </h1>
-          </div>
-        )}
-      </div>
+      {/* Hero Spacer for Circular Plan Avatar */}
+      <div className="h-28 shrink-0" />
 
       {/* EXPENSES CONTENT CONTAINER */}
       <div className="flex-1 flex flex-col pt-1 mt-2">
@@ -687,7 +684,8 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
       <button
         type="button"
         onClick={handleOpenAddCostSheet}
-        className="fixed bottom-[102px] right-6 z-30 w-13 h-13 rounded-full bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-[#FF6B2C]/30 transition-all cursor-pointer border border-white/10"
+        className="fixed right-6 z-30 w-13 h-13 rounded-full bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-[#FF6B2C]/30 transition-all cursor-pointer border border-white/10"
+        style={{ bottom: "calc(5.75rem + env(safe-area-inset-bottom, 0px))" }}
         aria-label="Add Cost"
       >
         <BanknoteArrowUp className="w-6 h-6 stroke-[2.2]" />
@@ -702,6 +700,7 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
           await onRefreshBalances();
         }}
         activeUserId={userPostgresUuid || activeUserId}
+        entryPoint="plan"
         initialPlanId={planDetails?.id || planId}
         relevantPlans={planDetails ? [{ id: planDetails.id, title: planDetails.title, cover_image: planDetails.cover_image }] : []}
         dbPlanParticipants={dbPlanParticipants}

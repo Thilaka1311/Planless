@@ -194,9 +194,7 @@ export const WalletProvider = ({
         planIds.length > 0
           ? Promise.resolve(supabase.from("plans").select("*").in("id", planIds))
           : Promise.resolve(supabase.from("plans").select("*")),
-        planIds.length > 0
-          ? Promise.resolve(supabase.from("plan_participants").select("*").in("plan_id", planIds))
-          : Promise.resolve({ data: [] }),
+        Promise.resolve(supabase.from("plan_participants").select("*")),
       ];
 
       const [{ data: users }, { data: plans }, { data: participants }] =

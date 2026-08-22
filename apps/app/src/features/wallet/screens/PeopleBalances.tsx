@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { ArrowLeft, Plus, Check, Edit2, CheckCircle2, ChevronDown, ChevronUp, ChevronRight, AlertCircle, HandCoins, ArrowUpRight, ArrowDownLeft, Trash2, BanknoteArrowUp, MoreVertical, AlertTriangle, Banknote, createLucideIcon } from "lucide-react";
 
 // Lucide BanknoteCheck Icon Definition
@@ -61,6 +61,14 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
   const [scrollTop, setScrollTop] = useState(0);
   const avatarOpacity = Math.max(0, 1 - scrollTop / 75);
   const stickyProgress = Math.min(1, Math.max(0, (scrollTop - 75) / 30));
+
+  // Hide bottom navigation bar for dedicated Person Balance screen
+  useEffect(() => {
+    onToggleBottomNav?.(true);
+    return () => {
+      onToggleBottomNav?.(false);
+    };
+  }, [onToggleBottomNav]);
 
   // Delete Expense state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -211,7 +219,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     <div
       id="subview_relationship_details"
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-36 text-left bg-[#050505] relative"
+      className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-32 text-left bg-[#050505] relative"
     >
       {/* Sticky Header Bar with Back Button, Centered Fixed Profile Avatar, & Three Dots Menu */}
       <div
@@ -222,7 +230,10 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
       >
         <button
           type="button"
-          onClick={onBack}
+          onClick={() => {
+            onToggleBottomNav?.(false);
+            onBack();
+          }}
           className="p-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0 z-50 pointer-events-auto"
           aria-label="Back to Wallet"
         >
@@ -522,7 +533,8 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
       <button
         type="button"
         onClick={handleOpenAddCostSheet}
-        className="fixed bottom-[102px] right-6 z-30 w-13 h-13 rounded-full bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-[#FF6B2C]/30 transition-all cursor-pointer border border-white/10"
+        className="fixed right-6 z-30 w-13 h-13 rounded-full bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-[#FF6B2C]/30 transition-all cursor-pointer border border-white/10"
+        style={{ bottom: "calc(5.75rem + env(safe-area-inset-bottom, 0px))" }}
         aria-label="Add Cost"
       >
         <BanknoteArrowUp className="w-6 h-6 stroke-[2.2]" />
@@ -552,6 +564,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
         onClose={() => setShowAddCostSheet(false)}
         onRefreshBalances={onRefreshBalances}
         activeUserId={activeUserId}
+        entryPoint="people"
         relevantPlans={relevantPlans}
         dbPlanParticipants={dbPlanParticipantsLocal}
         dbUsers={dbUsersLocal}

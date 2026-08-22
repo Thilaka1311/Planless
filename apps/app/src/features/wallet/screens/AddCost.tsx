@@ -1,15 +1,33 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Check, ArrowLeft } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { Check, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { isJoinedParticipantStatus } from "../services/walletService";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
+import { useWalletStore } from "../state/WalletContext";
+
+const avatarVariants = {
+  enter: (direction: number) => ({
+    x: direction > 0 ? 140 : -140,
+    opacity: 1,
+  }),
+  center: {
+    x: 0,
+    opacity: 1,
+  },
+  exit: (direction: number) => ({
+    x: direction > 0 ? -140 : 140,
+    opacity: 1,
+  }),
+};
 
 export interface AddCostProps {
   isOpen: boolean;
   onClose: () => void;
   onRefreshBalances: () => Promise<void> | void;
   activeUserId: string;
+  entryPoint?: "people" | "plan";
   initialPlanId?: string;
   relevantPlans?: Array<{
     id: string;
@@ -33,6 +51,7 @@ export const AddCost: React.FC<AddCostProps> = ({
   onClose,
   onRefreshBalances,
   activeUserId,
+  entryPoint,
   initialPlanId,
   relevantPlans = [],
   dbPlanParticipants = [],
@@ -46,6 +65,7 @@ export const AddCost: React.FC<AddCostProps> = ({
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
   const [submittingCost, setSubmittingCost] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [slideDirection, setSlideDirection] = useState<1 | -1>(1);
 
   // Interactive input states
   const [isCostFocused, setIsCostFocused] = useState(false);
@@ -61,26 +81,90 @@ export const AddCost: React.FC<AddCostProps> = ({
     return relevantPlans && relevantPlans.length > 0 ? relevantPlans : [];
   }, [relevantPlans]);
 
+  // Entry point mode determination:
+  // "plan" mode: opened from a specific plan. Hides carousel completely, locks selection to initialPlanId.
+  // "people" mode: opened from People/Wallet. Renders carousel for selecting plan.
+  const isPlanMode = useMemo(() => {
+    if (entryPoint === "plan") return true;
+    if (entryPoint === "people") return false;
+    return Boolean(initialPlanId);
+  }, [entryPoint, initialPlanId]);
+
+  const showCarousel = !isPlanMode && plansList.length > 0;
+
   // Currently selected plan object
   const selectedPlanObj = useMemo(() => {
+    if (initialPlanId) {
+      const match = plansList.find((p) => p.id === initialPlanId);
+      if (match) return match;
+      if (isPlanMode) return { id: initialPlanId, title: "Plan" };
+    }
     if (!plansList || plansList.length === 0) return null;
     return plansList.find((p) => p.id === selectedPlanId) || plansList[0];
-  }, [plansList, selectedPlanId]);
+  }, [plansList, selectedPlanId, initialPlanId, isPlanMode]);
+
+  const getPlanCoverImage = (p: any) => {
+    if (!p) return null;
+    return (
+      p.cover_image ||
+      p.cover_photo_path ||
+      p.cover_photo ||
+      p.planCover ||
+      p.coverImage ||
+      p.image ||
+      p.cover ||
+      null
+    );
+  };
 
   // Image source resolution for selected plan (supports cover_image from Supabase plans table)
   const planImageSrc = useMemo(() => {
     if (!selectedPlanObj) return null;
-    return (
-      selectedPlanObj.cover_image ||
-      selectedPlanObj.cover_photo_path ||
-      selectedPlanObj.cover_photo ||
-      selectedPlanObj.planCover ||
-      selectedPlanObj.coverImage ||
-      selectedPlanObj.image ||
-      selectedPlanObj.cover ||
-      null
-    );
+    return getPlanCoverImage(selectedPlanObj);
   }, [selectedPlanObj]);
+
+  const currentPlanIdx = useMemo(() => {
+    if (!plansList || plansList.length === 0) return 0;
+    const idx = plansList.findIndex((p) => p.id === selectedPlanId);
+    return idx >= 0 ? idx : 0;
+  }, [plansList, selectedPlanId]);
+
+  const prevPlan = useMemo(() => {
+    if (plansList.length <= 1 || isPlanMode) return null;
+    if (plansList.length === 2) {
+      return currentPlanIdx > 0 ? plansList[0] : null;
+    }
+    const prevIdx = (currentPlanIdx - 1 + plansList.length) % plansList.length;
+    return plansList[prevIdx];
+  }, [plansList, currentPlanIdx, isPlanMode]);
+
+  const nextPlan = useMemo(() => {
+    if (plansList.length <= 1 || isPlanMode) return null;
+    if (plansList.length === 2) {
+      return currentPlanIdx === 0 ? plansList[1] : null;
+    }
+    const nextIdx = (currentPlanIdx + 1) % plansList.length;
+    return plansList[nextIdx];
+  }, [plansList, currentPlanIdx, isPlanMode]);
+
+  const walletStore = useWalletStore();
+  const dbPlanParticipantsLocal = walletStore?.dbPlanParticipantsLocal || [];
+  const dbUsersLocal = walletStore?.dbUsersLocal || [];
+
+  const mergedPlanParticipants = useMemo(() => {
+    return [...(dbPlanParticipants || []), ...(dbPlanParticipantsLocal || [])];
+  }, [dbPlanParticipants, dbPlanParticipantsLocal]);
+
+  const mergedUsers = useMemo(() => {
+    return [...(dbUsers || []), ...(dbProfiles || []), ...(dbUsersLocal || [])];
+  }, [dbUsers, dbProfiles, dbUsersLocal]);
+
+  const isMatchingPlanId = (pp: any, tPlanId: string) => {
+    if (!tPlanId || !pp) return false;
+    const cleanTarget = String(tPlanId).trim().toLowerCase();
+    const cleanPP = String(pp.plan_id || pp.planId || "").trim().toLowerCase();
+    return cleanPP === cleanTarget;
+  };
 
   // Initialize selectedPlanId and selectedParticipantIds when screen opens
   useEffect(() => {
@@ -93,53 +177,57 @@ export const AddCost: React.FC<AddCostProps> = ({
     setIsCostFocused(false);
     setFocusedParticipantId(null);
 
-    const initialPlan = initialPlanId || plansList[0]?.id || "";
-    setSelectedPlanId(initialPlan);
+    const targetPlan = initialPlanId || plansList[0]?.id || "";
+    setSelectedPlanId(targetPlan);
 
-    const planPartRows = (dbPlanParticipants || []).filter(
-      (pp) => pp.plan_id === initialPlan && isJoinedParticipantStatus(pp.rsvp_status || pp.status)
+    const planPartRows = mergedPlanParticipants.filter(
+      (pp) => isMatchingPlanId(pp, targetPlan) && isJoinedParticipantStatus(pp.rsvp_status || pp.status)
     );
 
-    const initialUserIds = planPartRows.length > 0
-      ? Array.from(new Set(planPartRows.map((pp) => pp.user_id)))
-      : Array.from(new Set([activeUserId, ...(otherUserId ? [otherUserId] : [])]));
+    const rawUserIds = planPartRows.map((pp) => pp.user_id || pp.userId).filter(Boolean);
+
+    const initialUserIds = rawUserIds.length > 0
+      ? Array.from(new Set(rawUserIds))
+      : (isPlanMode
+          ? []
+          : Array.from(new Set([activeUserId, ...(otherUserId ? [otherUserId] : [])])));
 
     setSelectedParticipantIds(initialUserIds);
-  }, [isOpen, initialPlanId, plansList, dbPlanParticipants, activeUserId, otherUserId]);
+  }, [isOpen, initialPlanId, plansList, mergedPlanParticipants, activeUserId, otherUserId, isPlanMode]);
 
   // Compute available participants for selectedPlanId with strict sorting rule (You first, others A-Z)
   const availablePlanParticipants = useMemo(() => {
     const targetPlan = selectedPlanId || initialPlanId || plansList[0]?.id;
     if (!targetPlan) return [];
 
-    const planPartRows = (dbPlanParticipants || []).filter(
-      (pp) => pp.plan_id === targetPlan && isJoinedParticipantStatus(pp.rsvp_status || pp.status)
+    const planPartRows = mergedPlanParticipants.filter(
+      (pp) => isMatchingPlanId(pp, targetPlan) && isJoinedParticipantStatus(pp.rsvp_status || pp.status)
     );
 
     const userMap = new Map<string, any>();
-    (dbUsers || []).forEach((u) => {
-      if (u.id) userMap.set(u.id, u);
-      if (u.user_id) userMap.set(u.user_id, u);
-      if (u.public_id) userMap.set(u.public_id, u);
-    });
-    (dbProfiles || []).forEach((p) => {
-      if (p.id) userMap.set(p.id, p);
+    mergedUsers.forEach((u) => {
+      if (u.id) userMap.set(String(u.id).toLowerCase(), u);
+      if (u.user_id) userMap.set(String(u.user_id).toLowerCase(), u);
+      if (u.public_id) userMap.set(String(u.public_id).toLowerCase(), u);
     });
 
-    (dbPlanParticipants || []).forEach((pp) => {
-      if (pp.user && pp.user_id && !userMap.has(pp.user_id)) {
-        userMap.set(pp.user_id, pp.user);
+    mergedPlanParticipants.forEach((pp) => {
+      if (pp.user) {
+        const uId = pp.user_id || pp.userId || pp.user.id || pp.user.user_id;
+        if (uId) userMap.set(String(uId).toLowerCase(), pp.user);
       }
     });
 
-    const rawUserIds = planPartRows.map((pp) => pp.user_id);
+    const rawUserIds = planPartRows.map((pp) => pp.user_id || pp.userId).filter(Boolean);
     const pUserIds = rawUserIds.length > 0
       ? Array.from(new Set(rawUserIds))
-      : Array.from(new Set([activeUserId, ...(otherUserId ? [otherUserId] : [])]));
+      : (isPlanMode
+          ? []
+          : Array.from(new Set([activeUserId, ...(otherUserId ? [otherUserId] : [])])));
 
     const list = pUserIds.map((uid) => {
-      const u = userMap.get(uid);
-      const isMe = uid === activeUserId;
+      const u = userMap.get(String(uid).toLowerCase());
+      const isMe = String(uid).toLowerCase() === String(activeUserId).toLowerCase();
       const photo = u?.profile_photo_path || u?.profile_photo || u?.avatar || "";
       const name = isMe
         ? "You"
@@ -158,18 +246,32 @@ export const AddCost: React.FC<AddCostProps> = ({
       if (!a.isMe && b.isMe) return 1;
       return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     });
-  }, [selectedPlanId, initialPlanId, plansList, dbPlanParticipants, dbUsers, dbProfiles, activeUserId, otherUserId]);
+  }, [selectedPlanId, initialPlanId, plansList, mergedPlanParticipants, mergedUsers, activeUserId, otherUserId, isPlanMode]);
+
+  // Keep selectedParticipantIds preselected whenever availablePlanParticipants loads or updates
+  useEffect(() => {
+    if (!isOpen) return;
+    if (availablePlanParticipants.length > 0) {
+      const availIds = availablePlanParticipants.map((p) => p.id);
+      setSelectedParticipantIds((prev) => {
+        if (prev.length === 0) return availIds;
+        return prev;
+      });
+    }
+  }, [isOpen, availablePlanParticipants]);
 
   const handleSelectPlanChange = (planId: string) => {
+    if (isPlanMode) return; // Disallow changing plan when opened from a specific plan
     setSelectedPlanId(planId);
     setCostAmount("");
     setCustomParticipantShares({});
 
     const planPartRows = (dbPlanParticipants || []).filter(
-      (pp) => pp.plan_id === planId && isJoinedParticipantStatus(pp.rsvp_status || pp.status)
+      (pp) => isMatchingPlanId(pp, planId) && isJoinedParticipantStatus(pp.rsvp_status || pp.status)
     );
-    const newPlanUserIds = planPartRows.length > 0
-      ? Array.from(new Set(planPartRows.map((pp) => pp.user_id)))
+    const rawUserIds = planPartRows.map((pp) => pp.user_id || pp.userId).filter(Boolean);
+    const newPlanUserIds = rawUserIds.length > 0
+      ? Array.from(new Set(rawUserIds))
       : Array.from(new Set([activeUserId, ...(otherUserId ? [otherUserId] : [])]));
 
     setSelectedParticipantIds(newPlanUserIds);
@@ -177,11 +279,13 @@ export const AddCost: React.FC<AddCostProps> = ({
 
   // Infinite / looping bidirectional swipe navigation handlers
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (isPlanMode) return;
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (isPlanMode) return;
     if (touchStartX.current === null || touchStartY.current === null) return;
     const deltaX = e.changedTouches[0].clientX - touchStartX.current;
     const deltaY = e.changedTouches[0].clientY - touchStartY.current;
@@ -191,11 +295,13 @@ export const AddCost: React.FC<AddCostProps> = ({
         const curIdx = plansList.findIndex((p) => p.id === selectedPlanId);
         const validIdx = curIdx >= 0 ? curIdx : 0;
         if (deltaX < 0) {
-          // Swipe LEFT -> next plan
+          // Swipe LEFT -> next plan (slides in from right)
+          setSlideDirection(1);
           const nextIdx = (validIdx + 1) % plansList.length;
           handleSelectPlanChange(plansList[nextIdx].id);
         } else {
-          // Swipe RIGHT -> previous plan
+          // Swipe RIGHT -> previous plan (slides in from left)
+          setSlideDirection(-1);
           const prevIdx = (validIdx - 1 + plansList.length) % plansList.length;
           handleSelectPlanChange(plansList[prevIdx].id);
         }
@@ -207,10 +313,12 @@ export const AddCost: React.FC<AddCostProps> = ({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (isPlanMode) return;
     mouseStartX.current = e.clientX;
   };
 
   const handleMouseUp = (e: React.MouseEvent) => {
+    if (isPlanMode) return;
     if (mouseStartX.current === null) return;
     const deltaX = e.clientX - mouseStartX.current;
 
@@ -218,11 +326,13 @@ export const AddCost: React.FC<AddCostProps> = ({
       const curIdx = plansList.findIndex((p) => p.id === selectedPlanId);
       const validIdx = curIdx >= 0 ? curIdx : 0;
       if (deltaX < 0) {
-        // Swipe LEFT -> next plan
+        // Swipe LEFT -> next plan (slides in from right)
+        setSlideDirection(1);
         const nextIdx = (validIdx + 1) % plansList.length;
         handleSelectPlanChange(plansList[nextIdx].id);
       } else {
-        // Swipe RIGHT -> previous plan
+        // Swipe RIGHT -> previous plan (slides in from left)
+        setSlideDirection(-1);
         const prevIdx = (validIdx - 1 + plansList.length) % plansList.length;
         handleSelectPlanChange(plansList[prevIdx].id);
       }
@@ -310,8 +420,8 @@ export const AddCost: React.FC<AddCostProps> = ({
 
       const joinedPlanUserIds = new Set(
         (dbPlanParticipants || [])
-          .filter((pp) => pp.plan_id === selectedPlanId && isJoinedParticipantStatus(pp.rsvp_status || pp.status))
-          .map((pp) => pp.user_id)
+          .filter((pp) => isMatchingPlanId(pp, selectedPlanId) && isJoinedParticipantStatus(pp.rsvp_status || pp.status))
+          .map((pp) => pp.user_id || pp.userId)
       );
 
       const resolvedPayerUuid = resolveUserUuid(activeUserId);
@@ -373,23 +483,88 @@ export const AddCost: React.FC<AddCostProps> = ({
         <div className="w-8 shrink-0" />
       </div>
 
-      {/* ── 2. Circular Plan Avatar Area (with Horizontal Swipe Navigation) ──── */}
-      <div
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        className="flex flex-col items-center justify-center pt-2 pb-2 shrink-0 select-none cursor-grab active:cursor-grabbing touch-pan-y"
-      >
-        <div className="relative shrink-0">
-          <DiscoveryImages
-            key={selectedPlanObj?.id || "plan-avatar"}
-            src={planImageSrc}
-            alt={selectedPlanObj?.title || "Plan Cover"}
-            className="w-16 h-16 rounded-full object-cover overflow-hidden bg-zinc-900 border border-white/10 shadow-lg shrink-0 aspect-square ring-2 ring-white/10"
-          />
+      {/* ── 2. Single Plan Avatar Display with Subtle Side Arrow Indicators & Swipe Support ──── */}
+      {selectedPlanObj && (
+        <div
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
+          className={`relative w-full py-2.5 flex items-center justify-center gap-5 shrink-0 select-none ${
+            !isPlanMode && plansList.length > 1 ? "cursor-grab active:cursor-grabbing touch-pan-y" : ""
+          }`}
+        >
+          {/* Previous (Left) Arrow Indicator */}
+          {!isPlanMode && plansList.length > 1 ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (prevPlan) {
+                  setSlideDirection(-1);
+                  handleSelectPlanChange(prevPlan.id);
+                }
+              }}
+              disabled={!prevPlan}
+              className={`p-2 text-zinc-400 hover:text-white active:scale-90 transition-all cursor-pointer ${
+                !prevPlan ? "opacity-20 pointer-events-none cursor-default" : "opacity-80 hover:opacity-100"
+              }`}
+              aria-label="Previous Plan"
+            >
+              <ChevronLeft className="w-5 h-5 stroke-[2.2]" />
+            </button>
+          ) : (
+            <div className="w-9" />
+          )}
+
+          {/* Centered Single Plan Avatar with Directional Motion Slide */}
+          <div className="relative overflow-hidden w-22 h-22 flex items-center justify-center">
+            <AnimatePresence mode="popLayout" custom={slideDirection} initial={false}>
+              <motion.div
+                key={selectedPlanObj.id}
+                custom={slideDirection}
+                variants={avatarVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{
+                  x: { type: "spring", stiffness: 450, damping: 32, mass: 0.8 },
+                }}
+                className="w-20 h-20 rounded-full aspect-square overflow-hidden shadow-2xl shadow-black/80 flex items-center justify-center shrink-0"
+              >
+                <DiscoveryImages
+                  src={planImageSrc}
+                  alt={selectedPlanObj.title}
+                  className="w-full h-full object-cover aspect-square rounded-full opacity-95"
+                />
+              </motion.div>
+            </AnimatePresence>
+          </div>
+
+          {/* Next (Right) Arrow Indicator */}
+          {!isPlanMode && plansList.length > 1 ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (nextPlan) {
+                  setSlideDirection(1);
+                  handleSelectPlanChange(nextPlan.id);
+                }
+              }}
+              disabled={!nextPlan}
+              className={`p-2 text-zinc-400 hover:text-white active:scale-90 transition-all cursor-pointer ${
+                !nextPlan ? "opacity-20 pointer-events-none cursor-default" : "opacity-80 hover:opacity-100"
+              }`}
+              aria-label="Next Plan"
+            >
+              <ChevronRight className="w-5 h-5 stroke-[2.2]" />
+            </button>
+          ) : (
+            <div className="w-9" />
+          )}
         </div>
-      </div>
+      )}
 
       {/* ── 4. Total Cost Display & 5. Split Description Pill ──────────── */}
       <div className="flex flex-col items-center text-center px-6 pt-1 pb-3 shrink-0 space-y-1.5">
