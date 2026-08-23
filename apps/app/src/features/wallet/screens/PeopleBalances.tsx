@@ -18,6 +18,31 @@ import { ExpenseDetails, PlanBalancesDetail } from "./ExpenseDetail";
 import { AddCost } from "./AddCost";
 import { EditCost } from "./EditCost";
 import { SettleUpScreen } from "./SettleUpScreen";
+import { useProfileStore } from "../../profile/state/ProfileContext";
+
+export const getSettlementCoveredSubtitle = (
+  st: WalletSettlement,
+  relationshipName: string,
+  isPayerMe: boolean,
+  allExpenses: ExpenseBreakdown[] = [],
+  myDisplayName?: string
+): { titleText: string; subtitleText: string } => {
+  const rawMyName = (myDisplayName || "").trim();
+  const myFirstName = rawMyName ? rawMyName.split(" ")[0] : "You";
+  const otherName = (relationshipName || "User").trim();
+  const otherFirstName = otherName.split(" ")[0];
+
+  const payerFirstName = isPayerMe ? myFirstName : otherFirstName;
+  const receiverFirstName = isPayerMe ? otherFirstName : myFirstName;
+
+  const titleText = payerFirstName;
+  const subtitleText = `${payerFirstName} paid ${receiverFirstName}`;
+
+  return {
+    titleText,
+    subtitleText,
+  };
+};
 
 interface RelationshipDetailsScreenProps {
   relationship: WalletRelationship;
@@ -40,6 +65,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
 }) => {
   const { dbPlansLocal, dbPlanParticipantsLocal, dbUsersLocal, dbWalletPaidTransactions } = useWalletStore();
   const { refreshPlans } = usePlansStore();
+  const { userProfile } = useProfileStore();
 
   // Selected expense ID for PlanBalancesDetail navigation
   const [selectedExpenseIdForDetail, setSelectedExpenseIdForDetail] = useState<string | null>(null);
@@ -296,7 +322,6 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
 
       {/* Timeline container */}
       <div className={`flex-1 flex flex-col ${absNetBalance === 0 ? "pt-0 mt-0" : "pt-1 mt-1"}`}>
-
         {/* Unified Expenses & Settlements Timeline */}
         {(() => {
           type TimelineItem =
@@ -309,19 +334,21 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
           const items: TimelineItem[] = [];
 
           allExpenses.forEach((exp) => {
+            const dateStr = exp.createdAt || (exp as any).created_at || exp.date;
             items.push({
               id: `exp-${exp.id}`,
               type: "expense",
-              date: getEffectiveExpenseDate(exp),
+              date: new Date(dateStr || Date.now()),
               expense: exp,
             });
           });
 
           allSettlements.forEach((st) => {
+            const dateStr = st.created_at || (st as any).createdAt;
             items.push({
               id: `st-${st.id}`,
               type: "settlement",
-              date: new Date(st.created_at || Date.now()),
+              date: new Date(dateStr || Date.now()),
               settlement: st,
             });
           });
@@ -372,10 +399,13 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                         const validD = item.date;
                         const monthUpper = validD.toLocaleString("en-US", { month: "short" }).toUpperCase();
                         const dayStr = String(validD.getDate()).padStart(2, "0");
+                        const timeStr = (() => {
+                          if (!validD || isNaN(validD.getTime())) return null;
+                          return validD.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                        })();
 
                         if (item.type === "expense") {
                           const expense = item.expense;
-                          const isSettled = expense.status === "SETTLED" || expense.participantStatus === "SETTLED";
                           const expenseIsOwed = expense.role === "creditor";
                           const shareNum = Number(expense.yourShare || 0);
                           const isShareWhole = shareNum % 1 === 0;
@@ -388,49 +418,41 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                             <div
                               key={`expense-item-${expense.id}`}
                               onClick={() => handleCardClick(expense)}
-                              className={`w-full flex items-center justify-between py-3.5 text-left group transition-all cursor-pointer px-0.5 select-none hover:bg-white/[0.01] ${isSettled ? "opacity-45" : "opacity-100"
-                                }`}
+                              className="w-full flex items-center justify-between py-3.5 text-left group transition-all cursor-pointer px-0.5 select-none hover:bg-white/[0.01] opacity-100"
                             >
                               <div className="flex items-center gap-3 flex-1 min-w-0">
                                 {/* VERTICAL DATE COLUMN */}
-                                <div className="w-8 shrink-0 flex flex-col items-center justify-center text-center select-none mr-0.5">
-                                  <span className={`text-[9.5px] font-sans font-semibold tracking-wider uppercase leading-none ${isSettled ? "text-zinc-600" : "text-zinc-500"
-                                    }`}>
-                                    {monthUpper}
+                                <div className="w-11 shrink-0 flex flex-col items-center justify-center text-center select-none mr-0.5 space-y-1">
+                                  <span className="text-[10px] font-sans font-bold tracking-wide uppercase leading-none whitespace-nowrap text-zinc-400">
+                                    {monthUpper} {dayStr}
                                   </span>
-                                  <span className={`text-[13px] font-sans font-bold leading-none mt-1 ${isSettled ? "text-zinc-600" : "text-zinc-500"
-                                    }`}>
-                                    {dayStr}
-                                  </span>
+                                  {timeStr && (
+                                    <span className="text-[8.5px] font-sans font-medium leading-none whitespace-nowrap text-zinc-500/70">
+                                      {timeStr}
+                                    </span>
+                                  )}
                                 </div>
 
                                 {expense.planCover ? (
                                   <DiscoveryImages
                                     src={expense.planCover}
                                     alt={expense.planTitle}
-                                    className={`w-10 h-10 rounded-full object-cover bg-zinc-900 border border-white/[0.05] shrink-0 ${isSettled ? "opacity-60 grayscale-[0.3]" : ""
-                                      }`}
+                                    className="w-10 h-10 rounded-full object-cover bg-zinc-900 border border-white/[0.05] shrink-0 opacity-100"
                                   />
                                 ) : (
-                                  <div className={`w-10 h-10 rounded-full bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] font-black ${isSettled ? "text-zinc-700 opacity-60" : "text-zinc-650"
-                                    }`}>
+                                  <div className="w-10 h-10 rounded-full bg-zinc-900 border border-white/[0.05] shrink-0 flex items-center justify-center text-[10px] font-black text-zinc-650">
                                     PLAN
                                   </div>
                                 )}
 
                                 <div className="min-w-0 flex flex-col justify-center flex-1 pr-3">
-                                  <h5 className={`font-sans text-[13.5px] truncate leading-tight ${isSettled
-                                    ? "font-medium text-zinc-500 group-hover:text-zinc-400"
-                                    : "font-semibold text-zinc-100 group-hover:text-white"
-                                    }`}>
+                                  <h5 className="font-sans text-[13.5px] truncate leading-tight font-semibold text-zinc-100 group-hover:text-white">
                                     {expense.expenseTitle || (expense as any).title || "Plan Fee"}
                                   </h5>
-                                  <span className={`text-[11.5px] font-sans font-medium block truncate leading-tight mt-0.5 ${isSettled ? "text-zinc-600" : "text-zinc-400"
-                                    }`}>
+                                  <span className="text-[11.5px] font-sans font-medium block truncate leading-tight mt-0.5 text-zinc-400">
                                     {expense.planTitle}
                                   </span>
-                                  <span className={`text-[10px] font-sans block truncate leading-tight mt-0.5 ${isSettled ? "text-zinc-600" : "text-zinc-550"
-                                    }`}>
+                                  <span className="text-[10px] font-sans block truncate leading-tight mt-0.5 text-zinc-550">
                                     {(() => {
                                       const otherPlanPart = (dbPlanParticipantsLocal || []).find(
                                         (p: any) =>
@@ -453,21 +475,15 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                               </div>
 
                               <div className="text-right shrink-0 min-w-max pl-2 flex items-center justify-end">
-                                {isSettled ? (
-                                  <span className="font-sans text-xs font-semibold text-zinc-500">
-                                    Settled up
-                                  </span>
-                                ) : (
-                                  <span className="font-sans text-sm font-bold tracking-tight text-zinc-100">
-                                    {formattedShare}
-                                  </span>
-                                )}
+                                <span className="font-sans text-sm font-bold tracking-tight text-zinc-100">
+                                  {formattedShare}
+                                </span>
                               </div>
                             </div>
                           );
                         }
 
-                        // SETTLEMENT TIMELINE ROW
+                        // INDIVIDUAL SETTLEMENT TIMELINE ROW
                         const st = item.settlement;
                         const isPayerMe = st.payer_id === activeUserId;
                         const amountNum = Number(st.amount || 0);
@@ -477,21 +493,33 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                           maximumFractionDigits: 2,
                         })}`;
 
+                        const coveredInfo = getSettlementCoveredSubtitle(
+                          st,
+                          relationship.fullName,
+                          isPayerMe,
+                          allExpenses,
+                          userProfile?.full_name || userProfile?.name || userProfile?.username
+                        );
+
                         return (
                           <div
-                            key={`settlement-item-${st.id}`}
-                            onClick={() => setConfirmDeleteSettlementId(st.id)}
+                            key={item.id}
+                            onClick={() => {
+                              setConfirmDeleteSettlementId(st.id);
+                            }}
                             className="w-full flex items-center justify-between py-3.5 text-left group transition-all px-0.5 select-none opacity-100 cursor-pointer hover:bg-white/[0.01]"
                           >
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                               {/* VERTICAL DATE COLUMN */}
-                              <div className="w-8 shrink-0 flex flex-col items-center justify-center text-center select-none mr-0.5">
-                                <span className="text-[9.5px] font-sans font-semibold tracking-wider uppercase leading-none text-zinc-500">
-                                  {monthUpper}
+                              <div className="w-11 shrink-0 flex flex-col items-center justify-center text-center select-none mr-0.5 space-y-1">
+                                <span className="text-[10px] font-sans font-bold tracking-wide uppercase leading-none whitespace-nowrap text-zinc-400">
+                                  {monthUpper} {dayStr}
                                 </span>
-                                <span className="text-[13px] font-sans font-bold leading-none mt-1 text-zinc-500">
-                                  {dayStr}
-                                </span>
+                                {timeStr && (
+                                  <span className="text-[8.5px] font-sans font-medium leading-none whitespace-nowrap text-zinc-500/70">
+                                    {timeStr}
+                                  </span>
+                                )}
                               </div>
 
                               <div className="w-10 h-10 flex items-center justify-center text-emerald-400 shrink-0">
@@ -500,18 +528,17 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
 
                               <div className="min-w-0 flex flex-col justify-center flex-1 pr-3">
                                 <h5 className="font-sans text-[13.5px] truncate leading-tight font-semibold text-zinc-100 group-hover:text-white">
-                                  {relationship.fullName}
+                                  {coveredInfo.titleText}
                                 </h5>
                                 <span className="text-[11.5px] font-sans font-medium block truncate leading-tight mt-0.5 text-zinc-400">
-                                  {isPayerMe ? `You paid ${formattedAmount}` : `Paid you ${formattedAmount}`}
+                                  {coveredInfo.subtitleText}
                                 </span>
                               </div>
                             </div>
 
                             <div className="text-right shrink-0 min-w-max pl-2 flex items-center justify-end">
                               <span
-                                className={`font-sans text-sm font-bold tracking-tight ${isPayerMe ? "text-zinc-100" : "text-emerald-400"
-                                  }`}
+                                className="font-sans text-sm font-bold tracking-tight text-emerald-400"
                               >
                                 {formattedAmount}
                               </span>
@@ -733,4 +760,3 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     </div>
   );
 };
-

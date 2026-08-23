@@ -162,10 +162,26 @@ export const WalletProvider = ({
 
       setDbWalletPaidTransactions([]);
 
-      // 3. Query wallet_settlements
+      // 3. Query wallet_settlements with allocations and expense context
       const { data: settlementsData, error: settlementsErr } = await (supabase as any)
         .from("wallet_settlements")
-        .select("*")
+        .select(`
+          *,
+          allocations:wallet_settlement_allocations(
+            id,
+            amount,
+            expense_participant_id,
+            expense_participant:wallet_expense_participants(
+              id,
+              expense_id,
+              expense:wallet_expenses(
+                id,
+                title,
+                expense_type
+              )
+            )
+          )
+        `)
         .order("created_at", { ascending: false });
 
       if (settlementsErr) {

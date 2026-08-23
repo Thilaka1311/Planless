@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { ArrowLeft, Edit2, Trash2, HandCoins, CheckCircle2, MoreHorizontal, MoreVertical, Check } from "lucide-react";
-import { unsettleWalletExpenseParticipant, deleteWalletExpense, updateWalletExpense, removeExpenseParticipant, getParticipantFinancialState, sortExpenseParticipants } from "../services/walletService";
+import { unsettleWalletExpenseParticipant, deleteWalletExpense, updateWalletExpense, removeExpenseParticipant, getParticipantFinancialState, sortExpenseParticipants, registerExpenseCacheClearCallback } from "../services/walletService";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useWalletStore } from "../state/WalletContext";
@@ -34,6 +34,10 @@ export const invalidateExpenseDetailCache = (expenseId?: string) => {
     inFlightExpenseFetches.clear();
   }
 };
+
+registerExpenseCacheClearCallback(() => {
+  invalidateExpenseDetailCache();
+});
 
 export const updateExpenseDetailCache = (
   expenseId: string,
@@ -463,9 +467,11 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       const u = profMap.get(pt.user_id);
 
       const amountOwed = Number(pt.amount_owed ?? pt.amount ?? 0);
+      const amountPaid = Number(pt.amount_paid ?? pt.amountPaid ?? 0);
+      const outstandingAmount = Math.max(0, amountOwed - amountPaid);
       const ptStatus = String(pt.status || "PENDING").toUpperCase();
-      const isPtSettled = ptStatus === "SETTLED";
-      const remaining = isPtSettled ? 0 : amountOwed;
+      const isPtSettled = ptStatus === "SETTLED" || (amountOwed > 0 && amountPaid >= amountOwed) || (amountOwed > 0 && outstandingAmount <= 0);
+      const remaining = isPtSettled ? 0 : outstandingAmount;
 
       if (!isPtSettled && !isPayerRow && !pt.isPayerOnly) allSettled = false;
 
@@ -485,6 +491,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
 
       // Subtitle / payment direction label
       const formattedAmount = `₹${amountOwed.toLocaleString("en-IN")}`;
+      const formattedOutstanding = `₹${outstandingAmount.toLocaleString("en-IN")}`;
       let subtitle = "";
       let sheetSubtitle = "";
 
@@ -496,7 +503,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         sheetSubtitle = subtitle;
       } else if (isLeft) {
         subtitle = isPtSettled ? "Left plan · Settled" : "Left plan";
-        sheetSubtitle = isPtSettled ? "Left plan · Settled" : `Left plan · ${formattedAmount} owed`;
+        sheetSubtitle = isPtSettled ? "Left plan · Settled" : `Left plan · ${formattedOutstanding} owed`;
       } else if (isPtExcluded) {
         subtitle = "Waitlisted";
         sheetSubtitle = subtitle;
@@ -505,13 +512,13 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         sheetSubtitle = subtitle;
       } else if (payerMe) {
         subtitle = `${u?.full_name || u?.username || "Participant"} owes you`;
-        sheetSubtitle = `${u?.full_name || u?.username || "Participant"} owes you ${formattedAmount}`;
+        sheetSubtitle = `${u?.full_name || u?.username || "Participant"} owes you ${formattedOutstanding}`;
       } else if (ptIsMe) {
         subtitle = `You owe ${payerDisplayName}`;
-        sheetSubtitle = `You owe ${payerDisplayName} ${formattedAmount}`;
+        sheetSubtitle = `You owe ${payerDisplayName} ${formattedOutstanding}`;
       } else {
         subtitle = `${u?.full_name || u?.username || "Participant"} owes ${payerDisplayName}`;
-        sheetSubtitle = `${u?.full_name || u?.username || "Participant"} owes ${payerDisplayName} ${formattedAmount}`;
+        sheetSubtitle = `${u?.full_name || u?.username || "Participant"} owes ${payerDisplayName} ${formattedOutstanding}`;
       }
 
       return {
@@ -519,6 +526,8 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         fullName: ptIsMe ? "You" : u?.full_name || u?.username || "Participant",
         profilePhoto: u?.profile_photo_path || "",
         amountOwed,
+        amountPaid,
+        outstandingAmount,
         status: ptStatus,
         isPtSettled,
         isPtWaitlisted: isPtExcluded,
@@ -962,7 +971,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-24 text-left bg-[#050505] select-none animate-fade-in"
     >
       {/* TOP NAVIGATION BAR WITH PLAN NAME CENTERED */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-1.5">
         <button
           type="button"
           onClick={onBack}
@@ -1035,37 +1044,62 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       </div>
 
       {/* EXPENSE SUMMARY SECTION — DIRECTLY ON PAGE BACKGROUND */}
-      <div className="flex flex-col items-center text-center pt-2 pb-6 space-y-1.5 mb-2">
-        {/* 1. Expense Title */}
-        <h3 className="font-sans font-bold text-2xl text-zinc-100 leading-snug">
-          {expenseTitle}
-        </h3>
+      {(() => {
+        const formattedExpenseDateTime = (() => {
+          if (!expenseData) return null;
+          const rawDate = expenseData.created_at || (expenseData as any).createdAt || (expenseData as any).date;
+          if (!rawDate) return null;
+          const d = new Date(rawDate);
+          if (isNaN(d.getTime())) return null;
 
-        {/* 2. Centered Payer Avatar */}
-        <div className="pt-2 pb-0.5">
-          <UserAvatar
-            src={payerIsMe ? (userProfile?.profile_photo_path || payerPhoto) : payerPhoto}
-            alt={payerName}
-            size="w-16 h-16"
-            className="ring-2 ring-white/10 shadow-lg mx-auto"
-          />
-        </div>
+          const monthShort = d.toLocaleString("en-US", { month: "short" });
+          const dayNum = d.getDate();
+          const timeStr = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 
-        {/* 3. Payer Name */}
-        <h4 className="font-sans font-semibold text-base text-zinc-100 leading-tight">
-          {payerName}
-        </h4>
+          return `${monthShort} ${dayNum} · ${timeStr}`;
+        })();
 
-        {/* 4. Total Amount Paid */}
-        <p className="text-zinc-400 font-sans text-xs font-medium leading-tight">
-          Paid ₹{Number(expenseData.total_amount || 0).toLocaleString("en-IN")}
-        </p>
-      </div>
+        return (
+          <div className="flex flex-col items-center text-center pt-0 pb-5 space-y-1 mb-2">
+            {/* 1. Expense Title */}
+            <h3 className="font-sans font-bold text-2xl text-zinc-100 leading-snug">
+              {expenseTitle}
+            </h3>
+
+            {/* 2. Expense Creation Date & Time */}
+            {formattedExpenseDateTime && (
+              <p className="font-sans text-xs font-medium text-zinc-400 leading-none select-none">
+                {formattedExpenseDateTime}
+              </p>
+            )}
+
+            {/* 3. Centered Payer Avatar */}
+            <div className="pt-[22px] pb-0.5">
+              <UserAvatar
+                src={payerIsMe ? (userProfile?.profile_photo_path || payerPhoto) : payerPhoto}
+                alt={payerName}
+                size="w-16 h-16"
+                className="ring-2 ring-white/10 shadow-lg mx-auto"
+              />
+            </div>
+
+            {/* 4. Payer Name */}
+            <h4 className="font-sans font-semibold text-base text-zinc-100 leading-tight">
+              {payerName}
+            </h4>
+
+            {/* 5. Total Amount Paid */}
+            <p className="text-zinc-400 font-sans text-sm font-medium leading-tight">
+              Paid ₹{Number(expenseData.total_amount || 0).toLocaleString("en-IN")}
+            </p>
+          </div>
+        );
+      })()}
 
       {/* UNIFIED PARTICIPANTS LIST — DIRECTLY BELOW EXPENSE CARD */}
       <div className="space-y-0.5">
         {formattedParticipants.map((pt) => {
-          const isRowMuted = pt.isPtSettled || pt.isPayer || pt.isPtWaitlisted;
+          const isRowMuted = pt.isPtWaitlisted;
 
           return (
             <div
@@ -1103,8 +1137,12 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                       .reduce((sum, p) => sum + (p.amountOwed || 0), 0);
                     const totalCost = Number(expenseData.total_amount || 0);
                     displayAmt = Math.max(0, totalCost - totalOwedByOthers);
+                  } else if (pt.isPtWaitlisted) {
+                    displayAmt = 0;
+                  } else if (pt.isPtSettled) {
+                    displayAmt = Number(pt.amountOwed || pt.amountPaid || 0);
                   } else {
-                    displayAmt = pt.isPtWaitlisted ? 0 : Number(pt.amountOwed || 0);
+                    displayAmt = Number(pt.outstandingAmount ?? Math.max(0, pt.amountOwed - (pt.amountPaid || 0)));
                   }
 
                   return (

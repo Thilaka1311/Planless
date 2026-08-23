@@ -112,27 +112,24 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
     return set;
   }, [storePlans, dbPlansLocal]);
 
-  // Unified list of active plan relationships (excluding COMPLETED & CANCELLED plans)
+  // List of plan relationships (includes COMPLETED plans with outstanding money for current user)
   const visiblePlanRelationships = useMemo(() => {
     const active = (walletSummary.planRelationships || [])
-      .filter((pRel) => !completedPlanIds.has(pRel.planId))
       .slice()
       .sort((a, b) => Math.abs(b.netBalance) - Math.abs(a.netBalance));
     const settled = (walletSummary.settledPlanRelationships || [])
-      .filter((pRel) => !completedPlanIds.has(pRel.planId))
       .slice()
       .sort((a, b) => (a.planTitle || "").localeCompare(b.planTitle || ""));
 
     return [...active, ...settled];
-  }, [walletSummary.planRelationships, walletSummary.settledPlanRelationships, completedPlanIds]);
+  }, [walletSummary.planRelationships, walletSummary.settledPlanRelationships]);
 
-  // Settled plan relationships (excluding COMPLETED & CANCELLED plans)
+  // Settled plan relationships for active plans
   const settledPlanRelationships = useMemo(() => {
     return (walletSummary.settledPlanRelationships || [])
-      .filter((pRel) => !completedPlanIds.has(pRel.planId))
       .slice()
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  }, [walletSummary.settledPlanRelationships, completedPlanIds]);
+  }, [walletSummary.settledPlanRelationships]);
 
   // All searchable people (every user in mergedUsers except activeUserUuid)
   const allSearchablePeople = useMemo(() => {
