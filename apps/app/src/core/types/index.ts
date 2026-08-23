@@ -99,6 +99,11 @@ export interface DbPlanParticipant {
   circle_id?: string | null;
   leave_requested?: boolean;
   leave_requested_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  join_queue?: number | null;
+  final_attendance?: 'ATTENDED' | 'DID_NOT_ATTEND' | null;
+  final_state?: 'JOINED' | 'SKIPPED' | null;
 }
 
 export enum SystemMessageType {
@@ -263,6 +268,10 @@ export interface PlanMember {
   updatedAt?: string;
   createdAt?: string;
   checkedIn?: boolean;
+  skipReason?: string | null;
+  skip_reason?: string | null;
+  finalState?: 'JOINED' | 'SKIPPED' | null;
+  finalAttendance?: 'ATTENDED' | 'DID_NOT_ATTEND' | null;
 }
 
 // Backward compatibility alias for UI
@@ -284,6 +293,7 @@ export interface Plan {
   paymentAmount: number;
   status: "LIVE" | "COMPLETED" | "CANCELLED" | "PENDING" | "BOOKING_READY" | "CONFIRMED" | "SLOT_UNAVAILABLE";
   datetime?: string;
+  scheduled_at?: string;
   createdAt: string;
   waitlistEnabled?: boolean;
   joinLimit?: number;

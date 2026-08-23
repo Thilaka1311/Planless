@@ -38,6 +38,8 @@ import { useLiveCountdown, formatDeadlineFull, rsvpUrgencyStyles } from "../../.
 import { useRSVPDeadline } from "../../../utils/rsvpFormatter";
 import { HeroHeader } from "../../../components/HeroHeader";
 import { HeroMetadataCard } from "../../../components/HeroMetadataCard";
+import { PlanChatScreen } from "../../../../chats/screens/PlanChatScreen";
+import { PlanDetailsScreen } from "../../../../wallet/screens/PlanBalances";
 import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGooglePlacesAutocomplete";
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
 import { InlineParticipantView } from "../../../components/InlineParticipantView";
@@ -48,6 +50,8 @@ import {
   PaidPlanLeaveConfirmationDialog,
   CancelLeaveRequestBottomSheet,
   CancelPlanBottomSheet,
+  CompletePlanConfirmationBottomSheet,
+  EarlyCompletePlanConfirmationBottomSheet,
   RestorePlanBottomSheet,
   EditDateTimeBottomSheet,
   EditCostBottomSheet,
@@ -55,6 +59,7 @@ import {
   JoinPlanConfirmationBottomSheet,
   SkipPlanConfirmationDialog,
 } from "../../../components/BottomSheets";
+import { HostAttendanceScreen } from "../../../../completion/docs/Screens/HostAttendanceScreen";
 
 // ==========================================
 // UTILITIES & CONSTANTS
@@ -562,6 +567,8 @@ export interface PlansDetailsScreenProps {
   setShowLeftSuccess?: (planId: string | null) => void;
   onLeavePlan?: () => void;
   onPlanCancelled?: (planId: string) => void;
+  onOpenChat?: (planId: string) => void;
+  onOpenExpenses?: (planId: string) => void;
 }
 
 export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
@@ -575,6 +582,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   setShowLeftSuccess,
   onLeavePlan,
   onPlanCancelled,
+  onOpenChat,
+  onOpenExpenses,
 }) => {
   const { showToast } = useToast();
   const {
@@ -590,6 +599,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     joinPlan,
     changePlanHost,
     cancelPlan,
+    completePlan,
     removeParticipant,
     updatePlanDetails,
     moveParticipantToGoing,
@@ -837,9 +847,14 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [showInfoPopup, setShowInfoPopup] = useState(false);
   const [showLeavePlanConfirm, setShowLeavePlanConfirm] = useState(false);
   const [showCancelPlanConfirm, setShowCancelPlanConfirm] = useState(false);
+  const [showAttendanceSheet, setShowAttendanceSheet] = useState(false);
+  const [showEarlyEndPlanConfirm, setShowEarlyEndPlanConfirm] = useState(false);
+  const [isEndingPlan, setIsEndingPlan] = useState(false);
   const [showRestorePlanConfirm, setShowRestorePlanConfirm] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(false);
+  const [showPlanBalancesScreen, setShowPlanBalancesScreen] = useState(false);
+  const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
   const rsvp = useRSVPDeadline(selectedPlan?.response_deadline_at);
   const urgencyColor = rsvp.color;
 
@@ -865,6 +880,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     : (selectedPlan?.members ? selectedPlan.members.some(m => (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid) && m.isHost) : false);
 
   const isCancelled = Boolean((selectedPlan?.status || "").toUpperCase() === "CANCELLED");
+  const isCompleted = Boolean((selectedPlan?.status || "").toUpperCase() === "COMPLETED");
 
   const isCreatorHost = isHost;
 
@@ -1287,6 +1303,20 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               viewerId={resolvedUserUuid}
               onClose={onClose}
               isHost={isHost && !isCancelled}
+              onOpenChat={() => {
+                if (onOpenChat) {
+                  onOpenChat(selectedPlan.id);
+                } else {
+                  setSelectedChatPlanId(selectedPlan.id);
+                }
+              }}
+              onOpenExpenses={() => {
+                if (onOpenExpenses) {
+                  onOpenExpenses(selectedPlan.id);
+                } else {
+                  setShowPlanBalancesScreen(true);
+                }
+              }}
               onOpenSettings={!isCancelled ? () => setShowPlanSettingsScreen(true) : undefined}
             />
 
@@ -1435,17 +1465,20 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           <RSVPCard
             myParticipantRecord={myParticipantRecord}
             isCancelled={isCancelled}
+            isCompleted={isCompleted}
             className={(myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT") ? "!bottom-24" : ""}
             onClick={
-              isHost && isCancelled
-                ? () => setShowRestorePlanConfirm(true)
-                : isHost
-                  ? () => setShowCancelPlanConfirm(true)
-                  : myParticipantRecord?.rsvp_status === "JOINED" && myParticipantRecord?.leave_requested
-                    ? () => setShowCancelLeaveRequestConfirmation(true)
-                    : myParticipantRecord?.rsvp_status === "JOINED" && !alreadySkipped
-                      ? () => setShowLeavePlanConfirm(true)
-                      : undefined
+              isCompleted
+                ? undefined
+                : isHost && isCancelled
+                  ? () => setShowRestorePlanConfirm(true)
+                  : isHost
+                    ? () => setShowCancelPlanConfirm(true)
+                    : myParticipantRecord?.rsvp_status === "JOINED" && myParticipantRecord?.leave_requested
+                      ? () => setShowCancelLeaveRequestConfirmation(true)
+                      : myParticipantRecord?.rsvp_status === "JOINED" && !alreadySkipped
+                        ? () => setShowLeavePlanConfirm(true)
+                        : undefined
             }
           />
           {myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" && (
@@ -1554,6 +1587,33 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         />
       )}
 
+      {/* 💬 PLAN CHAT OVERLAY */}
+      {selectedChatPlanId && (
+        <div className="fixed inset-0 z-[80] bg-[#050505]">
+          <PlanChatScreen
+            planId={selectedChatPlanId}
+            onBack={() => setSelectedChatPlanId(null)}
+            onOpenPlanDetails={() => {
+              setSelectedChatPlanId(null);
+            }}
+          />
+        </div>
+      )}
+
+      {/* 💳 PLAN BALANCES / EXPENSES OVERLAY */}
+      {showPlanBalancesScreen && selectedPlan && (
+        <div className="fixed inset-0 z-[80] bg-[#050505]">
+          <PlanDetailsScreen
+            planId={selectedPlan.id}
+            onBack={() => setShowPlanBalancesScreen(false)}
+            onRefreshBalances={async () => { }}
+            activeUserId={activeUserId || userProfile.dbUuid || (userProfile as any)?.id || ""}
+            onSelectPlan={() => { }}
+            onToggleBottomNav={() => { }}
+          />
+        </div>
+      )}
+
       <AnimatePresence>
         {showCompletionFlow && (
           <PlanCompletionModal
@@ -1612,10 +1672,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onClose={() => setShowLeavePlanConfirm(false)}
       />
 
-      {/* ---------------- 🚫 CANCEL PLAN CONFIRMATION SHEET ---------------- */}
+      {/* ---------------- 🚫 PLAN ACTIONS SHEET (CANCEL / MARK AS COMPLETE) ---------------- */}
       <CancelPlanBottomSheet
         isOpen={showCancelPlanConfirm}
-        onConfirm={async () => {
+        onConfirmCancel={async () => {
           setShowCancelPlanConfirm(false);
           try {
             await cancelPlan(selectedPlan.id);
@@ -1625,7 +1685,73 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             showToast("Failed to cancel plan");
           }
         }}
+        onMarkAsComplete={() => {
+          setShowCancelPlanConfirm(false);
+          const rawScheduled = (selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt;
+          const planScheduledDate = new Date(rawScheduled);
+          const now = new Date();
+          const isEarly = !isNaN(planScheduledDate.getTime()) && now.getTime() < planScheduledDate.getTime();
+
+          if (isEarly) {
+            setShowEarlyEndPlanConfirm(true);
+          } else {
+            setShowAttendanceSheet(true);
+          }
+        }}
         onClose={() => setShowCancelPlanConfirm(false)}
+      />
+
+      {/* ---------------- 📝 HOST ATTENDANCE FULL-SCREEN SCREEN ---------------- */}
+      <AnimatePresence>
+        {showAttendanceSheet && (
+          <motion.div
+            key="host-attendance-screen"
+            initial={{ opacity: 0, x: 40 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 40 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="fixed inset-0 z-[70] bg-[#050505] flex flex-col"
+          >
+            <HostAttendanceScreen
+              isOpen={showAttendanceSheet}
+              members={selectedPlan?.members || []}
+              hostId={selectedPlan.hostId || selectedPlan.creatorId || (selectedPlan as any).host_id || ""}
+              isSubmitting={isEndingPlan}
+              onConfirm={async (attendanceInput) => {
+                setIsEndingPlan(true);
+                try {
+                  // Is it early?
+                  const rawScheduled = (selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt;
+                  const planScheduledDate = new Date(rawScheduled);
+                  const now = new Date();
+                  const isEarly = !isNaN(planScheduledDate.getTime()) && now.getTime() < planScheduledDate.getTime();
+
+                  await completePlan(selectedPlan.id, attendanceInput, { isEarly });
+                  showToast("✓ Plan completed");
+                  setShowAttendanceSheet(false);
+                  onClose();
+                } catch (err: any) {
+                  showToast("Failed to complete plan");
+                } finally {
+                  setIsEndingPlan(false);
+                }
+              }}
+              onBack={() => setShowAttendanceSheet(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ---------------- ⚡ EARLY COMPLETE PLAN CONFIRMATION SHEET ---------------- */}
+      <EarlyCompletePlanConfirmationBottomSheet
+        isOpen={showEarlyEndPlanConfirm}
+        scheduledTimeText={formatPlanDate((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)}
+        isSubmitting={false}
+        onConfirm={() => {
+          setShowEarlyEndPlanConfirm(false);
+          setShowAttendanceSheet(true);
+        }}
+        onClose={() => setShowEarlyEndPlanConfirm(false)}
       />
 
       {/* ---------------- ↺ RESTORE PLAN CONFIRMATION SHEET ---------------- */}

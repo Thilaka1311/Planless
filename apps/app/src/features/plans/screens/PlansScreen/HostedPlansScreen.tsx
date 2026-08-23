@@ -149,7 +149,7 @@ export const HostedPlansScreen = React.memo(({
 
   const hostedPlans = useMemo(() => {
     return plans.filter((p) => {
-      if ((p.status || "").toUpperCase() === "CANCELLED") return false;
+      if ((p.status || "").toUpperCase() === "CANCELLED" || (p.status || "").toUpperCase() === "COMPLETED") return false;
       const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
       const rsvpStatus = normalizeStatus(myParticipant?.rsvp_status);
       const isJoined = rsvpStatus === "JOINED";

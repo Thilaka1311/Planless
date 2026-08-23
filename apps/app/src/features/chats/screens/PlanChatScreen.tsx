@@ -39,7 +39,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
   const { profile: userProfile, activeUserUuid } = useProfileStore();
 
-  // Robust sender UUID resolution across all possible user state sources
   const senderUuid =
     userProfile?.dbUuid ||
     activeUserUuid ||
@@ -49,9 +48,8 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     "";
 
   const currentUserId = senderUuid;
-
-  // Find target plan
   const plan = plans.find((p) => p.id === planId || p.dbUuid === planId);
+  const isPlanCompleted = String(plan?.status || "").toUpperCase() === "COMPLETED";
 
   // Resolved target database UUID for plan (must be a valid UUID)
   const targetPlanUuid = useMemo(() => {
@@ -1115,46 +1113,59 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               )}
             </div>
 
-            {/* MESSAGE COMPOSER */}
-            <form
-              onSubmit={handleSendMessage}
-              className={`bg-black/90 px-4 pt-1.5 ${
-                keyboardOpen ? "pb-1.5" : "pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
-              } flex items-center flex-shrink-0`}
-            >
-              <div className="relative w-full flex items-center h-[46px] bg-zinc-900/90 border border-white/[0.08] rounded-full px-5 focus-within:border-white/20 transition-all shadow-lg">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  placeholder="Send a message..."
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onFocus={() => {
-                    scrollToBottom(false);
-                  }}
-                  className="w-full h-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none pr-24 font-sans"
-                />
-
-                {inputText.trim() ? (
-                  <button
-                    type="submit"
-                    disabled={sending}
-                    onMouseDown={(e) => e.preventDefault()}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#C46A2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
-                  >
-                    <SendHorizontal className="w-4 h-4 text-white stroke-[2]" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleOpenAddCostSheet}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-xs font-semibold text-white hover:bg-zinc-700 transition cursor-pointer flex items-center gap-1 shadow-md"
-                  >
-                    <span>+ Add Cost</span>
-                  </button>
-                )}
+            {/* ARCHIVED INDICATOR / MESSAGE COMPOSER */}
+            {isPlanCompleted ? (
+              <div
+                className={`bg-black/95 px-4 pt-3.5 ${
+                  keyboardOpen ? "pb-3.5" : "pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))]"
+                } flex items-center justify-center flex-shrink-0 border-t border-white/[0.06] select-none`}
+              >
+                <div className="px-4 py-2 rounded-full bg-zinc-900/80 border border-white/[0.08] text-xs font-medium text-zinc-400 tracking-wide flex items-center gap-2 shadow-inner">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/80" />
+                  <span>Plan completed · Chat archived</span>
+                </div>
               </div>
-            </form>
+            ) : (
+              <form
+                onSubmit={handleSendMessage}
+                className={`bg-black/90 px-4 pt-1.5 ${
+                  keyboardOpen ? "pb-1.5" : "pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
+                } flex items-center flex-shrink-0`}
+              >
+                <div className="relative w-full flex items-center h-[46px] bg-zinc-900/90 border border-white/[0.08] rounded-full px-5 focus-within:border-white/20 transition-all shadow-lg">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    placeholder="Send a message..."
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    onFocus={() => {
+                      scrollToBottom(false);
+                    }}
+                    className="w-full h-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none pr-24 font-sans"
+                  />
+
+                  {inputText.trim() ? (
+                    <button
+                      type="submit"
+                      disabled={sending}
+                      onMouseDown={(e) => e.preventDefault()}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#C46A2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
+                    >
+                      <SendHorizontal className="w-4 h-4 text-white stroke-[2]" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleOpenAddCostSheet}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-xs font-semibold text-white hover:bg-zinc-700 transition cursor-pointer flex items-center gap-1 shadow-md"
+                    >
+                      <span>+ Add Cost</span>
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
           </div>
 
           {/* PAGE 2: ACTIVITY */}

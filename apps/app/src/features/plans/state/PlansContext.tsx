@@ -65,7 +65,7 @@ interface PlansContextType {
   changePlanHost: (planId: string, newHostUuid: string, oldHostUuid: string) => Promise<void>;
   cancelPlan: (planId: string) => Promise<void>;
   updatePlanDetails: (planId: string, updates: Partial<DbPlan>) => Promise<any>;
-  completePlan: (planId: string) => Promise<void>;
+  completePlan: (planId: string, attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>, opts?: { isEarly?: boolean }) => Promise<void>;
   submitReview: (memoryId: string, category: 'movie' | 'dining', rating: number, review: string | null, userUuid: string, existingId?: string) => Promise<void>;
   submitStats: (memoryId: string, category: 'football' | 'badminton', stats: { scoreA?: number; scoreB?: number; wins?: number; losses?: number }, userUuid: string) => Promise<void>;
   submitMvp: (memoryId: string, voterUuid: string, mvpUuid: string) => Promise<void>;
@@ -1016,11 +1016,20 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await lifecycle.updatePlanDetails(planId, updates);
   }, [lifecycle, plans, updateLocalPlan]);
 
-  const completePlan = useCallback(async (planId: string) => {
-    await lifecycle.completePlan(planId);
+  const completePlan = useCallback(async (
+    planId: string,
+    attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>,
+    opts?: { isEarly?: boolean }
+  ) => {
+    await lifecycle.completePlan(planId, attendanceInput, opts);
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
-    updateLocalPlan(planUuid, { status: "COMPLETED" });
+    const nowIso = new Date().toISOString();
+    updateLocalPlan(planUuid, {
+      status: "COMPLETED",
+      updated_at: nowIso,
+      ...(opts?.isEarly ? { scheduled_at: nowIso, rsvp_deadline: nowIso, datetime: nowIso, time: nowIso } : {}),
+    });
   }, [lifecycle, plans, updateLocalPlan]);
 
   // ─── Team Assignment Actions (moved to hook usePlanTeams) ───
@@ -1170,7 +1179,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     changePlanHost: lifecycle.changePlanHost,
     cancelPlan: lifecycle.cancelPlan,
     updatePlanDetails: lifecycle.updatePlanDetails,
-    completePlan: lifecycle.completePlan,
+    completePlan,
     submitReview: outcomes.submitReview,
     submitStats: outcomes.submitStats,
     submitMvp: outcomes.submitMvp,
@@ -1200,7 +1209,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     memoizedAcceptPlan, memoizedDeclinePlan,
     memoizedCreatePlan,
     lifecycle.changePlanHost, lifecycle.cancelPlan, lifecycle.updatePlanDetails,
-    lifecycle.completePlan,
+    completePlan,
     outcomes.submitReview, outcomes.submitStats, outcomes.submitMvp,
     addParticipantsToPlan, promoteWaitlistParticipant, rebalanceCapacity, getAvailableCapacity,
     moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited,

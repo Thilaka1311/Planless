@@ -280,3 +280,21 @@ export async function removeParticipantRPC(
   if (error) throw error;
   return data;
 }
+
+/**
+ * Invokes the complete_plan SECURITY DEFINER RPC.
+ * Authorized only for the Plan Host.
+ * Finalizes participant attendance and completes the plan.
+ */
+export async function completePlan(
+  planId: string,
+  attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>
+): Promise<any> {
+  const { data, error } = await supabase.rpc("complete_plan", {
+    p_plan_id: planId,
+    p_attendance_input: attendanceInput
+  });
+
+  if (error) throw error;
+  return data;
+}

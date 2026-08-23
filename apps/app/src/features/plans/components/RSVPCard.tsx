@@ -7,13 +7,20 @@ interface RSVPCardProps {
   className?: string;
   onClick?: () => void;
   isCancelled?: boolean;
+  isCompleted?: boolean;
 }
 
-export const RSVPCard: React.FC<RSVPCardProps> = ({ myParticipantRecord, className = "", onClick, isCancelled = false }) => {
-  if (!myParticipantRecord && !isCancelled) return null;
+export const RSVPCard: React.FC<RSVPCardProps> = ({
+  myParticipantRecord,
+  className = "",
+  onClick,
+  isCancelled = false,
+  isCompleted = false,
+}) => {
+  if (!myParticipantRecord && !isCancelled && !isCompleted) return null;
 
-  const status = normalizeStatus(myParticipantRecord.rsvp_status);
-  const skipReason = myParticipantRecord.skip_reason;
+  const status = myParticipantRecord ? normalizeStatus(myParticipantRecord.rsvp_status) : undefined;
+  const skipReason = myParticipantRecord?.skip_reason;
 
   let text = '';
   let dotColor = 'bg-zinc-400';
@@ -32,6 +39,14 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({ myParticipantRecord, classNa
       backgroundColor: 'rgba(136, 19, 55, 0.28)',
       borderColor: 'rgba(244, 63, 94, 0.25)',
       textColor: 'text-rose-200',
+    };
+  } else if (isCompleted) {
+    text = "Plan Completed";
+    dotColor = 'bg-emerald-400/80 shadow-[0_0_8px_rgba(52,211,153,0.3)]';
+    glassStyle = {
+      backgroundColor: 'rgba(24, 24, 27, 0.65)',
+      borderColor: 'rgba(255, 255, 255, 0.08)',
+      textColor: 'text-zinc-400',
     };
   } else if (isHostRole) {
     text = "You're Hosting";
@@ -97,7 +112,7 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({ myParticipantRecord, classNa
     return null;
   }
 
-  const isInteractive = Boolean(onClick);
+  const isInteractive = Boolean(onClick && !isCompleted);
 
   return (
     <motion.div

@@ -8,6 +8,7 @@ import { WalletPlanCard } from "../components/WalletPlanCard";
 import { calculateWalletSummary, WalletRelationship, PlanRelationship } from "../services/walletService";
 import { useWalletStore } from "../state/WalletContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
+import { usePlansStore } from "../../plans/state/PlansContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { PeopleSettledUpScreen, PlansSettledUpScreen } from "./WalletSettledUp";
 
@@ -86,24 +87,52 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [walletSummary.settledRelationships]);
 
-  // Unified list of all plan relationships (active unsettled + settled)
+  const { plans: storePlans } = usePlansStore();
+
+  // Set of all completed or cancelled plan IDs to exclude from Wallet -> Plans tab
+  const completedPlanIds = useMemo(() => {
+    const set = new Set<string>();
+
+    (storePlans || []).forEach((p: any) => {
+      const st = String(p.status || "").toUpperCase();
+      if (st === "COMPLETED" || st === "CANCELLED") {
+        if (p.id) set.add(p.id);
+        if (p.dbUuid) set.add(p.dbUuid);
+      }
+    });
+
+    (dbPlansLocal || []).forEach((p: any) => {
+      const st = String(p.status || p.plan_status || "").toUpperCase();
+      if (st === "COMPLETED" || st === "CANCELLED") {
+        if (p.id) set.add(p.id);
+        if (p.dbUuid) set.add(p.dbUuid);
+      }
+    });
+
+    return set;
+  }, [storePlans, dbPlansLocal]);
+
+  // Unified list of active plan relationships (excluding COMPLETED & CANCELLED plans)
   const visiblePlanRelationships = useMemo(() => {
     const active = (walletSummary.planRelationships || [])
+      .filter((pRel) => !completedPlanIds.has(pRel.planId))
       .slice()
       .sort((a, b) => Math.abs(b.netBalance) - Math.abs(a.netBalance));
     const settled = (walletSummary.settledPlanRelationships || [])
+      .filter((pRel) => !completedPlanIds.has(pRel.planId))
       .slice()
       .sort((a, b) => (a.planTitle || "").localeCompare(b.planTitle || ""));
 
     return [...active, ...settled];
-  }, [walletSummary.planRelationships, walletSummary.settledPlanRelationships]);
+  }, [walletSummary.planRelationships, walletSummary.settledPlanRelationships, completedPlanIds]);
 
-  // Settled plan relationships
+  // Settled plan relationships (excluding COMPLETED & CANCELLED plans)
   const settledPlanRelationships = useMemo(() => {
     return (walletSummary.settledPlanRelationships || [])
+      .filter((pRel) => !completedPlanIds.has(pRel.planId))
       .slice()
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  }, [walletSummary.settledPlanRelationships]);
+  }, [walletSummary.settledPlanRelationships, completedPlanIds]);
 
   // All searchable people (every user in mergedUsers except activeUserUuid)
   const allSearchablePeople = useMemo(() => {
@@ -140,25 +169,30 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
     return Array.from(relMap.values()).sort((a, b) => a.fullName.localeCompare(b.fullName));
   }, [activeUserUuid, walletSummary.personRelationships, walletSummary.settledRelationships, mergedUsers]);
 
-  // All searchable plans (every plan in dbPlansLocal or walletSummary)
+  // All searchable plans (excluding COMPLETED & CANCELLED plans)
   const allSearchablePlans = useMemo(() => {
     const planMap = new Map<string, PlanRelationship>();
 
     // 1. Active plan relationships
-    (walletSummary.planRelationships || []).forEach((pRel) => {
-      planMap.set(pRel.planId, pRel);
-    });
+    (walletSummary.planRelationships || [])
+      .filter((pRel) => !completedPlanIds.has(pRel.planId))
+      .forEach((pRel) => {
+        planMap.set(pRel.planId, pRel);
+      });
 
     // 2. Settled plan relationships
-    (walletSummary.settledPlanRelationships || []).forEach((pRel) => {
-      if (!planMap.has(pRel.planId)) {
-        planMap.set(pRel.planId, pRel);
-      }
-    });
+    (walletSummary.settledPlanRelationships || [])
+      .filter((pRel) => !completedPlanIds.has(pRel.planId))
+      .forEach((pRel) => {
+        if (!planMap.has(pRel.planId)) {
+          planMap.set(pRel.planId, pRel);
+        }
+      });
 
-    // 3. Any other plans in dbPlansLocal
+    // 3. Any other plans in dbPlansLocal (excluding COMPLETED & CANCELLED plans)
     (dbPlansLocal || []).forEach((plan: any) => {
-      if (plan.id && !planMap.has(plan.id)) {
+      const statusUpper = String(plan.status || plan.plan_status || "").toUpperCase();
+      if (statusUpper !== "COMPLETED" && statusUpper !== "CANCELLED" && plan.id && !completedPlanIds.has(plan.id) && !planMap.has(plan.id)) {
         planMap.set(plan.id, {
           planId: plan.id,
           expenseId: `search-${plan.id}`,
@@ -174,7 +208,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
     });
 
     return Array.from(planMap.values()).sort((a, b) => (a.planTitle || "").localeCompare(b.planTitle || ""));
-  }, [walletSummary.planRelationships, walletSummary.settledPlanRelationships, dbPlansLocal]);
+  }, [walletSummary.planRelationships, walletSummary.settledPlanRelationships, dbPlansLocal, completedPlanIds]);
 
   // Filtered lists for search
   const isSearching = isSearchOpen && searchQuery.trim() !== "";

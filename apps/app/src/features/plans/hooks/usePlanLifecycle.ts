@@ -319,90 +319,47 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
 
   // ─── completePlan ────────────────────────────────────────────────────────────
 
-  const completePlan = useCallback(async (planId: string) => {
-
-
+  const completePlan = useCallback(async (
+    planId: string, 
+    attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>, 
+    opts?: { isEarly?: boolean }
+  ) => {
+    console.log("[PLAN_COMPLETE_START] Completing plan:", planId);
 
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
 
     if (!planUuid) {
+      console.error("[PLAN_COMPLETE_ERROR] Invalid plan ID:", planId);
       throw new Error("Cannot complete plan: invalid plan ID");
     }
 
-    // host or moderator validation
-    const dbPlanObj = dbPlans.find(p => p.id === planUuid);
+    // Host validation
+    const dbPlanObj = dbPlans.find(p => p.id === planUuid || p.id === matchedPlan?.id);
     const hostUuid = resolveUserUuid(matchedPlan?.hostId || matchedPlan?.creatorId || dbPlanObj?.host_id || "");
     const activeUserUuidResolved = resolveUserUuid(userId || "");
 
     const isHost = hostUuid === activeUserUuidResolved;
-
-    // Circle admin / Creator Admin check (circle association not in V2 DbPlan; skip for now)
-    const circleUuid: string | undefined = undefined;
-    let isCircleHost = false;
-    let isCircleAdmin = false;
-
-    if (circleUuid) {
-      const circleObj = dbCircles.find((c: any) => c.id === circleUuid || c.circle_id === circleUuid);
-      isCircleHost = circleObj?.created_by === activeUserUuidResolved;
-      const circleMemberObj = dbCircleMembers.find((cm: any) => (cm.circle_id === circleUuid || cm.circle_id === circleObj?.id) && cm.user_id === activeUserUuidResolved);
-      isCircleAdmin = circleMemberObj?.role === "admin";
+    if (!isHost) {
+      console.error("[PLAN_COMPLETE_ERROR] Unauthorized user attempting completion:", userId);
+      throw new Error("Only the plan host can complete the plan.");
     }
 
-    const isAuthorized = isHost || isCircleHost || isCircleAdmin;
-    if (!isAuthorized) {
-      throw new Error("Unauthorized: Only Plan Host, Circle Creator, or Circle Admins can complete plans.");
+    try {
+      await api.completePlan(planUuid, attendanceInput);
+      console.log("[PLAN_COMPLETE_SUCCESS] Plan successfully marked completed.");
+    } catch (err: any) {
+      console.error("[PLAN_COMPLETE_ERROR] Failed DB update:", err);
+      throw new Error(err.message || "Failed to complete plan");
     }
-
-    // Determine memory_type from structured fields (kept for logging/future use)
-    let memory_type = "football";
-    if (dbPlanObj) {
-      const dbItem = (dbPlanObj as any).discovery_items;
-      const categoryVal = dbItem?.category || "CUSTOM";
-      const subcategoryVal = dbItem?.subcategory || "OTHER";
-
-      if (categoryVal === "MOVIES") {
-        memory_type = "movie";
-      } else if (categoryVal === "DINING") {
-        memory_type = "dining";
-      } else if (categoryVal === "SPORTS") {
-        if (subcategoryVal === "FOOTBALL") {
-          memory_type = "football";
-        } else if (subcategoryVal === "BADMINTON") {
-          memory_type = "badminton";
-        }
-      }
-    }
-
-    // Get going participants fresh from DB
-    const { data: freshParticipantsData } = await (supabase as any)
-      .from("plan_participants")
-      .select("*");
-    const freshParticipants = freshParticipantsData || dbPlanParticipants;
-
-    const goingParticipants = freshParticipants.filter(
-      pp => pp.plan_id === planUuid && pp.rsvp_status === "JOINED"
-    );
-
-    const now = new Date();
-    const created_at = now.toISOString();
-    const editable_until = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-    const memoryId = crypto.randomUUID();
-
-    // 1. Update plan status to completed
-    const { error: planError } = await (supabase as any)
-      .from("plans")
-      .update({ status: "COMPLETED" })
-      .eq("id", planUuid);
-    if (planError) {
-      console.error("PLAN_COMPLETE_STATUS_ERROR", planError);
-      throw new Error("Failed to update plan status to completed");
-    }
-
 
     // System message for plan completion
-    await insertSystemMessage(planUuid, "Plan completed", null);
-  }, [plans, dbPlans, dbPlanParticipants, dbCircles, dbCircleMembers, userId, resolveUserUuid, insertSystemMessage]);
+    try {
+      await insertSystemMessage(planUuid, "Plan completed", null);
+    } catch (msgErr) {
+      console.warn("[PLAN_COMPLETE_WARNING] System message failed (non-critical):", msgErr);
+    }
+  }, [plans, dbPlans, userId, resolveUserUuid, insertSystemMessage]);
 
   return {
     changePlanHost,

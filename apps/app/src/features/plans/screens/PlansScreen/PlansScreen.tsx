@@ -166,8 +166,8 @@ export const PlansScreen = React.memo(({
   // Helper filter function for status match
   const filterByStatus = (statusFilter: 'all' | 'JOINED' | 'WAITLISTED' | 'SKIPPED') => {
     return involvedPlans.filter((p) => {
-      // Cancelled plans should never appear in participant plan lists (Going, Waitlisted, Skipped, etc.)
-      if ((p.status || "").toUpperCase() === "CANCELLED") {
+      // Cancelled or Completed plans should never appear in active participant plan lists
+      if ((p.status || "").toUpperCase() === "CANCELLED" || (p.status || "").toUpperCase() === "COMPLETED") {
         return false;
       }
 
