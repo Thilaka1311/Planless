@@ -669,15 +669,17 @@ export const calculateWalletSummary = (
       return;
     }
 
+    const hasOutstandingAmount = planNetOwedToMe >= 0.01 || planNetIOweThem >= 0.01;
+
     if (isCompleted) {
-      // Completed plan rule: Remain in Wallet -> Plans IF current user still has outstanding money
-      if (Math.abs(netPlanBalance) >= 0.01) {
+      // Completed plan rule: Remain in Wallet -> Plans IF current user still has ANY outstanding unsettled amount in this plan
+      if (hasOutstandingAmount) {
         planRelationships.push(item);
       }
-      // If completed and fully settled for current user (netPlanBalance === 0), REMOVE from Wallet -> Plans
+      // Only hide the completed plan when ALL of the current user's outstanding expense-participant amounts are zero
     } else {
       // Active plans: Push to planRelationships if outstanding money exists, else settledPlanRelationships
-      if (Math.abs(netPlanBalance) >= 0.01) {
+      if (hasOutstandingAmount) {
         planRelationships.push(item);
       } else {
         settledPlanRelationships.push(item);
@@ -755,6 +757,31 @@ export const deleteWalletSettlement = async (
   settlementId: string
 ): Promise<{ success: boolean; data?: any; error?: string }> => {
   try {
+    console.log("[walletService] deleteWalletSettlement requested for ID:", settlementId);
+
+    // If ID is a synthetic expense-participant settlement ID: "exp-pt-settle-{expenseId}-{userId}"
+    if (settlementId.startsWith("exp-pt-settle-")) {
+      const raw = settlementId.replace("exp-pt-settle-", "");
+      // Standard UUIDs are 36 characters long (e.g. 8-4-4-4-12)
+      const expenseId = raw.substring(0, 36);
+      const participantUserId = raw.substring(37);
+
+      console.log("[walletService] Reversing synthetic settlement for expenseId:", expenseId, "participantUserId:", participantUserId);
+
+      const ok = await unsettleWalletExpenseParticipant({
+        expenseId,
+        participantUserId,
+      });
+
+      if (!ok) {
+        return { success: false, error: "Failed to reverse participant settlement" };
+      }
+
+      invalidateExpenseDetailCache();
+      return { success: true };
+    }
+
+    // Real DB settlement UUID
     const { data, error } = await (supabase as any).rpc("delete_wallet_settlement", {
       p_settlement_id: settlementId,
     });
@@ -1045,23 +1072,11 @@ export const unsettleWalletExpenseParticipant = async (params: {
   participantUserId: string;
 }): Promise<boolean> => {
   try {
-    // 1. Try SECURITY DEFINER RPC first if available
-    const { error: rpcErr } = await (supabase as any).rpc("unsettle_wallet_expense", {
-      p_expense_id: params.expenseId,
-      p_debtor_id: params.participantUserId,
-    });
-
-    if (!rpcErr) {
-      return true;
-    }
-
-    console.warn("[walletService] unsettle_wallet_expense RPC fallback to direct DB update:", rpcErr);
-
-    // 2. Direct DB update fallback
     const { error: ptErr } = await supabase
       .from("wallet_expense_participants")
       .update({
         status: "PENDING",
+        amount_paid: 0,
         updated_at: new Date().toISOString(),
       })
       .eq("expense_id", params.expenseId)
@@ -1072,7 +1087,6 @@ export const unsettleWalletExpenseParticipant = async (params: {
       return false;
     }
 
-    // 3. Mark parent expense as PENDING as well
     const { error: expErr } = await supabase
       .from("wallet_expenses")
       .update({

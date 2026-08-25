@@ -322,7 +322,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
   const completePlan = useCallback(async (
     planId: string, 
     attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>, 
-    opts?: { isEarly?: boolean }
+    opts?: { isEarly?: boolean; expenseMode?: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE' }
   ) => {
     console.log("[PLAN_COMPLETE_START] Completing plan:", planId);
 
@@ -346,25 +346,79 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     }
 
     try {
-      await api.completePlan(planUuid, attendanceInput);
-      console.log("[PLAN_COMPLETE_SUCCESS] Plan successfully marked completed.");
+      const res = await api.completePlan(planUuid, attendanceInput, opts?.expenseMode || 'NONE');
+      console.log("[PLAN_COMPLETE_SUCCESS] Plan successfully marked completed:", res);
+      
+      // System message for plan completion (fire and forget)
+      insertSystemMessage(planUuid, "Plan completed", null).catch(msgErr => {
+        console.warn("[PLAN_COMPLETE_WARNING] System message failed (non-critical):", msgErr);
+      });
+      
+      return res;
     } catch (err: any) {
       console.error("[PLAN_COMPLETE_ERROR] Failed DB update:", err);
       throw new Error(err.message || "Failed to complete plan");
     }
 
-    // System message for plan completion
-    try {
-      await insertSystemMessage(planUuid, "Plan completed", null);
-    } catch (msgErr) {
-      console.warn("[PLAN_COMPLETE_WARNING] System message failed (non-critical):", msgErr);
-    }
   }, [plans, dbPlans, userId, resolveUserUuid, insertSystemMessage]);
+
+  // ─── manageCompletedPlanParticipants ──────────────────────────────────────────
+
+  const manageCompletedPlanParticipants = useCallback(async (
+    planId: string,
+    usersToAdd: string[],
+    usersToRemove: string[],
+    expenseMode: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE' = 'NONE'
+  ) => {
+    console.log("[PLAN_MANAGE_COMPLETED_START] Managing completed plan participants:", planId);
+
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+
+    if (!planUuid) {
+      throw new Error("Cannot manage participants: invalid plan ID");
+    }
+
+    // Host validation
+    const dbPlanObj = dbPlans.find(p => p.id === planUuid || p.id === matchedPlan?.id);
+    const hostUuid = resolveUserUuid(matchedPlan?.hostId || matchedPlan?.creatorId || dbPlanObj?.host_id || "");
+    const activeUserUuidResolved = resolveUserUuid(userId || "");
+
+    if (hostUuid !== activeUserUuidResolved) {
+      throw new Error("Only the plan host can manage participants of a completed plan.");
+    }
+
+    // 24-hour window check from scheduled_at
+    const scheduledAtRaw = (matchedPlan as any)?.scheduled_at || (matchedPlan as any)?.datetime || (matchedPlan as any)?.time || dbPlanObj?.scheduled_at;
+    if (scheduledAtRaw) {
+      const endTimeMs = new Date(scheduledAtRaw).getTime();
+      if (!isNaN(endTimeMs) && Date.now() >= endTimeMs + 24 * 60 * 60 * 1000) {
+        throw new Error("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.");
+      }
+    }
+
+    try {
+      const res = await api.manageCompletedPlanParticipantsRPC(planUuid, usersToAdd, usersToRemove, expenseMode);
+      
+      // Explicitly refresh plans and participants to ensure local state updates
+      await refreshPlans(["plans", "plan_participants"]);
+
+      return res;
+    } catch (err: any) {
+      console.error("[PLAN_MANAGE_COMPLETED_ERROR] Failed DB update:", JSON.stringify(err, null, 2));
+      const rawMsg = err?.message || err?.details || String(err);
+      if (rawMsg.includes("24-hour") || rawMsg.includes("MANAGEMENT_WINDOW_EXPIRED") || rawMsg.includes("expired")) {
+        throw new Error("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.");
+      }
+      throw new Error(rawMsg || "Failed to manage participants");
+    }
+  }, [plans, dbPlans, userId, resolveUserUuid, refreshPlans]);
 
   return {
     changePlanHost,
     cancelPlan,
     updatePlanDetails,
     completePlan,
+    manageCompletedPlanParticipants,
   };
 }

@@ -27,16 +27,16 @@ export const getSettlementCoveredSubtitle = (
   allExpenses: ExpenseBreakdown[] = [],
   myDisplayName?: string
 ): { titleText: string; subtitleText: string } => {
-  const rawMyName = (myDisplayName || "").trim();
-  const myFirstName = rawMyName ? rawMyName.split(" ")[0] : "You";
   const otherName = (relationshipName || "User").trim();
-  const otherFirstName = otherName.split(" ")[0];
+  const amountNum = Number(st.amount || 0);
+  const isWhole = amountNum % 1 === 0;
+  const formattedAmt = `₹${amountNum.toLocaleString("en-IN", {
+    minimumFractionDigits: isWhole ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
 
-  const payerFirstName = isPayerMe ? myFirstName : otherFirstName;
-  const receiverFirstName = isPayerMe ? otherFirstName : myFirstName;
-
-  const titleText = payerFirstName;
-  const subtitleText = `${payerFirstName} paid ${receiverFirstName}`;
+  const titleText = otherName;
+  const subtitleText = isPayerMe ? `You paid ${otherName}` : `Paid you ${formattedAmt}`;
 
   return {
     titleText,

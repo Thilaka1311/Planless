@@ -69,6 +69,7 @@ export interface DbPlan {
   scheduled_at: string;
   rsvp_deadline: string;
   max_participants: number | null;
+  attended_participants?: number;
   total_cost: number;
   status: 'LIVE' | 'COMPLETED' | 'CANCELLED';
   cover_image?: string | null;
@@ -301,6 +302,8 @@ export interface Plan {
   participant_filtering?: 'AUTOMATIC' | 'ASSIGNED';
   waitlistOrderMode?: 'AUTO' | 'CUSTOM';
   waitlist_order_mode?: 'AUTO' | 'CUSTOM';
+  attended_participants?: number;
+  attendedParticipants?: number;
 
   // UI Legacy Properties (Synced with Strict Contracts)
   category: "movies" | "sports" | "restaurants" | "custom";

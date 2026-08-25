@@ -29,6 +29,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   externalGoingList = [],
   externalWaitlist = [],
   externalInvitedList = [],
+  externalSkippedList = [],
   mode = 'wizard',
   managementMode,
   continueText,
@@ -83,6 +84,8 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   const displayWaitlist = mode === 'editor' ? externalWaitlist : internalWaitlist;
   const displayInvited = mode === 'editor' ? externalInvitedList : [];
 
+  const displaySkipped = mode === 'editor' ? (externalSkippedList || []) : [];
+
   const hasGoingTab = displayGoing.length > 0;
   const hasWaitlistTab = displayWaitlist.length > 0;
   const hasInvitedTab = displayInvited.length > 0;
@@ -93,13 +96,18 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
     if (mode === 'wizard') {
       return ['invited'];
     }
-    // Phase 2: Plan is full -> Going + Waitlist
-    if (isFull) {
-      return ['going', 'waitlist'];
+    const tabs: ParticipantTab[] = ['going'];
+    if (displayWaitlist.length > 0) {
+      tabs.push('waitlist');
     }
-    // Phase 1: Before plan is full -> Invited + Going
-    return ['invited', 'going'];
-  }, [isFull, mode]);
+    if (displaySkipped.length > 0) {
+      tabs.push('skipped');
+    }
+    if (displayInvited.length > 0) {
+      tabs.push('invited');
+    }
+    return tabs;
+  }, [mode, displayWaitlist.length, displaySkipped.length, displayInvited.length]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>('going');
   const initialMountRef = React.useRef(true);
@@ -267,6 +275,17 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
                 key={item.id}
                 item={item}
                 onClick={effectiveIsHost ? () => handleItemTap(item, 'invited') : undefined}
+              />
+            ))}
+          </div>
+        )}
+        {activeTab === 'skipped' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+            {displaySkipped.map((item) => (
+              <StackingFriends
+                key={item.id}
+                item={item}
+                onClick={effectiveIsHost ? () => handleItemTap(item, 'skipped') : undefined}
               />
             ))}
           </div>

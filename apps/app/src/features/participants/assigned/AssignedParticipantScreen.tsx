@@ -8,6 +8,7 @@ import { AssignedParticipantTabs } from './AssignedParticipantTabs';
 import { AssignedParticipantActions } from './AssignedParticipantActions';
 import { GoingSection } from '../components/GoingSection';
 import { WaitlistSection } from '../components/WaitlistSection';
+import { StackingFriends } from '../components/StackingFriends';
 import { ContinueButton } from '../../create/components/ContinueButton';
 import { DisplacedHostModal } from '../../plans/components/DisplacedHostModal';
 import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
@@ -34,6 +35,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   externalGoingList,
   externalWaitlist,
   externalInvitedList,
+  externalSkippedList,
   mode = 'wizard',
   managementMode,
   continueText,
@@ -90,12 +92,14 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
   const displayGoing = mode === 'editor' ? (externalGoingList ?? []) : internalGoingList;
   const displayWaitlist = mode === 'editor' ? (externalWaitlist ?? []) : internalWaitlist;
+  const displaySkipped = mode === 'editor' ? (externalSkippedList || []) : [];
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     const t: ParticipantTab[] = ['going'];
     if (displayWaitlist.length > 0 || mode === 'wizard') t.push('waitlist');
+    if (displaySkipped.length > 0) t.push('skipped');
     return t;
-  }, [displayWaitlist, mode]);
+  }, [displayWaitlist, displaySkipped, mode]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>('going');
   const initialMountRef = React.useRef(true);
@@ -372,6 +376,18 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
               </div>
             )}
           </>
+        )}
+
+        {activeTab === 'skipped' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+            {displaySkipped.map((item) => (
+              <StackingFriends
+                key={item.id}
+                item={item}
+                onClick={effectiveIsHost ? () => handleItemTap(item, 'skipped') : undefined}
+              />
+            ))}
+          </div>
         )}
       </div>
 

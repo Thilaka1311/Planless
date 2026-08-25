@@ -17,7 +17,10 @@ import {
   Film,
   CalendarDays,
   ChevronDown,
-  Check
+  Check,
+  MessageCircle,
+  Receipt,
+  Users
 } from "lucide-react";
 import { UserProfile, Plan } from "../../../../../core/types";
 import { usePlansStore } from "../../../state/PlansContext";
@@ -135,12 +138,12 @@ interface ParticipantsSectionProps {
   onOpenParticipants: () => void;
 }
 
-export function ParticipantsSection({
+export const ParticipantsSection = React.memo(({
   plan,
   userProfile,
   activeUserId,
   onOpenParticipants,
-}: ParticipantsSectionProps) {
+}: ParticipantsSectionProps) => {
   const members = plan.members || [];
   const currentUserId = userProfile.dbUuid || activeUserId;
 
@@ -152,8 +155,6 @@ export function ParticipantsSection({
     return m;
   };
 
-  // Group members with Current User first, then Hosts (A-Z), then Participants (A-Z)
-  const hostId = plan.hostId;
   const sortAlpha = (list: any[]) => [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
 
   const prioritizeUserAndSort = (list: any[]) => {
@@ -172,76 +173,170 @@ export function ParticipantsSection({
     ];
   };
 
-  const rawGoingList = members.filter(m => normalizeStatus(m.joinState) === "JOINED").map(mapMemberName);
+  const isCompletedPlan = plan.status === "COMPLETED";
+
+  const getMemberEffectiveState = (m: any) => {
+    const raw = m.joinState || (m as any).rsvp_status;
+    const norm = normalizeStatus(raw);
+
+    if (isCompletedPlan) {
+      if ((m as any).final_attendance === 'ATTENDED' || (m as any).final_state === 'JOINED') {
+        return 'JOINED';
+      }
+      if ((m as any).final_attendance === 'DID_NOT_ATTEND' || (m as any).final_state === 'SKIPPED') {
+        return 'SKIPPED';
+      }
+    }
+    return norm;
+  };
+
+  const rawGoingList = members.filter(m => getMemberEffectiveState(m) === "JOINED").map(mapMemberName);
   const goingList = prioritizeUserAndSort(rawGoingList);
 
-  const waitlistList = members.filter(m => normalizeStatus(m.joinState) === "WAITLISTED").map(mapMemberName);
+  const waitlistList = members.filter(m => getMemberEffectiveState(m) === "WAITLISTED").map(mapMemberName);
 
-  const rawInvitedList = members.filter(m => normalizeStatus(m.joinState) === "INVITED").map(mapMemberName);
+  const rawInvitedList = members.filter(m => getMemberEffectiveState(m) === "INVITED").map(mapMemberName);
   const invitedList = prioritizeUserAndSort(rawInvitedList);
 
-  // Sorted list of all participants to show in avatar strip (going first, then waitlist, then invited)
-  const sortedForStrip = [...goingList, ...waitlistList, ...invitedList];
-  const maxAvatars = 4;
-  const visibleAvatars = sortedForStrip.slice(0, maxAvatars);
-  const overflowCount = sortedForStrip.length - maxAvatars;
+  const rawSkippedList = members.filter(m => getMemberEffectiveState(m) === "SKIPPED").map(mapMemberName);
+  const skippedList = prioritizeUserAndSort(rawSkippedList);
 
-  const maxCapacity = plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
+  type InlineTab = 'going' | 'invited' | 'waitlist' | 'skipped';
+
+  const tabs = useMemo(() => {
+    const t: { key: InlineTab; label: string; count: number }[] = [];
+    if (goingList.length > 0 || (waitlistList.length === 0 && invitedList.length === 0 && skippedList.length === 0)) {
+      t.push({ key: 'going', label: 'Joined', count: goingList.length });
+    }
+    if (waitlistList.length > 0) {
+      t.push({ key: 'waitlist', label: 'Waitlisted', count: waitlistList.length });
+    }
+    if (invitedList.length > 0) {
+      t.push({ key: 'invited', label: 'Invited', count: invitedList.length });
+    }
+    if (skippedList.length > 0) {
+      t.push({ key: 'skipped', label: 'Skipped', count: skippedList.length });
+    }
+    return t;
+  }, [goingList.length, waitlistList.length, invitedList.length, skippedList.length]);
+
+  const [activeTab, setActiveTab] = useState<InlineTab>('going');
+
+  useEffect(() => {
+    if (tabs.length > 0 && !tabs.find(t => t.key === activeTab)) {
+      setActiveTab(tabs[0].key);
+    }
+  }, [tabs, activeTab]);
+
+  const activeList = useMemo(() => {
+    if (activeTab === 'waitlist') return waitlistList;
+    if (activeTab === 'invited') return invitedList;
+    if (activeTab === 'skipped') return skippedList;
+    return goingList;
+  }, [activeTab, goingList, waitlistList, invitedList, skippedList]);
+
+  const getLiveTabActiveStyle = (key: InlineTab) => {
+    switch (key) {
+      case 'going':
+        return {
+          className: 'text-emerald-200 font-semibold',
+          style: { backgroundColor: 'rgba(6, 78, 59, 0.85)' },
+        };
+      case 'invited':
+        return {
+          className: 'text-zinc-200 font-semibold',
+          style: { backgroundColor: 'rgba(39, 39, 42, 0.85)' },
+        };
+      case 'waitlist':
+        return {
+          className: 'text-amber-200 font-semibold',
+          style: { backgroundColor: 'rgba(120, 53, 15, 0.85)' },
+        };
+      case 'skipped':
+        return {
+          className: 'text-rose-200 font-semibold',
+          style: { backgroundColor: 'rgba(136, 19, 55, 0.85)' },
+        };
+    }
+  };
 
   return (
-    <div
-      id="participants_card_trigger"
-      onClick={onOpenParticipants}
-      className="w-full bg-[#111111] p-5 rounded-3xl border border-white/[0.08] space-y-4 hover:border-white/10 hover:bg-[#151515] transition-all duration-200 cursor-pointer text-left select-none"
-    >
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-sans font-semibold tracking-wider text-white/60 uppercase">Participants</h3>
-        <div className="flex items-center gap-1.5 text-white/60">
-          <span className="text-xs font-mono font-medium">{goingList.length} / {maxCapacity}</span>
-          <ChevronDown className="w-4 h-4 opacity-60" />
-        </div>
-      </div>
+    <div className="w-full text-left space-y-2 flex flex-col flex-1 min-h-0">
+      {/* Status Segmented Toggle */}
+      {tabs.length > 0 && (
+        <div className="w-full flex items-center justify-center bg-[#0A0A0C]/90 border border-white/15 rounded-full overflow-hidden backdrop-blur-md shadow-inner flex-shrink-0">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.key;
+            const activeStyle = getLiveTabActiveStyle(tab.key);
 
-      {/* Overlapping Avatar Strip */}
-      <div className="flex items-center">
-        <div className="flex -space-x-2.5 overflow-hidden">
-          {visibleAvatars.map((member, i) => (
-            <div
-              key={member.userId || i}
-              className="w-8 h-8 rounded-full border-2 border-[#000000] bg-[#111111] overflow-hidden flex-shrink-0 flex items-center justify-center relative"
-              style={{ zIndex: maxAvatars - i }}
-            >
-              <UserAvatar src={member.avatar} alt={member.name} size="w-full h-full" />
-            </div>
-          ))}
-          {overflowCount > 0 && (
-            <div
-              className="w-8 h-8 rounded-full border-2 border-[#000000] bg-[#1A1A1A] flex items-center justify-center text-[11px] font-sans font-medium text-white/90 z-10 flex-shrink-0"
-            >
-              +{overflowCount}
-            </div>
-          )}
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                style={isActive ? activeStyle.style : undefined}
+                className={`flex-1 py-1.5 px-3 text-[11.5px] font-sans font-semibold tracking-wide transition-all duration-200 focus:outline-none flex items-center justify-center cursor-pointer select-none min-w-0 ${
+                  isActive
+                    ? `${activeStyle.className} rounded-full z-10 shadow-sm`
+                    : 'text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-white/[0.04]'
+                }`}
+              >
+                <span className="truncate">{tab.label} ({tab.count})</span>
+              </button>
+            );
+          })}
         </div>
-      </div>
+      )}
 
-      {/* Compact Status Chips */}
-      <div className="flex flex-wrap gap-2 pt-1">
-        <div className="bg-emerald-950/20 border border-emerald-500/10 px-3 py-1 rounded-xl flex items-center gap-1.5 text-[11px] font-sans font-medium text-emerald-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          <span>Going {goingList.length}</span>
-        </div>
-        <div className="bg-amber-950/20 border border-amber-500/10 px-3 py-1 rounded-xl flex items-center gap-1.5 text-[11px] font-sans font-medium text-amber-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-          <span>Waitlist {waitlistList.length}</span>
-        </div>
-        <div className="bg-[#1A1A1A] border border-white/[0.08] px-3 py-1 rounded-xl flex items-center gap-1.5 text-[11px] font-sans font-medium text-white/60">
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
-          <span>Invited {invitedList.length}</span>
-        </div>
+      {/* Participant List (extends downward to immediately above Manage Participants control, internally scrollable) */}
+      <div className="px-1 py-0.5 min-h-[90px] max-h-[calc(100dvh-170px)] overflow-y-auto scrollbar-none flex-1 pb-1">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -5 }}
+            transition={{ duration: 0.14, ease: 'easeOut' }}
+            className="space-y-0.5"
+          >
+            {activeList.length === 0 ? (
+              <p className="text-[12px] text-white/30 font-sans py-1.5 px-1">No one here yet.</p>
+            ) : (
+              activeList.map((person, idx) => {
+                const isHostRole = person.role === 'HOST' || person.isHost === true;
+                return (
+                  <div
+                    key={person.userId || person.userUuid || person.user_id || person.id || idx}
+                    className="flex items-center gap-3 py-1.5 px-1 rounded-xl"
+                  >
+                    {activeTab === 'waitlist' && (
+                      <span className="text-[11px] font-bold text-white/30 min-w-[18px] font-sans">
+                        #{idx + 1}
+                      </span>
+                    )}
+                    <div className="relative flex-shrink-0">
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800">
+                        <UserAvatar src={person.avatar} alt={person.name} size="w-full h-full" />
+                      </div>
+                    </div>
+                    <span className="font-sans text-[13.5px] font-semibold leading-none truncate flex-1 text-white">
+                      {person.name}
+                    </span>
+                    {isHostRole && (
+                      <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0 uppercase">
+                        Host
+                      </span>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );
-}
+});
 
 // ==========================================
 // SUB-COMPONENTS
@@ -613,6 +708,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     switchToAutomaticWaitlistMode,
     swapParticipants,
     removeAndReplaceWithWaitlist,
+    manageCompletedPlanParticipants,
   } = usePlansStore();
   const selectedPlan = useLivePlan(planId);
 
@@ -627,6 +723,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [isChangingHost, setIsChangingHost] = useState(false);
   const [showDitchConfirm, setShowDitchConfirm] = useState(false);
   const [isDitching, setIsDitching] = useState(false);
+  const [isManagingCompletedParticipants, setIsManagingCompletedParticipants] = useState(false);
 
   // Bottom Sheet local editing states
   const [isEditingDateTimeSheetOpen, setIsEditingDateTimeSheetOpen] = useState(false);
@@ -848,6 +945,35 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [showLeavePlanConfirm, setShowLeavePlanConfirm] = useState(false);
   const [showCancelPlanConfirm, setShowCancelPlanConfirm] = useState(false);
   const [showAttendanceSheet, setShowAttendanceSheet] = useState(false);
+  const [planExpense, setPlanExpense] = useState<{ total_amount: number; title?: string } | null>(null);
+
+  useEffect(() => {
+    if (showAttendanceSheet && selectedPlan?.id) {
+      const fetchPlanExpense = async () => {
+        try {
+          const targetId = (selectedPlan as any).dbUuid || selectedPlan.id;
+          const { data } = await supabase
+            .from("wallet_expenses")
+            .select("total_amount, title")
+            .eq("plan_id", targetId)
+            .or("expense_type.eq.PLAN_EXPENSE,message_id.is.null")
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (data && Number(data.total_amount || 0) > 0) {
+            setPlanExpense({ total_amount: Number(data.total_amount), title: data.title });
+          } else {
+            setPlanExpense(null);
+          }
+        } catch (err) {
+          console.warn("[PlansPreviewScreen] Error fetching plan expense for review:", err);
+          setPlanExpense(null);
+        }
+      };
+      fetchPlanExpense();
+    }
+  }, [showAttendanceSheet, selectedPlan?.id]);
   const [showEarlyEndPlanConfirm, setShowEarlyEndPlanConfirm] = useState(false);
   const [isEndingPlan, setIsEndingPlan] = useState(false);
   const [showRestorePlanConfirm, setShowRestorePlanConfirm] = useState(false);
@@ -997,11 +1123,24 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const costText = useMemo(() => {
     if (!rawDbPlan || !hasCost) return "Free";
     const totalCostVal = Number(rawDbPlan.total_cost || 0);
-    const maxCapacity = Number(rawDbPlan.max_participants || 0);
-    if (totalCostVal <= 0 || maxCapacity <= 0) return "Free";
-    const perPerson = Math.round((totalCostVal / maxCapacity) * 100) / 100;
+    const isCompleted = rawDbPlan.status === 'COMPLETED';
+    const divisor = isCompleted
+      ? Number(rawDbPlan.attended_participants ?? selectedPlan?.attended_participants ?? 0)
+      : Number(rawDbPlan.max_participants || 0);
+
+    if (totalCostVal <= 0 || divisor <= 0) return "Free";
+    const perPerson = Math.round((totalCostVal / divisor) * 100) / 100;
     return `₹${perPerson} / person`;
-  }, [rawDbPlan, hasCost]);
+  }, [rawDbPlan, hasCost, selectedPlan]);
+
+  const isManagementExpired = useMemo(() => {
+    if (!selectedPlan) return false;
+    const rawScheduled = (selectedPlan as any).scheduled_at || rawDbPlan?.scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt;
+    if (!rawScheduled) return false;
+    const endTimeMs = new Date(rawScheduled).getTime();
+    if (isNaN(endTimeMs)) return false;
+    return Date.now() >= endTimeMs + 24 * 60 * 60 * 1000;
+  }, [selectedPlan, rawDbPlan]);
 
   const currentStatus = normalizeStatus(myParticipantRecord?.rsvp_status);
   const showJoinDirect = ["INVITED", "WAITLISTED", "new"].includes(currentStatus);
@@ -1022,8 +1161,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [showSkipConfirmation, setShowSkipConfirmation] = useState(false);
   const [showPaidLeaveConfirmation, setShowPaidLeaveConfirmation] = useState(false);
   const [showCancelLeaveRequestConfirmation, setShowCancelLeaveRequestConfirmation] = useState(false);
-  const [showOutstandingDuesModal, setShowOutstandingDuesModal] = useState(false);
-  const [outstandingDuesAmount, setOutstandingDuesAmount] = useState(0);
   const [isSubmittingPaidLeave, setIsSubmittingPaidLeave] = useState(false);
   const [isCancellingLeaveRequest, setIsCancellingLeaveRequest] = useState(false);
 
@@ -1081,24 +1218,18 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const handleSkip = useCallback(async () => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
     if (myParticipantRecord?.leave_requested) {
-      showToast("Leave request pending with host");
+      setShowCancelLeaveRequestConfirmation(true);
       return;
     }
 
-    // Check for outstanding dues in this plan
-    const dues = await getUserPlanOutstandingDues(selectedPlan.id, activeUserId);
-    if (dues > 0) {
-      setOutstandingDuesAmount(dues);
-      setShowOutstandingDuesModal(true);
-      return;
-    }
+    const isActuallyJoined = currentStatus === "JOINED";
 
-    if (hasCost) {
+    if (isActuallyJoined) {
       setShowPaidLeaveConfirmation(true);
     } else {
       setShowSkipConfirmation(true);
     }
-  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, hasCost, showToast]);
+  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, currentStatus]);
 
   const handleRejoin = useCallback(() => {
     if (!selectedPlan || !activeUserId || isRejoining) return;
@@ -1268,6 +1399,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     );
   }
 
+  const isLiveHostView = isHost && !isCancelled && !isCompleted;
+
   return (
     <motion.div
       id="home_plan_details"
@@ -1277,8 +1410,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       transition={{ duration: 0.18, ease: 'easeOut' }}
       className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left"
     >
-      <div id="immersive-plan-scroll-container" className="flex-1 overflow-y-auto scrollbar-none pb-20">
-        <div id="immersive-plan-hero-wrapper" className="w-full">
+      <div id="immersive-plan-scroll-container" className={`flex-1 ${isLiveHostView ? 'overflow-hidden flex flex-col h-full pb-20' : 'overflow-y-auto scrollbar-none pb-28'}`}>
+        <div id="immersive-plan-hero-wrapper" className="w-full flex-shrink-0">
           <div
             id="immersive-plan-hero-container"
             className="relative w-full h-[280px] flex flex-col justify-end overflow-visible flex-shrink-0 rounded-b-[2.5rem] border-b border-white/10"
@@ -1302,7 +1435,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               hosts={allHosts}
               viewerId={resolvedUserUuid}
               onClose={onClose}
-              isHost={isHost && !isCancelled}
+              isHost={isHost && !isCancelled && !isCompleted}
               onOpenChat={() => {
                 if (onOpenChat) {
                   onOpenChat(selectedPlan.id);
@@ -1317,7 +1450,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   setShowPlanBalancesScreen(true);
                 }
               }}
-              onOpenSettings={!isCancelled ? () => setShowPlanSettingsScreen(true) : undefined}
+              onOpenSettings={
+                isHost && !isCancelled && !isCompleted
+                  ? () => setShowPlanSettingsScreen(true)
+                  : undefined
+              }
             />
 
             {isEditingLocationInline && (
@@ -1331,16 +1468,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               />
             )}
 
-            {/* Integrated Glass Details Card Repositioned */}
-            <div className={`absolute left-6 right-6 bottom-0 translate-y-1/2 ${isEditingLocationInline ? "z-50 pointer-events-auto" : "z-20"}`}>
+            {/* Dynamic Integrated Info Card */}
+            <div className="absolute left-6 right-6 bottom-0 translate-y-1/2 z-20">
               <div className="w-full bg-black/15 backdrop-blur-3xl border border-white/[0.06] shadow-lg rounded-2xl relative">
-                <div className="flex flex-col p-4.5 gap-y-3.5 text-left">
-                  {/* 1. Date & Time (Row 1) */}
+                <div className="p-4 space-y-2.5">
+                  {/* 1. Date & Time Row (Row 1) */}
                   <button
                     type="button"
-                    disabled={!isHost || isCancelled}
+                    disabled={!isHost || isCancelled || isCompleted}
                     onClick={() => {
-                      if (isCancelled) return;
+                      if (isCancelled || isCompleted) return;
                       const planDate = new Date(selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt);
                       const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : new Date(planDate.getTime() - 12 * 60 * 60 * 1000);
                       setTempDate(getLocalDateString(planDate));
@@ -1349,24 +1486,24 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                       setTempRSVPTime(getLocalTimeString(planRSVP));
                       setIsEditingDateTimeSheetOpen(true);
                     }}
-                    className="flex items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+                    className="w-full flex items-center gap-3 text-left hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
                   >
-                    <CalendarDays className="w-4.5 h-4.5 text-white/70 flex-shrink-0" />
-                    <span className="text-[13px] font-semibold text-white/95 leading-none">
-                      {formatPlanDate(selectedPlan.datetime || selectedPlan.createdAt)}
+                    <CalendarDays className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <span className="text-[13px] font-sans font-semibold text-white tracking-wide truncate">
+                      {formatPlanDate((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)}
                     </span>
                   </button>
 
                   {/* 2. Location (Row 2) – inline autocomplete */}
                   <InlineLocationEditor
-                    isHost={isHost && !isCancelled}
+                    isHost={isHost && !isCancelled && !isCompleted}
                     currentLocation={selectedPlan.location || ""}
                     isEditing={isEditingLocationInline}
                     isSaving={isSavingLocation}
                     locationQuery={locationQuery}
                     inputRef={locationInputRef}
                     onStartEditing={() => {
-                      if (isHost && !isCancelled) {
+                      if (isHost && !isCancelled && !isCompleted) {
                         setLocationQuery(selectedPlan.location || "");
                         setIsEditingLocationInline(true);
                         setTimeout(() => {
@@ -1390,50 +1527,64 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     onRemoveLocation={handleRemoveLocation}
                   />
 
-                  {/* 3. RSVP & Cost Row (Row 3) */}
-                  <div className="flex items-center justify-between text-white/50 text-[11px] font-medium leading-none pt-1">
-                    {/* Left part: RSVP */}
-                    <button
-                      type="button"
-                      disabled={!isHost || isCancelled}
-                      onClick={() => {
-                        if (isCancelled) return;
-                        const planDate = new Date(selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt);
-                        const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : new Date(planDate.getTime() - 12 * 60 * 60 * 1000);
-                        setTempDate(getLocalDateString(planDate));
-                        setTempTime(getLocalTimeString(planDate));
-                        setTempRSVPDate(getLocalDateString(planRSVP));
-                        setTempRSVPTime(getLocalTimeString(planRSVP));
-                        setIsEditingDateTimeSheetOpen(true);
-                      }}
-                      className="flex items-center gap-2 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
-                    >
-                      <Hourglass className="w-3.5 h-3.5 flex-shrink-0" style={{ color: urgencyColor }} />
-                      <span style={{ color: urgencyColor }}>
-                        {rsvp.text}
-                      </span>
-                    </button>
+                  {/* 3. Cost Row (Row 3) */}
+                  <div className={`flex items-center text-white/50 text-[11px] font-medium leading-none pt-1 ${isCompleted ? "justify-start" : "justify-between"}`}>
+                    {!isCompleted && (
+                      <button
+                        type="button"
+                        disabled={!isHost || isCancelled}
+                        onClick={() => {
+                          if (isCancelled) return;
+                          const planDate = new Date(selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt);
+                          const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : new Date(planDate.getTime() - 12 * 60 * 60 * 1000);
+                          setTempDate(getLocalDateString(planDate));
+                          setTempTime(getLocalTimeString(planDate));
+                          setTempRSVPDate(getLocalDateString(planRSVP));
+                          setTempRSVPTime(getLocalTimeString(planRSVP));
+                          setIsEditingDateTimeSheetOpen(true);
+                        }}
+                        className="flex items-center gap-2 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
+                      >
+                        <Hourglass className="w-3.5 h-3.5 flex-shrink-0" style={{ color: urgencyColor }} />
+                        <span style={{ color: urgencyColor }}>
+                          {rsvp.text}
+                        </span>
+                      </button>
+                    )}
 
-                    {/* Right part: Cost */}
                     <div className="relative">
                       <button
                         type="button"
                         onClick={() => setIsCostPopoverOpen((prev) => !prev)}
-                        className="flex items-center gap-2 hover:bg-white/[0.06] active:bg-white/10 transition p-1.5 -m-1.5 rounded-xl cursor-pointer text-right text-white/90 font-semibold"
+                        className={`flex items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer ${isCompleted ? "text-left" : "text-right font-semibold"}`}
                       >
-                        <span>
-                          {hasCost && costText ? costText : "Free"}
-                        </span>
+                        {isCompleted ? (
+                          <>
+                            <IndianRupee className="w-4.5 h-4.5 text-emerald-400 flex-shrink-0" />
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-white text-[13px] font-semibold tracking-wide">
+                                {hasCost && costText && costText !== "Free" ? costText.replace(/^₹\s*/, '') : "Free"}
+                              </span>
+                              <span className="text-[#8E8E93] text-[11px] font-normal font-sans">per person</span>
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-white/90 font-semibold font-sans tracking-tight text-[13.5px]">
+                            {hasCost && costText ? costText : "Free"}
+                          </span>
+                        )}
                       </button>
 
                       <CostBreakdownPopover
                         totalCost={rawDbPlan?.total_cost}
                         maxParticipants={rawDbPlan?.max_participants}
+                        attendedParticipants={rawDbPlan?.attended_participants ?? selectedPlan?.attended_participants}
+                        isCompleted={isCompleted}
                         isOpen={isCostPopoverOpen}
                         onClose={() => setIsCostPopoverOpen(false)}
-                        isHost={isHost && !isCancelled}
+                        isHost={isHost && !isCancelled && !isCompleted}
                         onEditCost={() => {
-                          if (isCancelled) return;
+                          if (isCancelled || isCompleted) return;
                           const currentCost = rawDbPlan?.total_cost;
                           setEditTotalCostInput(currentCost && Number(currentCost) > 0 ? String(currentCost) : "");
                           setIsEditingCostSheetOpen(true);
@@ -1449,9 +1600,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           </div>
         </div>
 
-        <div id="immersive-plan-scroll-content" className="px-6 pt-[80px] space-y-7">
+        <div id="immersive-plan-scroll-content" className={`px-6 pt-[78px] space-y-5 ${isLiveHostView ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : ''}`}>
           {selectedPlan && (
-            (!isCancelled && (isHost || Boolean(selectedPlan.allowParticipantInvites || (selectedPlan as any).allow_participant_invites))) ? (
+            isCompleted ? (
+              <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} />
+            ) : (!isCancelled && (isHost || Boolean(selectedPlan.allowParticipantInvites || (selectedPlan as any).allow_participant_invites))) ? (
               <ParticipantsSection
                 plan={selectedPlan}
                 userProfile={userProfile}
@@ -1459,19 +1612,40 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 onOpenParticipants={() => setShowParticipantManagement(true)}
               />
             ) : (
-              <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} />
+              <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} />
             )
           )}
+
+          {/* Fixed Manage Participants action for host — floating icon + text only, tightly anchored above You're Hosting */}
+          {isHost && !isCancelled && !isCompleted && (
+            <div className="fixed bottom-[58px] left-6 right-6 z-40 flex items-center justify-center pointer-events-auto">
+              <button
+                type="button"
+                id="host_manage_participants_btn"
+                onClick={() => setShowParticipantManagement(true)}
+                className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
+              >
+                <Users className="w-4 h-4 text-white/70" />
+                <span>Manage Participants</span>
+              </button>
+            </div>
+          )}
+
           <RSVPCard
             myParticipantRecord={myParticipantRecord}
             isCancelled={isCancelled}
             isCompleted={isCompleted}
+            isManagementExpired={isManagementExpired}
             className={(myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT") ? "!bottom-24" : ""}
             onClick={
-              isCompleted
-                ? undefined
-                : isHost && isCancelled
-                  ? () => setShowRestorePlanConfirm(true)
+              isCompleted && isHost
+                ? !isManagementExpired
+                  ? () => setShowAttendanceSheet(true)
+                  : () => showToast("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.")
+                : isCompleted
+                  ? undefined
+                  : isHost && isCancelled
+                    ? () => setShowRestorePlanConfirm(true)
                   : isHost
                     ? () => setShowCancelPlanConfirm(true)
                     : myParticipantRecord?.rsvp_status === "JOINED" && myParticipantRecord?.leave_requested
@@ -1716,24 +1890,44 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               isOpen={showAttendanceSheet}
               members={selectedPlan?.members || []}
               hostId={selectedPlan.hostId || selectedPlan.creatorId || (selectedPlan as any).host_id || ""}
-              isSubmitting={isEndingPlan}
-              onConfirm={async (attendanceInput) => {
-                setIsEndingPlan(true);
-                try {
-                  // Is it early?
-                  const rawScheduled = (selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt;
-                  const planScheduledDate = new Date(rawScheduled);
-                  const now = new Date();
-                  const isEarly = !isNaN(planScheduledDate.getTime()) && now.getTime() < planScheduledDate.getTime();
+              planExpense={planExpense}
+              isSubmitting={isEndingPlan || isManagingCompletedParticipants}
+              isCompletedMode={selectedPlan?.status === 'COMPLETED'}
+              onConfirm={async (attendanceInput, expenseMode, usersToAdd, usersToRemove) => {
+                if (selectedPlan?.status === 'COMPLETED') {
+                  if (isManagementExpired) {
+                    showToast("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.");
+                    setShowAttendanceSheet(false);
+                    return;
+                  }
+                  setIsManagingCompletedParticipants(true);
+                  try {
+                    await manageCompletedPlanParticipants(selectedPlan.id, usersToAdd || [], usersToRemove || [], expenseMode);
+                    showToast("✓ Participants updated");
+                    setShowAttendanceSheet(false);
+                  } catch (err: any) {
+                    showToast(err.message || "Failed to update participants");
+                  } finally {
+                    setIsManagingCompletedParticipants(false);
+                  }
+                } else {
+                  setIsEndingPlan(true);
+                  try {
+                    // Is it early?
+                    const rawScheduled = (selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt;
+                    const planScheduledDate = new Date(rawScheduled);
+                    const now = new Date();
+                    const isEarly = !isNaN(planScheduledDate.getTime()) && now.getTime() < planScheduledDate.getTime();
 
-                  await completePlan(selectedPlan.id, attendanceInput, { isEarly });
-                  showToast("✓ Plan completed");
-                  setShowAttendanceSheet(false);
-                  onClose();
-                } catch (err: any) {
-                  showToast("Failed to complete plan");
-                } finally {
-                  setIsEndingPlan(false);
+                    await completePlan(selectedPlan.id, attendanceInput, { isEarly, expenseMode });
+                    showToast("✓ Plan completed");
+                    setShowAttendanceSheet(false);
+                    onClose();
+                  } catch (err: any) {
+                    showToast("Failed to complete plan");
+                  } finally {
+                    setIsEndingPlan(false);
+                  }
                 }
               }}
               onBack={() => setShowAttendanceSheet(false)}
@@ -1833,53 +2027,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
       {/* Location bottom sheet removed – location editing is now inline */}
 
-      {/* OUTSTANDING DUES WARNING MODAL BEFORE LEAVING */}
-      {showOutstandingDuesModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-xs animate-fade-in p-0 sm:p-4"
-          onClick={() => setShowOutstandingDuesModal(false)}
-        >
-          <div
-            className="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-t-3xl sm:rounded-2xl p-6 shadow-2xl space-y-4 text-left font-sans"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-10 h-1 bg-zinc-800 rounded-full mx-auto mb-1 sm:hidden" />
 
-            <div className="space-y-1.5">
-              <h3 className="text-lg font-bold text-white tracking-tight font-display">
-                You have outstanding expenses
-              </h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                You still owe ₹{outstandingDuesAmount.toLocaleString("en-IN")} from expenses in this plan. Leaving the plan won’t remove these expenses. You’ll still need to settle them.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowOutstandingDuesModal(false)}
-                className="flex-1 h-11 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 font-semibold text-xs hover:bg-zinc-800 transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowOutstandingDuesModal(false);
-                  if (hasCost) {
-                    setShowPaidLeaveConfirmation(true);
-                  } else {
-                    setShowSkipConfirmation(true);
-                  }
-                }}
-                className="flex-1 h-11 rounded-xl bg-amber-600 text-white font-semibold text-xs hover:bg-amber-500 active:scale-[0.99] transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-amber-600/20"
-              >
-                Continue Leaving
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </motion.div>
   );
 };

@@ -1,15 +1,23 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { ChevronLeft, Check } from "lucide-react";
+import { X, Check, Search } from "lucide-react";
 import { UserAvatar } from "../../../../IMGfromDB/UserAvatar";
 import { PlanMember } from "../../../../core/types";
 import { normalizeStatus } from "../../../../../lib/participantStatus";
+import { AttendanceSearch } from "./AttendanceSearch";
 
 export interface HostAttendanceScreenProps {
   isOpen?: boolean;
   members: PlanMember[];
   hostId: string;
+  planExpense?: { total_amount: number; title?: string } | null;
   isSubmitting?: boolean;
-  onConfirm: (attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>) => void;
+  isCompletedMode?: boolean;
+  onConfirm: (
+    attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>,
+    expenseMode: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE',
+    usersToAdd?: string[],
+    usersToRemove?: string[]
+  ) => void;
   onBack: () => void;
 }
 
@@ -17,94 +25,120 @@ export const HostAttendanceScreen: React.FC<HostAttendanceScreenProps> = ({
   isOpen = true,
   members = [],
   hostId,
+  planExpense = null,
   isSubmitting = false,
+  isCompletedMode = false,
   onConfirm,
   onBack,
 }) => {
-  const [step, setStep] = useState<'attendance' | 'summary'>('attendance');
-  // Local state for attendance decisions: map user_id -> 'ATTENDED' | 'DID_NOT_ATTEND'
+  const [step, setStep] = useState<'attendance' | 'search'>('attendance');
   const [attendanceState, setAttendanceState] = useState<Record<string, 'ATTENDED' | 'DID_NOT_ATTEND'>>({});
+  const [extraMembers, setExtraMembers] = useState<PlanMember[]>([]);
+  const [initialAttendedIds, setInitialAttendedIds] = useState<Set<string>>(new Set());
+  const [showExpenseDialog, setShowExpenseDialog] = useState(false);
+
+  // Combine initial members + extra members added from Attendance Search
+  const combinedMembers = useMemo(() => {
+    return [...members, ...extraMembers];
+  }, [members, extraMembers]);
+
+  // Helper to extract user ID consistently
+  const getMemberId = (m: PlanMember) => m.userId || m.userUuid || (m as any).user_id || (m as any).id;
 
   // Initialize attendance state when opened
   useEffect(() => {
     if (isOpen) {
       setStep('attendance');
+      setExtraMembers([]);
       const initialState: Record<string, 'ATTENDED' | 'DID_NOT_ATTEND'> = {};
+      const initialIds = new Set<string>();
+
       members.forEach((m) => {
-        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
+        const mId = getMemberId(m);
         const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
         const status = normalizeStatus(m.joinState || (m as any).rsvp_status);
 
-        if (isHostUser) {
+        let isAttended = false;
+        if (isCompletedMode) {
+          const finalAttendance = (m as any).final_attendance;
+          const finalState = (m as any).final_state;
+          isAttended = isHostUser || finalAttendance === 'ATTENDED' || (status === 'JOINED' && !finalAttendance) || finalState === 'JOINED';
+        } else {
+          isAttended = isHostUser || status === 'JOINED';
+        }
+
+        if (isAttended) {
           initialState[mId] = 'ATTENDED';
-        } else if (status === 'JOINED') {
-          initialState[mId] = 'ATTENDED';
+          initialIds.add(mId);
         } else {
           initialState[mId] = 'DID_NOT_ATTEND';
         }
       });
       setAttendanceState(initialState);
+      setInitialAttendedIds(initialIds);
     }
-  }, [isOpen, members, hostId]);
+  }, [isOpen, members, hostId, isCompletedMode]);
 
-  const toggleAttendance = (mId: string) => {
+  const toggleAttendance = (m: PlanMember) => {
+    const mId = getMemberId(m);
     if (mId === hostId) return; // Host cannot be toggled
-    setAttendanceState((prev) => ({
-      ...prev,
-      [mId]: prev[mId] === 'ATTENDED' ? 'DID_NOT_ATTEND' : 'ATTENDED',
-    }));
+
+    const isOriginalMember = members.some(
+      (om) => getMemberId(om) === mId
+    );
+
+    const isCurrentlyAttended = attendanceState[mId] === 'ATTENDED';
+
+    if (!isCurrentlyAttended) {
+      // User is selecting this person as ATTENDED
+      if (!isOriginalMember) {
+        setExtraMembers((prev) => {
+          if (prev.some((em) => getMemberId(em) === mId)) {
+            return prev;
+          }
+          return [...prev, m];
+        });
+      }
+      setAttendanceState((prev) => ({ ...prev, [mId]: 'ATTENDED' }));
+    } else {
+      // User is deselecting this person to DID_NOT_ATTEND
+      if (!isOriginalMember) {
+        setExtraMembers((prev) =>
+          prev.filter((em) => getMemberId(em) !== mId)
+        );
+      }
+      setAttendanceState((prev) => ({ ...prev, [mId]: 'DID_NOT_ATTEND' }));
+    }
   };
 
-  const setAllJoinedToAttended = () => {
+  const setAllToAttended = () => {
     setAttendanceState((prev) => {
       const next = { ...prev };
-      members.forEach((m) => {
-        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
-        const status = normalizeStatus(m.joinState || (m as any).rsvp_status);
-        if (status === 'JOINED') {
-          next[mId] = 'ATTENDED';
-        }
+      combinedMembers.forEach((m) => {
+        const mId = getMemberId(m);
+        next[mId] = 'ATTENDED';
       });
       return next;
     });
   };
 
-  const getMemberSubtitle = (member: PlanMember, isAttended: boolean, isHost: boolean) => {
-    if (isHost) return 'Host';
-    if (isAttended) return null;
-
-    const originalStatus = normalizeStatus(member.joinState || (member as any).rsvp_status);
-    if (originalStatus === 'JOINED') return "Didn't attend";
-    if (originalStatus === 'WAITLISTED') return 'Waitlisted';
-    if (originalStatus === 'INVITED') return 'Invited';
-    if (originalStatus === 'SKIPPED') {
-      const reason = (member.skipReason || (member as any).skip_reason || '').toUpperCase();
-      if (reason === 'REMOVED') return 'Removed';
-      return 'Not attending';
-    }
-    return "Didn't attend";
-  };
-
-  const { attendedMembers, otherMembers } = useMemo(() => {
+  // Attended members: from combinedMembers (includes extraMembers selected as attended)
+  const attendedMembers = useMemo(() => {
     const attended: PlanMember[] = [];
-    const others: PlanMember[] = [];
 
-    members.forEach((m) => {
-      const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
+    combinedMembers.forEach((m) => {
+      const mId = getMemberId(m);
       const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
       const decision = isHostUser ? 'ATTENDED' : (attendanceState[mId] || 'DID_NOT_ATTEND');
 
       if (decision === 'ATTENDED') {
         attended.push(m);
-      } else {
-        others.push(m);
       }
     });
 
-    // Sort attended: Host first, then alphabetized
     attended.sort((a, b) => {
-      const aId = a.userId || a.userUuid || (a as any).user_id || (a as any).id;
-      const bId = b.userId || b.userUuid || (b as any).user_id || (b as any).id;
+      const aId = getMemberId(a);
+      const bId = getMemberId(b);
       const aIsHost = a.isHost || a.role === 'HOST' || aId === hostId;
       const bIsHost = b.isHost || b.role === 'HOST' || bId === hostId;
       if (aIsHost && !bIsHost) return -1;
@@ -112,250 +146,443 @@ export const HostAttendanceScreen: React.FC<HostAttendanceScreenProps> = ({
       return (a.name || '').localeCompare(b.name || '');
     });
 
-    // Sort others: alphabetized
-    others.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return attended;
+  }, [combinedMembers, attendanceState, hostId]);
 
-    return { attendedMembers: attended, otherMembers: others };
+  // Other members: ONLY original plan members who are NOT attending
+  const otherMembers = useMemo(() => {
+    const others: PlanMember[] = [];
+
+    members.forEach((m) => {
+      const mId = getMemberId(m);
+      const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
+      if (isHostUser) return;
+
+      const decision = attendanceState[mId] || 'DID_NOT_ATTEND';
+      if (decision !== 'ATTENDED') {
+        others.push(m);
+      }
+    });
+
+    others.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return others;
   }, [members, attendanceState, hostId]);
+
+  const hasAddedParticipants = useMemo(() => {
+    return attendedMembers.some((m) => {
+      const mId = getMemberId(m);
+      const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
+      if (isHostUser) return false;
+      const originalStatus = normalizeStatus(m.joinState || (m as any).rsvp_status);
+      return originalStatus !== 'JOINED';
+    });
+  }, [attendedMembers, hostId]);
 
   if (!isOpen) return null;
 
-  const summaryAttendedCount = attendedMembers.length;
-  const summaryDidNotAttendCount = otherMembers.length;
+  if (step === 'search') {
+    return (
+      <AttendanceSearch
+        isOpen={isOpen}
+        combinedMembers={combinedMembers}
+        attendanceState={attendanceState}
+        hostId={hostId}
+        onToggleAttendance={toggleAttendance}
+        onBack={() => setStep('attendance')}
+      />
+    );
+  }
 
-  const handleHeaderBack = () => {
-    if (step === 'summary') {
-      setStep('attendance');
+  const handleActionClick = () => {
+    if (isCompletedMode) {
+      const currentAttendedIds = new Set(attendedMembers.map(m => getMemberId(m)));
+      
+      const usersToAdd: string[] = [];
+      currentAttendedIds.forEach(id => {
+        if (!initialAttendedIds.has(id as string)) {
+          usersToAdd.push(id as string);
+        }
+      });
+
+      const usersToRemove: string[] = [];
+      initialAttendedIds.forEach(id => {
+        if (!currentAttendedIds.has(id as string)) {
+          usersToRemove.push(id as string);
+        }
+      });
+
+      if (usersToAdd.length === 0 && usersToRemove.length === 0) {
+        // No changes made
+        onBack();
+        return;
+      }
+
+      if (planExpense && Number(planExpense.total_amount || 0) > 0) {
+        setShowExpenseDialog(true);
+      } else {
+        executeSubmission('NONE', usersToAdd, usersToRemove);
+      }
     } else {
-      onBack();
+      if (planExpense && Number(planExpense.total_amount || 0) > 0 && hasAddedParticipants) {
+        setShowExpenseDialog(true);
+      } else {
+        executeSubmission('SPLIT_ALL');
+      }
     }
   };
 
+  const executeSubmission = (mode: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE', addOverride?: string[], removeOverride?: string[]) => {
+    const payload = combinedMembers
+      .map((m) => {
+        const mId = getMemberId(m);
+        const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
+        const originalStatus = normalizeStatus(m.joinState || (m as any).rsvp_status);
+        const isAttended = isHostUser || attendanceState[mId] === 'ATTENDED';
+
+        if (isAttended) {
+          return {
+            user_id: mId,
+            attendance: 'ATTENDED' as const,
+          };
+        }
+
+        if (originalStatus === 'JOINED') {
+          return {
+            user_id: mId,
+            attendance: 'DID_NOT_ATTEND' as const,
+          };
+        }
+
+        return null;
+      })
+      .filter(
+        (entry): entry is {
+          user_id: string;
+          attendance: 'ATTENDED' | 'DID_NOT_ATTEND';
+        } => entry !== null
+      );
+
+    const currentAttendedIds = new Set(attendedMembers.map(m => getMemberId(m)));
+    const usersToAdd: string[] = addOverride ?? [];
+    if (!addOverride) {
+      currentAttendedIds.forEach(id => {
+        if (!initialAttendedIds.has(id as string)) {
+          usersToAdd.push(id as string);
+        }
+      });
+    }
+
+    const usersToRemove: string[] = removeOverride ?? [];
+    if (!removeOverride) {
+      initialAttendedIds.forEach(id => {
+        if (!currentAttendedIds.has(id as string)) {
+          usersToRemove.push(id as string);
+        }
+      });
+    }
+
+    const effectiveExpenseMode = planExpense && Number(planExpense.total_amount || 0) > 0 ? mode : 'NONE';
+    setShowExpenseDialog(false);
+    onConfirm(payload, effectiveExpenseMode, usersToAdd, usersToRemove);
+  };
+
+  // Calculations for Expense Split Bottom Sheet
+  const totalExpense = planExpense ? Number(planExpense.total_amount || 0) : 0;
+  const currentGoingCount = attendedMembers.length;
+  const splitAllCostPerPerson = currentGoingCount > 0 ? Math.round((totalExpense / currentGoingCount) * 100) / 100 : 0;
+
   return (
-    <div className="fixed inset-0 z-[70] bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none">
-      {/* Top Navigation Bar with Back Arrow and Title */}
-      <div className="px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-3 flex items-center gap-2 flex-shrink-0 relative z-30 min-h-[52px] border-b border-white/10">
+    <div className="fixed inset-0 z-[70] bg-[#000000] flex flex-col h-full overflow-hidden text-left relative" style={{ fontFamily: 'Inter, sans-serif' }}>
+      {/* ── Standardized Header Top Bar ── */}
+      <div
+        className="w-full shrink-0 px-5 flex items-center bg-[#000000] border-b border-white/[0.08] relative z-40 gap-3"
+        style={{ height: '72px', boxSizing: 'border-box' }}
+      >
+        {/* BACK BUTTON */}
         <button
           type="button"
-          onClick={handleHeaderBack}
-          className="p-2 -ml-2 text-white hover:text-white/80 active:scale-95 transition cursor-pointer flex items-center justify-center rounded-full"
-          title="Back"
+          onClick={onBack}
+          style={{
+            background: 'none',
+            border: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#FFFFFF',
+            cursor: 'pointer',
+            padding: 0,
+            width: 24,
+            height: 24,
+            flexShrink: 0,
+          }}
         >
-          <ChevronLeft className="w-6 h-6" />
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12" />
+            <polyline points="12 19 5 12 12 5" />
+          </svg>
         </button>
-        <h1 className="text-lg font-bold text-white tracking-tight">
-          {step === 'attendance' ? 'Who attended?' : 'Review Completion'}
-        </h1>
+
+        {/* TITLE & SUBTITLE */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', margin: 0, letterSpacing: '-0.01em', fontFamily: 'Inter, sans-serif', lineHeight: '1.2' }}>
+            {isCompletedMode ? "Manage Participants" : "Who attended?"}
+          </h2>
+          <p style={{ fontSize: 11, fontWeight: 650, color: '#A1A1AA', margin: 0, marginTop: 2, fontFamily: 'Inter, sans-serif', lineHeight: '1.2' }}>
+            {`${attendedMembers.length} attended`}
+          </p>
+        </div>
+
+        {/* TRAILING CONTROLS: SEARCH ICON */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            type="button"
+            onClick={() => setStep('search')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#FFFFFF',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 4,
+              width: 32,
+              height: 32,
+              transition: 'opacity 0.2s'
+            }}
+          >
+            <Search className="w-5 h-5 text-white" />
+          </button>
+        </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto scrollbar-none p-5 space-y-6">
-        {step === 'attendance' ? (
-          <>
-            <div>
-              <p className="text-[14px] text-white/60 leading-[1.55]">
-                Confirm who actually came to the plan. Tap a participant to change their attendance state.
-              </p>
-            </div>
-
-            {/* ATTENDED SECTION */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between pb-1">
-                <h3 className="text-[12px] font-semibold text-white/90 uppercase tracking-wider">
-                  Attended ({attendedMembers.length})
-                </h3>
+      {/* ── Main Content Area ── */}
+      <div className="flex flex-col flex-1 min-h-0 relative">
+        <div className="flex-1 flex flex-col px-5 pt-4 pb-24 animate-fade-in min-h-0 relative">
+          <div className="flex flex-col flex-1 min-h-0 space-y-4">
+            {/* ── ATTENDED SECTION HEADER & SELECT ALL ── */}
+            <div className="flex items-center justify-between pb-1 select-none">
+              <h3 className="text-[12px] font-semibold text-white/90 uppercase tracking-wider">
+                ATTENDED ({attendedMembers.length})
+              </h3>
+              {otherMembers.length > 0 && (
                 <button
                   type="button"
-                  onClick={setAllJoinedToAttended}
-                  className="text-[13px] font-medium text-blue-400 hover:text-blue-300 active:opacity-70 transition-opacity cursor-pointer"
+                  onClick={setAllToAttended}
+                  className="text-xs font-semibold text-zinc-400 hover:text-white transition cursor-pointer"
                 >
-                  Everyone attended
+                  Select all
                 </button>
-              </div>
-
-              <div className="bg-[#111111] rounded-2xl border border-white/10 p-3 space-y-2">
-                {attendedMembers.map((m) => {
-                  const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
-                  const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
-                  const subtitle = getMemberSubtitle(m, true, isHostUser);
-
-                  return (
-                    <div key={mId} className="flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 relative">
-                          <UserAvatar src={m.avatar || (m as any).profile_photo} alt={m.name} size="w-full h-full" />
-                          <div className="absolute inset-0 rounded-full border border-white/10" />
-                        </div>
-                        <div>
-                          <span className="text-[15px] font-medium text-white block">
-                            {m.name || 'Participant'}
-                          </span>
-                          {subtitle && (
-                            <span className="text-[12px] text-white/40 block">{subtitle}</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {isHostUser ? (
-                        <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30 opacity-60">
-                          <Check className="w-4 h-4 text-emerald-400" />
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => toggleAttendance(mId)}
-                          className="w-8 h-8 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 flex items-center justify-center border border-emerald-500/40 active:scale-95 transition-transform cursor-pointer"
-                          title="Click to mark absent"
-                        >
-                          <Check className="w-4 h-4 text-emerald-400" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              )}
             </div>
 
-            {/* OTHER PEOPLE SECTION */}
-            {otherMembers.length > 0 && (
-              <div className="space-y-3 pt-2">
-                <h3 className="text-[12px] font-semibold text-white/50 uppercase tracking-wider">
-                  Other people ({otherMembers.length})
-                </h3>
-
-                <div className="bg-[#111111] rounded-2xl border border-white/10 p-3 space-y-2">
-                  {otherMembers.map((m) => {
-                    const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
-                    const subtitle = getMemberSubtitle(m, false, false);
+            {/* ── Attended Selected Strip ── */}
+            {attendedMembers.length > 0 && (
+              <div className="bg-transparent border-b border-white/[0.08] pb-4 flex items-center gap-3 animate-fade-in select-none">
+                <div className="flex-1 flex items-center gap-4 overflow-x-auto scrollbar-none py-1">
+                  {attendedMembers.map((m) => {
+                    const mId = getMemberId(m);
+                    const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
+                    const photo = m.avatar || (m as any).profile_photo;
+                    const name = m.name || 'Participant';
+                    const firstName = name.split(' ')[0];
 
                     return (
-                      <div key={mId} className="flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors opacity-80">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 relative">
-                            <UserAvatar src={m.avatar || (m as any).profile_photo} alt={m.name} size="w-full h-full" />
-                            <div className="absolute inset-0 rounded-full border border-white/10" />
-                          </div>
-                          <div>
-                            <span className="text-[15px] font-medium text-white block">
-                              {m.name || 'Participant'}
-                            </span>
-                            {subtitle && (
-                              <span className="text-[12px] text-white/40 block">{subtitle}</span>
-                            )}
-                          </div>
+                      <div key={`attended-strip-${mId}`} className="flex flex-col items-center shrink-0 relative w-14">
+                        <div className="relative">
+                          <UserAvatar
+                            src={photo}
+                            alt={name}
+                            size="w-12 h-12"
+                            className="border border-white/10"
+                          />
+
+                          {/* Remove button for non-hosts */}
+                          {!isHostUser && (
+                            <button
+                              type="button"
+                              onClick={() => toggleAttendance(m)}
+                              className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition shadow-md"
+                            >
+                              <X className="w-3 h-3 stroke-[2.5]" />
+                            </button>
+                          )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => toggleAttendance(mId)}
-                          className="px-4 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/90 text-[13px] font-medium active:scale-95 transition-all cursor-pointer border border-white/10"
-                        >
-                          Add
-                        </button>
+
+                        <div className="flex flex-col items-center w-full mt-1.5 min-h-[16px]">
+                          <span className="text-[10px] font-semibold text-zinc-400 truncate w-full text-center">
+                            {firstName}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
             )}
-          </>
-        ) : (
-          /* SUMMARY STEP */
-          <div className="flex flex-col items-center text-center pt-8 space-y-6 max-w-sm mx-auto">
-            <div className="w-20 h-20 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30">
-              <Check className="w-10 h-10 text-emerald-400" />
-            </div>
 
-            <div className="space-y-2">
-              <h2 className="text-[24px] font-bold text-white">Complete this plan?</h2>
-              <p className="text-[15px] text-white/70 leading-[1.5]">
-                <span className="font-semibold text-white">{summaryAttendedCount}</span> {summaryAttendedCount === 1 ? 'person' : 'people'} attended.<br />
-                {summaryDidNotAttendCount > 0 && (
-                  <>
-                    <span className="font-semibold text-white">{summaryDidNotAttendCount}</span> {summaryDidNotAttendCount === 1 ? 'person' : 'people'} didn't attend.
-                  </>
-                )}
-              </p>
-            </div>
+            {/* ── Unattended / Available Members List ── */}
+            <div className="flex-1 flex flex-col select-none space-y-1 overflow-y-auto scrollbar-none pr-1 min-h-0">
+              {otherMembers.length === 0 ? (
+                <div className="w-full py-8 text-center text-zinc-600 text-xs font-semibold select-none">
+                  Everyone is marked as attended
+                </div>
+              ) : (
+                otherMembers.map((m) => {
+                  const mId = getMemberId(m);
+                  const photo = m.avatar || (m as any).profile_photo;
+                  const name = m.name || 'Participant';
 
-            <div className="w-full bg-[#111111] p-4 rounded-2xl border border-white/10 text-left text-xs text-white/50 space-y-1">
-              <p className="font-semibold text-white/70 text-sm">Note</p>
-              <p>Completing this plan will move it to Past Plans. Participant attendance states will be saved permanently.</p>
+                  return (
+                    <button
+                      key={`unattended-row-${mId}`}
+                      type="button"
+                      onClick={() => toggleAttendance(m)}
+                      style={{
+                        width: '100%',
+                        padding: '12px 14px',
+                        borderRadius: 12,
+                        border: '1px solid rgba(255, 255, 255, 0.04)',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        transition: 'all 0.2s',
+                        cursor: 'pointer',
+                        outline: 'none',
+                      }}
+                    >
+                      <div className="flex items-center gap-3 truncate">
+                        <UserAvatar
+                          src={photo}
+                          alt={name}
+                          size="w-8 h-8"
+                          className="shrink-0"
+                        />
+                        <span className="block truncate text-xs font-bold text-white">
+                          {name}
+                        </span>
+                      </div>
+
+                      {/* Unselected circular radio indicator */}
+                      <span className="w-4.5 h-4.5 rounded-full border-2 border-zinc-600 shrink-0" />
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Persistent Bottom Action Bar */}
-      <div className="p-4 bg-[#050505]/95 backdrop-blur-md border-t border-white/10 flex flex-col gap-3 shrink-0 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
-        {step === 'attendance' ? (
+        {/* ── Fixed Bottom CTA Button ── */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            padding: '16px 20px',
+            background: 'linear-gradient(to top, #000000 80%, rgba(0,0,0,0))',
+            zIndex: 40,
+            paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
+            pointerEvents: 'auto'
+          }}
+        >
           <button
             type="button"
-            onClick={() => setStep('summary')}
-            className="w-full py-4 rounded-2xl text-[15px] font-semibold text-black active:scale-[0.98] transition-all cursor-pointer bg-white hover:bg-white/90"
+            disabled={isSubmitting}
+            onClick={handleActionClick}
+            style={{
+              width: '100%',
+              height: 48,
+              borderRadius: 14,
+              border: 'none',
+              background: isSubmitting ? '#E5E5E5' : '#FFFFFF',
+              color: '#000000',
+              fontSize: 15,
+              fontWeight: 700,
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+              transition: 'all 0.2s',
+              fontFamily: 'Inter, sans-serif',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+            }}
           >
-            Review
+            {isSubmitting && (
+              <svg className="animate-spin h-5 w-5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            )}
+            {isSubmitting
+              ? (isCompletedMode ? "Saving Changes…" : "Completing Plan…")
+              : (isCompletedMode ? "Save Changes" : "Complete Plan")}
           </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => {
-                const payload = members
-                  .map((m) => {
-                    const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
-                    const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
-                    const originalStatus = normalizeStatus(m.joinState || (m as any).rsvp_status);
-                    const isAttended = isHostUser || attendanceState[mId] === 'ATTENDED';
-
-                    // 1. Host or explicitly added participant -> ATTENDED
-                    if (isAttended) {
-                      return {
-                        user_id: mId,
-                        attendance: 'ATTENDED' as const,
-                      };
-                    }
-
-                    // 2. JOINED participant explicitly marked absent -> DID_NOT_ATTEND
-                    if (originalStatus === 'JOINED') {
-                      return {
-                        user_id: mId,
-                        attendance: 'DID_NOT_ATTEND' as const,
-                      };
-                    }
-
-                    // 3. Untouched non-JOINED participant -> Omit from payload
-                    return null;
-                  })
-                  .filter(
-                    (entry): entry is {
-                      user_id: string;
-                      attendance: 'ATTENDED' | 'DID_NOT_ATTEND';
-                    } => entry !== null
-                  );
-                onConfirm(payload);
-              }}
-              className="w-full py-4 rounded-2xl text-[15px] font-semibold text-black active:scale-[0.98] transition-all cursor-pointer bg-emerald-400 hover:bg-emerald-300 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {isSubmitting && (
-                <svg className="animate-spin h-5 w-5 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              )}
-              {isSubmitting ? "Completing Plan…" : "Complete Plan"}
-            </button>
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => setStep('attendance')}
-              className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/80 hover:text-white active:scale-[0.98] transition-all cursor-pointer bg-white/10"
-            >
-              Back to attendance
-            </button>
-          </>
-        )}
+        </div>
       </div>
+
+      {/* ── Expense Options Bottom Sheet ── */}
+      {showExpenseDialog && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="w-full bg-[#111111] rounded-t-3xl border border-white/10 p-6 pb-8 shadow-2xl flex flex-col gap-4 animate-slide-up">
+            <h2 className="text-white text-[18px] font-bold tracking-tight">
+              {isCompletedMode ? "Updated Expense Split" : "How should the plan expense be handled?"}
+            </h2>
+
+            {/* Recalculated Cost Split Summary Card */}
+            {totalExpense > 0 && (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col gap-2">
+                <div className="flex justify-between items-center text-xs text-zinc-400 font-medium">
+                  <span>Total Plan Expense</span>
+                  <span className="text-white font-semibold text-sm">₹{totalExpense.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs text-zinc-400 font-medium">
+                  <span>Going Participants</span>
+                  <span className="text-white font-semibold text-sm">{currentGoingCount} people</span>
+                </div>
+                <div className="h-[1px] bg-white/10 my-1" />
+                <div className="flex justify-between items-center text-xs text-zinc-300 font-semibold">
+                  <span>Recalculated Split</span>
+                  <span className="text-emerald-400 font-bold text-base">₹{splitAllCostPerPerson.toLocaleString('en-IN')} / person</span>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => executeSubmission('SPLIT_ALL')}
+              className="w-full bg-white/10 hover:bg-white/15 border border-white/5 rounded-xl p-4 text-left transition cursor-pointer"
+            >
+              <div className="text-white text-[15px] font-semibold">Split the plan expense</div>
+              <div className="text-zinc-400 text-[13px] font-medium mt-1">
+                Recalculate total expense across all {currentGoingCount} Going participants (₹{splitAllCostPerPerson.toLocaleString('en-IN')} each).
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => executeSubmission('KEEP_CURRENT_COST')}
+              className="w-full bg-white/10 hover:bg-white/15 border border-white/5 rounded-xl p-4 text-left transition cursor-pointer"
+            >
+              <div className="text-white text-[15px] font-semibold">Keep current cost per person</div>
+              <div className="text-zinc-400 text-[13px] font-medium mt-1">
+                Use the existing per-person cost for everyone added.
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowExpenseDialog(false)}
+              className="w-full mt-2 py-3 rounded-xl text-zinc-400 hover:text-white font-semibold text-[15px] transition cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

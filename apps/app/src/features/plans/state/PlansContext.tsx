@@ -65,7 +65,8 @@ interface PlansContextType {
   changePlanHost: (planId: string, newHostUuid: string, oldHostUuid: string) => Promise<void>;
   cancelPlan: (planId: string) => Promise<void>;
   updatePlanDetails: (planId: string, updates: Partial<DbPlan>) => Promise<any>;
-  completePlan: (planId: string, attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>, opts?: { isEarly?: boolean }) => Promise<void>;
+  completePlan: (planId: string, attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>, opts?: { isEarly?: boolean; expenseMode?: 'SPLIT_ALL' | 'CHARGE_NEW_ONLY' | 'NONE' }) => Promise<void>;
+  manageCompletedPlanParticipants: (planId: string, usersToAdd: string[], usersToRemove: string[], expenseMode?: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE') => Promise<any>;
   submitReview: (memoryId: string, category: 'movie' | 'dining', rating: number, review: string | null, userUuid: string, existingId?: string) => Promise<void>;
   submitStats: (memoryId: string, category: 'football' | 'badminton', stats: { scoreA?: number; scoreB?: number; wins?: number; losses?: number }, userUuid: string) => Promise<void>;
   submitMvp: (memoryId: string, voterUuid: string, mvpUuid: string) => Promise<void>;
@@ -983,6 +984,22 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           : plan
       )
     );
+
+    if (updates.status && updates.status !== "COMPLETED") {
+      setDbPlanParticipants((prev) =>
+        prev.map((pp) =>
+          pp.plan_id === planId
+            ? {
+                ...pp,
+                final_attendance: null,
+                final_state: null,
+                finalAttendance: null,
+                finalState: null,
+              }
+            : pp
+        )
+      );
+    }
   }, []);
 
   const changePlanHost = useCallback(async (planId: string, newHostUuid: string, oldHostUuid: string) => {
@@ -1019,15 +1036,20 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const completePlan = useCallback(async (
     planId: string,
     attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>,
-    opts?: { isEarly?: boolean }
+    opts?: { isEarly?: boolean; expenseMode?: 'SPLIT_ALL' | 'CHARGE_NEW_ONLY' | 'NONE' }
   ) => {
-    await lifecycle.completePlan(planId, attendanceInput, opts);
+    const res = await lifecycle.completePlan(planId, attendanceInput, opts);
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
     const nowIso = new Date().toISOString();
+    const finalAttendedCount = res?.attended_participants ?? res?.final_count ?? attendanceInput.filter(a => a.attendance === 'ATTENDED').length;
+
     updateLocalPlan(planUuid, {
       status: "COMPLETED",
+      attended_participants: finalAttendedCount,
+      attendedParticipants: finalAttendedCount,
       updated_at: nowIso,
+      ...(res?.total_cost !== undefined ? { total_cost: Number(res.total_cost) } : {}),
       ...(opts?.isEarly ? { scheduled_at: nowIso, rsvp_deadline: nowIso, datetime: nowIso, time: nowIso } : {}),
     });
   }, [lifecycle, plans, updateLocalPlan]);
@@ -1180,6 +1202,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     cancelPlan: lifecycle.cancelPlan,
     updatePlanDetails: lifecycle.updatePlanDetails,
     completePlan,
+    manageCompletedPlanParticipants: lifecycle.manageCompletedPlanParticipants,
     submitReview: outcomes.submitReview,
     submitStats: outcomes.submitStats,
     submitMvp: outcomes.submitMvp,
@@ -1208,7 +1231,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     memoizedGetHubPlans, memoizedGetParticipantCounts, refreshPlans,
     memoizedAcceptPlan, memoizedDeclinePlan,
     memoizedCreatePlan,
-    lifecycle.changePlanHost, lifecycle.cancelPlan, lifecycle.updatePlanDetails,
+    lifecycle.changePlanHost, lifecycle.cancelPlan, lifecycle.updatePlanDetails, lifecycle.manageCompletedPlanParticipants,
     completePlan,
     outcomes.submitReview, outcomes.submitStats, outcomes.submitMvp,
     addParticipantsToPlan, promoteWaitlistParticipant, rebalanceCapacity, getAvailableCapacity,

@@ -8,6 +8,7 @@ interface RSVPCardProps {
   onClick?: () => void;
   isCancelled?: boolean;
   isCompleted?: boolean;
+  isManagementExpired?: boolean;
 }
 
 export const RSVPCard: React.FC<RSVPCardProps> = ({
@@ -16,6 +17,7 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({
   onClick,
   isCancelled = false,
   isCompleted = false,
+  isManagementExpired = false,
 }) => {
   if (!myParticipantRecord && !isCancelled && !isCompleted) return null;
 
@@ -41,7 +43,8 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({
       textColor: 'text-rose-200',
     };
   } else if (isCompleted) {
-    text = "Plan Completed";
+    const isManagementAvailable = isHostRole && !isManagementExpired;
+    text = isManagementAvailable ? "Completed · Manage Participants" : "Completed";
     dotColor = 'bg-emerald-400/80 shadow-[0_0_8px_rgba(52,211,153,0.3)]';
     glassStyle = {
       backgroundColor: 'rgba(24, 24, 27, 0.65)',
@@ -112,7 +115,8 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({
     return null;
   }
 
-  const isInteractive = Boolean(onClick && !isCompleted);
+  const isInteractive = Boolean(onClick && (!isCompleted || isHostRole));
+  const showDot = Boolean(isHostRole || isCancelled || isCompleted);
 
   return (
     <motion.div
@@ -127,9 +131,11 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({
         backgroundColor: glassStyle.backgroundColor,
         borderColor: glassStyle.borderColor,
       }}
-      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 rounded-full border backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.45)] flex items-center gap-2.5 max-w-[90vw] select-none transition-all duration-300 ${isInteractive ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none'} ${className}`}
+      className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 rounded-full border backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.45)] flex items-center justify-center gap-2.5 max-w-[90vw] select-none transition-all duration-300 ${isInteractive ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none'} ${className}`}
     >
-      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor} transition-colors duration-300`} />
+      {showDot && (
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor} transition-colors duration-300`} />
+      )}
       <AnimatePresence mode="wait">
         <motion.span
           key={text}
@@ -142,7 +148,6 @@ export const RSVPCard: React.FC<RSVPCardProps> = ({
           {text}
         </motion.span>
       </AnimatePresence>
-      {isInteractive && null}
     </motion.div>
   );
 };
