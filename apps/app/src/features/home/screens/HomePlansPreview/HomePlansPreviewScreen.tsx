@@ -147,7 +147,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const handleToggleJoinCallback = useCallback(
     (p: Plan) => {
       if (alreadySkipped && activeUserId) {
-        rejoinPlan(p.id, activeUserId, userProfile);
+        rejoinPlan(p.id, userProfile);
       } else {
         joinPlan(p.id, userProfile);
       }
@@ -233,7 +233,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
     // Perform DB join asynchronously in background without blocking UI overlay
     const joinOp = alreadySkipped && activeUserId
-      ? rejoinPlan(planToJoin.id, activeUserId, userProfile)
+      ? rejoinPlan(planToJoin.id, userProfile)
       : joinPlan(planToJoin.id, userProfile);
 
     joinOp.catch((err) => {

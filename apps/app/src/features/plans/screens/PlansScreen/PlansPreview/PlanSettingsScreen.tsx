@@ -18,6 +18,7 @@ interface PlanSettingsScreenProps {
     maxParticipants?: number;
   }) => Promise<void> | void;
   onUpdatePlanDetails?: (updates: { participant_filtering?: "AUTOMATIC" | "ASSIGNED" }) => Promise<void> | void;
+  onWaitlistModeChange?: (mode: "auto" | "assigned") => Promise<void> | void;
   onDemoteHost?: (userId: string) => Promise<void> | void;
   onRemoveParticipant?: (userId: string) => Promise<void> | void;
   onSelectHost?: (hostItem: { id: string; dbUuid: string; name: string; avatar: string; isHost: boolean }) => void;
@@ -36,6 +37,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   onBack,
   onUpdateSettings,
   onUpdatePlanDetails,
+  onWaitlistModeChange,
   onDemoteHost,
   onRemoveParticipant,
   onSelectHost,
@@ -924,7 +926,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
             {/* Header */}
             <div style={{ padding: '0 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF', marginBottom: 6, fontFamily: 'Inter, sans-serif', tracking: '-0.02em' }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF', marginBottom: 6, fontFamily: 'Inter, sans-serif', letterSpacing: '-0.02em' }}>
                 Promote a New Host
               </h3>
               <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: '1.45', fontFamily: 'Inter, sans-serif' }}>
@@ -955,7 +957,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
                           <UserAvatar src={p.avatar} alt={p.name} size="w-10 h-10" className="flex-shrink-0" />
                           <div style={{ minWidth: 0, flex: 1 }}>
-                            <span style={{ fontSize: 15, fontWeight: 600, color: '#FFFFFF', display: 'block', truncate: true, fontFamily: 'Inter, sans-serif' }}>
+                            <span className="truncate" style={{ fontSize: 15, fontWeight: 600, color: '#FFFFFF', display: 'block', fontFamily: 'Inter, sans-serif' }}>
                               {p.name}
                             </span>
                             <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>

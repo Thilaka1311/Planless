@@ -65,7 +65,7 @@ interface PlansContextType {
   changePlanHost: (planId: string, newHostUuid: string, oldHostUuid: string) => Promise<void>;
   cancelPlan: (planId: string) => Promise<void>;
   updatePlanDetails: (planId: string, updates: Partial<DbPlan>) => Promise<any>;
-  completePlan: (planId: string, attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>, opts?: { isEarly?: boolean; expenseMode?: 'SPLIT_ALL' | 'CHARGE_NEW_ONLY' | 'NONE' }) => Promise<void>;
+  completePlan: (planId: string, attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>, opts?: { isEarly?: boolean; expenseMode?: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE' }) => Promise<void>;
   manageCompletedPlanParticipants: (planId: string, usersToAdd: string[], usersToRemove: string[], expenseMode?: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE') => Promise<any>;
   submitReview: (memoryId: string, category: 'movie' | 'dining', rating: number, review: string | null, userUuid: string, existingId?: string) => Promise<void>;
   submitStats: (memoryId: string, category: 'football' | 'badminton', stats: { scoreA?: number; scoreB?: number; wins?: number; losses?: number }, userUuid: string) => Promise<void>;
@@ -89,7 +89,7 @@ interface PlansContextType {
   rebalanceCapacity: (planId: string, newCapacity: number) => Promise<{ promotedCount: number; demotedCount: number }>;
   getAvailableCapacity: (planId: string) => { capacity: number; goingCount: number; availableSpots: number };
   addParticipantsToPlan: (options: AddParticipantsOptions) => Promise<void>;
-  moveParticipantToGoing: (planId: string, participantUserUuid: string) => Promise<void>;
+  moveParticipantToGoing: (planId: string, participantUserUuid: string, options?: { bypassCapacityCheck?: boolean }) => Promise<void>;
   moveParticipantToWaitlist: (planId: string, participantUserUuid: string) => Promise<void>;
   moveParticipantToInvited: (planId: string, participantUserUuid: string) => Promise<void>;
   updatePlanSettings: (
@@ -1036,7 +1036,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const completePlan = useCallback(async (
     planId: string,
     attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>,
-    opts?: { isEarly?: boolean; expenseMode?: 'SPLIT_ALL' | 'CHARGE_NEW_ONLY' | 'NONE' }
+    opts?: { isEarly?: boolean; expenseMode?: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE' }
   ) => {
     const res = await lifecycle.completePlan(planId, attendanceInput, opts);
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
