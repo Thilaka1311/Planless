@@ -31,7 +31,7 @@ import { HomeHeader } from "./components/HomeHeader";
 import { useLivePlan } from "./features/plans/hooks/useLivePlan";
 import { SearchYourPlansScreen } from "./features/plans/screens/PlansScreen/SearchYourPlansScreen";
 import { HostedPlansScreen } from "./features/plans/screens/PlansScreen/HostedPlansScreen";
-import { PastPlans } from "./features/plans/screens/PlansScreen/PastPlans";
+import { PastPlans } from "./features/profile/screens/PastPlans";
 import { ChatsScreen } from "./features/chats/screens/ChatsScreen";
 import { PlanChatScreen } from "./features/chats/screens/PlanChatScreen";
 
@@ -50,7 +50,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const { friends } = useFriendshipStore();
 
   // --- Core Navigation Tab state ---
-  const [activeTab, setActiveTab] = useState<"home" | "plans" | "create" | "circles" | "wallet" | "profile">(() => {
+  const [activeTab, setActiveTab] = useState<any>(() => {
     return (localStorage.getItem("planless_active_tab") as any) || "home";
   });
   const [childrenWantBottomNavHidden, setChildrenWantBottomNavHidden] = useState(false);
@@ -82,7 +82,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const [showWaitlistSuccessId, setShowWaitlistSuccessId] = useState<string | null>(null);
   const [showLeftSuccessId, setShowLeftSuccessId] = useState<string | null>(null);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
-  const [plansFilter, setPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED'>('JOINED');
+  const [plansFilter, setPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted' | string>('JOINED');
   const [showHostedPlansScreen, setShowHostedPlansScreen] = useState(false);
   const [showPastPlansScreen, setShowPastPlansScreen] = useState(false);
   const [plansScrollY, setPlansScrollY] = useState(0);
@@ -415,9 +415,6 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           showHostedIcon={true}
           onToggleHosted={() => setShowHostedPlansScreen(prev => !prev)}
           isHostedActive={showHostedPlansScreen}
-          showPastIcon={true}
-          onTogglePast={() => setShowPastPlansScreen(true)}
-          isPastActive={showPastPlansScreen}
           title={showHostedPlansScreen ? "Hosted Plans" : "Plans"}
           scrollY={plansScrollY}
           hideNotificationsIcon={true}
@@ -449,7 +446,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
             activeCardId={activeCardId}
             setActiveCardId={setActiveCardId}
             handleSnoozePlan={handleSnoozePlan}
-            handleWaitlistPlan={waitlistPlan}
+            handleWaitlistPlan={(planId) => waitlistPlan(planId, userProfile)}
             homeFeedRef={homeFeedRef}
             selectedPlanId={selectedPlanId}
             onNavigateToCreate={() => setActiveTab("create")}
@@ -504,6 +501,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
             setSelectedPlanId={setSelectedPlanId}
             setShowDepositModal={setShowDepositModal}
             onToggleBottomNav={setChildrenWantBottomNavHidden}
+            onOpenPastPlans={() => setShowPastPlansScreen(true)}
           />
         )}
       </main>

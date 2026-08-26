@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { ChevronRight, Check, X, CreditCard, Inbox, CalendarCheck, Hourglass, Coffee, Sparkles } from "lucide-react";
+import { Check, X, CreditCard, Inbox, CalendarCheck, Hourglass, Coffee, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 import { Plan, DbPlanParticipant } from "../../../../core/types";
 import { normalizeStatus } from "../../../../../lib/participantStatus";
@@ -15,8 +15,8 @@ import { PlansDivider } from "../../components/PlansDivider";
 interface PlansScreenProps {
   setSelectedPlanId: (planId: string | null) => void;
   skippedByPlanId?: Record<string, string[]>;
-  plansFilter?: 'JOINED' | 'WAITLISTED' | 'SKIPPED';
-  setPlansFilter?: (filter: 'JOINED' | 'WAITLISTED' | 'SKIPPED') => void;
+  plansFilter?: 'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted';
+  setPlansFilter?: (filter: any) => void;
   onScroll?: (y: number) => void;
 }
 
@@ -31,7 +31,7 @@ export const PlansScreen = React.memo(({
   const { userProfile, activeUserId } = useProfileStore();
   const { circles } = useCirclesStore();
 
-  const [localPlansFilter, setLocalPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED'>('JOINED');
+  const [localPlansFilter, setLocalPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted'>('JOINED');
   const plansFilter = propPlansFilter !== undefined ? propPlansFilter : localPlansFilter;
   const setPlansFilter = propSetPlansFilter !== undefined ? propSetPlansFilter : setLocalPlansFilter;
 
@@ -220,7 +220,7 @@ export const PlansScreen = React.memo(({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         onClick={() => setSelectedPlanId(plan.id)}
-        className="w-full bg-white/[0.02] hover:bg-white/[0.04] active:bg-white/[0.06] border border-white/5 rounded-2xl py-2.5 px-4 transition-all duration-150 cursor-pointer flex items-center justify-between group active:scale-[0.99] select-none text-left"
+        className="w-full py-2.5 px-1 transition-all duration-150 cursor-pointer flex items-center justify-between group active:scale-[0.99] select-none text-left"
       >
         <div className="flex items-center gap-3.5 min-w-0 flex-1">
           {/* Thumbnail circle avatar */}
@@ -243,11 +243,6 @@ export const PlansScreen = React.memo(({
               {timeLabel}
             </span>
           </div>
-        </div>
-
-        {/* Chevron on the right */}
-        <div className="flex items-center flex-shrink-0 ml-3">
-          <ChevronRight className="w-4 h-4 text-zinc-650 group-hover:text-zinc-400 group-hover:translate-x-0.5 transition-all" />
         </div>
       </motion.div>
     );
@@ -327,11 +322,11 @@ export const PlansScreen = React.memo(({
       {/* Scrollable Container */}
       <div
         onScroll={(e) => onScroll?.(e.currentTarget.scrollTop)}
-        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-0 pb-6"
+        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-3.5 pb-6"
       >
 
         <PlansDivider
-          selected={plansFilter}
+          selected={plansFilter as any}
           counts={{
             joined: joinedCount,
             waitlisted: waitlistedCount,

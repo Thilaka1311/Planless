@@ -55,7 +55,7 @@ export default defineConfig(() => {
           ]
         },
         devOptions: {
-          enabled: false // Disable in dev by default unless testing
+          enabled: false
         }
       })
     ],
@@ -74,6 +74,7 @@ export default defineConfig(() => {
       },
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      allowedHosts: true as const,
     },
     preview: {
       allowedHosts: true as const,

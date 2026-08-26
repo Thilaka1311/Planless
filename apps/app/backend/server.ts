@@ -10,6 +10,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 import { env } from "./config/env";
 import express from "express";
+import http from "http";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
@@ -120,14 +121,49 @@ async function startServer() {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
   });
 
+  const httpServer = http.createServer(app);
+
   // 2. VITE MIDDLEWARE (DEV) OR STATIC CHASSIS (PROD)
   if (env.NODE_ENV !== "production") {
+    // Explicitly serve a self-unregistering service worker for /sw.js in dev mode.
+    // When a browser/PWA with an active production SW checks for updates to /sw.js,
+    // this script immediately unregisters the SW, clears CacheStorage, and reloads the page.
+    app.get(["/sw.js", "/sw.js.map"], (req, res) => {
+      res.setHeader("Content-Type", "application/javascript");
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.send(`
+        self.addEventListener('install', () => self.skipWaiting());
+        self.addEventListener('activate', (event) => {
+          event.waitUntil(
+            self.registration.unregister()
+              .then(() => self.caches.keys())
+              .then((keys) => Promise.all(keys.map((k) => self.caches.delete(k))))
+              .then(() => self.clients.matchAll({ type: 'window' }))
+              .then((clients) => {
+                clients.forEach((client) => client.navigate(client.url));
+              })
+          );
+        });
+      `);
+    });
+
+    // Disable HTTP browser caching for dev responses
+    app.use((req, res, next) => {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      next();
+    });
+
     const vite = await createViteServer({
       configFile: path.resolve(__dirname, "../vite.config.ts"),
       root: path.resolve(__dirname, ".."),
       server: { 
         middlewareMode: true,
         host: "0.0.0.0",
+        hmr: {
+          server: httpServer,
+        },
       },
       appType: "spa",
     });
@@ -192,7 +228,7 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Planless Fullstack App server booted on http://localhost:${PORT}`);
     // seedDefaultUsers();
   });

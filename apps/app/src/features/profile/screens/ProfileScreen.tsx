@@ -14,7 +14,8 @@ import {
   Camera,
   Shield,
   Sparkles,
-  Pencil
+  Pencil,
+  History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useProfileStore } from "../state/ProfileContext";
@@ -30,12 +31,14 @@ import { Accounts } from "./Accounts";
 import { UsernameScreen } from "./UsernameScreen";
 import { Name } from "./Name";
 import { About } from "./About";
+import { PastPlans } from "./PastPlans";
 
 interface ProfileScreenProps {
   onLogout: () => void;
   setSelectedPlanId: (planId: string | null) => void;
   setShowDepositModal: (show: boolean) => void;
   onToggleBottomNav?: (hide: boolean) => void;
+  onOpenPastPlans?: () => void;
 }
 
 export const ProfileScreen = ({
@@ -43,6 +46,7 @@ export const ProfileScreen = ({
   setSelectedPlanId,
   setShowDepositModal,
   onToggleBottomNav,
+  onOpenPastPlans,
 }: ProfileScreenProps) => {
   const { showToast } = useToast();
   const { userProfile, activeUserId, activeUserUuid, updateProfile, dbUsers, setDbUsers } = useProfileStore();
@@ -58,7 +62,7 @@ export const ProfileScreen = ({
   const currentUser = dbUsers.find(u => u.id === activeUserUuid || u.user_id === activeUserId);
 
   // Interactive sheet states
-  const [activeSheet, setActiveSheet] = useState<'account' | 'notifications' | 'privacy' | 'payments' | 'logout' | 'friends' | 'createUsername' | 'editName' | 'editAbout' | null>(null);
+  const [activeSheet, setActiveSheet] = useState<'account' | 'pastPlans' | 'notifications' | 'privacy' | 'payments' | 'logout' | 'friends' | 'createUsername' | 'editName' | 'editAbout' | null>(null);
 
   React.useEffect(() => {
     onToggleBottomNav?.(activeSheet !== null);
@@ -89,6 +93,18 @@ export const ProfileScreen = ({
       icon: <User className="w-4.5 h-4.5 text-zinc-400" />,
       onClick: () => {
         setActiveSheet('account');
+      }
+    },
+    {
+      id: 'pastPlans',
+      label: 'Past Plans',
+      icon: <History className="w-4.5 h-4.5 text-zinc-400" />,
+      onClick: () => {
+        if (onOpenPastPlans) {
+          onOpenPastPlans();
+        } else {
+          setActiveSheet('pastPlans');
+        }
       }
     },
     {
@@ -514,6 +530,17 @@ export const ProfileScreen = ({
             onEditUsername={() => setActiveSheet('createUsername')}
             onEditName={() => setActiveSheet('editName')}
             onEditAbout={() => setActiveSheet('editAbout')}
+          />
+        )}
+
+        {/* PAST PLANS SHEET */}
+        {activeSheet === 'pastPlans' && (
+          <PastPlans
+            onBack={() => setActiveSheet(null)}
+            setSelectedPlanId={(id) => {
+              setSelectedPlanId(id);
+              setActiveSheet(null);
+            }}
           />
         )}
 

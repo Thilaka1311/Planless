@@ -1,11 +1,11 @@
 import React, { useMemo } from "react";
 import { ChevronLeft, History } from "lucide-react";
-import { EmptyState } from "../../../home/components/EmptyState";
-import { usePlansStore } from "../../state/PlansContext";
-import { useProfileStore } from "../../../profile/state/ProfileContext";
-import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
-import { getPlanCover } from "../../config/planCoverImages";
-import { normalizeStatus } from "../../../../../lib/participantStatus";
+import { EmptyState } from "../../home/components/EmptyState";
+import { usePlansStore } from "../../plans/state/PlansContext";
+import { useProfileStore } from "../state/ProfileContext";
+import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
+import { getPlanCover } from "../../plans/config/planCoverImages";
+import { normalizeStatus } from "../../../../lib/participantStatus";
 
 interface PastPlansProps {
   onBack: () => void;
@@ -35,7 +35,7 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
   const completedPlans = useMemo(() => {
     return plans.filter((p) => {
       if ((p.status || "").toUpperCase() !== "COMPLETED") return false;
-      
+
       const myMember = p.members.find(m => {
         const mId = m.userUuid || m.userId || (m as any).user_id || (m as any).id;
         return activeUserUuid && mId === activeUserUuid;

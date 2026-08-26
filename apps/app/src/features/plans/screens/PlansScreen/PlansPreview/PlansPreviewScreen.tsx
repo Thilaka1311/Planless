@@ -45,9 +45,8 @@ import { PlanChatScreen } from "../../../../chats/screens/PlanChatScreen";
 import { PlanDetailsScreen } from "../../../../wallet/screens/PlanBalances";
 import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGooglePlacesAutocomplete";
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
-import { InlineParticipantView } from "../../../components/InlineParticipantView";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";
-import { RSVPCard } from "../../../components/RSVPCard";
+import { LiveActionButton } from "../../../components/LiveActionButton";
 import {
   LeavePlanBottomSheet,
   PaidPlanLeaveConfirmationDialog,
@@ -135,7 +134,7 @@ interface ParticipantsSectionProps {
   plan: Plan;
   userProfile: UserProfile;
   activeUserId?: string;
-  onOpenParticipants: () => void;
+  onOpenParticipants?: () => void;
 }
 
 export const ParticipantsSection = React.memo(({
@@ -206,7 +205,7 @@ export const ParticipantsSection = React.memo(({
   const tabs = useMemo(() => {
     const t: { key: InlineTab; label: string; count: number }[] = [];
     if (goingList.length > 0 || (waitlistList.length === 0 && invitedList.length === 0 && skippedList.length === 0)) {
-      t.push({ key: 'going', label: 'Joined', count: goingList.length });
+      t.push({ key: 'going', label: isCompletedPlan ? 'Attended' : 'Joined', count: goingList.length });
     }
     if (waitlistList.length > 0) {
       t.push({ key: 'waitlist', label: 'Waitlisted', count: waitlistList.length });
@@ -218,7 +217,7 @@ export const ParticipantsSection = React.memo(({
       t.push({ key: 'skipped', label: 'Skipped', count: skippedList.length });
     }
     return t;
-  }, [goingList.length, waitlistList.length, invitedList.length, skippedList.length]);
+  }, [goingList.length, waitlistList.length, invitedList.length, skippedList.length, isCompletedPlan]);
 
   const [activeTab, setActiveTab] = useState<InlineTab>('going');
 
@@ -262,34 +261,47 @@ export const ParticipantsSection = React.memo(({
 
   return (
     <div className="w-full text-left space-y-2 flex flex-col flex-1 min-h-0">
-      {/* Status Segmented Toggle */}
+      {/* Status Segmented Toggle + Manage Participants Icon */}
       {tabs.length > 0 && (
-        <div className="w-full flex items-center justify-center bg-[#0A0A0C]/90 border border-white/15 rounded-full overflow-hidden backdrop-blur-md shadow-inner flex-shrink-0">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.key;
-            const activeStyle = getLiveTabActiveStyle(tab.key);
+        <div className="w-full flex items-center justify-between gap-2 flex-shrink-0">
+          <div className="flex-1 flex items-center justify-center bg-[#0A0A0C]/90 border border-white/15 rounded-full overflow-hidden backdrop-blur-md shadow-inner">
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.key;
+              const activeStyle = getLiveTabActiveStyle(tab.key);
 
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                style={isActive ? activeStyle.style : undefined}
-                className={`flex-1 py-1.5 px-3 text-[11.5px] font-sans font-semibold tracking-wide transition-all duration-200 focus:outline-none flex items-center justify-center cursor-pointer select-none min-w-0 ${
-                  isActive
-                    ? `${activeStyle.className} rounded-full z-10 shadow-sm`
-                    : 'text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-white/[0.04]'
-                }`}
-              >
-                <span className="truncate">{tab.label} ({tab.count})</span>
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  style={isActive ? activeStyle.style : undefined}
+                  className={`flex-1 py-1.5 px-3 text-[11.5px] font-sans font-semibold tracking-wide transition-all duration-200 focus:outline-none flex items-center justify-center cursor-pointer select-none min-w-0 ${
+                    isActive
+                      ? `${activeStyle.className} rounded-full z-10 shadow-sm`
+                      : 'text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-white/[0.04]'
+                  }`}
+                >
+                  <span className="truncate">{tab.label} ({tab.count})</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {onOpenParticipants && (
+            <button
+              type="button"
+              onClick={onOpenParticipants}
+              className="h-8 w-8 rounded-full bg-[#0A0A0C]/90 border border-white/15 text-white/80 hover:text-white transition flex items-center justify-center cursor-pointer shrink-0 shadow-inner"
+              title="Manage Participants"
+            >
+              <Users className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )}
 
       {/* Participant List (extends downward to immediately above Manage Participants control, internally scrollable) */}
-      <div className="px-1 py-0.5 min-h-[90px] max-h-[calc(100dvh-170px)] overflow-y-auto scrollbar-none flex-1 pb-1">
+      <div className="px-1 py-0.5 min-h-[90px] max-h-[calc(100dvh-410px)] overflow-y-auto scrollbar-none flex-1 pb-24">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
@@ -1399,6 +1411,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     );
   }
 
+  const isFixedViewportView = (isHost || isCompleted) && !isCancelled;
   const isLiveHostView = isHost && !isCancelled && !isCompleted;
 
   return (
@@ -1410,7 +1423,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       transition={{ duration: 0.18, ease: 'easeOut' }}
       className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left"
     >
-      <div id="immersive-plan-scroll-container" className={`flex-1 ${isLiveHostView ? 'overflow-hidden flex flex-col h-full pb-20' : 'overflow-y-auto scrollbar-none pb-28'}`}>
+      <div id="immersive-plan-scroll-container" className={`flex-1 ${isFixedViewportView ? 'overflow-hidden flex flex-col h-full pb-20' : 'overflow-y-auto scrollbar-none pb-28'}`}>
         <div id="immersive-plan-hero-wrapper" className="w-full flex-shrink-0">
           <div
             id="immersive-plan-hero-container"
@@ -1600,29 +1613,28 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           </div>
         </div>
 
-        <div id="immersive-plan-scroll-content" className={`px-6 pt-[78px] space-y-5 ${isLiveHostView ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : ''}`}>
+        <div id="immersive-plan-scroll-content" className={`px-6 pt-[78px] space-y-5 ${isFixedViewportView ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : ''}`}>
           {selectedPlan && (
-            isCompleted ? (
-              <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} />
-            ) : (!isCancelled && (isHost || Boolean(selectedPlan.allowParticipantInvites || (selectedPlan as any).allow_participant_invites))) ? (
-              <ParticipantsSection
-                plan={selectedPlan}
-                userProfile={userProfile}
-                activeUserId={activeUserId}
-                onOpenParticipants={() => setShowParticipantManagement(true)}
-              />
-            ) : (
-              <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} />
-            )
+            <ParticipantsSection
+              plan={selectedPlan}
+              userProfile={userProfile}
+              activeUserId={activeUserId}
+            />
           )}
 
-          {/* Fixed Manage Participants action for host — floating icon + text only, tightly anchored above You're Hosting */}
-          {isHost && !isCancelled && !isCompleted && (
+          {/* Fixed Manage Participants action for host — floating icon + text only, tightly anchored above LiveActionButton */}
+          {isHost && !isCancelled && (
             <div className="fixed bottom-[58px] left-6 right-6 z-40 flex items-center justify-center pointer-events-auto">
               <button
                 type="button"
                 id="host_manage_participants_btn"
-                onClick={() => setShowParticipantManagement(true)}
+                onClick={
+                  isCompleted
+                    ? !isManagementExpired
+                      ? () => setShowAttendanceSheet(true)
+                      : () => showToast("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.")
+                    : () => setShowParticipantManagement(true)
+                }
                 className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
               >
                 <Users className="w-4 h-4 text-white/70" />
@@ -1631,7 +1643,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             </div>
           )}
 
-          <RSVPCard
+          <LiveActionButton
             myParticipantRecord={myParticipantRecord}
             isCancelled={isCancelled}
             isCompleted={isCompleted}

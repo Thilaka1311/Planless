@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Crown } from 'lucide-react';
+import { Crown, Users } from 'lucide-react';
 import { Plan } from '../../../core/types';
 import { normalizeStatus } from '../../../../lib/participantStatus';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
@@ -11,6 +11,7 @@ interface InlineParticipantViewProps {
   plan: Plan;
   activeUserId?: string;
   isHost?: boolean;
+  onManageParticipants?: () => void;
 }
 
 interface InlineMemberEntry {
@@ -23,7 +24,7 @@ interface InlineMemberEntry {
   joinedQueueAt?: string | null;
 }
 
-export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp }: InlineParticipantViewProps) {
+export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, onManageParticipants }: InlineParticipantViewProps) {
   const members = plan.members || [];
   const hostId = plan.hostId || (plan as any).host_id || (plan as any).creator_id || (plan as any).creatorId;
 
@@ -372,8 +373,21 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp }
               </span>
             </div>
 
-            {/* Right: Expand/collapse chevron */}
-            <div className="flex items-center pl-2">
+            {/* Right: Manage Participants icon + Expand/collapse chevron */}
+            <div className="flex items-center gap-2 pl-2">
+              {onManageParticipants && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onManageParticipants();
+                  }}
+                  className="p-1 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition cursor-pointer"
+                  title="Manage Participants"
+                >
+                  <Users className="w-4 h-4" />
+                </button>
+              )}
               <motion.span
                 animate={{ rotate: isExpanded ? 180 : 0 }}
                 transition={{ duration: 0.22, ease: 'easeInOut' }}
@@ -408,7 +422,20 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp }
               </span>
             </div>
 
-            <div className="flex items-center pl-2">
+            <div className="flex items-center gap-2 pl-2">
+              {onManageParticipants && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onManageParticipants();
+                  }}
+                  className="p-1 rounded-lg hover:bg-white/10 text-white/70 hover:text-white transition cursor-pointer"
+                  title="Manage Participants"
+                >
+                  <Users className="w-4 h-4" />
+                </button>
+              )}
               <motion.span
                 animate={{ rotate: isExpanded ? 180 : 0 }}
                 transition={{ duration: 0.22, ease: 'easeInOut' }}
@@ -554,6 +581,22 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp }
                 </motion.div>
               </AnimatePresence>
             </div>
+
+            {onManageParticipants && (
+              <div className="px-4 pb-4 pt-1 border-t border-white/[0.06] flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onManageParticipants();
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] active:scale-[0.98] border border-white/10 transition flex items-center justify-center gap-2 text-xs font-semibold text-white/90 cursor-pointer shadow-sm"
+                >
+                  <Users className="w-4 h-4 text-white/70" />
+                  <span>Manage Participants</span>
+                </button>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

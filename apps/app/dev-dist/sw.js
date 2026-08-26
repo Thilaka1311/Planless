@@ -81,13 +81,16 @@ define(['./workbox-aeb6ecaf'], (function (workbox) { 'use strict';
     "revision": "3ca0b8505b4bec776b69afdba2768812"
   }, {
     "url": "index.html",
-    "revision": "0.fnp6v99d548"
+    "revision": "0.9tqf8g314f"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
     allowlist: [/^\/$/],
-    denylist: [/^\/api/, /supabase\.co/]
+    denylist: [/^\/api\//, /.*supabase\.co.*/]
   }));
-  workbox.registerRoute(/.*supabase\.co.*/, new workbox.NetworkOnly(), 'GET');
+  workbox.registerRoute(/.*supabase\.co.*/, new workbox.NetworkOnly({
+    "cacheName": "supabase-network-only",
+    plugins: []
+  }), 'GET');
 
 }));

@@ -38,7 +38,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
   hideNotificationsIcon = false,
 }) => {
   const actionButtonClass = (isActive: boolean) =>
-    `w-9 h-9 rounded-full flex items-center justify-center relative cursor-pointer transition-all active:scale-95 ${
+    `w-9.5 h-9.5 rounded-full flex items-center justify-center relative cursor-pointer transition-all active:scale-95 ${
       isActive
         ? "text-amber-400 bg-amber-500/10 border border-amber-500/20"
         : "text-zinc-400 hover:text-white hover:bg-white/[0.06]"
@@ -61,7 +61,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
           <UserAvatar
             src={userProfile.avatar}
             alt={userProfile.name}
-            size="w-10 h-10"
+            size="w-[42px] h-[42px]"
             className="border-2 border-zinc-800 hover:border-[#ff8b66] transition-colors"
           />
         </button>
@@ -83,7 +83,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
               aria-label="Past Plans"
               className={actionButtonClass(isPastActive)}
             >
-              <History className="w-4.5 h-4.5 stroke-[2]" />
+              <History className="w-5 h-5 stroke-[2]" />
             </button>
           )}
           {showHostedIcon && onToggleHosted && (
@@ -92,7 +92,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
               aria-label="Hosted Plans"
               className={actionButtonClass(isHostedActive)}
             >
-              <Crown className="w-4.5 h-4.5 stroke-[2]" />
+              <Crown className="w-5 h-5 stroke-[2]" />
             </button>
           )}
           {showSearch && onToggleSearch && (
@@ -101,7 +101,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
               aria-label="Search Plans"
               className={actionButtonClass(false)}
             >
-              <Search className="w-4.5 h-4.5 stroke-[2]" />
+              <Search className="w-5 h-5 stroke-[2]" />
             </button>
           )}
         </div>

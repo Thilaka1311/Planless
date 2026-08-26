@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx backend/server.ts",
+    "dev:mobile": "tsx backend/server.ts",
     "build": "vite build && esbuild backend/server.ts --bundle --platform=node --format=esm --packages=external --sourcemap --outfile=dist/server.mjs",
     "start": "node dist/server.mjs",
     "clean": "rm -rf dist server.js",

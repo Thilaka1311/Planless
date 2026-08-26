@@ -15,6 +15,7 @@ export interface HomeScreenProps {
   handleToggleJoin: (planId: string) => Promise<boolean | void> | void;
   setShowPaymentSuccess: (planId: string | null) => void;
   setShowWaitlistSuccess?: (planId: string | null) => void;
+  setShowLeftSuccess?: (planId: string | null) => void;
   setNotifications: React.Dispatch<React.SetStateAction<NotificationItem[]>>;
   activeCardId: string | null;
   setActiveCardId: (id: string | null) => void;
