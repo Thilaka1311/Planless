@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { ArrowLeft, Edit2, Trash2, HandCoins, CheckCircle2, MoreHorizontal, MoreVertical, Check } from "lucide-react";
-import { unsettleWalletExpenseParticipant, deleteWalletExpense, updateWalletExpense, removeExpenseParticipant, getParticipantFinancialState, sortExpenseParticipants } from "../services/walletService";
+import { unsettleWalletExpenseParticipant, settleWalletExpenseParticipant, deleteWalletExpense, updateWalletExpense, removeExpenseParticipant, getParticipantFinancialState, sortExpenseParticipants, registerExpenseCacheClearCallback } from "../services/walletService";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useWalletStore } from "../state/WalletContext";
@@ -34,6 +34,10 @@ export const invalidateExpenseDetailCache = (expenseId?: string) => {
     inFlightExpenseFetches.clear();
   }
 };
+
+registerExpenseCacheClearCallback(() => {
+  invalidateExpenseDetailCache();
+});
 
 export const updateExpenseDetailCache = (
   expenseId: string,
@@ -147,11 +151,14 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
   const [showParticipantActionSheet, setShowParticipantActionSheet] = useState(false);
   const [submittingUnsettle, setSubmittingUnsettle] = useState(false);
   const [unsettleError, setUnsettleError] = useState<string | null>(null);
+  const [submittingSettle, setSubmittingSettle] = useState(false);
+  const [settleError, setSettleError] = useState<string | null>(null);
 
   const handleParticipantClick = (pt: any) => {
     if (pt.isMe) return; // 'You' row is untappable
-    if (!pt.isPtSettled) return; // Pending participants have no expense-level settle action
+    if (!pt.isPtSettled && pt.outstandingAmount <= 0) return; // Waitlisted or otherwise 0 outstanding
     setUnsettleError(null);
+    setSettleError(null);
     setSelectedParticipantForAction(pt);
     setShowParticipantActionSheet(true);
   };
@@ -463,9 +470,11 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       const u = profMap.get(pt.user_id);
 
       const amountOwed = Number(pt.amount_owed ?? pt.amount ?? 0);
+      const amountPaid = Number(pt.amount_paid ?? pt.amountPaid ?? 0);
+      const outstandingAmount = Math.max(0, amountOwed - amountPaid);
       const ptStatus = String(pt.status || "PENDING").toUpperCase();
-      const isPtSettled = ptStatus === "SETTLED";
-      const remaining = isPtSettled ? 0 : amountOwed;
+      const isPtSettled = ptStatus === "SETTLED" || (amountOwed > 0 && amountPaid >= amountOwed) || (amountOwed > 0 && outstandingAmount <= 0);
+      const remaining = isPtSettled ? 0 : outstandingAmount;
 
       if (!isPtSettled && !isPayerRow && !pt.isPayerOnly) allSettled = false;
 
@@ -485,6 +494,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
 
       // Subtitle / payment direction label
       const formattedAmount = `₹${amountOwed.toLocaleString("en-IN")}`;
+      const formattedOutstanding = `₹${outstandingAmount.toLocaleString("en-IN")}`;
       let subtitle = "";
       let sheetSubtitle = "";
 
@@ -496,7 +506,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         sheetSubtitle = subtitle;
       } else if (isLeft) {
         subtitle = isPtSettled ? "Left plan · Settled" : "Left plan";
-        sheetSubtitle = isPtSettled ? "Left plan · Settled" : `Left plan · ${formattedAmount} owed`;
+        sheetSubtitle = isPtSettled ? "Left plan · Settled" : `Left plan · ${formattedOutstanding} owed`;
       } else if (isPtExcluded) {
         subtitle = "Waitlisted";
         sheetSubtitle = subtitle;
@@ -505,13 +515,13 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         sheetSubtitle = subtitle;
       } else if (payerMe) {
         subtitle = `${u?.full_name || u?.username || "Participant"} owes you`;
-        sheetSubtitle = `${u?.full_name || u?.username || "Participant"} owes you ${formattedAmount}`;
+        sheetSubtitle = `${u?.full_name || u?.username || "Participant"} owes you ${formattedOutstanding}`;
       } else if (ptIsMe) {
         subtitle = `You owe ${payerDisplayName}`;
-        sheetSubtitle = `You owe ${payerDisplayName} ${formattedAmount}`;
+        sheetSubtitle = `You owe ${payerDisplayName} ${formattedOutstanding}`;
       } else {
         subtitle = `${u?.full_name || u?.username || "Participant"} owes ${payerDisplayName}`;
-        sheetSubtitle = `${u?.full_name || u?.username || "Participant"} owes ${payerDisplayName} ${formattedAmount}`;
+        sheetSubtitle = `${u?.full_name || u?.username || "Participant"} owes ${payerDisplayName} ${formattedOutstanding}`;
       }
 
       return {
@@ -519,6 +529,8 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         fullName: ptIsMe ? "You" : u?.full_name || u?.username || "Participant",
         profilePhoto: u?.profile_photo_path || "",
         amountOwed,
+        amountPaid,
+        outstandingAmount,
         status: ptStatus,
         isPtSettled,
         isPtWaitlisted: isPtExcluded,
@@ -789,6 +801,40 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
     }
   };
 
+  // Settle Participant Handler
+  const handleConfirmSettle = async () => {
+    if (!expenseData || !selectedParticipantForAction || submittingSettle) return;
+
+    setSubmittingSettle(true);
+    setSettleError(null);
+
+    try {
+      lastLocalMutationRef.current = Date.now();
+      const success = await settleWalletExpenseParticipant({
+        expenseId: expenseData.id,
+        participantUserId: selectedParticipantForAction.userId,
+      });
+
+      if (!success) {
+        setSettleError("Failed to settle. Please try again.");
+        setSubmittingSettle(false);
+        return;
+      }
+
+      invalidateExpenseDetailCache(expenseData.id);
+      setShowParticipantActionSheet(false);
+      setSelectedParticipantForAction(null);
+      setSettleError(null);
+      await loadExpenseDetail(true);
+      await onRefreshBalances();
+    } catch (err: any) {
+      console.error("[ExpenseDetail] Exception settling participant:", err);
+      setSettleError(err.message || "Failed to settle.");
+    } finally {
+      setSubmittingSettle(false);
+    }
+  };
+
   // Remove Participant Handlers
   const [showRemoveParticipantModal, setShowRemoveParticipantModal] = useState(false);
   const [selectedParticipantForRemove, setSelectedParticipantForRemove] = useState<any | null>(null);
@@ -962,7 +1008,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       className="w-full h-full flex flex-col overflow-y-auto scrollbar-none px-6 pt-3 pb-24 text-left bg-[#050505] select-none animate-fade-in"
     >
       {/* TOP NAVIGATION BAR WITH PLAN NAME CENTERED */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-1.5">
         <button
           type="button"
           onClick={onBack}
@@ -1035,43 +1081,68 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
       </div>
 
       {/* EXPENSE SUMMARY SECTION — DIRECTLY ON PAGE BACKGROUND */}
-      <div className="flex flex-col items-center text-center pt-2 pb-6 space-y-1.5 mb-2">
-        {/* 1. Expense Title */}
-        <h3 className="font-sans font-bold text-2xl text-zinc-100 leading-snug">
-          {expenseTitle}
-        </h3>
+      {(() => {
+        const formattedExpenseDateTime = (() => {
+          if (!expenseData) return null;
+          const rawDate = expenseData.created_at || (expenseData as any).createdAt || (expenseData as any).date;
+          if (!rawDate) return null;
+          const d = new Date(rawDate);
+          if (isNaN(d.getTime())) return null;
 
-        {/* 2. Centered Payer Avatar */}
-        <div className="pt-2 pb-0.5">
-          <UserAvatar
-            src={payerIsMe ? (userProfile?.profile_photo_path || payerPhoto) : payerPhoto}
-            alt={payerName}
-            size="w-16 h-16"
-            className="ring-2 ring-white/10 shadow-lg mx-auto"
-          />
-        </div>
+          const monthShort = d.toLocaleString("en-US", { month: "short" });
+          const dayNum = d.getDate();
+          const timeStr = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 
-        {/* 3. Payer Name */}
-        <h4 className="font-sans font-semibold text-base text-zinc-100 leading-tight">
-          {payerName}
-        </h4>
+          return `${monthShort} ${dayNum} · ${timeStr}`;
+        })();
 
-        {/* 4. Total Amount Paid */}
-        <p className="text-zinc-400 font-sans text-xs font-medium leading-tight">
-          Paid ₹{Number(expenseData.total_amount || 0).toLocaleString("en-IN")}
-        </p>
-      </div>
+        return (
+          <div className="flex flex-col items-center text-center pt-0 pb-5 space-y-1 mb-2">
+            {/* 1. Expense Title */}
+            <h3 className="font-sans font-bold text-2xl text-zinc-100 leading-snug">
+              {expenseTitle}
+            </h3>
+
+            {/* 2. Expense Creation Date & Time */}
+            {formattedExpenseDateTime && (
+              <p className="font-sans text-xs font-medium text-zinc-400 leading-none select-none">
+                {formattedExpenseDateTime}
+              </p>
+            )}
+
+            {/* 3. Centered Payer Avatar */}
+            <div className="pt-[22px] pb-0.5">
+              <UserAvatar
+                src={payerIsMe ? (userProfile?.profile_photo_path || payerPhoto) : payerPhoto}
+                alt={payerName}
+                size="w-16 h-16"
+                className="ring-2 ring-white/10 shadow-lg mx-auto"
+              />
+            </div>
+
+            {/* 4. Payer Name */}
+            <h4 className="font-sans font-semibold text-base text-zinc-100 leading-tight">
+              {payerName}
+            </h4>
+
+            {/* 5. Total Amount Paid */}
+            <p className="text-zinc-400 font-sans text-sm font-medium leading-tight">
+              Paid ₹{Number(expenseData.total_amount || 0).toLocaleString("en-IN")}
+            </p>
+          </div>
+        );
+      })()}
 
       {/* UNIFIED PARTICIPANTS LIST — DIRECTLY BELOW EXPENSE CARD */}
       <div className="space-y-0.5">
         {formattedParticipants.map((pt) => {
-          const isRowMuted = pt.isPtSettled || pt.isPayer || pt.isPtWaitlisted;
+          const isRowMuted = pt.isPtWaitlisted || (!pt.isPayer && pt.isPtSettled);
 
           return (
             <div
               key={`${pt.userId}-${pt.isPayer ? 'payer' : 'pt'}`}
               onClick={() => handleParticipantClick(pt)}
-              className={`py-3.5 flex items-center justify-between text-left px-1 select-none hover:bg-white/[0.02] active:bg-white/[0.04] transition-all cursor-pointer rounded-xl ${isRowMuted ? "opacity-60" : "opacity-100"
+              className={`py-3.5 flex items-center justify-between text-left px-1 select-none hover:bg-white/[0.02] active:bg-white/[0.04] transition-all cursor-pointer rounded-xl ${isRowMuted ? "opacity-50" : "opacity-100"
                 }`}
             >
               <div className="flex items-center gap-3.5 min-w-0">
@@ -1103,8 +1174,12 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                       .reduce((sum, p) => sum + (p.amountOwed || 0), 0);
                     const totalCost = Number(expenseData.total_amount || 0);
                     displayAmt = Math.max(0, totalCost - totalOwedByOthers);
+                  } else if (pt.isPtWaitlisted) {
+                    displayAmt = 0;
+                  } else if (pt.isPtSettled) {
+                    displayAmt = Number(pt.amountOwed || pt.amountPaid || 0);
                   } else {
-                    displayAmt = pt.isPtWaitlisted ? 0 : Number(pt.amountOwed || 0);
+                    displayAmt = Number(pt.outstandingAmount ?? Math.max(0, pt.amountOwed - (pt.amountPaid || 0)));
                   }
 
                   return (
@@ -1275,10 +1350,11 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-xs animate-fade-in"
           onClick={() => {
-            if (!submittingUnsettle) {
+            if (!submittingUnsettle && !submittingSettle) {
               setShowParticipantActionSheet(false);
               setSelectedParticipantForAction(null);
               setUnsettleError(null);
+              setSettleError(null);
             }
           }}
         >
@@ -1289,22 +1365,29 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
             {/* Sheet Handle Indicator */}
             <div className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-2" />
 
-            {/* Header: Avatar, Name & Subtitle (Left Aligned) */}
-            <div className="flex items-center gap-3.5 pb-4 border-b border-white/[0.06]">
-              <UserAvatar
-                src={selectedParticipantForAction.profilePhoto}
-                alt={selectedParticipantForAction.fullName}
-                size="w-11 h-11"
-                className="shrink-0 ring-1 ring-white/10"
-              />
-              <div className="min-w-0 flex flex-col justify-center text-left">
-                <h3 className="text-base font-sans font-semibold text-white truncate leading-tight">
-                  {selectedParticipantForAction.fullName}
-                </h3>
-                <p className="text-xs text-zinc-400 font-sans mt-0.5 truncate leading-tight">
-                  {selectedParticipantForAction.sheetSubtitle || selectedParticipantForAction.subtitle}
-                </p>
+            {/* Header: Avatar, Name & Subtitle (Left Aligned) with Amount on Right */}
+            <div className="flex items-center justify-between pb-4 border-b border-white/[0.06]">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <UserAvatar
+                  src={selectedParticipantForAction.profilePhoto}
+                  alt={selectedParticipantForAction.fullName}
+                  size="w-11 h-11"
+                  className="shrink-0 ring-1 ring-white/10"
+                />
+                <div className="min-w-0 flex flex-col justify-center text-left">
+                  <h3 className="text-base font-sans font-semibold text-white truncate leading-tight">
+                    {selectedParticipantForAction.fullName}
+                  </h3>
+                  <p className="text-xs text-zinc-400 font-sans mt-0.5 truncate leading-tight">
+                    {selectedParticipantForAction.subtitle}
+                  </p>
+                </div>
               </div>
+              {!selectedParticipantForAction.isPtSettled && selectedParticipantForAction.outstandingAmount > 0 && (
+                <span className="text-base font-sans font-bold text-white shrink-0 ml-3">
+                  ₹{selectedParticipantForAction.outstandingAmount.toLocaleString("en-IN")}
+                </span>
+              )}
             </div>
 
             {/* Actions List */}
@@ -1312,6 +1395,11 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
               {unsettleError && (
                 <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
                   {unsettleError}
+                </div>
+              )}
+              {settleError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-sans">
+                  {settleError}
                 </div>
               )}
 
@@ -1329,14 +1417,29 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
                 </button>
               )}
 
-              {/* 2. Cancel — Dismiss Action */}
+              {/* 2. Primary Action: Settle Up (if not settled and owes money) */}
+              {!selectedParticipantForAction.isPtSettled && selectedParticipantForAction.outstandingAmount > 0 && (
+                <button
+                  type="button"
+                  disabled={submittingSettle}
+                  onClick={handleConfirmSettle}
+                  className="w-full h-13 flex items-center justify-center px-4 rounded-2xl text-sm font-semibold transition cursor-pointer text-[#050505] bg-emerald-500 hover:bg-emerald-400 border border-emerald-400/50 active:scale-[0.99] disabled:opacity-50"
+                >
+                  <span>
+                    {submittingSettle ? "Settling..." : "Settle up"}
+                  </span>
+                </button>
+              )}
+
+              {/* 3. Cancel — Dismiss Action */}
               <button
                 type="button"
-                disabled={submittingUnsettle}
+                disabled={submittingUnsettle || submittingSettle}
                 onClick={() => {
                   setShowParticipantActionSheet(false);
                   setSelectedParticipantForAction(null);
                   setUnsettleError(null);
+                  setSettleError(null);
                 }}
                 className="w-full pt-3 pb-1 text-center text-sm font-medium text-zinc-400 hover:text-white transition cursor-pointer focus:outline-none disabled:opacity-50"
               >

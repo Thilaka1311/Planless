@@ -6,6 +6,7 @@ import { WalletRelationship, createWalletSettlement } from "../services/walletSe
 interface SettleUpScreenProps {
   relationship: WalletRelationship;
   activeUserId: string;
+  planId?: string;
   onBack: () => void;
   onSettled: () => void;
   onMount?: () => void;
@@ -14,6 +15,7 @@ interface SettleUpScreenProps {
 export const SettleUpScreen: React.FC<SettleUpScreenProps> = ({
   relationship,
   activeUserId,
+  planId,
   onBack,
   onSettled,
   onMount,
@@ -73,6 +75,7 @@ export const SettleUpScreen: React.FC<SettleUpScreenProps> = ({
       const res = await createWalletSettlement({
         receiverId: relationship.userId,
         amount: parsed,
+        planId: planId || undefined,
       });
 
       if (!res.success) {

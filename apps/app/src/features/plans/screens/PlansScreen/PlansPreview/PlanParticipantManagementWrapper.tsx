@@ -719,10 +719,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const goingMembers = useMemo(() => {
     return allPlanMembers.filter((m) => {
       const status = normalizeStatus(m.joinState || m.rsvp_status);
-      if (status === 'SKIPPED') return false;
+      if (status === 'SKIPPED' || status === 'INVITED') return false; // Exclude INVITED explicitly
+      
       if (waitlistMode === 'assigned') {
         const group = (m as any).assignedGroup || (m as any).assigned_group;
-        return group === 'GOING' || (!group && status !== 'WAITLISTED');
+        return group === 'GOING' || (!group && status === 'JOINED'); // Ensure only JOINED
       }
       return status === 'JOINED';
     });
@@ -733,27 +734,23 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const waitlistMembers = useMemo(() => {
     return allPlanMembers.filter((m) => {
       const status = normalizeStatus(m.joinState || m.rsvp_status);
-      if (status === 'SKIPPED') return false;
+      if (status === 'SKIPPED' || status === 'INVITED') return false; // Exclude INVITED explicitly
       if (waitlistMode === 'assigned') {
         const group = (m as any).assignedGroup || (m as any).assigned_group;
-        return group === 'WAITLIST' || (!group && status === 'WAITLISTED');
-      }
-      if (isAutomaticFull) {
-        return status === 'WAITLISTED' || status === 'INVITED';
+        return group === 'WAITLIST' || (!group && status === 'WAITLISTED'); // Ensure only WAITLISTED
       }
       return status === 'WAITLISTED';
     });
-  }, [allPlanMembers, waitlistMode, isAutomaticFull]);
+  }, [allPlanMembers, waitlistMode]);
 
   const invitedList: Friend[] = useMemo(() => {
-    if (waitlistMode === 'assigned' || isAutomaticFull) {
-      return [];
-    }
+    // In assigned mode, we SHOULD show invited users in the invited list.
+    // They are currently being filtered out, which caused them to not appear anywhere if they didn't show up in goingMembers.
     const rawInvited = allPlanMembers
       .filter((m) => normalizeStatus(m.joinState || m.rsvp_status) === 'INVITED')
-      .map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants));
+      .map(m => memberToFriend(m, hostId, activeUserId, dbPlanParticipants));
     return prioritizeCurrentUserAndSort(rawInvited);
-  }, [allPlanMembers, hostId, activeUserId, dbPlanParticipants, waitlistMode, isAutomaticFull, prioritizeCurrentUserAndSort]);
+  }, [allPlanMembers, prioritizeCurrentUserAndSort, waitlistMode, hostId, activeUserId, dbPlanParticipants]);
 
   const rawGoingList: Friend[] = useMemo(() => {
     return goingMembers.map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants));
@@ -767,6 +764,13 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     const rawList = waitlistMembers.map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants));
     return sortByWaitlistOrder(rawList);
   }, [waitlistMembers, hostId, activeUserId, dbPlanParticipants, sortByWaitlistOrder]);
+
+  const skippedList: Friend[] = useMemo(() => {
+    const rawSkipped = allPlanMembers
+      .filter((m) => normalizeStatus(m.joinState || m.rsvp_status) === 'SKIPPED')
+      .map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants));
+    return prioritizeCurrentUserAndSort(rawSkipped);
+  }, [allPlanMembers, hostId, activeUserId, dbPlanParticipants, prioritizeCurrentUserAndSort]);
 
   // Determine which tab to show by default: the one containing the current user
   const initialTab: 'going' | 'waitlist' | 'invited' = useMemo(() => {
@@ -1403,6 +1407,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         externalGoingList={displayGoingList}
         externalWaitlist={displayWaitlist}
         externalInvitedList={invitedList}
+        externalSkippedList={skippedList}
         initialTab={initialTab}
         onBack={onBack}
         onAdjustCapacity={effectiveIsHost ? handleAdjustCapacity : undefined}

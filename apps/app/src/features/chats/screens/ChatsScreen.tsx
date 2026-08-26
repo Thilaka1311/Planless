@@ -98,8 +98,8 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
   // excluding cancelled plans. Sorted by scheduled_at ASC (occurring sooner first).
   const userPlanChats = useMemo(() => {
     const userInvolvedPlans = plans.filter((p) => {
-      // Exclude cancelled plans
-      if ((p.status || "").toUpperCase() === "CANCELLED") return false;
+      // Exclude cancelled and completed plans from active chat list
+      if ((p.status || "").toUpperCase() === "CANCELLED" || (p.status || "").toUpperCase() === "COMPLETED") return false;
 
       const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
       const isHostRole = myParticipant?.role === "HOST" || p.hostId === userUuid || p.creatorId === userUuid;

@@ -623,6 +623,8 @@ export type Database = {
           circle_id: string | null
           cost_per_participant: number | null
           created_at: string
+          final_attendance: Database["public"]["Enums"]["attendance_status"] | null
+          final_state: Database["public"]["Enums"]["rsvp_status"] | null
           delivery_status: string
           plan_id: string
           responded_at: string | null
@@ -636,6 +638,8 @@ export type Database = {
           circle_id?: string | null
           cost_per_participant?: number | null
           created_at?: string
+          final_attendance?: Database["public"]["Enums"]["attendance_status"] | null
+          final_state?: Database["public"]["Enums"]["rsvp_status"] | null
           delivery_status?: string
           plan_id: string
           responded_at?: string | null
@@ -649,6 +653,8 @@ export type Database = {
           circle_id?: string | null
           cost_per_participant?: number | null
           created_at?: string
+          final_attendance?: Database["public"]["Enums"]["attendance_status"] | null
+          final_state?: Database["public"]["Enums"]["rsvp_status"] | null
           delivery_status?: string
           plan_id?: string
           responded_at?: string | null
@@ -1063,6 +1069,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      complete_plan: {
+        Args: {
+          p_plan_id: string
+          p_attendance_input: Json
+        }
+        Returns: Json
+      }
       generate_discovery_public_id: { Args: never; Returns: string }
       generate_user_public_id: { Args: never; Returns: string }
       insert_cost_expense: {
@@ -1090,6 +1103,7 @@ export type Database = {
       }
     }
     Enums: {
+      attendance_status: "ATTENDED" | "DID_NOT_ATTEND"
       activity_category:
         | "SPORTS"
         | "MOVIES"
@@ -1368,6 +1382,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      attendance_status: ["ATTENDED", "DID_NOT_ATTEND"],
       activity_category: [
         "SPORTS",
         "MOVIES",

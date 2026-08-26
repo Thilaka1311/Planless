@@ -63,7 +63,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         boxShadow: isItemDragged ? 'none' : '0 2px 6px rgba(0, 0, 0, 0.3)',
         zIndex: isItemDragged ? 0 : 1,
         position: 'relative',
-        opacity: isItemDragged ? 0.25 : item.isAccepted === false ? 0.7 : 1,
+        opacity: isItemDragged ? 0.25 : (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? 0.7 : 1,
         transition: 'background 0.2s ease, opacity 0.2s ease, box-shadow 0.28s ease',
       }}
       onMouseEnter={(e) => {
@@ -79,7 +79,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         </span>
       )}
       {renderAvatar()}
-      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: item.isAccepted === false ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
+      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
         {item.name}
       </span>
       {item.leave_requested && (
@@ -89,7 +89,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
             fontSize: 15,
             fontWeight: 700,
             color: '#F59E0B',
-            marginRight: item.isHost || item.isAccepted === false ? 10 : 4,
+            marginRight: item.isHost || (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? 10 : 4,
             lineHeight: 1,
             flexShrink: 0,
             fontFamily: 'Inter, sans-serif',
@@ -113,7 +113,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         }}>
           Host
         </span>
-      ) : item.isAccepted === false ? (
+      ) : (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? (
         <span style={{
           fontSize: 11,
           fontWeight: 500,
@@ -127,6 +127,21 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
           alignItems: 'center',
         }}>
           Invited
+        </span>
+      ) : item.rsvpStatus === 'SKIPPED' ? (
+        <span style={{
+          fontSize: 11,
+          fontWeight: 500,
+          color: '#FCA5A5',
+          background: 'rgba(239, 68, 68, 0.15)',
+          padding: '2px 8px',
+          borderRadius: 9999,
+          fontFamily: 'Inter, sans-serif',
+          lineHeight: 1.2,
+          display: 'inline-flex',
+          alignItems: 'center',
+        }}>
+          Skipped
         </span>
       ) : null}
     </div>

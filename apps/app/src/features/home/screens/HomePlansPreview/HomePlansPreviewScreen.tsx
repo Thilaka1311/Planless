@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { CalendarDays, Hourglass, MapPin } from "lucide-react";
+import { CalendarDays, Hourglass, MapPin, MessageCircle, Receipt } from "lucide-react";
 import { UserProfile, Plan } from "../../../../core/types";
 import { usePlansStore } from "../../../plans/state/PlansContext";
 import { useLivePlan } from "../../../plans/hooks/useLivePlan";
@@ -19,6 +19,8 @@ import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
 import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
 import { JoinPlanConfirmationBottomSheet, SkipPlanConfirmationDialog, PaidPlanLeaveConfirmationDialog, CancelLeaveRequestBottomSheet } from "../../../plans/components/BottomSheets";
 import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
+import { PlanChatScreen } from "../../../chats/screens/PlanChatScreen";
+import { PlanDetailsScreen as PlanBalancesScreen } from "../../../wallet/screens/PlanBalances";
 
 export interface PlansPreviewScreenProps {
   planId: string;
@@ -32,6 +34,8 @@ export interface PlansPreviewScreenProps {
   setShowLeftSuccess?: (planId: string | null) => void;
   onLeavePlan?: () => void;
   onPlanCancelled?: (planId: string) => void;
+  onOpenChat?: (planId: string) => void;
+  onOpenExpenses?: (planId: string) => void;
 }
 
 export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
@@ -45,6 +49,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   setShowLeftSuccess,
   onLeavePlan,
   onPlanCancelled,
+  onOpenChat,
+  onOpenExpenses,
 }) => {
   const { showToast } = useToast();
   const {
@@ -67,6 +73,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(false);
   const [showCompletionFlow, setShowCompletionFlow] = useState(false);
   const [showManageTeams, setShowManageTeams] = useState(false);
+  const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
+  const [showPlanBalancesScreen, setShowPlanBalancesScreen] = useState(false);
 
   const resolvedUserUuid = userProfile.dbUuid || activeUserId || "";
   const isHost = selectedPlan ? selectedPlan.hostId === resolvedUserUuid : false;
@@ -139,7 +147,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const handleToggleJoinCallback = useCallback(
     (p: Plan) => {
       if (alreadySkipped && activeUserId) {
-        rejoinPlan(p.id, activeUserId, userProfile);
+        rejoinPlan(p.id, userProfile);
       } else {
         joinPlan(p.id, userProfile);
       }
@@ -196,12 +204,17 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
   const hasCost = rawDbPlan && rawDbPlan.total_cost && Number(rawDbPlan.total_cost) > 0;
   const costText = useMemo(() => {
-    if (!hasCost) return null;
-    const total = Number(rawDbPlan!.total_cost);
-    const capacity = rawDbPlan!.max_participants ? Number(rawDbPlan!.max_participants) : maxSpots;
-    const perPerson = Math.round(total / (capacity || 1));
+    if (!hasCost || !rawDbPlan) return null;
+    const total = Number(rawDbPlan.total_cost);
+    const isCompleted = rawDbPlan.status === 'COMPLETED';
+    const divisor = isCompleted
+      ? Number(rawDbPlan.attended_participants ?? selectedPlan?.attended_participants ?? 0)
+      : (rawDbPlan.max_participants ? Number(rawDbPlan.max_participants) : maxSpots);
+
+    if (total <= 0 || !divisor || divisor <= 0) return null;
+    const perPerson = Math.round((total / divisor) * 100) / 100;
     return `₹${perPerson} / person`;
-  }, [hasCost, rawDbPlan, maxSpots]);
+  }, [hasCost, rawDbPlan, maxSpots, selectedPlan]);
 
   const [showJoinConfirmation, setShowJoinConfirmation] = useState(false);
 
@@ -220,7 +233,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
     // Perform DB join asynchronously in background without blocking UI overlay
     const joinOp = alreadySkipped && activeUserId
-      ? rejoinPlan(planToJoin.id, activeUserId, userProfile)
+      ? rejoinPlan(planToJoin.id, userProfile)
       : joinPlan(planToJoin.id, userProfile);
 
     joinOp.catch((err) => {
@@ -300,12 +313,15 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       setShowCancelLeaveRequestConfirmation(true);
       return;
     }
-    if (hasCost) {
+    
+    const isActuallyJoined = myParticipantRecord?.rsvp_status === "JOINED";
+    
+    if (isActuallyJoined) {
       setShowPaidLeaveConfirmation(true);
     } else {
       setShowSkipConfirmation(true);
     }
-  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, hasCost]);
+  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord]);
 
   if (!selectedPlan) return null;
 
@@ -353,7 +369,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       onPointerCancel={cancelHolding}
       className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left select-none"
     >
-      <div id="immersive-plan-scroll-container" className="flex-1 overflow-y-auto scrollbar-none pb-24">
+      <div id="immersive-plan-scroll-container" className="flex-1 overflow-y-auto scrollbar-none pb-28">
         <div id="immersive-plan-hero-wrapper" className="w-full">
           <div
             id="immersive-plan-hero-container"
@@ -436,9 +452,9 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         </div>
 
         {/* Scroll Content: Inline Participant View exclusively */}
-        <div id="immersive-plan-scroll-content" className="px-6 pt-[80px] space-y-7">
+        <div id="immersive-plan-scroll-content" className="px-6 pt-[78px] space-y-5">
           {selectedPlan && (
-            <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} />
+            <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} />
           )}
         </div>
       </div>
@@ -573,6 +589,33 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
           activeUserId={activeUserId}
           onClose={() => setShowManageTeams(false)}
         />
+      )}
+
+      {/* 💬 PLAN CHAT OVERLAY */}
+      {selectedChatPlanId && (
+        <div className="fixed inset-0 z-[80] bg-[#050505]">
+          <PlanChatScreen
+            planId={selectedChatPlanId}
+            onBack={() => setSelectedChatPlanId(null)}
+            onOpenPlanDetails={() => {
+              setSelectedChatPlanId(null);
+            }}
+          />
+        </div>
+      )}
+
+      {/* 💳 PLAN BALANCES / EXPENSES OVERLAY */}
+      {showPlanBalancesScreen && selectedPlan && (
+        <div className="fixed inset-0 z-[80] bg-[#050505]">
+          <PlanBalancesScreen
+            planId={selectedPlan.id}
+            onBack={() => setShowPlanBalancesScreen(false)}
+            onRefreshBalances={async () => { }}
+            activeUserId={activeUserId || userProfile.dbUuid || (userProfile as any)?.id || ""}
+            onSelectPlan={() => { }}
+            onToggleBottomNav={() => { }}
+          />
+        </div>
       )}
 
       <AnimatePresence>

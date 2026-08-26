@@ -28,8 +28,13 @@ export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
     if (!rawDbPlan || !rawDbPlan.total_cost || Number(rawDbPlan.total_cost) <= 0) return null;
 
     const total = Number(rawDbPlan.total_cost);
-    const capacity = rawDbPlan.max_participants ? Number(rawDbPlan.max_participants) : (plan.maxSpots || 8);
-    const perPerson = Math.round(total / (capacity || 1));
+    const isCompleted = rawDbPlan.status === 'COMPLETED' || plan.status === 'COMPLETED';
+    const divisor = isCompleted
+      ? Number(rawDbPlan.attended_participants ?? plan.attended_participants ?? 0)
+      : (rawDbPlan.max_participants ? Number(rawDbPlan.max_participants) : (plan.maxSpots || 8));
+
+    if (total <= 0 || !divisor || divisor <= 0) return null;
+    const perPerson = Math.round((total / divisor) * 100) / 100;
     return `₹${perPerson} / person`;
   }, [plan, dbPlans]);
 

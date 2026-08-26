@@ -280,3 +280,45 @@ export async function removeParticipantRPC(
   if (error) throw error;
   return data;
 }
+
+/**
+ * Invokes the complete_plan SECURITY DEFINER RPC.
+ * Authorized only for the Plan Host.
+ * Finalizes participant attendance and completes the plan.
+ */
+export async function completePlan(
+  planId: string,
+  attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>,
+  expenseMode: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE' = 'NONE'
+): Promise<any> {
+  const { data, error } = await supabase.rpc("complete_plan", {
+    p_plan_id: planId,
+    p_attendance_input: attendanceInput,
+    p_expense_mode: expenseMode,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Invokes the manage_completed_plan_participants SECURITY DEFINER RPC.
+ * Authorized only for the Plan Host.
+ * Adds or removes participants after a plan is already COMPLETED.
+ */
+export async function manageCompletedPlanParticipantsRPC(
+  planId: string,
+  usersToAdd: string[],
+  usersToRemove: string[],
+  expenseMode: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE' = 'NONE'
+): Promise<any> {
+  const { data, error } = await (supabase.rpc as any)("manage_completed_plan_participants", {
+    p_plan_id: planId,
+    p_users_to_add: usersToAdd,
+    p_users_to_remove: usersToRemove,
+    p_expense_mode: expenseMode,
+  });
+
+  if (error) throw error;
+  return data;
+}

@@ -397,7 +397,7 @@ export const AddCost: React.FC<AddCostProps> = ({
           .from("plan_messages")
           .insert({
             plan_id: selectedPlanId,
-            user_id: activeUserId,
+            sender_id: activeUserId,
             content: JSON.stringify({ title: costTitle.trim() || "Shared Expense", amount: parsedAmount }),
             message_type: "cost",
           })
@@ -412,16 +412,16 @@ export const AddCost: React.FC<AddCostProps> = ({
       }
 
       const resolveUserUuid = (rawId: string): string => {
-        const u = (dbUsers || []).find(
-          (usr) => usr.id === rawId || usr.user_id === rawId || usr.public_id === rawId
+        const u = (mergedUsers || []).find(
+          (usr: any) => usr.id === rawId || usr.user_id === rawId || usr.public_id === rawId
         );
         return u?.id || rawId;
       };
 
       const joinedPlanUserIds = new Set(
-        (dbPlanParticipants || [])
-          .filter((pp) => isMatchingPlanId(pp, selectedPlanId) && isJoinedParticipantStatus(pp.rsvp_status || pp.status))
-          .map((pp) => pp.user_id || pp.userId)
+        (mergedPlanParticipants || [])
+          .filter((pp: any) => isMatchingPlanId(pp, selectedPlanId) && isJoinedParticipantStatus(pp.rsvp_status || pp.status))
+          .map((pp: any) => pp.user_id || pp.userId)
       );
 
       const resolvedPayerUuid = resolveUserUuid(activeUserId);

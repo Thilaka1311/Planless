@@ -3,8 +3,11 @@ import { Edit2 } from "lucide-react";
 
 interface CostBreakdownPopoverProps {
   totalCost?: number | null;
-  /** Total plan capacity (max_participants). Used to derive per-person cost. */
+  /** Total plan capacity (max_participants). Used to derive per-person cost for active plans. */
   maxParticipants?: number | null;
+  /** Attended participants count. Used to derive per-person cost for completed plans. */
+  attendedParticipants?: number | null;
+  isCompleted?: boolean;
   isOpen: boolean;
   onClose: () => void;
   isHost?: boolean;
@@ -16,6 +19,8 @@ interface CostBreakdownPopoverProps {
 export const CostBreakdownPopover: React.FC<CostBreakdownPopoverProps> = ({
   totalCost,
   maxParticipants,
+  attendedParticipants,
+  isCompleted = false,
   isOpen,
   onClose,
   isHost = false,
@@ -57,14 +62,16 @@ export const CostBreakdownPopover: React.FC<CostBreakdownPopoverProps> = ({
   if (!isOpen) return null;
 
   const totalCostNum = totalCost !== undefined && totalCost !== null ? Number(totalCost) : 0;
-  const maxCapNum = maxParticipants !== undefined && maxParticipants !== null ? Number(maxParticipants) : 0;
+  const divisor = isCompleted
+    ? (attendedParticipants !== undefined && attendedParticipants !== null ? Number(attendedParticipants) : Number(maxParticipants || 0))
+    : (maxParticipants !== undefined && maxParticipants !== null ? Number(maxParticipants) : 0);
 
   const formattedTotalCost =
     totalCostNum > 0 ? `₹${Math.round(totalCostNum)}` : "Free";
 
   const formattedPerPerson =
-    totalCostNum > 0 && maxCapNum > 0
-      ? `₹${Math.round((totalCostNum / maxCapNum) * 100) / 100}`
+    totalCostNum > 0 && divisor > 0
+      ? `₹${Math.round((totalCostNum / divisor) * 100) / 100}`
       : "Free";
 
   const positionClasses =

@@ -76,7 +76,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
 
       {/* Right Column: Compact Action Utility Group */}
       <div className="flex-1 flex items-center justify-end z-10">
-        <div className="flex items-center gap-0.5 bg-white/[0.03] border border-white/[0.06] p-0.5 rounded-full">
+        <div className="flex items-center gap-0.5">
           {showPastIcon && onTogglePast && (
             <button
               onClick={onTogglePast}

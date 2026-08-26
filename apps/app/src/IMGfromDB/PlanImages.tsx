@@ -2,6 +2,7 @@ import React from "react";
 import { resolveImage, ImageType } from "../shared/imaging/imageResolver";
 
 interface DiscoveryImagesProps {
+  id?: string;
   /** The storage path or full URL of the cover image. */
   src?: string | null;
   /** Category to determine fallback covers */
@@ -25,6 +26,7 @@ interface DiscoveryImagesProps {
  *   discovery-images bucket → plan-images bucket (legacy) → placeholder
  */
 export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
+  id,
   src,
   category = "CUSTOM",
   alt = "Discovery Preview",
@@ -68,6 +70,7 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
 
   return (
     <img
+      id={id}
       src={imgSrc}
       alt={alt}
       className={className}

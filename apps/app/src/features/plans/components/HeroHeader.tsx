@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronLeft, Edit, MoreVertical, Settings, Users, Activity, CreditCard } from "lucide-react";
+import { ChevronLeft, Edit, MoreVertical, Settings, Users, Activity, CreditCard, MessageSquare } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
@@ -47,6 +47,7 @@ interface HeroHeaderProps {
   onOpenParticipants?: () => void;
   /** Called when the user taps the activity history icon in the chat header */
   onOpenActivity?: () => void;
+  onOpenChat?: () => void;
   /** Called when the user taps Expenses in the chat header menu */
   onOpenExpenses?: () => void;
 }
@@ -61,6 +62,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   isHost = false,
   onEdit,
   onEditTitle,
+  onOpenChat,
   onOpenSettings,
   overflowMenuItems = [],
   coverImage,
@@ -328,56 +330,89 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           <ChevronLeft className="w-5 h-5" />
         </button>
 
-        {/* Right action buttons */}
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto">
-          {onOpenSettings ? (
-            <button
-              id="immersive-plan-settings-btn"
-              type="button"
-              onClick={onOpenSettings}
-              className="w-9 h-9 flex items-center justify-center text-white active:scale-95 transition duration-200 cursor-pointer"
-              title="Plan Settings"
-            >
-              <Settings className="w-4.5 h-4.5" />
-            </button>
-          ) : showOverflow ? (
-            <div ref={menuRef} className="relative">
+        {/* Right action buttons — Contextual Popup Menu */}
+        <div ref={menuRef} className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto">
+          {(onOpenChat || onOpenExpenses || onOpenSettings || showOverflow) && (
+            <div className="relative">
               <button
                 id="immersive-plan-overflow-btn"
                 type="button"
-                onClick={() => setMenuOpen(v => !v)}
-                className="w-9 h-9 flex items-center justify-center text-white active:scale-95 transition duration-200 cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen((prev) => !prev);
+                }}
+                className="w-9 h-9 flex items-center justify-center text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer"
+                title="Plan Menu"
               >
-                <MoreVertical className="w-4.5 h-4.5" />
+                <MoreVertical className="w-5 h-5" />
               </button>
 
-              {/* Dropdown */}
-              {menuOpen && (
-                <div
-                  className="absolute top-full right-0 mt-2 min-w-[160px] rounded-2xl overflow-hidden shadow-2xl border border-white/10 z-50"
-                  style={{ background: "rgba(28,28,30,0.96)", backdropFilter: "blur(20px)" }}
-                >
-                  {overflowMenuItems.map((item, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        item.onClick();
-                      }}
-                      className={`w-full flex items-center px-4 py-3.5 text-left text-[14px] font-medium transition-colors active:bg-white/10 ${
-                        item.destructive
-                          ? "text-red-400 hover:bg-red-500/10"
-                          : "text-white/90 hover:bg-white/8"
-                      } ${idx > 0 ? "border-t border-white/[0.06]" : ""}`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {/* Compact Contextual Popup Menu */}
+              <AnimatePresence>
+                {menuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.92, y: -6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.92, y: -6 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute top-full right-0 mt-2 min-w-[170px] bg-[#121216]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-1.5 z-[100] flex flex-col space-y-0.5 text-left select-none"
+                  >
+                    {/* 1. Chat */}
+                    {onOpenChat && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onOpenChat();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
+                      >
+                        <MessageSquare className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
+                        <span className="text-xs font-semibold text-white tracking-tight">
+                          Chat
+                        </span>
+                      </button>
+                    )}
+
+                    {/* 2. Expenses */}
+                    {onOpenExpenses && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onOpenExpenses();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
+                      >
+                        <CreditCard className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
+                        <span className="text-xs font-semibold text-white tracking-tight">
+                          Expenses
+                        </span>
+                      </button>
+                    )}
+
+                    {/* 3. Settings */}
+                    {onOpenSettings && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onOpenSettings();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
+                      >
+                        <Settings className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
+                        <span className="text-xs font-semibold text-white tracking-tight">
+                          Settings
+                        </span>
+                      </button>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-          ) : null}
+          )}
         </div>
 
         {/* Circular Plan Avatar & Centered Title */}

@@ -13,7 +13,7 @@ export interface Friend {
   leave_requested_at?: string | null;
 }
 
-export type ParticipantTab = 'going' | 'waitlist' | 'invited';
+export type ParticipantTab = 'going' | 'waitlist' | 'invited' | 'skipped';
 
 export interface PendingLeaveParticipant {
   id: string;
@@ -59,6 +59,7 @@ export interface SharedParticipantScreenProps {
   externalGoingList?: Friend[];
   externalWaitlist?: Friend[];
   externalInvitedList?: Friend[];
+  externalSkippedList?: Friend[];
   onReorderWaitlist?: (newWaitlist: Friend[]) => void;
   onReorderWaitlistComplete?: (finalWaitlist: Friend[]) => void;
   waitlistMode?: 'automatic' | 'assigned';

@@ -55,6 +55,7 @@ export interface DbCircleMember {
 // 4. PLANS TABLE (The central focus object of everything in Planless)
 export interface DbPlan {
   id: string;
+  plan_id?: string;
   public_id: string;
   host_id: string;
   discovery_item_id?: string | null;
@@ -69,6 +70,8 @@ export interface DbPlan {
   scheduled_at: string;
   rsvp_deadline: string;
   max_participants: number | null;
+  attended_participants?: number;
+  attendedParticipants?: number;
   total_cost: number;
   status: 'LIVE' | 'COMPLETED' | 'CANCELLED';
   cover_image?: string | null;
@@ -99,6 +102,11 @@ export interface DbPlanParticipant {
   circle_id?: string | null;
   leave_requested?: boolean;
   leave_requested_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  join_queue?: number | null;
+  final_attendance?: 'ATTENDED' | 'DID_NOT_ATTEND' | null;
+  final_state?: 'JOINED' | 'SKIPPED' | null;
 }
 
 export enum SystemMessageType {
@@ -245,13 +253,17 @@ export interface DbPlanTeamAssignment {
 export type PlanState = "JOINED" | "WAITLISTED" | "SKIPPED" | "INVITED" | "passed" | "unanswered";
 
 export interface PlanMember {
+  id?: string;
   userId: string;
   userUuid?: string;
   name: string;
+  displayName?: string;
   avatar: string;
+  profile_photo?: string;
   role?: 'HOST' | 'PARTICIPANT';
   isHost?: boolean;
   joinState: PlanState;
+  rsvp_status?: string;
   reminderState: "sent" | "none";
   joinedAt: string;
   joinedQueueAt?: string;
@@ -263,6 +275,11 @@ export interface PlanMember {
   updatedAt?: string;
   createdAt?: string;
   checkedIn?: boolean;
+  skipReason?: string | null;
+  skip_reason?: string | null;
+  leave_requested?: boolean;
+  finalState?: 'JOINED' | 'SKIPPED' | null;
+  finalAttendance?: 'ATTENDED' | 'DID_NOT_ATTEND' | null;
 }
 
 // Backward compatibility alias for UI
@@ -274,6 +291,8 @@ export interface Plan {
   dbUuid?: string;
   publicId?: string;
   title: string;
+  maxParticipants?: number;
+  min_participants?: number;
   groupId: string | null;
   hostId: string;
   members: PlanMember[];
@@ -284,6 +303,7 @@ export interface Plan {
   paymentAmount: number;
   status: "LIVE" | "COMPLETED" | "CANCELLED" | "PENDING" | "BOOKING_READY" | "CONFIRMED" | "SLOT_UNAVAILABLE";
   datetime?: string;
+  scheduled_at?: string;
   createdAt: string;
   waitlistEnabled?: boolean;
   joinLimit?: number;
@@ -291,9 +311,12 @@ export interface Plan {
   participant_filtering?: 'AUTOMATIC' | 'ASSIGNED';
   waitlistOrderMode?: 'AUTO' | 'CUSTOM';
   waitlist_order_mode?: 'AUTO' | 'CUSTOM';
+  attended_participants?: number;
+  attendedParticipants?: number;
 
   // UI Legacy Properties (Synced with Strict Contracts)
   category: "movies" | "sports" | "restaurants" | "custom";
+  subcategory?: string;
   cost: number;
   confirmedCount: number;
   maxSpots?: number;
@@ -346,6 +369,7 @@ export interface Circle {
   id: string;
   dbUuid?: string;
   name: string;
+  category?: string;
   membersCount: number;
   avatars: string[];
   groupImage?: string;
@@ -357,9 +381,12 @@ export interface Circle {
   playersOnField: number;
   timeWindow: string;
   membersList: {
+    id?: string;
+    userId?: string;
     name: string;
     phone: string;
     avatar: string;
+    role?: string;
   }[];
 }
 

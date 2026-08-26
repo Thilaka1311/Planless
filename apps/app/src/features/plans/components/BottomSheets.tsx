@@ -424,16 +424,107 @@ export const CancelLeaveRequestBottomSheet: React.FC<CancelLeaveRequestBottomShe
 };
 
 // ----------------------------------------------------------------------
-// 2. CANCEL PLAN BOTTOM SHEET
+// 2. CANCEL PLAN BOTTOM SHEET (PLAN ACTIONS)
 // ----------------------------------------------------------------------
 interface CancelPlanBottomSheetProps {
   isOpen: boolean;
-  onConfirm: () => void;
+  onConfirm?: () => void;
+  onConfirmCancel?: () => void;
+  onMarkAsComplete?: () => void;
   onClose: () => void;
 }
 
 export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
   isOpen,
+  onConfirm,
+  onConfirmCancel,
+  onMarkAsComplete,
+  onClose,
+}) => {
+  const handleCancelClick = () => {
+    if (onConfirmCancel) {
+      onConfirmCancel();
+    } else if (onConfirm) {
+      onConfirm();
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
+
+            <div className="px-5 pb-2 text-left">
+              <h2 className="text-[18px] font-bold text-white mb-1">Plan Actions</h2>
+            </div>
+
+            <div className="px-4 pt-4 flex flex-col gap-2.5">
+              <button
+                id="cancel_plan_confirm_btn"
+                type="button"
+                onClick={handleCancelClick}
+                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-red-400 active:scale-[0.98] transition-transform cursor-pointer"
+                style={{ background: "rgba(255,59,48,0.12)", border: "1px solid rgba(255,59,48,0.2)" }}
+              >
+                Cancel Plan
+              </button>
+
+              <button
+                id="mark_as_complete_btn"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onMarkAsComplete?.();
+                }}
+                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white active:scale-[0.98] transition-transform cursor-pointer"
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+              >
+                Mark as Complete
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 2B. COMPLETE PLAN CONFIRMATION BOTTOM SHEET
+// ----------------------------------------------------------------------
+interface CompletePlanConfirmationBottomSheetProps {
+  isOpen: boolean;
+  isSubmitting?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+export const CompletePlanConfirmationBottomSheet: React.FC<CompletePlanConfirmationBottomSheetProps> = ({
+  isOpen,
+  isSubmitting = false,
   onConfirm,
   onClose,
 }) => {
@@ -466,31 +557,111 @@ export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
             </div>
 
             <div className="px-5 pb-2 text-left">
-              <h2 className="text-[18px] font-bold text-white mb-2">Cancel Plan?</h2>
+              <h2 className="text-[18px] font-bold text-white mb-2">End this plan?</h2>
               <p className="text-[14px] text-white/55 leading-[1.55]">
-                This will cancel the plan for everyone.
+                This will move the plan to Past Plans. Any unsettled expenses will remain in Wallet until they're cleared.
               </p>
             </div>
 
             <div className="px-4 pt-5 flex flex-col gap-2.5">
               <button
-                id="cancel_plan_confirm_btn"
+                id="end_plan_confirm_btn"
                 type="button"
                 onClick={onConfirm}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-red-400 active:scale-[0.98] transition-transform"
-                style={{ background: "rgba(255,59,48,0.12)", border: "1px solid rgba(255,59,48,0.2)" }}
+                disabled={isSubmitting}
+                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+                style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)" }}
               >
-                Cancel Plan
+                {isSubmitting ? "Ending Plan…" : "End Plan"}
               </button>
 
               <button
-                id="cancel_plan_keep_btn"
                 type="button"
                 onClick={onClose}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform"
+                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform cursor-pointer"
                 style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
               >
-                Keep Plan
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 2C. EARLY COMPLETE PLAN CONFIRMATION BOTTOM SHEET
+// ----------------------------------------------------------------------
+interface EarlyCompletePlanConfirmationBottomSheetProps {
+  isOpen: boolean;
+  scheduledTimeText: string;
+  isSubmitting?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+export const EarlyCompletePlanConfirmationBottomSheet: React.FC<EarlyCompletePlanConfirmationBottomSheetProps> = ({
+  isOpen,
+  scheduledTimeText,
+  isSubmitting = false,
+  onConfirm,
+  onClose,
+}) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
+
+            <div className="px-5 pb-2 text-left">
+              <h2 className="text-[18px] font-bold text-white mb-2">Complete plan early?</h2>
+              <p className="text-[14px] text-white/55 leading-[1.55]">
+                This plan is scheduled for <span className="text-white font-medium">{scheduledTimeText}</span>. Since you're completing it now, the plan time will be updated to now.
+              </p>
+            </div>
+
+            <div className="px-4 pt-5 flex flex-col gap-2.5">
+              <button
+                id="complete_plan_early_confirm_btn"
+                type="button"
+                onClick={onConfirm}
+                disabled={isSubmitting}
+                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? "Completing Plan…" : "Complete Plan"}
+              </button>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform cursor-pointer"
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+              >
+                Cancel
               </button>
             </div>
           </motion.div>

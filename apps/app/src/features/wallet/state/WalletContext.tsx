@@ -162,10 +162,26 @@ export const WalletProvider = ({
 
       setDbWalletPaidTransactions([]);
 
-      // 3. Query wallet_settlements
+      // 3. Query wallet_settlements with allocations and expense context
       const { data: settlementsData, error: settlementsErr } = await (supabase as any)
         .from("wallet_settlements")
-        .select("*")
+        .select(`
+          *,
+          allocations:wallet_settlement_allocations(
+            id,
+            amount,
+            expense_participant_id,
+            expense_participant:wallet_expense_participants(
+              id,
+              expense_id,
+              expense:wallet_expenses(
+                id,
+                title,
+                expense_type
+              )
+            )
+          )
+        `)
         .order("created_at", { ascending: false });
 
       if (settlementsErr) {
@@ -175,7 +191,7 @@ export const WalletProvider = ({
       }
 
       // 4. Extract unique plan and user IDs to fetch additional context
-      const planIds = Array.from(new Set((expenses || []).map((e: any) => e.plan_id).filter(Boolean)));
+      const expensePlanIds = (expenses || []).map((e: any) => e.plan_id).filter(Boolean);
       const payerIds = Array.from(new Set((expenses || []).map((e: any) => e.payer_id).filter(Boolean)));
       const settlementUserIds = (settlementsData || []).flatMap((s: any) => [s.payer_id, s.receiver_id]).filter(Boolean);
       const participantUserIds = Array.from(
@@ -185,20 +201,36 @@ export const WalletProvider = ({
             .filter(Boolean)
         )
       );
-      const userIds = Array.from(new Set([...payerIds, ...participantUserIds, ...settlementUserIds]));
+
+      // Fetch all plan_participants first to discover all plans the active user is in
+      const { data: participants } = await supabase.from("plan_participants").select("*");
+
+      const userPlanIds = (participants || [])
+        .filter((pp: any) => pp.user_id === activeUserUuid)
+        .map((pp: any) => pp.plan_id)
+        .filter(Boolean);
+
+      const allPlanIds = Array.from(new Set([...expensePlanIds, ...userPlanIds]));
+
+      const planParticipantUserIds = (participants || [])
+        .filter((pp: any) => allPlanIds.includes(pp.plan_id))
+        .map((pp: any) => pp.user_id)
+        .filter(Boolean);
+
+      const userIds = Array.from(
+        new Set([...payerIds, ...participantUserIds, ...settlementUserIds, ...planParticipantUserIds, activeUserUuid].filter(Boolean))
+      );
 
       const fetchPromises: Promise<any>[] = [
         userIds.length > 0
           ? Promise.resolve(supabase.from("users").select("*").in("id", userIds))
           : Promise.resolve(supabase.from("users").select("*")),
-        planIds.length > 0
-          ? Promise.resolve(supabase.from("plans").select("*").in("id", planIds))
+        allPlanIds.length > 0
+          ? Promise.resolve(supabase.from("plans").select("*").in("id", allPlanIds))
           : Promise.resolve(supabase.from("plans").select("*")),
-        Promise.resolve(supabase.from("plan_participants").select("*")),
       ];
 
-      const [{ data: users }, { data: plans }, { data: participants }] =
-        await Promise.all(fetchPromises);
+      const [{ data: users }, { data: plans }] = await Promise.all(fetchPromises);
 
       setDbUsersLocal(users || []);
       setDbPlansLocal(plans || []);
@@ -231,7 +263,7 @@ export const WalletProvider = ({
       }, 50);
     };
 
-    // Subscribe to realtime updates on wallet_expenses, wallet_expense_participants, and wallet_settlements
+    // Subscribe to realtime updates on wallet_expenses, wallet_expense_participants, wallet_settlements, and plan_participants
     const channel = supabase
       .channel(channelName)
       .on(
@@ -253,6 +285,13 @@ export const WalletProvider = ({
         { event: "*", schema: "public", table: "wallet_settlements" },
         () => {
           triggerCoalescedRefresh("realtime", "wallet_settlements");
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "plan_participants" },
+        () => {
+          triggerCoalescedRefresh("realtime", "plan_participants");
         }
       )
       .subscribe();

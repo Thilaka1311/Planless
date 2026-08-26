@@ -212,7 +212,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                   <button
                     onClick={() => {
                       if (sheetType === 'going' && !isSelf) {
-                        onRemoveParticipant(selectedItem);
+                        executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
                       } else {
                         onShowConfirmRemove(true);
                       }
@@ -245,7 +245,9 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                 Cancel
               </button>
               <button
-                onClick={() => onRemoveParticipant(selectedItem)}
+                onClick={() => {
+                  executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                }}
                 style={{ flex: 1, padding: '14px', background: '#EF4444', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
               >
                 {isSelf ? 'Leave' : 'Remove'}

@@ -160,7 +160,13 @@ export const mapPlansToLegacyPlans = (
             updatedAt: ip.updated_at,
             createdAt: ip.created_at,
             checkedIn: false,
-            removedByHost: false
+            removedByHost: false,
+            skipReason: ip.skip_reason || null,
+            skip_reason: ip.skip_reason || null,
+            finalState: ip.final_state || null,
+            final_state: ip.final_state || null,
+            finalAttendance: ip.final_attendance || null,
+            final_attendance: ip.final_attendance || null,
           };
         }
 
@@ -184,7 +190,13 @@ export const mapPlansToLegacyPlans = (
           updatedAt: ip.updated_at,
           createdAt: ip.created_at,
           checkedIn: false,
-          removedByHost: false
+          removedByHost: false,
+          skipReason: ip.skip_reason || null,
+          skip_reason: ip.skip_reason || null,
+          finalState: ip.final_state || null,
+          final_state: ip.final_state || null,
+          finalAttendance: ip.final_attendance || null,
+          final_attendance: ip.final_attendance || null,
         };
       }).filter(Boolean) as any[],
       (p as any).participant_filtering,

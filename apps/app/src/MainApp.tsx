@@ -524,6 +524,10 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           }}
           userProfile={userProfile}
           activeUserId={activeUserId}
+          onOpenChat={(planId) => {
+            setSelectedPlanId(null);
+            setSelectedChatPlanId(planId);
+          }}
           setShowPaymentSuccess={setShowPaymentSuccessId}
           setShowWaitlistSuccess={setShowWaitlistSuccessId}
           setShowLeftSuccess={setShowLeftSuccessId}
