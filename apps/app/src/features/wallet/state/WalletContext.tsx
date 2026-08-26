@@ -13,6 +13,10 @@ interface WalletState {
   dbUsersLocal: any[];
   loading: boolean;
   error: string | null;
+  walletBalance?: number;
+  transactions?: any[];
+  dbTransactions?: any[];
+  setDbTransactions?: any;
   refreshTransactions: () => Promise<void>;
   updateExpenseInStore: (expenseId: string, updatedFields: {
     title?: string;

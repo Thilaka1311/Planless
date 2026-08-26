@@ -232,35 +232,16 @@ export const HostAttendanceScreen: React.FC<HostAttendanceScreenProps> = ({
   };
 
   const executeSubmission = (mode: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE', addOverride?: string[], removeOverride?: string[]) => {
-    const payload = combinedMembers
-      .map((m) => {
-        const mId = getMemberId(m);
-        const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
-        const originalStatus = normalizeStatus(m.joinState || (m as any).rsvp_status);
-        const isAttended = isHostUser || attendanceState[mId] === 'ATTENDED';
+    const payload = combinedMembers.map((m) => {
+      const mId = getMemberId(m);
+      const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
+      const isAttended = isHostUser || attendanceState[mId] === 'ATTENDED';
 
-        if (isAttended) {
-          return {
-            user_id: mId,
-            attendance: 'ATTENDED' as const,
-          };
-        }
-
-        if (originalStatus === 'JOINED') {
-          return {
-            user_id: mId,
-            attendance: 'DID_NOT_ATTEND' as const,
-          };
-        }
-
-        return null;
-      })
-      .filter(
-        (entry): entry is {
-          user_id: string;
-          attendance: 'ATTENDED' | 'DID_NOT_ATTEND';
-        } => entry !== null
-      );
+      return {
+        user_id: mId,
+        attendance: isAttended ? ('ATTENDED' as const) : ('DID_NOT_ATTEND' as const),
+      };
+    });
 
     const currentAttendedIds = new Set(attendedMembers.map(m => getMemberId(m)));
     const usersToAdd: string[] = addOverride ?? [];

@@ -22,6 +22,7 @@ export interface User {
   wallet_balance: number;
   active_status: boolean;
   friends?: number;
+  profile_completed?: boolean;
 }
 
 
@@ -208,11 +209,17 @@ export interface DbPlanOutcome {
 export interface DbMemory {
   id?: string;
   plan_id: string;
-  memory_type: 'football' | 'badminton' | 'movies' | 'dining';
-  status: string;
+  memory_type?: 'football' | 'badminton' | 'movies' | 'dining' | string;
+  status?: string;
   created_at?: string;
   locked_at?: string | null;
-  editable_until: string;
+  editable_until?: string;
+  user_id?: string;
+  category?: string;
+  subcategory?: string;
+  title?: string;
+  scheduled_at?: string;
+  outcome_text?: string;
 }
 
 export interface DbMemoryResult {

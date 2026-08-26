@@ -11,7 +11,7 @@ interface UserAvatarProps {
   /** Additional classes to merge onto the <img> element */
   className?: string;
   /** onClick handler */
-  onClick?: () => void;
+  onClick?: (e?: any) => void;
   /** Custom style rules */
   style?: React.CSSProperties;
 }
