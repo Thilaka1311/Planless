@@ -36,7 +36,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
+  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, replaceParticipant, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
   const { profile: userProfile, activeUserUuid } = useProfileStore();
 
   const senderUuid =
@@ -792,7 +792,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 showWaitlistMode={false}
                 replaceTargetUserId={replaceTargetUserId}
                 onCancelReplacement={() => setReplaceTargetUserId(null)}
-                onConfirmReplacement={(pId, targetId, replacementId) => resolvePaidPlanLeaveRequest(pId, targetId, 'REPLACED', replacementId)}
+                onConfirmReplacement={(pId, targetId, replacementId) => replaceParticipant(pId, targetId, replacementId)}
               />
             )}
           </div>

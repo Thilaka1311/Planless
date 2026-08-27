@@ -1,9 +1,12 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Crown, Users } from 'lucide-react';
 import { Plan } from '../../../core/types';
-import { normalizeStatus } from '../../../../lib/participantStatus';
+import { normalizeStatus, sortGoingParticipants, formatSkipReason } from '../../../../lib/participantStatus';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
+import { usePlansStore } from '../state/PlansContext';
+import { supabase } from '../../../../lib/supabaseClient';
+import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
 
 type InlineTab = 'going' | 'invited' | 'waitlist' | 'skipped';
 
@@ -12,6 +15,7 @@ interface InlineParticipantViewProps {
   activeUserId?: string;
   isHost?: boolean;
   onManageParticipants?: () => void;
+  variant?: 'accordion' | 'flat';
 }
 
 interface InlineMemberEntry {
@@ -22,11 +26,15 @@ interface InlineMemberEntry {
   isAccepted: boolean;
   waitlistPosition?: number | null;
   joinedQueueAt?: string | null;
+  skipReason?: string | null;
 }
 
-export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, onManageParticipants }: InlineParticipantViewProps) {
+export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, onManageParticipants, variant = 'accordion' }: InlineParticipantViewProps) {
+  const { dbPlanParticipants } = usePlansStore();
   const members = plan.members || [];
   const hostId = plan.hostId || (plan as any).host_id || (plan as any).creator_id || (plan as any).creatorId;
+
+  const [selectedProfileUserId, setSelectedProfileUserId] = useState<string | null>(null);
 
   const isHostUser = isHostProp ?? Boolean(
     activeUserId && (
@@ -37,9 +45,20 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
 
   const [isExpanded, setIsExpanded] = React.useState(false);
 
-  const planFiltering = plan.participantFiltering || (plan as any).participant_filtering || 'AUTOMATIC';
-  const isAssignedMode = planFiltering === 'ASSIGNED';
+  const rawWaitlistMode =
+    plan.participantFiltering ||
+    (plan as any).participant_filtering ||
+    (plan as any).waitlist_mode ||
+    (plan as any).waitlistMode ||
+    (plan as any).waitlist_type ||
+    (plan as any).waitlistType ||
+    'AUTOMATIC';
+
+  const normalizedWaitlistMode = String(rawWaitlistMode ?? '').trim().toLowerCase();
+  const isAssignedMode = normalizedWaitlistMode === 'assigned';
   const waitlistOrderMode = plan.waitlistOrderMode || (plan as any).waitlist_order_mode || 'AUTO';
+
+  console.log('[InlineParticipantView] rawWaitlistMode:', rawWaitlistMode, 'normalizedMode:', normalizedWaitlistMode, 'isAssignedMode:', isAssignedMode);
 
   // Helper to extract normalized final state for completed plans
   const getMemberFinalState = (m: any): string | null => {
@@ -74,8 +93,9 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     }
 
     if (isAssignedMode) {
-      const group = (currentMember as any).assignedGroup || (currentMember as any).assigned_group;
-      return group === 'WAITLIST' ? 'waitlist' : 'going';
+      const groupRaw = (currentMember as any).assignedGroup || (currentMember as any).assigned_group;
+      const group = typeof groupRaw === 'string' ? groupRaw.toLowerCase() : '';
+      return (group === 'waitlisted' || group === 'waitlist') ? 'waitlist' : 'going';
     }
     const status = normalizeStatus(currentMember.joinState || (currentMember as any).rsvp_status);
     if (status === 'WAITLISTED') return 'waitlist';
@@ -85,13 +105,197 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
 
   const [activeTab, setActiveTab] = React.useState<InlineTab>(initialTab);
 
+  const targetPlanUuid = (plan as any).dbUuid || plan.id;
+
+  const [liveAssignedParticipants, setLiveAssignedParticipants] = React.useState<any[] | null>(null);
+
+  React.useEffect(() => {
+    if (!isAssignedMode || !targetPlanUuid) return;
+
+    const fetchParticipants = async (reason = 'INITIAL') => {
+      const { data, error } = await supabase
+        .from('plan_participants')
+        .select('user_id, assigned_group, waitlist_position, rsvp_status, skip_reason')
+        .eq('plan_id', targetPlanUuid);
+      
+      if (!error && data) {
+        console.log(`[WAITLIST PIPELINE 4 - REFETCH] (${reason})`, { planId: targetPlanUuid, rows: data });
+        setLiveAssignedParticipants(data as any[]);
+        console.log(`[WAITLIST PIPELINE 5 - LIVE STATE]`, (data as any[]).map(d => `${d.user_id} -> ${d.assigned_group} -> ${d.waitlist_position}`));
+      }
+    };
+
+    fetchParticipants('INITIAL_MOUNT');
+
+    console.log(`[WAITLIST PIPELINE - SUBSCRIBE] planId: ${targetPlanUuid}`);
+    const channel = supabase.channel(`inline-participants-${targetPlanUuid}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'plan_participants', filter: `plan_id=eq.${targetPlanUuid}` },
+        (payload) => {
+          const payloadNew = payload.new as any;
+          const payloadOld = payload.old as any;
+          console.log(`[WAITLIST PIPELINE 3 - REALTIME EVENT]`, {
+            event: payload.eventType,
+            plan_id: payloadNew?.plan_id || payloadOld?.plan_id,
+            user_id: payloadNew?.user_id || payloadOld?.user_id,
+            old_position: payloadOld?.waitlist_position,
+            new_position: payloadNew?.waitlist_position,
+          });
+          fetchParticipants('REALTIME_EVENT');
+        }
+      )
+      .subscribe((status) => {
+        console.log(`[WAITLIST PIPELINE - SUBSCRIBE STATUS]`, status);
+      });
+
+    return () => {
+      console.log(`[WAITLIST PIPELINE - CLEANUP] planId: ${targetPlanUuid}`);
+      supabase.removeChannel(channel);
+    };
+  }, [isAssignedMode, targetPlanUuid]);
+
+  const planDbParticipants = useMemo(() => {
+    if (!dbPlanParticipants || dbPlanParticipants.length === 0) return [];
+    return dbPlanParticipants.filter((pp: any) =>
+      pp.plan_id === targetPlanUuid ||
+      pp.plan_id === plan.id ||
+      (plan as any).dbUuid === pp.plan_id
+    );
+  }, [dbPlanParticipants, targetPlanUuid, plan.id, (plan as any).dbUuid]);
+
   const groups = useMemo(() => {
+    const sortAlpha = (list: InlineMemberEntry[]) => [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
+
+    const prioritizeUserAndSortGoing = (list: InlineMemberEntry[]) => {
+      return sortGoingParticipants(list, activeUserId);
+    };
+
+    const isCompletedPlan = plan.status === 'COMPLETED';
+
+    // ----------------------------------------------------------------------
+    // NEW CLEAN ASSIGNED MODE PIPELINE
+    // ----------------------------------------------------------------------
+    if (isAssignedMode && !isCompletedPlan) {
+      const going: InlineMemberEntry[] = [];
+      const waitlist: InlineMemberEntry[] = [];
+      const skipped: InlineMemberEntry[] = [];
+
+      const activeSource = liveAssignedParticipants || planDbParticipants;
+
+      console.log('[INLINE_ASSIGNED_DB]', {
+        planId: plan.id,
+        usingLiveSource: liveAssignedParticipants !== null,
+        participants: activeSource.map(pp => ({
+          userId: pp.user_id,
+          name: members.find(m => (m.userUuid || m.userId || (m as any).user_id || (m as any).id) === pp.user_id)?.name,
+          assignedGroup: pp.assigned_group,
+          waitlistPosition: pp.waitlist_position,
+          status: pp.rsvp_status,
+          skipReason: pp.skip_reason
+        }))
+      });
+
+      // 1. Create lookup map for canonical user_id -> dbRow
+      const dbRowByUserId = new Map<string, any>();
+      for (const pp of activeSource) {
+        if (pp.user_id) {
+          dbRowByUserId.set(String(pp.user_id).toLowerCase(), pp);
+        }
+      }
+
+      // 2. Map existing members through the lookup
+      for (const pp of activeSource) {
+        const rowUserId = pp.user_id;
+        if (!rowUserId) continue;
+
+        const m = members.find(member => {
+            const mId = member.userUuid || member.userId || (member as any).user_id || (member as any).id || (member as any).dbUuid;
+            return mId && String(mId).toLowerCase() === String(rowUserId).toLowerCase();
+        });
+
+        const isHostRole = m ? (m.role === 'HOST' || m.isHost === true) : false;
+        const isCurrentUser = Boolean(activeUserId && String(rowUserId).toLowerCase() === String(activeUserId).toLowerCase());
+
+        const effectiveStatus = normalizeStatus(m?.joinState || (m as any)?.rsvp_status || pp.rsvp_status);
+        const isAccepted = effectiveStatus !== 'INVITED' && effectiveStatus !== 'SKIPPED';
+
+        // 3. Read assigned_group directly from database row
+        const dbAssignedGroup = pp.assigned_group;
+        const assignedGroup = typeof dbAssignedGroup === 'string' ? dbAssignedGroup.toLowerCase() : '';
+
+        // 4. Read waitlist_position directly from database row
+        const waitlistPosition = pp.waitlist_position;
+
+        const entry: InlineMemberEntry = {
+          name: isCurrentUser ? 'You' : (m?.name || 'Unknown'),
+          avatar: m?.avatar || '',
+          userId: rowUserId,
+          isHost: Boolean(isHostRole),
+          isAccepted,
+          waitlistPosition,
+          joinedQueueAt: null, // Explicitly no fallback in assigned mode
+          skipReason: pp.skip_reason || (m as any)?.skipReason || (m as any)?.skip_reason || null,
+        };
+
+        // 5. Split into Going / Waitlisted / Skipped
+        if (effectiveStatus === 'SKIPPED') {
+          skipped.push(entry);
+        } else if (assignedGroup === 'waitlisted' || assignedGroup === 'waitlist') {
+          waitlist.push(entry);
+        } else if (assignedGroup === 'going') {
+          going.push(entry);
+        } else {
+          // If no assigned group is set in DB yet, put them in going for now
+          going.push(entry);
+        }
+      }
+
+      // 6. Sort waitlisted strictly by waitlist_position ASC
+      const waitlistSorted = [...waitlist].sort((a, b) => {
+        const posA = a.waitlistPosition !== null && a.waitlistPosition !== undefined && typeof a.waitlistPosition === 'number'
+          ? a.waitlistPosition
+          : Number.MAX_SAFE_INTEGER;
+        const posB = b.waitlistPosition !== null && b.waitlistPosition !== undefined && typeof b.waitlistPosition === 'number'
+          ? b.waitlistPosition
+          : Number.MAX_SAFE_INTEGER;
+
+        if (posA === Number.MAX_SAFE_INTEGER && a.name) {
+          console.warn(`[INLINE_ASSIGNED] Missing waitlist_position`, {
+            plan_id: plan.id,
+            user_id: a.userId,
+            name: a.name
+          });
+        }
+        if (posB === Number.MAX_SAFE_INTEGER && b.name && posA !== Number.MAX_SAFE_INTEGER) {
+          console.warn(`[INLINE_ASSIGNED] Missing waitlist_position`, {
+            plan_id: plan.id,
+            user_id: b.userId,
+            name: b.name
+          });
+        }
+
+        return posA - posB;
+      });
+
+      console.log('[WAITLIST PIPELINE 6 - INLINE RENDER]');
+      waitlistSorted.forEach((w, idx) => console.log(`${idx + 1}. ${w.name} (${w.userId}) -> ${w.waitlistPosition}`));
+
+      return {
+        going: prioritizeUserAndSortGoing(going),
+        invited: [], // No invited section in assigned mode
+        waitlist: waitlistSorted,
+        skipped: prioritizeUserAndSortGoing(skipped)
+      };
+    }
+
+    // ----------------------------------------------------------------------
+    // EXISTING AUTOMATIC MODE PIPELINE (Unchanged)
+    // ----------------------------------------------------------------------
     const going: InlineMemberEntry[] = [];
     const invited: InlineMemberEntry[] = [];
     const waitlist: InlineMemberEntry[] = [];
     const skipped: InlineMemberEntry[] = [];
-
-    const isCompletedPlan = plan.status === 'COMPLETED';
 
     for (const m of members) {
       const isHostRole = m.role === 'HOST' || m.isHost === true;
@@ -113,6 +317,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         isAccepted,
         waitlistPosition: (m as any).waitlistPosition ?? (m as any).waitlist_position ?? null,
         joinedQueueAt: (m as any).joinedQueueAt ?? (m as any).joined_queue_at ?? (m as any).createdAt ?? (m as any).created_at ?? null,
+        skipReason: (m as any).skipReason || (m as any).skip_reason || null,
       };
 
       if (isCompletedPlan) {
@@ -120,15 +325,6 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         else if (effectiveStatus === 'WAITLISTED') waitlist.push(entry);
         else if (effectiveStatus === 'INVITED') invited.push(entry);
         else skipped.push(entry);
-      } else if (isAssignedMode) {
-        const group = (m as any).assignedGroup || (m as any).assigned_group;
-        if (group === 'WAITLIST' || (!group && effectiveStatus === 'WAITLISTED')) {
-          waitlist.push(entry);
-        } else if (effectiveStatus === 'SKIPPED') {
-          skipped.push(entry);
-        } else {
-          going.push(entry);
-        }
       } else {
         if (effectiveStatus === 'JOINED') going.push(entry);
         else if (effectiveStatus === 'INVITED') invited.push(entry);
@@ -137,22 +333,8 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
       }
     }
 
-    const sortAlpha = (list: InlineMemberEntry[]) => [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
-
-    const prioritizeUserAndSortGoing = (list: InlineMemberEntry[]) => {
-      const currentUser = list.find(item => item.name === 'You' || (activeUserId && item.userId === activeUserId));
-      const remaining = list.filter(item => item !== currentUser);
-      const remainingHosts = sortAlpha(remaining.filter(i => i.isHost));
-      const remainingNonHosts = sortAlpha(remaining.filter(i => !i.isHost));
-      return [
-        ...(currentUser ? [currentUser] : []),
-        ...remainingHosts,
-        ...remainingNonHosts,
-      ];
-    };
-
-    const sortByWaitlistOrder = (list: InlineMemberEntry[]) =>
-      [...list].sort((a, b) => {
+    const sortByWaitlistOrder = (list: InlineMemberEntry[]) => {
+      return [...list].sort((a, b) => {
         if (waitlistOrderMode === 'CUSTOM') {
           const posA = a.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
           const posB = b.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
@@ -164,6 +346,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         if (queueA !== queueB) return queueA - queueB;
         return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
       });
+    };
 
     return {
       going: prioritizeUserAndSortGoing(going),
@@ -171,7 +354,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
       waitlist: sortByWaitlistOrder(waitlist),
       skipped: prioritizeUserAndSortGoing(skipped)
     };
-  }, [members, activeUserId, isAssignedMode, waitlistOrderMode]);
+  }, [members, planDbParticipants, liveAssignedParticipants, activeUserId, isAssignedMode, waitlistOrderMode, plan.id, (plan as any).dbUuid, plan.status]);
 
   const tabs = useMemo(() => {
     const t: { key: InlineTab; label: string; count: number }[] = [];
@@ -191,17 +374,24 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
       }
     } else if (isAssignedMode) {
-      if (groups.going.length > 0 || groups.waitlist.length === 0) {
-        t.push({ key: 'going', label: 'Joined', count: groups.going.length });
-      }
+      t.push({ key: 'going', label: 'Joined', count: groups.going.length });
       if (groups.waitlist.length > 0) {
         t.push({ key: 'waitlist', label: 'Waitlisted', count: groups.waitlist.length });
       }
+      if (groups.skipped.length > 0) {
+        t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
+      }
     } else {
-      if (groups.going.length > 0) t.push({ key: 'going', label: 'Joined', count: groups.going.length });
-      if (groups.waitlist.length > 0) t.push({ key: 'waitlist', label: 'Waitlisted', count: groups.waitlist.length });
-      if (groups.invited.length > 0) t.push({ key: 'invited', label: 'Invited', count: groups.invited.length });
-      if (groups.skipped.length > 0) t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
+      t.push({ key: 'going', label: 'Joined', count: groups.going.length });
+      if (groups.waitlist.length > 0) {
+        t.push({ key: 'waitlist', label: 'Waitlisted', count: groups.waitlist.length });
+      }
+      if (groups.invited.length > 0) {
+        t.push({ key: 'invited', label: 'Invited', count: groups.invited.length });
+      }
+      if (groups.skipped.length > 0) {
+        t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
+      }
     }
     return t;
   }, [groups, isAssignedMode, plan.status]);
@@ -258,37 +448,52 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     }
   };
 
-  // Render streamlined view for normal participants on live plans:
-  // Starts directly with status toggle, always expanded, no header row, no outer card box, max 4 visible participant rows with internal scroll.
-  if (isParticipantView) {
-    return (
-      <div className="w-full text-left space-y-2">
-        {tabs.length > 0 && (
-          <div className="w-full flex items-center justify-center bg-[#0A0A0C]/90 border border-white/15 rounded-full overflow-hidden backdrop-blur-md shadow-inner">
-            {tabs.map((tab) => {
-              const isActive = activeTab === tab.key;
-              const activeStyle = getLiveTabActiveStyle(tab.key);
+  // Render streamlined view for normal participants on live plans, or if variant is explicitly flat:
+  // Starts directly with status toggle, always expanded, no header row, no outer card box.
+  if (isParticipantView || variant === 'flat') {
+    const flatMaxHeight = isHostUser ? 'max-h-[calc(100dvh-480px)]' : 'max-h-[calc(100dvh-440px)]';
 
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveTab(tab.key)}
-                  style={isActive ? activeStyle.style : undefined}
-                  className={`flex-1 py-1.5 px-3 text-[11.5px] font-sans font-semibold tracking-wide transition-all duration-200 focus:outline-none flex items-center justify-center cursor-pointer select-none min-w-0 ${
-                    isActive
-                      ? `${activeStyle.className} rounded-full z-10 shadow-sm`
-                      : 'text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-white/[0.04]'
-                  }`}
-                >
-                  <span className="truncate">{tab.label} ({tab.count})</span>
-                </button>
-              );
-            })}
+    return (
+      <div className="w-full text-left space-y-2 flex flex-col min-h-0">
+        {tabs.length > 0 && (
+          <div className="w-full flex items-center justify-between gap-2 flex-shrink-0">
+            <div className="flex-1 flex items-center justify-center bg-[#0A0A0C]/90 border border-white/15 rounded-full overflow-hidden backdrop-blur-md shadow-inner">
+              {tabs.map((tab) => {
+                const isActive = activeTab === tab.key;
+                const activeStyle = getLiveTabActiveStyle(tab.key);
+
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    style={isActive ? activeStyle.style : undefined}
+                    className={`flex-1 py-1.5 px-3 text-[11.5px] font-sans font-semibold tracking-wide transition-all duration-200 focus:outline-none flex items-center justify-center cursor-pointer select-none min-w-0 ${
+                      isActive
+                        ? `${activeStyle.className} rounded-full z-10 shadow-sm`
+                        : 'text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <span className="truncate">{tab.label} ({tab.count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {onManageParticipants && (
+              <button
+                type="button"
+                onClick={onManageParticipants}
+                className="h-8 w-8 rounded-full bg-[#0A0A0C]/90 border border-white/15 text-white/80 hover:text-white transition flex items-center justify-center cursor-pointer shrink-0 shadow-inner"
+                title="Manage Participants"
+              >
+                <Users className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         )}
 
-        <div className="px-1 py-0.5 min-h-[90px] max-h-[calc(100dvh-340px)] overflow-y-auto scrollbar-none">
+        <div className={`px-1 py-0.5 min-h-[90px] overflow-y-auto scrollbar-none pb-2 ${variant === 'flat' ? flatMaxHeight : 'max-h-[calc(100dvh-340px)]'}`}>
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -304,7 +509,12 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                 activeList.map((person, idx) => (
                   <div
                     key={person.userId || idx}
-                    className={`flex items-center gap-3 py-1.5 px-1 rounded-xl ${
+                    onClick={() => {
+                      if (person.userId) {
+                        setSelectedProfileUserId(person.userId);
+                      }
+                    }}
+                    className={`flex items-center gap-3 py-1.5 px-2 rounded-xl cursor-pointer hover:bg-white/[0.06] active:scale-[0.98] transition-all duration-150 select-none ${
                       person.isAccepted ? 'opacity-100' : 'opacity-70'
                     }`}
                   >
@@ -323,8 +533,13 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                     }`}>
                       {person.name}
                     </span>
+                    {activeTab === 'skipped' && person.skipReason && (
+                      <span className="text-[11px] font-medium text-white/50 truncate max-w-[100px] text-right font-sans">
+                        {formatSkipReason(person.skipReason)}
+                      </span>
+                    )}
                     {person.isHost && (
-                      <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0 uppercase">
+                      <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0">
                         Host
                       </span>
                     )}
@@ -334,6 +549,11 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
             </motion.div>
           </AnimatePresence>
         </div>
+
+        <FriendProfileViewerBottomSheet
+          friendUserId={selectedProfileUserId}
+          onClose={() => setSelectedProfileUserId(null)}
+        />
       </div>
     );
   }
@@ -551,7 +771,12 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                     activeList.map((person, idx) => (
                       <div
                         key={person.userId || idx}
-                        className={`flex items-center gap-3 py-2 px-1 rounded-xl ${
+                        onClick={() => {
+                          if (person.userId) {
+                            setSelectedProfileUserId(person.userId);
+                          }
+                        }}
+                        className={`flex items-center gap-3 py-2 px-2 rounded-xl cursor-pointer hover:bg-white/[0.06] active:scale-[0.98] transition-all duration-150 select-none ${
                           person.isAccepted ? 'opacity-100' : 'opacity-70'
                         }`}
                       >
@@ -570,8 +795,13 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                         }`}>
                           {person.name}
                         </span>
+                        {activeTab === 'skipped' && person.skipReason && (
+                          <span className="text-[11px] font-medium text-white/50 truncate max-w-[100px] text-right font-sans">
+                            {formatSkipReason(person.skipReason)}
+                          </span>
+                        )}
                         {person.isHost && (
-                          <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0 uppercase">
+                          <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0">
                             Host
                           </span>
                         )}
@@ -600,6 +830,11 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
           </motion.div>
         )}
       </AnimatePresence>
+
+      <FriendProfileViewerBottomSheet
+        friendUserId={selectedProfileUserId}
+        onClose={() => setSelectedProfileUserId(null)}
+      />
     </div>
   );
 }

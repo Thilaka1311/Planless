@@ -30,6 +30,34 @@ export async function getCurrentUserFriendships(activeUserUuid: string): Promise
   return (data || []) as FriendshipWithProfiles[];
 }
 
+export async function getCompleteCurrentUserFriends(activeUserUuid: string) {
+  if (!activeUserUuid) return [];
+  const rawFriendships = await getCurrentUserFriendships(activeUserUuid);
+  
+  const acceptedFriends: any[] = [];
+  rawFriendships.forEach((row: any) => {
+    if (row.status === "ACCEPTED") {
+      const isUser1 = row.user_1_id === activeUserUuid;
+      const rawFriend = isUser1 ? row.user_2 : row.user_1;
+      if (rawFriend && rawFriend.id) {
+        acceptedFriends.push({
+          id: rawFriend.id,
+          dbUuid: rawFriend.id,
+          user_id: rawFriend.public_id,
+          full_name: rawFriend.full_name,
+          name: rawFriend.full_name,
+          username: rawFriend.full_name ? rawFriend.full_name.toLowerCase().replace(/\s+/g, "") : "",
+          profile_photo: rawFriend.profile_photo_path,
+          avatar: rawFriend.profile_photo_path || "",
+          bio: rawFriend.bio
+        });
+      }
+    }
+  });
+
+  return acceptedFriends;
+}
+
 export async function sendFriendRequest(
   currentUserId: string,
   targetUserId: string,

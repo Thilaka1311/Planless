@@ -11,6 +11,7 @@ export interface Friend {
   waitlistPosition?: number | null;
   leave_requested?: boolean;
   leave_requested_at?: string | null;
+  skipReason?: string | null;
 }
 
 export type ParticipantTab = 'going' | 'waitlist' | 'invited' | 'skipped';
@@ -70,6 +71,7 @@ export interface SharedParticipantScreenProps {
   pendingLeaveRequests?: PendingLeaveParticipant[];
   onReplaceLeaveParticipant?: (participantId: string) => void;
   onKeepPaymentLeaveParticipant?: (participantId: string) => void;
+  onInviteSkipped?: (friend: Friend, target: 'GOING' | 'WAITLIST') => Promise<void> | void;
 }
 
 export type ParticipantManagementScreenProps = SharedParticipantScreenProps;

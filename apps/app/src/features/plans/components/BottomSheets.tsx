@@ -287,57 +287,62 @@ export const PaidPlanLeaveConfirmationDialog: React.FC<PaidPlanLeaveConfirmation
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 pointer-events-auto">
-          {/* Subtle backdrop dimming */}
+        <>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
           />
-
-          {/* Minimal Centered Modal Dialog Card */}
           <motion.div
-            initial={{ scale: 0.92, opacity: 0, y: 6 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.92, opacity: 0, y: 6 }}
-            transition={{ type: "spring", damping: 28, stiffness: 360 }}
-            className="relative w-full max-w-[310px] bg-[#18181B] border border-white/[0.08] rounded-2xl p-5 text-center shadow-xl space-y-4 z-10"
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+            }}
           >
-            {/* Title & Wording */}
-            <div className="space-y-2 pt-0.5">
-              <h3 className="text-[19px] font-bold text-white tracking-tight leading-snug">
-                Leave Plan?
-              </h3>
-              <p className="text-[13px] text-zinc-400 font-medium leading-[1.5] tracking-wide">
-                We'll send a request to the host to leave this plan. You'll remain in the plan until the host decides.
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
+
+            <div className="px-5 pb-2 text-left">
+              <h2 className="text-[18px] font-bold text-white mb-2">Leave request required</h2>
+              <p className="text-[14px] text-white/55 leading-[1.55]">
+                There is no one on the waitlist to take your place. You need to send a leave request to the host.
               </p>
             </div>
 
-            {/* Actions: Request to Leave CTA & Muted Text Cancel */}
-            <div className="flex flex-col items-center gap-2 pt-1">
+            <div className="px-4 pt-5 flex flex-col gap-2.5">
               <button
                 id="paid_leave_request_modal_confirm_btn"
                 type="button"
                 disabled={isSubmitting}
                 onClick={onConfirm}
-                className="w-full py-3 px-4 rounded-xl text-[13.5px] font-bold text-white bg-amber-500/20 hover:bg-amber-500/30 active:scale-[0.98] transition-all border border-amber-500/40 disabled:opacity-50 tracking-wide"
+                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-amber-400 active:scale-[0.98] transition-transform disabled:opacity-50"
+                style={{ background: "rgba(245,158,11,0.16)", border: "1px solid rgba(245,158,11,0.3)" }}
               >
-                {isSubmitting ? "Sending Request…" : "Request to Leave"}
+                {isSubmitting ? "Sending Request…" : "Send leave request"}
               </button>
 
               <button
                 id="paid_leave_request_modal_cancel_btn"
                 type="button"
                 onClick={onClose}
-                className="py-1 px-3 text-[12.5px] font-medium text-zinc-400 hover:text-zinc-200 active:opacity-70 transition-colors cursor-pointer"
+                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform"
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
               >
                 Cancel
               </button>
             </div>
           </motion.div>
-        </div>
+        </>
       )}
     </AnimatePresence>
   );
@@ -1746,6 +1751,7 @@ interface RemoveGoingParticipantBottomSheetProps {
   hasWaitlist: boolean;
   goingCount?: number;
   waitlistCount?: number;
+  onMoveToWaitlist?: () => void;
   onDecreaseCapacity: () => void;
   onReplaceParticipant?: () => void;
   onCancelPlan?: () => void;
@@ -1758,6 +1764,7 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
   hasWaitlist: rawHasWaitlist,
   goingCount,
   waitlistCount,
+  onMoveToWaitlist,
   onDecreaseCapacity,
   onReplaceParticipant,
   onCancelPlan,
@@ -1765,7 +1772,7 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
 }) => {
   if (!isOpen || !participant) return null;
   const hasWaitlist = waitlistCount !== undefined ? waitlistCount > 0 : rawHasWaitlist;
-  const canDecreaseCapacity = hasWaitlist && (goingCount === undefined || goingCount > 2);
+  const canDecreaseCapacity = goingCount === undefined || goingCount > 2;
 
   return (
     <div
@@ -1801,87 +1808,101 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
         </div>
 
         {/* Personalized Participant Header */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20 }}>
-          <div style={{ flexShrink: 0 }}>
-            <div className="w-12 h-12 rounded-full border-2 border-white/20 overflow-hidden bg-[#1A1A1A] flex items-center justify-center">
-              <UserAvatar src={participant.avatar} alt={participant.name} size="w-full h-full" />
-            </div>
-          </div>
-
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <UserAvatar src={participant.avatar} alt={participant.name} size="w-10 h-10" />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.01em' }}>Remove Participant</span>
-            <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 2, lineHeight: 1.4 }}>
-              {!hasWaitlist ? 'Removing them will cancel the plan.' : 'How would you like to handle this Going spot?'}
+            <span style={{ fontSize: 16, fontWeight: 600, color: '#FFFFFF', letterSpacing: '-0.01em' }}>Remove participant</span>
+            <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)', marginTop: 2, lineHeight: 1.4 }}>
+              How would you like to handle their spot?
             </span>
           </div>
         </div>
 
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Action 1: Decrease Plan Size (Only shown if goingCount > 2) */}
+          {/* Action 0: Move to Waitlist instead */}
+          {onMoveToWaitlist && (
+            <button
+              type="button"
+              onClick={onMoveToWaitlist}
+              style={{
+                width: '100%',
+                height: 48,
+                padding: '0 14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
+                color: '#FFFFFF',
+                textAlign: 'left',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">
+                <TrendingDown className="w-4 h-4" />
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Move to waitlist instead</span>
+            </button>
+          )}
+
+          {/* Action 1: Decrease Plan Size */}
           {canDecreaseCapacity && (
             <button
               type="button"
               onClick={onDecreaseCapacity}
               style={{
                 width: '100%',
-                padding: '14px 16px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: 14,
+                height: 48,
+                padding: '0 14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
                 color: '#FFFFFF',
                 textAlign: 'left',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 14,
+                gap: 12,
               }}
             >
-              <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 flex-shrink-0">
-                <UserMinus className="w-5 h-5" />
+              <div className="w-7 h-7 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 flex-shrink-0">
+                <UserMinus className="w-4 h-4" />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
-                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
-                  This participant will be removed from the plan and the maximum plan size will decrease by one.
-                </span>
-              </div>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
             </button>
           )}
 
-          {/* Action 2: Replace with Participant from Waitlist (Only shown if waitlist has participants) */}
-          {hasWaitlist && onReplaceParticipant && (
+          {/* Action 2: Replace Participant */}
+          {onReplaceParticipant && (
             <button
               type="button"
               onClick={onReplaceParticipant}
               style={{
                 width: '100%',
-                padding: '14px 16px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: 14,
+                height: 48,
+                padding: '0 14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
                 color: '#FFFFFF',
                 textAlign: 'left',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 14,
+                gap: 12,
               }}
             >
-              <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 flex-shrink-0">
-                <ArrowLeftRight className="w-5 h-5" />
+              <div className="w-7 h-7 rounded-lg bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 flex-shrink-0">
+                <ArrowLeftRight className="w-4 h-4" />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Replace with Participant from Waitlist</span>
-                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
-                  Select a participant from the Waitlist to immediately fill this Going spot without changing plan size.
-                </span>
-              </div>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Replace Participant</span>
             </button>
           )}
 
-          {/* Action: Cancel Plan (Only shown when waitlistCount === 0) */}
-          {!hasWaitlist && onCancelPlan && (
+          {/* Action: Cancel Plan (Only shown when no other actions are possible) */}
+          {!hasWaitlist && !onMoveToWaitlist && onCancelPlan && (
             <button
               type="button"
               onClick={onCancelPlan}

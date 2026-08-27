@@ -24,6 +24,11 @@ export const ParticipantTabs: React.FC<ParticipantTabsProps> = ({
   onAddFriends,
 }) => {
   const tabCount = visibleTabs.length;
+
+  if (tabCount === 0) {
+    return null;
+  }
+
   const activeTabIndex = Math.max(0, visibleTabs.indexOf(activeTab));
   const pillWidth = `calc(${100 / tabCount}% - 3px)`;
   const pillLeft =
@@ -35,7 +40,7 @@ export const ParticipantTabs: React.FC<ParticipantTabsProps> = ({
     activeTab === key ? '#FFFFFF' : '#8E8E93';
 
   return (
-    <div style={{ padding: '0 20px', margin: '16px 0 8px 0', shrink: 0 }}>
+    <div style={{ padding: '0 20px', margin: '16px 0 8px 0', flexShrink: 0 }}>
       <div
         style={{
           display: 'flex',

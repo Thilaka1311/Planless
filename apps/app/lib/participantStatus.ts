@@ -26,6 +26,40 @@ export function normalizeStatus(rsvpStatus: string | undefined): PlanState {
 }
 
 /**
+ * Formats raw skip_reason strings (e.g. "REMOVED", "LEFT", "REPLACED", "PAYMENT_KEPT")
+ * into clean user-facing labels ("Removed", "Left", "Replaced", "Payment Kept").
+ */
+export function formatSkipReason(reason?: string | null): string {
+  if (!reason) return '';
+  const raw = String(reason).trim();
+  if (!raw) return '';
+
+  const upper = raw.toUpperCase();
+
+  switch (upper) {
+    case 'REMOVED':
+      return 'Removed';
+    case 'LEFT':
+      return 'Left';
+    case 'REPLACED':
+      return 'Replaced';
+    case 'PAYMENT_KEPT':
+    case 'PAYMENT KEPT':
+    case 'PAYMENTKEPT':
+      return 'Payment Kept';
+    case 'SKIPPED':
+      return 'Skipped';
+    case 'DECLINED':
+      return 'Declined';
+    default:
+      return raw
+        .replace(/_/g, ' ')
+        .toLowerCase()
+        .replace(/\b\w/g, char => char.toUpperCase());
+  }
+}
+
+/**
  * Resolves standard categories/counts from a list of participant rows.
  */
 export interface ParticipantBreakdown {
@@ -77,8 +111,123 @@ export function parseTimeToMinutes(timeStr: string): number {
   let hours = parseInt(match[1]);
   const minutes = parseInt(match[2]);
   const ampm = match[3].toUpperCase();
-  if (ampm === "PM" && hours < 12) hours += 12;
   if (ampm === "AM" && hours === 12) hours = 0;
+  if (ampm === "PM" && hours < 12) hours += 12;
   return hours * 60 + minutes;
 }
+
+export interface SortableParticipantEntry {
+  name?: string;
+  userId?: string;
+  dbUuid?: string;
+  id?: string;
+  isAccepted?: boolean;
+  [key: string]: any;
+}
+
+/**
+ * Shared ordering helper for the Going/Joined section across Inline Participant Toggle and Participant Management screen.
+ * Ordering rules:
+ * 1. You / current user (always first at index 0, regardless of RSVP state).
+ * 2. Joined/accepted participants (isAccepted !== false) sorted alphabetically A -> Z.
+ * 3. Invited participants (isAccepted === false) sorted alphabetically A -> Z.
+ */
+export function sortGoingParticipants<T extends SortableParticipantEntry>(
+  list: T[],
+  activeUserId?: string
+): T[] {
+  if (!list || list.length === 0) return [];
+
+  const sortAlpha = (items: T[]) =>
+    [...items].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+    );
+
+  const currentUser = list.find((item) => {
+    const isYou = item.name === 'You';
+    const itemUserId = String(item.userId || item.dbUuid || item.id || '').toLowerCase();
+    const activeId = activeUserId ? String(activeUserId).toLowerCase() : '';
+    return isYou || (Boolean(activeId) && itemUserId === activeId);
+  });
+
+  const remaining = list.filter((item) => item !== currentUser);
+
+  const joinedList = remaining.filter((item) => item.isAccepted !== false);
+  const invitedList = remaining.filter((item) => item.isAccepted === false);
+
+  const joinedSorted = sortAlpha(joinedList);
+  const invitedSorted = sortAlpha(invitedList);
+
+  return [
+    ...(currentUser ? [{ ...currentUser, name: 'You' }] : []),
+    ...joinedSorted,
+    ...invitedSorted,
+  ];
+}
+
+/**
+ * Checks whether a plan has a valid waitlisted replacement available to fill a vacant spot.
+ * 
+ * For ASSIGNED mode:
+ * - Finds the participant row where assigned_group = 'WAITLIST' AND waitlist_position = 1.
+ * - Checks their ACTUAL current RSVP state (normalizeStatus).
+ * - Returns true ONLY if position #1 participant has actually joined the waitlist (status === 'WAITLISTED').
+ * - Returns false if position #1 is INVITED, SKIPPED, or missing/non-existent.
+ * 
+ * For AUTOMATIC mode:
+ * - Checks if there is any active waitlisted participant with rsvp_status === 'WAITLISTED'.
+ */
+export interface WaitlistReplacementResult {
+  hasReplacement: boolean;
+  candidate: any | null;
+}
+
+export function checkHasValidWaitlistReplacement(
+  freshParticipants: any[] | undefined | null,
+  mode?: string
+): WaitlistReplacementResult {
+  if (!freshParticipants || freshParticipants.length === 0) {
+    return { hasReplacement: false, candidate: null };
+  }
+
+  const normalizedMode = String(mode || 'AUTOMATIC').trim().toUpperCase();
+
+  if (normalizedMode === 'ASSIGNED') {
+    // 1. Find participant assigned_group == 'WAITLIST' and waitlist_position == 1
+    const pos1Participant = freshParticipants.find((pp: any) => {
+      const group = String(pp.assigned_group || pp.assignedGroup || '').trim().toUpperCase();
+      const pos = pp.waitlist_position ?? pp.waitlistPosition;
+      return group === 'WAITLIST' && Number(pos) === 1;
+    });
+
+    if (!pos1Participant) {
+      return { hasReplacement: false, candidate: null };
+    }
+
+    // 2. Check canonical accepted state: not INVITED and not SKIPPED
+    const status = normalizeStatus(pos1Participant.rsvp_status || pos1Participant.joinState);
+    const isActuallyWaitlisted = status !== 'INVITED' && status !== 'SKIPPED';
+
+    return {
+      hasReplacement: isActuallyWaitlisted,
+      candidate: pos1Participant
+    };
+  } else {
+    // AUTOMATIC mode:
+    const activeWaitlisted = freshParticipants.filter((pp: any) => {
+      const status = normalizeStatus(pp.rsvp_status || pp.joinState);
+      const group = String(pp.assigned_group || pp.assignedGroup || '').trim().toUpperCase();
+      return status !== 'INVITED' && status !== 'SKIPPED' && group !== 'GOING';
+    });
+
+    const candidate = activeWaitlisted.length > 0 ? activeWaitlisted[0] : null;
+
+    return {
+      hasReplacement: activeWaitlisted.length > 0,
+      candidate
+    };
+  }
+}
+
+
 

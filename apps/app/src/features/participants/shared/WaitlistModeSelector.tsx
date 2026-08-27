@@ -32,7 +32,7 @@ export const WaitlistModeSelector: React.FC<WaitlistModeSelectorProps> = ({
           </span>
           <span style={{ fontSize: 11, color: '#A1A1AA', lineHeight: 1.4 }}>
             {waitlistMode === 'assigned'
-              ? 'You decide who is Going and who is Waitlisted. Acceptance order does not affect placement.'
+              ? 'You decide who is Joined and who is Waitlisted. Acceptance order does not affect placement.'
               : 'Participants fill available spots in the order they accept invitations. Additional participants are automatically waitlisted.'}
           </span>
         </div>

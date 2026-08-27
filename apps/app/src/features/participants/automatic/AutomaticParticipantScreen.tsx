@@ -205,6 +205,8 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         </>
       )}
 
+
+
       <AutomaticParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
@@ -252,7 +254,6 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           <GoingSection
             goingList={displayGoing}
             onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'going') : undefined}
-            reorderable={false}
             showIndex={false}
           />
         )}

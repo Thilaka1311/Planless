@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from '../shared/types';
+import { formatSkipReason } from '../../../../lib/participantStatus';
 
 interface AutomaticParticipantActionsProps {
   selectedItem: Friend | null;
@@ -104,6 +105,8 @@ export const AutomaticParticipantActions: React.FC<AutomaticParticipantActionsPr
                 ? 'Joined'
                 : sheetType === 'waitlist'
                 ? 'Waitlist'
+                : sheetType === 'skipped'
+                ? (formatSkipReason(selectedItem.skipReason) || 'Skipped')
                 : 'Invited'}
             </span>
           </div>
@@ -113,29 +116,6 @@ export const AutomaticParticipantActions: React.FC<AutomaticParticipantActionsPr
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {isLeaveRequested ? (
               <>
-                <button
-                  onClick={() => {
-                    executeActionWithImmediateDismiss(() => {
-                      const targetId = selectedItem.dbUuid || selectedItem.id;
-                      if (onReplaceLeaveParticipant) onReplaceLeaveParticipant(targetId);
-                    });
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '14px',
-                    background: 'rgba(245, 158, 11, 0.1)',
-                    border: '1px solid rgba(245, 158, 11, 0.3)',
-                    borderRadius: 12,
-                    color: '#F59E0B',
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
-                >
-                  Replace Participant
-                </button>
-
                 <button
                   onClick={() => {
                     executeActionWithImmediateDismiss(() => {
@@ -156,13 +136,36 @@ export const AutomaticParticipantActions: React.FC<AutomaticParticipantActionsPr
                     textAlign: 'left',
                   }}
                 >
-                  Keep Payment
+                  Keep payment
+                </button>
+
+                <button
+                  onClick={() => {
+                    executeActionWithImmediateDismiss(() => {
+                      const targetId = selectedItem.dbUuid || selectedItem.id;
+                      if (onReplaceLeaveParticipant) onReplaceLeaveParticipant(targetId);
+                    });
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    background: 'rgba(245, 158, 11, 0.1)',
+                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    borderRadius: 12,
+                    color: '#F59E0B',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  Replace participant
                 </button>
               </>
             ) : (
               <>
-                {/* Make Host — only for going/invited participants, never for waitlist */}
-                {onPromoteHost && sheetType !== 'waitlist' && (selectedItem.rsvpStatus === 'JOINED' || selectedItem.isAccepted === true) && !selectedItem.isHost && (
+                {/* Make Host — only for active going participants */}
+                {onPromoteHost && sheetType !== 'waitlist' && sheetType !== 'skipped' && selectedItem.rsvpStatus === 'JOINED' && !selectedItem.isHost && (
                   <button
                     onClick={() => {
                       executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem!));

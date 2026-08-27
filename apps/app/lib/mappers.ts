@@ -527,7 +527,7 @@ function sortMembers(members: any[], filteringMode?: string, waitlistOrderMode: 
 
   joined.sort((a, b) => getEpoch(a.joinedAt, a.updatedAt, a.createdAt) - getEpoch(b.joinedAt, b.updatedAt, b.createdAt));
 
-  if (waitlistOrderMode === 'CUSTOM') {
+  if (waitlistOrderMode === 'CUSTOM' || (filteringMode && filteringMode.toUpperCase() === 'ASSIGNED')) {
     waitlisted.sort((a, b) => {
       const posA = a.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
       const posB = b.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
@@ -536,8 +536,6 @@ function sortMembers(members: any[], filteringMode?: string, waitlistOrderMode: 
       const qB = b.joinQueue ?? Number.MAX_SAFE_INTEGER;
       return qA - qB;
     });
-  } else if (filteringMode === 'ASSIGNED') {
-    waitlisted.sort((a, b) => getEpoch(a.createdAt, a.waitlistedAt, a.joinedAt) - getEpoch(b.createdAt, b.waitlistedAt, b.joinedAt));
   } else {
     // AUTOMATIC mode: Order strictly by joinQueue ASC, with createdAt ASC tiebreaker
     waitlisted.sort((a, b) => {

@@ -2,13 +2,8 @@ import React from 'react';
 import { Crown } from 'lucide-react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 
-interface Friend {
-  id: string;
-  dbUuid: string;
-  name: string;
-  avatar: string;
-  isHost?: boolean;
-}
+import { Friend } from '../shared/types';
+import { formatSkipReason } from '../../../../lib/participantStatus';
 
 interface StackingFriendsProps {
   item: Friend;
@@ -55,22 +50,22 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
       style={{
         display: 'flex',
         alignItems: 'center',
-        padding: '12px 14px',
-        background: isItemDragged ? 'rgba(255, 255, 255, 0.02)' : '#161619',
-        border: isItemDragged ? '1px dashed rgba(255, 255, 255, 0.15)' : '1px solid rgba(255, 255, 255, 0.05)',
+        padding: '10px 4px',
+        background: isItemDragged ? 'rgba(255, 255, 255, 0.04)' : 'transparent',
+        border: isItemDragged ? '1px dashed rgba(255, 255, 255, 0.15)' : 'none',
         borderRadius: 8,
         cursor: draggable ? 'grab' : (onClick ? 'pointer' : 'default'),
-        boxShadow: isItemDragged ? 'none' : '0 2px 6px rgba(0, 0, 0, 0.3)',
+        boxShadow: 'none',
         zIndex: isItemDragged ? 0 : 1,
         position: 'relative',
         opacity: isItemDragged ? 0.25 : (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? 0.7 : 1,
-        transition: 'background 0.2s ease, opacity 0.2s ease, box-shadow 0.28s ease',
+        transition: 'background 0.2s ease, opacity 0.2s ease',
       }}
       onMouseEnter={(e) => {
-        if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = '#222227';
+        if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
       }}
       onMouseLeave={(e) => {
-        if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = '#161619';
+        if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = 'transparent';
       }}
     >
       {showIndex && index !== undefined && (
@@ -82,7 +77,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
       <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
         {item.name}
       </span>
-      {item.leave_requested && (
+      {(item.leave_requested || (item as any).leaveRequested) && (
         <span
           title="Requested to leave"
           style={{
@@ -112,36 +107,6 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
           alignItems: 'center',
         }}>
           Host
-        </span>
-      ) : (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? (
-        <span style={{
-          fontSize: 11,
-          fontWeight: 500,
-          color: '#8E8E93',
-          background: 'rgba(255, 255, 255, 0.06)',
-          padding: '2px 8px',
-          borderRadius: 9999,
-          fontFamily: 'Inter, sans-serif',
-          lineHeight: 1.2,
-          display: 'inline-flex',
-          alignItems: 'center',
-        }}>
-          Invited
-        </span>
-      ) : item.rsvpStatus === 'SKIPPED' ? (
-        <span style={{
-          fontSize: 11,
-          fontWeight: 500,
-          color: '#FCA5A5',
-          background: 'rgba(239, 68, 68, 0.15)',
-          padding: '2px 8px',
-          borderRadius: 9999,
-          fontFamily: 'Inter, sans-serif',
-          lineHeight: 1.2,
-          display: 'inline-flex',
-          alignItems: 'center',
-        }}>
-          Skipped
         </span>
       ) : null}
     </div>

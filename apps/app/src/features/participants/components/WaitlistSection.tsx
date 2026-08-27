@@ -1,14 +1,7 @@
 import React from 'react';
 import { Reorder } from 'motion/react';
 import { StackingFriends } from './StackingFriends';
-
-interface Friend {
-  id: string;
-  dbUuid: string;
-  name: string;
-  avatar: string;
-  isHost?: boolean;
-}
+import { Friend } from '../shared/types';
 
 interface WaitlistSectionProps {
   waitlist: Friend[];
@@ -42,14 +35,14 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
       {reorderable && onReorder && waitlist.length > 1 ? (
         <Reorder.Group
           axis="y"
           values={waitlist}
           onReorder={onReorder}
           as="div"
-          style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}
+          style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}
         >
           {waitlist.map((item, idx) => {
             const itemKey = item.dbUuid || item.id;

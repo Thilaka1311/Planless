@@ -58,6 +58,8 @@ interface PlansContextType {
   requestPaidPlanLeave: (planId: string) => Promise<void>;
   cancelPaidPlanLeaveRequest: (planId: string) => Promise<void>;
   resolvePaidPlanLeaveRequest: (planId: string, targetUserId: string, resolution: 'REPLACED' | 'KEEP_PAYMENT', replacementUserId?: string) => Promise<void>;
+  replaceParticipant: (planId: string, targetUserId: string, replacementUserId: string) => Promise<any>;
+  moveParticipantToWaitlistAndDecreaseCapacity: (planId: string, targetUserId: string) => Promise<any>;
   rejoinPlan: (planId: string, userProfile: any) => Promise<void>;
   // New acceptance / payment / booking actions
   acceptPlan: (planId: string, userProfile: any) => Promise<void>;
@@ -497,6 +499,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     requestPaidPlanLeave,
     cancelPaidPlanLeaveRequest,
     resolvePaidPlanLeaveRequest,
+    replaceParticipant,
+    moveParticipantToWaitlistAndDecreaseCapacity,
     rejoinPlan,
     removeParticipant,
     promoteWaitlistIfSpotsAvailable,
@@ -806,18 +810,28 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Map each friend to their host-assigned group (GOING vs WAITLIST) if in Assigned mode
     const friendAssignmentMap = new Map<string, 'GOING' | 'WAITLIST'>();
+    const waitlistPositionMap = new Map<string, number>();
+
     if (isAssignedMode && selectedFriends.length > 0) {
       const priorityIds: string[] = priorityGuestIds;
       const capacity: number = newDbPlan?.max_participants || 2;
       const hostOffset = isHostSelected ? 1 : 0;
       const goingCapacityForFriends = Math.max(0, capacity - hostOffset);
 
+      let currentWaitlistPos = 1;
+
       selectedFriends.forEach((f: any, index: number) => {
         const fUuid = f.dbUuid || f.id;
         if (!fUuid) return;
         // Priority guest IDs or first N friends fit into GOING; overflow into WAITLIST
         const isPriority = priorityIds.length > 0 ? priorityIds.includes(fUuid) : index < goingCapacityForFriends;
-        friendAssignmentMap.set(fUuid, isPriority ? 'GOING' : 'WAITLIST');
+        
+        if (isPriority) {
+          friendAssignmentMap.set(fUuid, 'GOING');
+        } else {
+          friendAssignmentMap.set(fUuid, 'WAITLIST');
+          waitlistPositionMap.set(fUuid, currentWaitlistPos++);
+        }
       });
     }
 
@@ -852,12 +866,17 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ? (friendAssignmentMap.get(inviteeUuid) || "GOING")
         : null;
 
+      const waitlistPos = (isAssignedMode && assignedGroup === 'WAITLIST')
+        ? (waitlistPositionMap.get(inviteeUuid) || null)
+        : null;
+
       participantRecords.push({
         plan_id: insertedPlanUuid,
         user_id: inviteeUuid,
         role: "PARTICIPANT",
         rsvp_status: shouldAutoJoin ? "JOINED" : "INVITED",
         assigned_group: assignedGroup,
+        waitlist_position: waitlistPos,
         responded_at: shouldAutoJoin ? new Date().toISOString() : null,
         circle_id: cId
       });
@@ -1194,6 +1213,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     requestPaidPlanLeave,
     cancelPaidPlanLeaveRequest,
     resolvePaidPlanLeaveRequest,
+    replaceParticipant,
+    moveParticipantToWaitlistAndDecreaseCapacity,
     rejoinPlan,
     acceptPlan: memoizedAcceptPlan,
     declinePlan: memoizedDeclinePlan,
@@ -1237,7 +1258,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addParticipantsToPlan, promoteWaitlistParticipant, rebalanceCapacity, getAvailableCapacity,
     moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited,
     updatePlanSettings, promoteParticipantToHost, demoteHostToParticipant,
-    swapParticipants, removeAndReplaceWithWaitlist, reorderWaitlist, switchToAutomaticWaitlistMode
+    swapParticipants, removeAndReplaceWithWaitlist, replaceParticipant, moveParticipantToWaitlistAndDecreaseCapacity, reorderWaitlist, switchToAutomaticWaitlistMode
   ]);
 
   return (

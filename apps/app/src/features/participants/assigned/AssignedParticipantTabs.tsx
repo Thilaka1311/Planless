@@ -8,6 +8,7 @@ interface AssignedParticipantTabsProps {
   goingCount: number;
   capacity: number;
   waitlistCount: number;
+  skippedCount?: number;
   onTabChange: (tab: ParticipantTab) => void;
 }
 
@@ -17,12 +18,18 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
   goingCount,
   capacity,
   waitlistCount,
+  skippedCount,
   onTabChange,
 }) => {
   // Filter visible tabs to strictly exclude 'invited'
-  const filteredTabs = visibleTabs.filter((t) => t !== 'invited');
+  const filteredTabs = visibleTabs.filter((t): t is Exclude<ParticipantTab, 'invited'> => t !== 'invited');
   const tabCount = filteredTabs.length;
-  const activeTabIndex = Math.max(0, filteredTabs.indexOf(activeTab));
+
+  if (tabCount === 0) {
+    return null;
+  }
+
+  const activeTabIndex = Math.max(0, filteredTabs.indexOf(activeTab as any));
   const pillWidth = `calc(${100 / tabCount}% - 3px)`;
   const pillLeft =
     activeTabIndex === 0
@@ -33,7 +40,7 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
     activeTab === key ? '#FFFFFF' : '#8E8E93';
 
   return (
-    <div style={{ padding: '0 20px', margin: '16px 0 8px 0', shrink: 0 }}>
+    <div style={{ padding: '0 20px', margin: '16px 0 8px 0', flexShrink: 0 }}>
       <div
         style={{
           display: 'flex',
@@ -63,9 +70,9 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
 
         {filteredTabs.map((key) => {
           let label = '';
-          if (key === 'going') label = `Going (${goingCount} / ${capacity})`;
+          if (key === 'going') label = `Joined (${goingCount} / ${capacity})`;
           if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
-          if (key === 'skipped') label = `Skipped`;
+          if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
 
           return (
             <button

@@ -35,9 +35,34 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
   } = useFriendshipStore();
   const { showToast } = useToast();
 
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [profile, setProfile] = useState<FriendProfileData | null>(null);
   const [loadingProfile, setLoadingProfile] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    async function fetchAuthUser() {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (data?.user?.id) {
+          setCurrentUserId(data.user.id);
+          return;
+        }
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.user?.id) {
+          setCurrentUserId(sessionData.session.user.id);
+        }
+      } catch (err) {
+        console.error("Error fetching current authenticated user:", err);
+      }
+    }
+    fetchAuthUser();
+  }, []);
+
+  const isSelfProfile = useMemo(() => {
+    if (!currentUserId || !friendUserId) return false;
+    return String(currentUserId).trim().toLowerCase() === String(friendUserId).trim().toLowerCase();
+  }, [currentUserId, friendUserId]);
 
   // Derive relationship status dynamically from the central Friendship store
   const relationship = useMemo(() => {
@@ -214,95 +239,97 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
                 </div>
 
                 {/* 5. Dynamic Relationship Action Buttons */}
-                <div className="mt-6 w-full space-y-2">
-                  {relationship.type === "PENDING_INCOMING" ? (
-                    <div className="flex gap-2.5 w-full">
+                {!isSelfProfile && (
+                  <div className="mt-6 w-full space-y-2">
+                    {relationship.type === "PENDING_INCOMING" ? (
+                      <div className="flex gap-2.5 w-full">
+                        <button
+                          type="button"
+                          onClick={handleAction}
+                          disabled={actionLoading}
+                          style={{
+                            flex: 1,
+                            padding: "14px",
+                            background: "rgba(34, 197, 94, 0.12)",
+                            border: "none",
+                            borderRadius: 12,
+                            color: "#4ADE80",
+                            fontSize: 14,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                          className="flex items-center justify-center gap-2 active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
+                        >
+                          <UserCheck className="w-4 h-4 flex-shrink-0" />
+                          <span>Accept</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRejectIncoming}
+                          disabled={actionLoading}
+                          style={{
+                            flex: 1,
+                            padding: "14px",
+                            background: "rgba(239, 68, 68, 0.10)",
+                            border: "none",
+                            borderRadius: 12,
+                            color: "#EF4444",
+                            fontSize: 14,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                          className="flex items-center justify-center gap-2 active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
+                        >
+                          <X className="w-4 h-4 flex-shrink-0" />
+                          <span>Reject</span>
+                        </button>
+                      </div>
+                    ) : (
                       <button
                         type="button"
                         onClick={handleAction}
                         disabled={actionLoading}
                         style={{
-                          flex: 1,
+                          width: "100%",
                           padding: "14px",
-                          background: "rgba(34, 197, 94, 0.12)",
+                          background:
+                            relationship.type === "ACCEPTED"
+                              ? "rgba(239, 68, 68, 0.08)"
+                              : "rgba(255, 255, 255, 0.06)",
                           border: "none",
                           borderRadius: 12,
-                          color: "#4ADE80",
+                          color:
+                            relationship.type === "ACCEPTED"
+                              ? "#EF4444"
+                              : "#FFFFFF",
                           fontSize: 14,
                           fontWeight: 600,
                           cursor: "pointer",
                         }}
                         className="flex items-center justify-center gap-2 active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
                       >
-                        <UserCheck className="w-4 h-4 flex-shrink-0" />
-                        <span>Accept</span>
+                        {actionLoading ? (
+                          <span>Processing...</span>
+                        ) : relationship.type === "ACCEPTED" ? (
+                          <>
+                            <UserMinus className="w-4 h-4 flex-shrink-0" />
+                            <span>Remove Friend</span>
+                          </>
+                        ) : relationship.type === "PENDING_OUTGOING" ? (
+                          <>
+                            <UserMinus className="w-4 h-4 flex-shrink-0" />
+                            <span>Cancel Request</span>
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="w-4 h-4 flex-shrink-0" />
+                            <span>Add Friend</span>
+                          </>
+                        )}
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleRejectIncoming}
-                        disabled={actionLoading}
-                        style={{
-                          flex: 1,
-                          padding: "14px",
-                          background: "rgba(239, 68, 68, 0.10)",
-                          border: "none",
-                          borderRadius: 12,
-                          color: "#EF4444",
-                          fontSize: 14,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                        className="flex items-center justify-center gap-2 active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
-                      >
-                        <X className="w-4 h-4 flex-shrink-0" />
-                        <span>Reject</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleAction}
-                      disabled={actionLoading}
-                      style={{
-                        width: "100%",
-                        padding: "14px",
-                        background:
-                          relationship.type === "ACCEPTED"
-                            ? "rgba(239, 68, 68, 0.08)"
-                            : "rgba(255, 255, 255, 0.06)",
-                        border: "none",
-                        borderRadius: 12,
-                        color:
-                          relationship.type === "ACCEPTED"
-                            ? "#EF4444"
-                            : "#FFFFFF",
-                        fontSize: 14,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                      className="flex items-center justify-center gap-2 active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
-                    >
-                      {actionLoading ? (
-                        <span>Processing...</span>
-                      ) : relationship.type === "ACCEPTED" ? (
-                        <>
-                          <UserMinus className="w-4 h-4 flex-shrink-0" />
-                          <span>Remove Friend</span>
-                        </>
-                      ) : relationship.type === "PENDING_OUTGOING" ? (
-                        <>
-                          <UserMinus className="w-4 h-4 flex-shrink-0" />
-                          <span>Cancel Request</span>
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus className="w-4 h-4 flex-shrink-0" />
-                          <span>Add Friend</span>
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="py-8 text-center text-zinc-500 font-sans text-xs">

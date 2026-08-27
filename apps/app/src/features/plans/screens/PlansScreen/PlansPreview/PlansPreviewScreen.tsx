@@ -27,7 +27,7 @@ import { usePlansStore } from "../../../state/PlansContext";
 import { useLivePlan } from "../../../hooks/useLivePlan";
 import { useToast } from "../../../../../shared/contexts/ToastContext";
 import { supabase } from "../../../../../../lib/supabaseClient";
-import { normalizeStatus } from "../../../../../../lib/participantStatus";
+import { normalizeStatus, checkHasValidWaitlistReplacement } from "../../../../../../lib/participantStatus";
 import { getPlanCover } from "../../../config/planCoverImages";
 import { formatPlanDate } from "../../../../../../lib/mappers";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
@@ -39,6 +39,7 @@ import PlanCompletionModal from "../../../../../shared/modals/PlanCompletionModa
 import { ParticipantToggleBar } from "../../../../home/components/PlanDetailsCard";
 import { useLiveCountdown, formatDeadlineFull, rsvpUrgencyStyles } from "../../../../home/components/PlanCard";
 import { useRSVPDeadline } from "../../../utils/rsvpFormatter";
+import { InlineParticipantView } from "../../../components/InlineParticipantView";
 import { HeroHeader } from "../../../components/HeroHeader";
 import { HeroMetadataCard } from "../../../components/HeroMetadataCard";
 import { PlanChatScreen } from "../../../../chats/screens/PlanChatScreen";
@@ -127,228 +128,7 @@ function PlanCategoryIcon({ plan }: { plan: any }) {
   return <CalendarDays className="w-3 h-3 text-zinc-400" strokeWidth={2} />;
 }
 
-// ==========================================
-// SUB-COMPONENTS — PARTICIPANTS SECTION
-// ==========================================
-interface ParticipantsSectionProps {
-  plan: Plan;
-  userProfile: UserProfile;
-  activeUserId?: string;
-  onOpenParticipants?: () => void;
-}
-
-export const ParticipantsSection = React.memo(({
-  plan,
-  userProfile,
-  activeUserId,
-  onOpenParticipants,
-}: ParticipantsSectionProps) => {
-  const members = plan.members || [];
-  const currentUserId = userProfile.dbUuid || activeUserId;
-
-  const mapMemberName = (m: any) => {
-    const mId = m.userId || m.userUuid || m.user_id || m.id;
-    if (currentUserId && mId === currentUserId) {
-      return { ...m, name: "You" };
-    }
-    return m;
-  };
-
-  const sortAlpha = (list: any[]) => [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
-
-  const prioritizeUserAndSort = (list: any[]) => {
-    const currentUser = list.find(m => {
-      const mId = m.userId || m.userUuid || m.user_id || m.id;
-      return m.name === "You" || (currentUserId && mId === currentUserId);
-    });
-    const remaining = list.filter(m => m !== currentUser);
-    const isHostCheck = (m: any) => (m.role === 'HOST' || m.isHost === true);
-    const hosts = sortAlpha(remaining.filter(isHostCheck));
-    const nonHosts = sortAlpha(remaining.filter(m => !isHostCheck(m)));
-    return [
-      ...(currentUser ? [currentUser] : []),
-      ...hosts,
-      ...nonHosts,
-    ];
-  };
-
-  const isCompletedPlan = plan.status === "COMPLETED";
-
-  const getMemberEffectiveState = (m: any) => {
-    const raw = m.joinState || (m as any).rsvp_status;
-    const norm = normalizeStatus(raw);
-
-    if (isCompletedPlan) {
-      if ((m as any).final_attendance === 'ATTENDED' || (m as any).final_state === 'JOINED') {
-        return 'JOINED';
-      }
-      if ((m as any).final_attendance === 'DID_NOT_ATTEND' || (m as any).final_state === 'SKIPPED') {
-        return 'SKIPPED';
-      }
-    }
-    return norm;
-  };
-
-  const rawGoingList = members.filter(m => getMemberEffectiveState(m) === "JOINED").map(mapMemberName);
-  const goingList = prioritizeUserAndSort(rawGoingList);
-
-  const waitlistList = members.filter(m => getMemberEffectiveState(m) === "WAITLISTED").map(mapMemberName);
-
-  const rawInvitedList = members.filter(m => getMemberEffectiveState(m) === "INVITED").map(mapMemberName);
-  const invitedList = prioritizeUserAndSort(rawInvitedList);
-
-  const rawSkippedList = members.filter(m => getMemberEffectiveState(m) === "SKIPPED").map(mapMemberName);
-  const skippedList = prioritizeUserAndSort(rawSkippedList);
-
-  type InlineTab = 'going' | 'invited' | 'waitlist' | 'skipped';
-
-  const tabs = useMemo(() => {
-    const t: { key: InlineTab; label: string; count: number }[] = [];
-    if (goingList.length > 0 || (waitlistList.length === 0 && invitedList.length === 0 && skippedList.length === 0)) {
-      t.push({ key: 'going', label: isCompletedPlan ? 'Attended' : 'Joined', count: goingList.length });
-    }
-    if (waitlistList.length > 0) {
-      t.push({ key: 'waitlist', label: 'Waitlisted', count: waitlistList.length });
-    }
-    if (invitedList.length > 0) {
-      t.push({ key: 'invited', label: 'Invited', count: invitedList.length });
-    }
-    if (skippedList.length > 0) {
-      t.push({ key: 'skipped', label: 'Skipped', count: skippedList.length });
-    }
-    return t;
-  }, [goingList.length, waitlistList.length, invitedList.length, skippedList.length, isCompletedPlan]);
-
-  const [activeTab, setActiveTab] = useState<InlineTab>('going');
-
-  useEffect(() => {
-    if (tabs.length > 0 && !tabs.find(t => t.key === activeTab)) {
-      setActiveTab(tabs[0].key);
-    }
-  }, [tabs, activeTab]);
-
-  const activeList = useMemo(() => {
-    if (activeTab === 'waitlist') return waitlistList;
-    if (activeTab === 'invited') return invitedList;
-    if (activeTab === 'skipped') return skippedList;
-    return goingList;
-  }, [activeTab, goingList, waitlistList, invitedList, skippedList]);
-
-  const getLiveTabActiveStyle = (key: InlineTab) => {
-    switch (key) {
-      case 'going':
-        return {
-          className: 'text-emerald-200 font-semibold',
-          style: { backgroundColor: 'rgba(6, 78, 59, 0.85)' },
-        };
-      case 'invited':
-        return {
-          className: 'text-zinc-200 font-semibold',
-          style: { backgroundColor: 'rgba(39, 39, 42, 0.85)' },
-        };
-      case 'waitlist':
-        return {
-          className: 'text-amber-200 font-semibold',
-          style: { backgroundColor: 'rgba(120, 53, 15, 0.85)' },
-        };
-      case 'skipped':
-        return {
-          className: 'text-rose-200 font-semibold',
-          style: { backgroundColor: 'rgba(136, 19, 55, 0.85)' },
-        };
-    }
-  };
-
-  return (
-    <div className="w-full text-left space-y-2 flex flex-col flex-1 min-h-0">
-      {/* Status Segmented Toggle + Manage Participants Icon */}
-      {tabs.length > 0 && (
-        <div className="w-full flex items-center justify-between gap-2 flex-shrink-0">
-          <div className="flex-1 flex items-center justify-center bg-[#0A0A0C]/90 border border-white/15 rounded-full overflow-hidden backdrop-blur-md shadow-inner">
-            {tabs.map((tab) => {
-              const isActive = activeTab === tab.key;
-              const activeStyle = getLiveTabActiveStyle(tab.key);
-
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveTab(tab.key)}
-                  style={isActive ? activeStyle.style : undefined}
-                  className={`flex-1 py-1.5 px-3 text-[11.5px] font-sans font-semibold tracking-wide transition-all duration-200 focus:outline-none flex items-center justify-center cursor-pointer select-none min-w-0 ${
-                    isActive
-                      ? `${activeStyle.className} rounded-full z-10 shadow-sm`
-                      : 'text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-white/[0.04]'
-                  }`}
-                >
-                  <span className="truncate">{tab.label} ({tab.count})</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {onOpenParticipants && (
-            <button
-              type="button"
-              onClick={onOpenParticipants}
-              className="h-8 w-8 rounded-full bg-[#0A0A0C]/90 border border-white/15 text-white/80 hover:text-white transition flex items-center justify-center cursor-pointer shrink-0 shadow-inner"
-              title="Manage Participants"
-            >
-              <Users className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Participant List (extends downward to immediately above Manage Participants control, internally scrollable) */}
-      <div className="px-1 py-0.5 min-h-[90px] max-h-[calc(100dvh-410px)] overflow-y-auto scrollbar-none flex-1 pb-24">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -5 }}
-            transition={{ duration: 0.14, ease: 'easeOut' }}
-            className="space-y-0.5"
-          >
-            {activeList.length === 0 ? (
-              <p className="text-[12px] text-white/30 font-sans py-1.5 px-1">No one here yet.</p>
-            ) : (
-              activeList.map((person, idx) => {
-                const isHostRole = person.role === 'HOST' || person.isHost === true;
-                return (
-                  <div
-                    key={person.userId || person.userUuid || person.user_id || person.id || idx}
-                    className="flex items-center gap-3 py-1.5 px-1 rounded-xl"
-                  >
-                    {activeTab === 'waitlist' && (
-                      <span className="text-[11px] font-bold text-white/30 min-w-[18px] font-sans">
-                        #{idx + 1}
-                      </span>
-                    )}
-                    <div className="relative flex-shrink-0">
-                      <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800">
-                        <UserAvatar src={person.avatar} alt={person.name} size="w-full h-full" />
-                      </div>
-                    </div>
-                    <span className="font-sans text-[13.5px] font-semibold leading-none truncate flex-1 text-white">
-                      {person.name}
-                    </span>
-                    {isHostRole && (
-                      <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0 uppercase">
-                        Host
-                      </span>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </div>
-    </div>
-  );
-});
+// Removed duplicated ParticipantsSection. We now use InlineParticipantView with variant="flat".
 
 // ==========================================
 // SUB-COMPONENTS
@@ -368,7 +148,7 @@ function ActionButtons({
   handleJoinDirect,
   handleRejoin,
   handleSkip,
-  setShowLeaveConfirm,
+  setShowLeavePlanConfirm,
   setShowDitchConfirm,
   setShowCompletionFlow,
   setShowManageTeams,
@@ -388,7 +168,7 @@ function ActionButtons({
   handleJoinDirect: () => void;
   handleRejoin: () => void;
   handleSkip: () => void;
-  setShowLeaveConfirm: (val: boolean) => void;
+  setShowLeavePlanConfirm: (val: boolean) => void;
   setShowDitchConfirm: (val: boolean) => void;
   setShowCompletionFlow: (val: boolean) => void;
   setShowManageTeams: (val: boolean) => void;
@@ -448,7 +228,7 @@ function ActionButtons({
           ) : (
             <button
               type="button"
-              onClick={() => setShowLeaveConfirm(true)}
+              onClick={() => setShowLeavePlanConfirm(true)}
               className="w-full py-3.5 px-6 rounded-[20px] text-[11px] font-sans font-black tracking-[0.12em] text-rose-500/80 hover:text-rose-455 bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 hover:border-rose-500/20 transition-all uppercase text-center cursor-pointer"
             >
               Leave Plan
@@ -720,6 +500,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     switchToAutomaticWaitlistMode,
     swapParticipants,
     removeAndReplaceWithWaitlist,
+    replaceParticipant,
     manageCompletedPlanParticipants,
   } = usePlansStore();
   const selectedPlan = useLivePlan(planId);
@@ -729,7 +510,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [isSkipping, setIsSkipping] = useState(false);
   const [isRejoining, setIsRejoining] = useState(false);
   const [isJoiningDirect, setIsJoiningDirect] = useState(false);
-  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [showChangeHostList, setShowChangeHostList] = useState(false);
   const [isChangingHost, setIsChangingHost] = useState(false);
@@ -1237,7 +1017,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     const isActuallyJoined = currentStatus === "JOINED";
 
     if (isActuallyJoined) {
-      setShowPaidLeaveConfirmation(true);
+      setShowLeavePlanConfirm(true);
     } else {
       setShowSkipConfirmation(true);
     }
@@ -1302,7 +1082,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     try {
       await skipPlan(selectedPlan.id, activeUserId);
       showToast("You left the plan.");
-      setShowLeaveConfirm(false);
+      setShowLeavePlanConfirm(false);
       if (onLeavePlan) {
         onLeavePlan();
       } else {
@@ -1322,6 +1102,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       await cancelPlan(selectedPlan.id);
       showToast("Plan cancelled.");
       setShowDitchConfirm(false);
+      setShowLeavePlanConfirm(false);
       if (onPlanCancelled) {
         onPlanCancelled(selectedPlan.id);
       } else if (onLeavePlan) {
@@ -1615,10 +1396,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
         <div id="immersive-plan-scroll-content" className={`px-6 pt-[78px] space-y-5 ${isFixedViewportView ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : ''}`}>
           {selectedPlan && (
-            <ParticipantsSection
+            <InlineParticipantView
               plan={selectedPlan}
-              userProfile={userProfile}
-              activeUserId={activeUserId}
+              activeUserId={userProfile?.dbUuid || activeUserId}
+              isHost={isHost}
+              variant="flat"
             />
           )}
 
@@ -1662,9 +1444,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     ? () => setShowCancelPlanConfirm(true)
                     : myParticipantRecord?.rsvp_status === "JOINED" && myParticipantRecord?.leave_requested
                       ? () => setShowCancelLeaveRequestConfirmation(true)
-                      : myParticipantRecord?.rsvp_status === "JOINED" && !alreadySkipped
+                      : currentStatus === "JOINED" && !alreadySkipped
                         ? () => setShowLeavePlanConfirm(true)
-                        : undefined
+                        : currentStatus === "WAITLISTED" && !alreadySkipped
+                          ? () => setShowSkipConfirmation(true)
+                          : undefined
             }
           />
           {myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" && (
@@ -1704,7 +1488,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         handleJoinDirect={handleJoinDirect}
         handleRejoin={handleRejoin}
         handleSkip={handleSkip}
-        setShowLeaveConfirm={setShowLeaveConfirm}
+        setShowLeavePlanConfirm={setShowLeavePlanConfirm}
         setShowDitchConfirm={setShowDitchConfirm}
         setShowCompletionFlow={setShowCompletionFlow}
         setShowManageTeams={setShowManageTeams}
@@ -1754,6 +1538,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               })}
               onReorderWaitlist={(planId, orderedUserUuids) => reorderWaitlist(planId, orderedUserUuids)}
               onSwitchToAutomaticMode={(planId, userIds) => switchToAutomaticWaitlistMode(planId, userIds)}
+              onConfirmReplacement={(planId, targetId, replacementId) => replaceParticipant(planId, targetId, replacementId)}
               onOpenSettings={() => {
                 setShowParticipantManagement(false);
                 setShowPlanSettingsScreen(true);
@@ -1852,8 +1637,72 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         isOpen={showLeavePlanConfirm}
         isSkipping={isSkipping}
         onConfirm={async () => {
+          console.log('[LEAVE HANDLER ENTERED]');
+          console.log('source: PlansPreviewScreen');
+          console.log('planId:', planUuid);
+          console.log('userId:', resolvedUserUuid);
+          
           setShowLeavePlanConfirm(false);
-          await handleSkip();
+          const isPaidPlan = rawDbPlan && rawDbPlan.total_cost !== undefined && rawDbPlan.total_cost !== null && Number(rawDbPlan.total_cost) > 0;
+          const isJoined = currentStatus === "JOINED";
+
+          if (isPaidPlan && isJoined) {
+            try {
+              // Perform a fresh database query directly against plan_participants table
+              const { data: freshParticipants, error: freshErr } = await (supabase as any)
+                .from("plan_participants")
+                .select("user_id, rsvp_status, assigned_group, waitlist_position")
+                .eq("plan_id", planUuid);
+
+              if (freshErr) {
+                console.error("[LeavePlanBottomSheet] Error querying fresh database state:", freshErr);
+              }
+
+              const mode = rawDbPlan?.participant_filtering || (selectedPlan as any)?.participantFiltering || "AUTOMATIC";
+              
+              const pos1Candidate = freshParticipants?.find(p => p.assigned_group === 'WAITLIST' && p.waitlist_position === 1);
+              
+              console.log('[ASSIGNED #1 AUDIT]');
+              console.log('plan_id:', planUuid);
+              console.log('user_id:', pos1Candidate?.user_id);
+              console.log('assigned_group:', pos1Candidate?.assigned_group);
+              console.log('waitlist_position:', pos1Candidate?.waitlist_position);
+              console.log('rsvp_status:', pos1Candidate?.rsvp_status);
+
+              const { hasReplacement, candidate } = checkHasValidWaitlistReplacement(freshParticipants, mode);
+
+              console.log('[REAL PAID LEAVE DECISION]');
+              console.log(JSON.stringify({
+                planId: planUuid,
+                currentUserId: resolvedUserUuid,
+                waitlistMode: mode,
+                waitlistCandidates: freshParticipants?.filter(p => p.assigned_group === 'WAITLIST'),
+                positionOneCandidate: pos1Candidate,
+                positionOneIsAccepted: pos1Candidate ? (pos1Candidate.rsvp_status !== 'INVITED' && pos1Candidate.rsvp_status !== 'SKIPPED') : false,
+                hasValidReplacement: hasReplacement,
+                finalDecision: hasReplacement ? 'ALLOW_IMMEDIATE_LEAVE' : 'SHOW_LEAVE_REQUEST_SHEET'
+              }, null, 2));
+
+              console.log('[LEAVE ELIGIBILITY RESULT]');
+              console.log('hasValidReplacement:', hasReplacement);
+              console.log('decision:', hasReplacement ? 'DIRECT_LEAVE' : 'LEAVE_REQUEST');
+
+              if (!hasReplacement) {
+                console.log('[LEAVE SHEET]');
+                console.log('sheet: LEAVE_REQUEST');
+                // FLOW 2 — NO VALID WAITLIST REPLACEMENT -> Show second bottom sheet ("Leave request required")
+                setShowPaidLeaveConfirmation(true);
+                return;
+              }
+            } catch (err) {
+              console.error("[LeavePlanBottomSheet] Error during leave decision:", err);
+            }
+          }
+
+          console.log('[LEAVE SHEET]');
+          console.log('sheet: DIRECT_LEAVE');
+          // FLOW 1 — HAS ELIGIBLE WAITLIST / FREE PLAN / WAITLISTED PARTICIPANT -> Allow immediate leave
+          handleConfirmSkip();
         }}
         onClose={() => setShowLeavePlanConfirm(false)}
       />

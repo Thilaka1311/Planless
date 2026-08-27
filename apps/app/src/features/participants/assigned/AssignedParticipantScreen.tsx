@@ -13,6 +13,7 @@ import { ContinueButton } from '../../create/components/ContinueButton';
 import { DisplacedHostModal } from '../../plans/components/DisplacedHostModal';
 import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
 import { PendingDecisionsSection } from '../shared/PendingDecisionsSection';
+import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
 
 interface AssignedParticipantScreenProps extends SharedParticipantScreenProps {
   isHostSelected?: boolean;
@@ -66,6 +67,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   pendingLeaveRequests,
   onReplaceLeaveParticipant,
   onKeepPaymentLeaveParticipant,
+  onInviteSkipped,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
@@ -125,6 +127,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   const [selectedItem, setSelectedItem] = useState<Friend | null>(null);
   const [sheetType, setSheetType] = useState<ParticipantTab | null>(null);
   const [showConfirmRemove, setShowConfirmRemove] = useState(false);
+  const [viewProfileUserId, setViewProfileUserId] = useState<string | null>(null);
 
   // Displaced Host Modal state
   const [affectedHosts, setAffectedHosts] = useState<Friend[]>([]);
@@ -290,51 +293,17 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         </>
       )}
 
+
+
       <AssignedParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
         goingCount={displayGoing.length}
         capacity={capacity}
         waitlistCount={displayWaitlist.length}
+        skippedCount={displaySkipped.length}
         onTabChange={setActiveTab}
       />
-
-      {/* Action Button Below Segmented Control — Assigned Mode */}
-      {(effectiveIsHost || canParticipantInvite) && onAddFriends && (
-        <div style={{ padding: '0 20px', margin: '4px 0 12px' }}>
-          <button
-            type="button"
-            onClick={() => onAddFriends(activeTab)}
-            style={{
-              width: '100%',
-              padding: '11px 16px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 14,
-              color: '#FFFFFF',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              fontFamily: 'Inter, sans-serif',
-              transition: 'background 0.15s, border-color 0.15s',
-            }}
-            className="hover:bg-white/[0.12] active:scale-[0.99]"
-          >
-            <UserPlus className="w-4 h-4 text-white" />
-            <span>
-              {canParticipantInvite && !effectiveIsHost
-                ? 'Add Participants'
-                : visibleTabs.includes('waitlist')
-                ? (activeTab === 'going' ? 'Add to Going' : 'Add to Waitlist')
-                : 'Add Participants'}
-            </span>
-          </button>
-        </div>
-      )}
 
       {/* List content — Assigned Mode */}
       <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 16, flex: 1, overflowY: 'auto' }}>
@@ -349,7 +318,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             ) : (
               <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
                 <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', textAlign: 'center' }}>
-                  No participants in Going.
+                  No participants in Joined.
                 </span>
               </div>
             )}
@@ -422,6 +391,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           onRemoveParticipant={removeFromPlanAction}
           onReplaceLeaveParticipant={onReplaceLeaveParticipant}
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
+          onInviteSkipped={onInviteSkipped}
+          onViewProfile={(item) => setViewProfileUserId(item.dbUuid || item.id)}
         />
       )}
 
@@ -432,6 +403,27 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         onMoveToWaitlist={handleMoveToWaitlistConfirm}
         onCancel={handleCancelConfirm}
       />
+
+      <FriendProfileViewerBottomSheet
+        friendUserId={viewProfileUserId}
+        onClose={() => setViewProfileUserId(null)}
+      />
+
+      {/* Sticky/Floating Action Button — Bottom Right */}
+      {(effectiveIsHost || canParticipantInvite) && onAddFriends && (
+        <button
+          type="button"
+          onClick={() => onAddFriends(activeTab)}
+          title={activeTab === 'going' ? 'Add to Joined' : 'Add to Waitlist'}
+          style={{
+            bottom: 'calc(2.25rem + env(safe-area-inset-bottom, 0px))',
+            right: 'calc(2rem + env(safe-area-inset-right, 0px))',
+          }}
+          className="fixed z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-200 cursor-pointer pointer-events-auto select-none"
+        >
+          <UserPlus className="w-5 h-5 text-white" />
+        </button>
+      )}
     </div>
   );
 };

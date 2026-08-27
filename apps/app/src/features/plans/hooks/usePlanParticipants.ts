@@ -86,6 +86,8 @@ export function usePlanParticipants({
   const renumberWaitlistPositions = useCallback(async (planUuid: string) => {
     const matchedPlan = plans.find(p => p.id === planUuid || p.dbUuid === planUuid);
     const orderMode = matchedPlan?.waitlistOrderMode || (matchedPlan as any)?.waitlist_order_mode || 'AUTO';
+    const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
+    const isAssigned = filteringMode === 'ASSIGNED';
 
     // Fetch fresh plan participants from state / DB
     const { data: freshParts } = await (supabase as any)
@@ -104,7 +106,7 @@ export function usePlanParticipants({
 
     // Sort using canonical waitlist ordering mechanism
     const sortedWaitlist = [...waitlistParts].sort((a, b) => {
-      if (orderMode === 'CUSTOM') {
+      if (orderMode === 'CUSTOM' || isAssigned) {
         const posA = a.waitlist_position ?? Number.MAX_SAFE_INTEGER;
         const posB = b.waitlist_position ?? Number.MAX_SAFE_INTEGER;
         if (posA !== posB) return posA - posB;
@@ -185,7 +187,7 @@ export function usePlanParticipants({
     }
   }, [plans, dbPlans, dbUsers, resolveUserUuid, insertSystemMessage]);
 
-  const promoteWaitlistIfSpotsAvailable = useCallback(async (planUuid: string) => {
+  const promoteWaitlistIfSpotsAvailable = useCallback(async (planUuid: string, options?: { bypassDeadlineCheck?: boolean }) => {
     const matchedPlan = plans.find(p => p.id === planUuid || p.dbUuid === planUuid);
     const resolvedPlanUuid = matchedPlan?.dbUuid || planUuid;
     const dbPlanObj = dbPlans.find(p => p.id === resolvedPlanUuid);
@@ -206,7 +208,7 @@ export function usePlanParticipants({
     const isPastDeadline = rsvpDeadline ? new Date() > new Date(rsvpDeadline) : false;
 
     // In ASSIGNED mode, automatic promotion ONLY occurs if RSVP deadline has passed
-    if (isAssigned && !isPastDeadline) {
+    if (isAssigned && !isPastDeadline && !options?.bypassDeadlineCheck) {
       return;
     }
 
@@ -236,8 +238,22 @@ export function usePlanParticipants({
       }
 
       const waitlisted = planParticipants
-        .filter(pp => pp.rsvp_status === "WAITLISTED")
+        .filter(pp => {
+          const status = normalizeStatus(pp.rsvp_status);
+          if (status === "SKIPPED" || status === "INVITED") return false;
+          const group = String((pp as any).assigned_group || (pp as any).assignedGroup || '').trim().toUpperCase();
+          if (isAssigned) {
+            return group === "WAITLIST";
+          }
+          return status === "WAITLISTED" || group === "WAITLIST";
+        })
         .sort((a, b) => {
+          if (isAssigned) {
+            // Assigned mode: waitlist_position is the source of truth
+            const posA = a.waitlist_position ?? Number.MAX_SAFE_INTEGER;
+            const posB = b.waitlist_position ?? Number.MAX_SAFE_INTEGER;
+            if (posA !== posB) return posA - posB;
+          }
           const timeA = (a as any).created_at ? new Date((a as any).created_at).getTime() : 0;
           const timeB = (b as any).created_at ? new Date((b as any).created_at).getTime() : 0;
           return timeA - timeB;
@@ -358,14 +374,18 @@ export function usePlanParticipants({
       // Calculate new waitlist position if joining/rejoining waitlist
       let newWaitlistPos: number | null = null;
       if (targetDbState === "WAITLISTED") {
-        const currentWaitlist = dbPlanParticipants.filter(pp => {
-          if (pp.plan_id !== planUuid) return false;
-          if (pp.rsvp_status === 'SKIPPED') return false;
-          const group = (pp as any).assigned_group || (pp as any).assignedGroup;
-          return group === 'WAITLIST' || (!group && pp.rsvp_status === 'WAITLISTED');
-        });
-        const maxPos = currentWaitlist.reduce((max, p) => Math.max(max, p.waitlist_position || 0), 0);
-        newWaitlistPos = maxPos + 1;
+        if (existingBefore?.waitlist_position != null) {
+          newWaitlistPos = existingBefore.waitlist_position;
+        } else {
+          const currentWaitlist = dbPlanParticipants.filter(pp => {
+            if (pp.plan_id !== planUuid) return false;
+            if (pp.rsvp_status === 'SKIPPED') return false;
+            const group = (pp as any).assigned_group || (pp as any).assignedGroup;
+            return group === 'WAITLIST' || (!group && pp.rsvp_status === 'WAITLISTED');
+          });
+          const maxPos = currentWaitlist.reduce((max, p) => Math.max(max, p.waitlist_position || 0), 0);
+          newWaitlistPos = maxPos + 1;
+        }
       }
 
       const existingSr = existingBefore?.skip_reason === "PAYMENT_KEPT" ? "PAYMENT_KEPT" : null;
@@ -510,7 +530,7 @@ export function usePlanParticipants({
 
     await handleParticipantStatusChange(planUuid, userUuid, leaverParticipantRecord?.rsvp_status, "SKIPPED");
     await unassignTeam(planUuid, userUuid);
-    await promoteWaitlistIfSpotsAvailable(planUuid);
+    await promoteWaitlistIfSpotsAvailable(planUuid, { bypassDeadlineCheck: true });
     await renumberWaitlistPositions(planUuid);
     // Recalculate wallet splits after a participant leaves Going
     recalculateWalletExpenses(planUuid).catch(err =>
@@ -566,7 +586,7 @@ export function usePlanParticipants({
 
       await handleParticipantStatusChange(planUuid, userUuid, existingBefore.rsvp_status, "SKIPPED");
       await unassignTeam(planUuid, userUuid);
-      await promoteWaitlistIfSpotsAvailable(planUuid);
+      await promoteWaitlistIfSpotsAvailable(planUuid, { bypassDeadlineCheck: true });
       await renumberWaitlistPositions(planUuid);
       // Recalculate wallet splits after a participant leaves
       recalculateWalletExpenses(planUuid).catch(err =>
@@ -1608,19 +1628,31 @@ export function usePlanParticipants({
       });
     });
 
+    console.log("[WAITLIST PIPELINE 1 - WRITE]", { planId: planUuid, orderedUserIds: orderedUserUuids });
+
     // 2. Immediately execute atomic PostgreSQL RPC to persist reordered waitlist
     try {
       const resolvedUserUuids = orderedUserUuids.map(uId => resolveUserUuid(uId) || uId);
+      
       const { error } = await (supabase as any).rpc("reorder_waitlist", {
         p_plan_id: planUuid,
         p_ordered_user_ids: resolvedUserUuids,
       });
 
       if (error) {
-        console.error("[reorderWaitlist] Error executing reorder_waitlist RPC:", error);
+        console.error("[ASSIGNED_WAITLIST_REORDER] RPC Error:", error);
         await refreshPlans(["plans", "plan_participants"]);
+      } else {
+        // Fetch database to confirm
+        const { data: fetchCheck } = await (supabase as any)
+          .from("plan_participants")
+          .select("user_id, assigned_group, waitlist_position")
+          .eq("plan_id", planUuid);
+
+        console.log("[WAITLIST PIPELINE 2 - DATABASE AFTER WRITE]", fetchCheck);
       }
     } catch (err) {
+      console.error("[ASSIGNED_WAITLIST_REORDER] RPC Exception:", err);
       await refreshPlans(["plans", "plan_participants"]);
     }
   }, [plans, resolveUserUuid, setDbPlanParticipants, refreshPlans]);
@@ -1683,6 +1715,107 @@ export function usePlanParticipants({
     return rpcResult;
   }, [plans, resolveUserUuid, refreshPlans]);
 
+  /**
+   * Host-Initiated Participant Replacement Flow (Flow 2).
+   * Atomically replaces a target participant with a replacement participant
+   * without requiring an active leave request (never calls resolve_paid_plan_leave_request).
+   */
+  const replaceParticipant = useCallback(async (
+    planId: string,
+    targetUserId: string,
+    replacementUserId: string
+  ) => {
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+    const resolvedTargetUuid = resolveUserUuid(targetUserId);
+    const resolvedReplacementUuid = resolveUserUuid(replacementUserId);
+
+    if (!planUuid || !resolvedTargetUuid || !resolvedReplacementUuid) {
+      console.error("[replaceParticipant] Missing plan or target/replacement participant ID");
+      throw new Error("Cannot replace participant: missing ID");
+    }
+
+    const targetPp = dbPlanParticipants.find(pp =>
+      (pp.plan_id === planUuid || pp.plan_id === planId) &&
+      (pp.user_id === resolvedTargetUuid || pp.user_id === targetUserId)
+    );
+    const replacementPp = dbPlanParticipants.find(pp =>
+      (pp.plan_id === planUuid || pp.plan_id === planId) &&
+      (pp.user_id === resolvedReplacementUuid || pp.user_id === replacementUserId)
+    );
+
+    console.log('[HOST REPLACEMENT START]', {
+      planId: planUuid,
+      targetParticipantId: resolvedTargetUuid,
+      replacementParticipantId: resolvedReplacementUuid,
+      targetRsvpStatus: targetPp?.rsvp_status,
+      targetAssignedGroup: targetPp?.assigned_group,
+      replacementRsvpStatus: replacementPp?.rsvp_status,
+      replacementAssignedGroup: replacementPp?.assigned_group,
+    });
+
+    console.log('[HOST REPLACEMENT TRANSACTION]', {
+      functionName: 'replace_participant',
+      planId: planUuid,
+      targetUserId: resolvedTargetUuid,
+      replacementUserId: resolvedReplacementUuid,
+    });
+
+    const { data: rpcResult, error: rpcError } = await (supabase as any)
+      .rpc('replace_participant', {
+        p_plan_id: planUuid,
+        p_target_user_id: resolvedTargetUuid,
+        p_replacement_user_id: resolvedReplacementUuid,
+      });
+
+    if (rpcError) {
+      console.error('[replaceParticipant] RPC error:', rpcError);
+      throw rpcError;
+    }
+
+    console.log('[HOST REPLACEMENT COMPLETE]', {
+      rpcResult,
+      targetUserId: resolvedTargetUuid,
+      replacementUserId: resolvedReplacementUuid,
+    });
+
+    invalidatePlanCache(planUuid, 'activities');
+    await refreshPlans(['plan_participants', 'plan_activity', 'wallet_expenses', 'wallet_expense_participants']);
+    return rpcResult;
+  }, [plans, resolveUserUuid, dbPlanParticipants, refreshPlans]);
+
+  /**
+   * Atomically moves a participant from GOING to WAITLIST and decreases plan capacity by 1.
+   */
+  const moveParticipantToWaitlistAndDecreaseCapacity = useCallback(async (
+    planId: string,
+    targetUserId: string
+  ) => {
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+    const resolvedTargetUuid = resolveUserUuid(targetUserId);
+
+    if (!planUuid || !resolvedTargetUuid) {
+      console.error("[moveParticipantToWaitlistAndDecreaseCapacity] Missing plan or target participant ID");
+      throw new Error("Cannot move participant to waitlist: missing ID");
+    }
+
+    const { data: rpcResult, error: rpcError } = await (supabase as any)
+      .rpc('move_participant_to_waitlist_and_decrease_capacity', {
+        p_plan_id: planUuid,
+        p_target_user_id: resolvedTargetUuid,
+      });
+
+    if (rpcError) {
+      console.error('[moveParticipantToWaitlistAndDecreaseCapacity] RPC error:', rpcError);
+      throw rpcError;
+    }
+
+    invalidatePlanCache(planUuid, 'activities');
+    await refreshPlans(['plans', 'plan_participants', 'plan_activity', 'wallet_expenses', 'wallet_expense_participants']);
+    return rpcResult;
+  }, [plans, resolveUserUuid, refreshPlans]);
+
   return {
     joinPlan,
     leavePlan,
@@ -1690,6 +1823,8 @@ export function usePlanParticipants({
     requestPaidPlanLeave,
     cancelPaidPlanLeaveRequest,
     resolvePaidPlanLeaveRequest,
+    replaceParticipant,
+    moveParticipantToWaitlistAndDecreaseCapacity,
     rejoinPlan,
     removeParticipant,
     promoteWaitlistIfSpotsAvailable,
