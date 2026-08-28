@@ -63,6 +63,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onWaitlistModeChange,
   showWaitlistMode = true,
   canParticipantInvite = false,
+  currentPage,
   onBottomSheetStateChange,
   pendingLeaveRequests,
   onReplaceLeaveParticipant,
@@ -409,8 +410,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         onClose={() => setViewProfileUserId(null)}
       />
 
-      {/* Sticky/Floating Action Button — Bottom Right */}
-      {(effectiveIsHost || canParticipantInvite) && onAddFriends && (
+      {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
+      {(currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
         <button
           type="button"
           onClick={() => onAddFriends(activeTab)}

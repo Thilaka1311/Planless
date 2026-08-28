@@ -1490,9 +1490,6 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
               <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Increase Plan Size</span>
-              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
-                Increase the plan capacity by one and move this participant into Going.
-              </span>
             </div>
           </button>
 
@@ -1520,9 +1517,6 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Swap Participant from Going</span>
-                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
-                  Replace an existing Going participant with this participant without changing the plan size.
-                </span>
               </div>
             </button>
           )}
@@ -1657,9 +1651,6 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
-                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
-                  Reduce the plan capacity by one and move this participant to the Waitlist.
-                </span>
               </div>
             </button>
           )}
@@ -1688,9 +1679,6 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Swap with Participant from Waitlist</span>
-                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 2 }}>
-                  Replace this Going participant with someone currently in the Waitlist without changing the plan size.
-                </span>
               </div>
             </button>
           )}

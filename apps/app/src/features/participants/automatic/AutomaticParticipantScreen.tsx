@@ -3,6 +3,7 @@ import { UserPlus } from 'lucide-react';
 import { SharedParticipantScreenProps, Friend, ParticipantTab } from '../shared/types';
 import { ParticipantHeader } from '../shared/ParticipantHeader';
 import { PlanSizeCard } from '../shared/PlanSizeCard';
+import { partitionAutomaticParticipants } from '../../../../lib/participantStatus';
 
 import { AutomaticParticipantTabs } from './AutomaticParticipantTabs';
 import { AutomaticParticipantActions } from './AutomaticParticipantActions';
@@ -42,6 +43,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   onAdjustCapacity,
   onMoveToGoing,
   onMoveToWaitlist,
+  onMoveToInvited,
   onRemoveParticipant,
   onPromoteHost,
   onDemoteHost,
@@ -53,9 +55,9 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   waitlistMode = 'automatic',
   onWaitlistModeChange,
   showWaitlistMode = true,
-  pendingLeaveRequests,
   onReplaceLeaveParticipant,
   onKeepPaymentLeaveParticipant,
+  currentPage,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
@@ -70,31 +72,46 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       }
     : null;
 
-  const [internalGoingList, setInternalGoingList] = useState<Friend[]>([]);
-  const [internalWaitlist, setInternalWaitlist] = useState<Friend[]>([]);
+  const partitioned = useMemo(() => {
+    if (mode === 'wizard') {
+      const allWizard = [...(hostItem ? [hostItem] : []), ...selectedFriends];
+      return {
+        going: allWizard.slice(0, capacity),
+        waitlist: allWizard.slice(capacity),
+        skipped: [],
+        goingJoinedCount: isHostSelected ? 1 : 0,
+      };
+    }
+    const allMembers = [
+      ...externalGoingList,
+      ...externalWaitlist,
+      ...externalInvitedList,
+      ...(externalSkippedList || []),
+    ];
+    return partitionAutomaticParticipants(allMembers, capacity, userProfile?.dbUuid || userProfile?.id);
+  }, [
+    mode,
+    hostItem,
+    selectedFriends,
+    externalGoingList,
+    externalWaitlist,
+    externalInvitedList,
+    externalSkippedList,
+    capacity,
+    isHostSelected,
+    userProfile,
+  ]);
 
-  useEffect(() => {
-    if (mode !== 'wizard') return;
-    const allList = [...(hostItem ? [hostItem] : []), ...selectedFriends];
-    setInternalGoingList(allList.slice(0, capacity));
-    setInternalWaitlist(allList.slice(capacity));
-  }, [selectedFriends, capacity, isHostSelected, mode]);
+  const displayGoing = partitioned.going;
+  const displayWaitlist = partitioned.waitlist;
+  const displaySkipped = partitioned.skipped;
+  const actualJoinedCount = partitioned.goingJoinedCount;
 
-  const displayGoing = mode === 'editor' ? externalGoingList : internalGoingList;
-  const displayWaitlist = mode === 'editor' ? externalWaitlist : internalWaitlist;
-  const displayInvited = mode === 'editor' ? externalInvitedList : [];
-
-  const displaySkipped = mode === 'editor' ? (externalSkippedList || []) : [];
-
-  const hasGoingTab = displayGoing.length > 0;
-  const hasWaitlistTab = displayWaitlist.length > 0;
-  const hasInvitedTab = displayInvited.length > 0;
-
-  const isFull = capacity > 0 && displayGoing.length >= capacity;
+  const isFull = capacity > 0 && actualJoinedCount >= capacity;
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     if (mode === 'wizard') {
-      return ['invited'];
+      return ['going'];
     }
     const tabs: ParticipantTab[] = ['going'];
     if (displayWaitlist.length > 0) {
@@ -103,18 +120,15 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
     if (displaySkipped.length > 0) {
       tabs.push('skipped');
     }
-    if (displayInvited.length > 0) {
-      tabs.push('invited');
-    }
     return tabs;
-  }, [mode, displayWaitlist.length, displaySkipped.length, displayInvited.length]);
+  }, [mode, displayWaitlist.length, displaySkipped.length]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>('going');
   const initialMountRef = React.useRef(true);
 
   useEffect(() => {
     if (mode === 'wizard') {
-      setActiveTab('invited');
+      setActiveTab('going');
       return;
     }
     if (initialMountRef.current && visibleTabs.length > 0) {
@@ -126,7 +140,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       } else if (visibleTabs.includes('waitlist')) {
         defaultTab = 'waitlist';
       } else {
-        defaultTab = 'invited';
+        defaultTab = visibleTabs[0];
       }
       setActiveTab(defaultTab);
       initialMountRef.current = false;
@@ -135,7 +149,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
 
   useEffect(() => {
     if (visibleTabs.length > 0 && !visibleTabs.includes(activeTab)) {
-      const fallbackTab = (['going', 'waitlist', 'invited'] as ParticipantTab[]).find((t) => visibleTabs.includes(t)) || visibleTabs[0];
+      const fallbackTab = (['going', 'waitlist', 'skipped'] as ParticipantTab[]).find((t) => visibleTabs.includes(t)) || visibleTabs[0];
       setActiveTab(fallbackTab);
     }
   }, [visibleTabs, activeTab]);
@@ -162,6 +176,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   };
 
   const effectiveIsHost = isHost !== undefined ? isHost : isHostUser;
+  const canParticipantInvite = managementMode !== 'host' && managementMode !== 'invite_only';
 
   return (
     <div
@@ -205,55 +220,22 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         </>
       )}
 
-
-
       <AutomaticParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
-        goingCount={displayGoing.length}
+        goingCount={actualJoinedCount}
         capacity={capacity}
         waitlistCount={displayWaitlist.length}
-        invitedCount={mode === 'wizard' ? selectedFriends.length : displayInvited.length}
+        invitedCount={0}
         onTabChange={setActiveTab}
       />
-
-      {/* Action Button Below Segmented Control — Automatic Mode */}
-      {effectiveIsHost && onAddFriends && (
-        <div style={{ padding: '0 20px', margin: '4px 0 12px' }}>
-          <button
-            type="button"
-            onClick={() => onAddFriends()}
-            style={{
-              width: '100%',
-              padding: '11px 16px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 14,
-              color: '#FFFFFF',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              fontFamily: 'Inter, sans-serif',
-              transition: 'background 0.15s, border-color 0.15s',
-            }}
-            className="hover:bg-white/[0.12] active:scale-[0.99]"
-          >
-            <UserPlus className="w-4 h-4 text-white" />
-            <span>Invite Participants</span>
-          </button>
-        </div>
-      )}
 
       {/* List content — Automatic Queue (No drag & drop / reordering) */}
       <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 8, flex: 1, overflowY: 'auto' }}>
         {activeTab === 'going' && (
           <GoingSection
-            goingList={displayGoing}
-            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'going') : undefined}
+            goingList={mode === 'wizard' ? [...(hostItem ? [hostItem] : []), ...selectedFriends] : displayGoing}
+            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, (item.rsvpStatus === 'INVITED' || item.isAccepted === false) ? 'invited' : 'going') : undefined}
             showIndex={false}
           />
         )}
@@ -265,20 +247,6 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
             reorderable={false}
             showIndex={true}
           />
-        )}
-        {activeTab === 'invited' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-            {(mode === 'wizard'
-              ? [...(hostItem ? [hostItem] : []), ...selectedFriends]
-              : displayInvited
-            ).map((item) => (
-              <StackingFriends
-                key={item.id}
-                item={item}
-                onClick={effectiveIsHost ? () => handleItemTap(item, 'invited') : undefined}
-              />
-            ))}
-          </div>
         )}
         {activeTab === 'skipped' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
@@ -316,12 +284,30 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           onClose={closeSheet}
           onShowConfirmRemove={setShowConfirmRemove}
           onMoveToGoing={onMoveToGoing}
+          onMoveToWaitlist={onMoveToWaitlist}
+          onMoveToInvited={onMoveToInvited}
           onPromoteHost={onPromoteHost}
           onDemoteHost={onDemoteHost}
           onRemoveParticipant={onRemoveParticipant || (() => {})}
           onReplaceLeaveParticipant={onReplaceLeaveParticipant}
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
         />
+      )}
+
+      {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
+      {(currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
+        <button
+          type="button"
+          onClick={() => onAddFriends(activeTab)}
+          title={activeTab === 'going' ? 'Add to Joined' : 'Add to Waitlist'}
+          style={{
+            bottom: 'calc(2.25rem + env(safe-area-inset-bottom, 0px))',
+            right: 'calc(2rem + env(safe-area-inset-right, 0px))',
+          }}
+          className="fixed z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-200 cursor-pointer pointer-events-auto select-none"
+        >
+          <UserPlus className="w-5 h-5 text-white" />
+        </button>
       )}
     </div>
   );

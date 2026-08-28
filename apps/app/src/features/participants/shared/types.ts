@@ -54,6 +54,7 @@ export interface SharedParticipantScreenProps {
   onOpenActivity?: () => void;
   initialTab?: ParticipantTab;
   displayMode?: 'standalone' | 'embedded';
+  currentPage?: number;
   onPlanSizeEditingChange?: (isEditing: boolean) => void;
   isHostSelected?: boolean;
   selectedFriends?: Friend[];

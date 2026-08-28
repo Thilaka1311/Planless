@@ -57,6 +57,7 @@ export interface ActivityEvent {
   rawTargetUserId?: string | null;
   rawSkipReason?: string | null;
   rawMetadata?: any;
+  isDisabled?: boolean;
 }
 
 interface ActivityTimelineScreenProps {
@@ -107,7 +108,7 @@ const formatDateSubtext = (d: Date): string => {
 const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }> = ({ type, isDisabled }) => {
   let iconNode: React.ReactNode = null;
 
-  switch (type) {
+  switch (type as any) {
     // ── PLAN EVENTS ──
     case "plan_created":
       iconNode = <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />;
@@ -411,7 +412,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
   const isHost = useMemo(() => {
     if (!plan) return false;
     const userUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId;
-    return plan.creatorId === userUuid || plan.host_id === userUuid || plan.creator_id === userUuid;
+    return plan.creatorId === userUuid || (plan as any).host_id === userUuid || (plan as any).creator_id === userUuid;
   }, [plan, userProfile, activeUserId]);
 
   const handleKeepPayment = useCallback(async (targetUserId: string) => {
@@ -480,7 +481,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
 
       // 3. Global dbUsers list
       const matchUser = dbUsers.find(
-        (u) => u.id === userId || u.public_id === userId || (u as any).user_id === userId || (u as any).dbUuid === userId
+        (u) => u.id === userId || (u as any).public_id === userId || (u as any).user_id === userId || (u as any).dbUuid === userId
       );
       if (matchUser) {
         return {

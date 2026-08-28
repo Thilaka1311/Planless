@@ -28,9 +28,11 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
   onClick,
   isItemDragged = false
 }) => {
+  const isInvited = item.isAccepted === false || item.rsvpStatus === 'INVITED';
+
   const renderAvatar = () => {
     return (
-      <div style={{ position: 'relative', width: 28, height: 28, marginRight: 12, flexShrink: 0 }}>
+      <div style={{ position: 'relative', width: 28, height: 28, marginRight: 12, flexShrink: 0, opacity: isInvited ? 0.6 : 1 }}>
         <UserAvatar
           src={item.avatar}
           alt={item.name}
@@ -58,7 +60,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         boxShadow: 'none',
         zIndex: isItemDragged ? 0 : 1,
         position: 'relative',
-        opacity: isItemDragged ? 0.25 : (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? 0.7 : 1,
+        opacity: isItemDragged ? 0.25 : isInvited ? 0.55 : 1,
         transition: 'background 0.2s ease, opacity 0.2s ease',
       }}
       onMouseEnter={(e) => {
@@ -74,7 +76,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         </span>
       )}
       {renderAvatar()}
-      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
+      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: isInvited ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
         {item.name}
       </span>
       {(item.leave_requested || (item as any).leaveRequested) && (

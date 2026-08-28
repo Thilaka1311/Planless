@@ -45,6 +45,7 @@ interface PlanParticipantManagementWrapperProps {
   replaceTargetUserId?: string | null;
   onCancelReplacement?: () => void;
   onConfirmReplacement?: (planId: string, targetUserId: string, replacementUserId: string) => Promise<void>;
+  currentPage?: number;
 }
 
 function memberToFriend(m: any, hostId: string, activeUserId?: string, dbPlanParticipants: any[] = [], currentPlanId?: string): Friend {
@@ -120,6 +121,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   replaceTargetUserId = null,
   onCancelReplacement,
   onConfirmReplacement,
+  currentPage,
 }) => {
   const { circles } = useCirclesStore();
   const { friends, refreshFriendships } = useFriendshipStore();
@@ -1070,28 +1072,14 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
   const handleMoveToWaitlist = useCallback(
     async (friend: Friend) => {
-      if (waitlistMode === 'assigned') {
-        if (goingMembers.length <= 2 && waitlistList.length > 0) {
-          // If goingCount === 2 and waitlist exists, bypass capacity reduction options and directly open swap picker
-          setSwapState({ type: 'swap', targetFriend: friend });
-        } else {
-          setPendingMoveToWaitlist(friend);
-        }
-        return;
-      }
-
-      setLocalGoingList(null);
-      setLocalWaitlist(null);
-      try {
-        await onMoveToWaitlist(plan.id, friend.dbUuid || friend.id);
-      } catch {
-        showToast('Failed to move participant');
-      } finally {
-        setLocalGoingList(null);
-        setLocalWaitlist(null);
+      if (goingMembers.length <= 2 && waitlistList.length > 0) {
+        // If goingCount === 2 and waitlist exists, bypass capacity reduction options and directly open swap picker
+        setSwapState({ type: 'swap', targetFriend: friend });
+      } else {
+        setPendingMoveToWaitlist(friend);
       }
     },
-    [plan.id, waitlistMode, goingMembers.length, waitlistList.length, onMoveToWaitlist, showToast],
+    [goingMembers.length, waitlistList.length],
   );
 
   const [pendingRemoveGoing, setPendingRemoveGoing] = useState<Friend | null>(null);
@@ -1193,6 +1181,29 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       }
     },
     [plan.id, waitlistMode, goingList, onRemoveParticipant, showToast],
+  );
+
+  const handleMoveToInvited = useCallback(
+    async (friend: Friend) => {
+      const friendId = friend.dbUuid || friend.id;
+      setLocalGoingList(null);
+      setLocalWaitlist(null);
+      try {
+        if (onMoveToInvited) {
+          await onMoveToInvited(plan.id, friendId);
+        } else if (onAddParticipants) {
+          await onAddParticipants(plan.id, [friendId], []);
+        }
+        showToast(`✓ Invited ${friend.name}`);
+      } catch (err: any) {
+        console.error('[handleMoveToInvited] error:', err);
+        showToast(err?.message || 'Failed to invite participant');
+      } finally {
+        setLocalGoingList(null);
+        setLocalWaitlist(null);
+      }
+    },
+    [plan.id, onMoveToInvited, onAddParticipants, showToast],
   );
 
   const handleConfirmSwap = useCallback(
@@ -1641,6 +1652,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   return (
     <>
       <ParticipantManagementScreen
+        currentPage={currentPage}
         title="Participants"
         category={plan.category || 'custom'}
         eventDate={formattedDate}
@@ -1682,6 +1694,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         onReplaceLeaveParticipant={handleReplaceLeaveParticipant}
         onKeepPaymentLeaveParticipant={handleKeepPaymentLeaveParticipant}
         onInviteSkipped={effectiveIsHost ? handleInviteSkipped : undefined}
+        onMoveToInvited={effectiveIsHost ? handleMoveToInvited : undefined}
       />
 
       {isPickerOpen && (

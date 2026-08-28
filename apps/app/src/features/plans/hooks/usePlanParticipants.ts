@@ -1100,11 +1100,6 @@ export function usePlanParticipants({
       return;
     }
 
-    const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
-    if (filteringMode !== 'ASSIGNED') {
-      throw new Error("Manual queue movement is not allowed on Automatic plans.");
-    }
-
     // Assigned Mode Capacity Validation: Count all active participants assigned to GOING (accepted + invited)
     const capacity = matchedPlan?.joinLimit || matchedPlan?.capacity || matchedPlan?.maxSpots || 0;
     if (capacity > 0 && !options?.bypassCapacityCheck) {
@@ -1194,12 +1189,6 @@ export function usePlanParticipants({
     if (!planUuid || !resolvedUserUuid) {
       console.error("[usePlanParticipants moveParticipantToWaitlist] Missing plan UUID or user UUID");
       return;
-    }
-
-    // Block manual queue movement on AUTOMATIC plans
-    const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
-    if (filteringMode !== 'ASSIGNED') {
-      throw new Error("Manual queue movement is not allowed on Automatic plans.");
     }
 
     let calculatedPos = 1;

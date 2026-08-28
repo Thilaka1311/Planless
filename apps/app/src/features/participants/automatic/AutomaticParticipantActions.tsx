@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from '../shared/types';
-import { formatSkipReason } from '../../../../lib/participantStatus';
+import { formatSkipReason, getEffectiveParticipantState } from '../../../../lib/participantStatus';
 
 interface AutomaticParticipantActionsProps {
   selectedItem: Friend | null;
@@ -12,6 +12,8 @@ interface AutomaticParticipantActionsProps {
   onClose: () => void;
   onShowConfirmRemove: (show: boolean) => void;
   onMoveToGoing?: (item: Friend) => void;
+  onMoveToWaitlist?: (item: Friend) => void;
+  onMoveToInvited?: (item: Friend) => void;
   onPromoteHost?: (item: Friend) => void;
   onDemoteHost?: (item: Friend) => void;
   onRemoveParticipant: (item: Friend) => void;
@@ -28,6 +30,8 @@ export const AutomaticParticipantActions: React.FC<AutomaticParticipantActionsPr
   onClose,
   onShowConfirmRemove,
   onMoveToGoing,
+  onMoveToWaitlist,
+  onMoveToInvited,
   onPromoteHost,
   onDemoteHost,
   onRemoveParticipant,
@@ -63,6 +67,7 @@ export const AutomaticParticipantActions: React.FC<AutomaticParticipantActionsPr
   );
 
   const isLeaveRequested = selectedItem.leave_requested === true;
+  const effectiveState = getEffectiveParticipantState(selectedItem, sheetType);
 
   return (
     <div
@@ -98,21 +103,64 @@ export const AutomaticParticipantActions: React.FC<AutomaticParticipantActionsPr
           <UserAvatar src={selectedItem.avatar} alt={selectedItem.name} size="w-10 h-10" />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 16, fontWeight: 600 }}>{selectedItem.name}</span>
-            <span style={{ fontSize: 12, color: isLeaveRequested ? '#FFFFFF' : 'rgba(255, 255, 255, 0.4)', fontWeight: isLeaveRequested ? 400 : 400 }}>
+            <span style={{ fontSize: 12, color: isLeaveRequested ? '#FFFFFF' : 'rgba(255, 255, 255, 0.4)', fontWeight: 400 }}>
               {isLeaveRequested
                 ? 'Wants to leave this plan'
-                : sheetType === 'going'
-                ? 'Joined'
-                : sheetType === 'waitlist'
-                ? 'Waitlist'
-                : sheetType === 'skipped'
+                : effectiveState === 'SKIPPED'
                 ? (formatSkipReason(selectedItem.skipReason) || 'Skipped')
+                : effectiveState === 'GOING'
+                ? 'Joined'
+                : effectiveState === 'WAITLIST'
+                ? 'Waitlist'
                 : 'Invited'}
             </span>
           </div>
         </div>
 
-        {!showConfirmRemove ? (
+        {effectiveState === 'SKIPPED' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {onMoveToInvited && (
+              <button
+                onClick={() => {
+                  executeActionWithImmediateDismiss(() => onMoveToInvited(selectedItem));
+                }}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#FFFFFF',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                Invite to Plan
+              </button>
+            )}
+
+            <button
+              onClick={onClose}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'none',
+                border: 'none',
+                borderRadius: 12,
+                color: 'rgba(255,255,255,0.4)',
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: 'pointer',
+                textAlign: 'center',
+                marginTop: 8,
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : !showConfirmRemove ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {isLeaveRequested ? (
               <>
@@ -164,8 +212,54 @@ export const AutomaticParticipantActions: React.FC<AutomaticParticipantActionsPr
               </>
             ) : (
               <>
+                {/* Move to Going — ONLY for waitlisted or invited participants (NOT going) */}
+                {onMoveToGoing && (effectiveState === 'WAITLIST' || effectiveState === 'INVITED') && (
+                  <button
+                    onClick={() => {
+                      executeActionWithImmediateDismiss(() => onMoveToGoing(selectedItem));
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '14px',
+                      background: 'rgba(5, 150, 105, 0.12)',
+                      border: '1px solid rgba(5, 150, 105, 0.3)',
+                      borderRadius: 12,
+                      color: '#10B981',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    Move to Going
+                  </button>
+                )}
+
+                {/* Move to Waitlist — ONLY for active going non-host participants (NOT waitlist) */}
+                {onMoveToWaitlist && effectiveState === 'GOING' && !selectedItem.isHost && (
+                  <button
+                    onClick={() => {
+                      executeActionWithImmediateDismiss(() => onMoveToWaitlist(selectedItem));
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '14px',
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      border: 'none',
+                      borderRadius: 12,
+                      color: '#FFFFFF',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    Move to Waitlist
+                  </button>
+                )}
+
                 {/* Make Host — only for active going participants */}
-                {onPromoteHost && sheetType !== 'waitlist' && sheetType !== 'skipped' && selectedItem.rsvpStatus === 'JOINED' && !selectedItem.isHost && (
+                {onPromoteHost && effectiveState === 'GOING' && !selectedItem.isHost && (
                   <button
                     onClick={() => {
                       executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem!));

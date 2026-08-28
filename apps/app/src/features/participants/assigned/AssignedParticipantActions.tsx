@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from '../shared/types';
-import { formatSkipReason } from '../../../../lib/participantStatus';
+import { formatSkipReason, getEffectiveParticipantState } from '../../../../lib/participantStatus';
 
 interface AssignedParticipantActionsProps {
   selectedItem: Friend | null;
@@ -77,7 +77,8 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
   );
 
   const isLeaveRequested = selectedItem.leave_requested === true;
-  const isSkipped = sheetType === 'skipped';
+  const effectiveState = getEffectiveParticipantState(selectedItem, sheetType);
+  const isSkipped = effectiveState === 'SKIPPED';
 
   const skipLabel = formatSkipReason(selectedItem.skipReason) || 'Skipped';
 
@@ -289,7 +290,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                       View Profile
                     </button>
                   )}
-                  {onMoveToWaitlist && sheetType === 'going' && !selectedItem.isHost && canMoveToWaitlist && (
+                  {onMoveToWaitlist && effectiveState === 'GOING' && !selectedItem.isHost && canMoveToWaitlist && (
                     <button
                       onClick={() => onMoveToWaitlist(selectedItem)}
                       style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
@@ -297,7 +298,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                       Move to Waitlist
                     </button>
                   )}
-                  {onMoveToGoing && sheetType === 'waitlist' && (
+                  {onMoveToGoing && (effectiveState === 'WAITLIST' || effectiveState === 'INVITED') && (
                     <button
                       onClick={() => onMoveToGoing(selectedItem)}
                       style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
@@ -306,7 +307,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                     </button>
                   )}
 
-                  {onPromoteHost && sheetType !== 'waitlist' && selectedItem.rsvpStatus === 'JOINED' && !selectedItem.isHost && (
+                  {onPromoteHost && effectiveState === 'GOING' && !selectedItem.isHost && (
                     <button
                       onClick={() => {
                         executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));

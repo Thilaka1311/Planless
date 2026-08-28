@@ -59,6 +59,49 @@ export function formatSkipReason(reason?: string | null): string {
   }
 }
 
+export type EffectiveParticipantState = 'GOING' | 'WAITLIST' | 'SKIPPED' | 'INVITED';
+
+/**
+ * Determines the effective participant state from the participant item and contextual tab.
+ */
+export function getEffectiveParticipantState(
+  item: { rsvpStatus?: string; assignedGroup?: string; skipReason?: string | null; [key: string]: any } | null,
+  sheetType?: string | null
+): EffectiveParticipantState {
+  if (!item) return 'INVITED';
+
+  const rawSheetType = sheetType ? String(sheetType).toLowerCase() : '';
+
+  // 1. Explicit contextual location takes priority:
+  if (rawSheetType === 'going') return 'GOING';
+  if (rawSheetType === 'waitlist') return 'WAITLIST';
+  if (rawSheetType === 'skipped') return 'SKIPPED';
+  if (rawSheetType === 'invited') return 'INVITED';
+
+  // 2. Fallback to raw DB attributes if sheetType is unprovided:
+  const rawSkipReason = item.skipReason ? String(item.skipReason).toUpperCase() : '';
+  const rawRsvpStatus = item.rsvpStatus ? String(item.rsvpStatus).toUpperCase() : '';
+  const rawAssignedGroup = item.assignedGroup ? String(item.assignedGroup).toUpperCase() : '';
+
+  if (
+    rawRsvpStatus === 'SKIPPED' ||
+    rawSkipReason === 'REMOVED' ||
+    rawSkipReason === 'SKIPPED'
+  ) {
+    return 'SKIPPED';
+  }
+
+  if (rawAssignedGroup === 'WAITLIST' || rawRsvpStatus === 'WAITLISTED') {
+    return 'WAITLIST';
+  }
+
+  if (rawRsvpStatus === 'JOINED' || rawAssignedGroup === 'GOING') {
+    return 'GOING';
+  }
+
+  return 'INVITED';
+}
+
 /**
  * Resolves standard categories/counts from a list of participant rows.
  */
@@ -227,6 +270,90 @@ export function checkHasValidWaitlistReplacement(
       candidate
     };
   }
+}
+
+export interface AutomaticParticipantPartition<T = any> {
+  going: T[];
+  waitlist: T[];
+  skipped: T[];
+  goingJoinedCount: number;
+  capacity: number;
+}
+
+/**
+ * Shared, centralized helper for calculating Automatic Waitlist participant states.
+ * Enforces strict first-come, first-served capacity allocation:
+ * 1. SKIPPED participants always go to Skipped.
+ * 2. Accepted/JOINED participants fill Going spots up to capacity (ordered chronologically).
+ * 3. Remaining accepted participants beyond capacity go to Waitlist.
+ * 4. INVITED participants fill any remaining Going spots if capacity > joined count (rendered dimmed).
+ * 5. When capacity is full, INVITED participants go to Waitlist (rendered dimmed).
+ */
+export function partitionAutomaticParticipants<T extends Record<string, any>>(
+  members: T[],
+  capacity: number,
+  activeUserId?: string
+): AutomaticParticipantPartition<T> {
+  const cap = Math.max(0, capacity || 0);
+
+  const skippedMembers: T[] = [];
+  const nonSkippedMembers: T[] = [];
+
+  for (const m of members) {
+    const status = normalizeStatus(m.rsvp_status || m.joinState || m.rsvpStatus);
+    if (status === 'SKIPPED') {
+      skippedMembers.push(m);
+    } else {
+      nonSkippedMembers.push(m);
+    }
+  }
+
+  const acceptedMembers: T[] = [];
+  const unacceptedMembers: T[] = [];
+
+  for (const m of nonSkippedMembers) {
+    const status = normalizeStatus(m.rsvp_status || m.joinState || m.rsvpStatus);
+    if (status === 'JOINED' || status === 'WAITLISTED') {
+      acceptedMembers.push(m);
+    } else {
+      unacceptedMembers.push(m);
+    }
+  }
+
+  const sortByTimestamp = (items: T[]) => {
+    return [...items].sort((a, b) => {
+      const qA = a.joined_queue_at || a.joinedQueueAt || a.created_at || a.createdAt;
+      const qB = b.joined_queue_at || b.joinedQueueAt || b.created_at || b.createdAt;
+      const timeA = qA ? new Date(qA).getTime() : Number.MAX_SAFE_INTEGER;
+      const timeB = qB ? new Date(qB).getTime() : Number.MAX_SAFE_INTEGER;
+      if (timeA !== timeB) return timeA - timeB;
+      const nameA = a.name || a.full_name || '';
+      const nameB = b.name || b.full_name || '';
+      return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+    });
+  };
+
+  const sortedAccepted = sortByTimestamp(acceptedMembers);
+  const sortedUnaccepted = sortByTimestamp(unacceptedMembers);
+
+  const joinedAccepted = sortedAccepted.slice(0, cap);
+  const overflowAccepted = sortedAccepted.slice(cap);
+
+  const availableGoingSpots = cap - joinedAccepted.length;
+
+  const goingInvited = availableGoingSpots > 0 ? sortedUnaccepted.slice(0, availableGoingSpots) : [];
+  const overflowUnaccepted = availableGoingSpots > 0 ? sortedUnaccepted.slice(availableGoingSpots) : sortedUnaccepted;
+
+  const finalGoingRaw = [...joinedAccepted, ...goingInvited];
+  const finalWaitlistRaw = [...overflowAccepted, ...overflowUnaccepted];
+
+  return {
+    going: sortGoingParticipants(finalGoingRaw, activeUserId),
+    waitlist: finalWaitlistRaw,
+    skipped: sortGoingParticipants(skippedMembers, activeUserId),
+    goingJoinedCount: joinedAccepted.length,
+    capacity: cap,
+  };
 }
 
 

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Crown, Users } from 'lucide-react';
 import { Plan } from '../../../core/types';
-import { normalizeStatus, sortGoingParticipants, formatSkipReason } from '../../../../lib/participantStatus';
+import { normalizeStatus, sortGoingParticipants, formatSkipReason, partitionAutomaticParticipants } from '../../../../lib/participantStatus';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { usePlansStore } from '../state/PlansContext';
 import { supabase } from '../../../../lib/supabaseClient';
@@ -290,71 +290,42 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     }
 
     // ----------------------------------------------------------------------
-    // EXISTING AUTOMATIC MODE PIPELINE (Unchanged)
+    // AUTOMATIC MODE PIPELINE (Centralized via partitionAutomaticParticipants)
     // ----------------------------------------------------------------------
-    const going: InlineMemberEntry[] = [];
-    const invited: InlineMemberEntry[] = [];
-    const waitlist: InlineMemberEntry[] = [];
-    const skipped: InlineMemberEntry[] = [];
+    const maxCapacity = plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
 
-    for (const m of members) {
+    const convertedEntries: InlineMemberEntry[] = members.map((m) => {
       const isHostRole = m.role === 'HOST' || m.isHost === true;
       const mId = m.userUuid || m.userId || (m as any).user_id || (m as any).id;
       const isCurrentUser = Boolean(activeUserId && mId === activeUserId);
-
       let effectiveStatus = normalizeStatus(m.joinState || (m as any).rsvp_status);
       if (isCompletedPlan) {
         effectiveStatus = (getMemberFinalState(m) || effectiveStatus) as any;
       }
-
       const isAccepted = effectiveStatus !== 'INVITED' && effectiveStatus !== 'SKIPPED';
-
-      const entry: InlineMemberEntry = {
+      return {
         name: isCurrentUser ? 'You' : (m.name || 'Unknown'),
         avatar: m.avatar || '',
         userId: mId,
         isHost: Boolean(isHostRole),
         isAccepted,
+        rsvpStatus: effectiveStatus,
         waitlistPosition: (m as any).waitlistPosition ?? (m as any).waitlist_position ?? null,
         joinedQueueAt: (m as any).joinedQueueAt ?? (m as any).joined_queue_at ?? (m as any).createdAt ?? (m as any).created_at ?? null,
         skipReason: (m as any).skipReason || (m as any).skip_reason || null,
       };
+    });
 
-      if (isCompletedPlan) {
-        if (effectiveStatus === 'JOINED') going.push(entry);
-        else if (effectiveStatus === 'WAITLISTED') waitlist.push(entry);
-        else if (effectiveStatus === 'INVITED') invited.push(entry);
-        else skipped.push(entry);
-      } else {
-        if (effectiveStatus === 'JOINED') going.push(entry);
-        else if (effectiveStatus === 'INVITED') invited.push(entry);
-        else if (effectiveStatus === 'WAITLISTED') waitlist.push(entry);
-        else if (effectiveStatus === 'SKIPPED') skipped.push(entry);
-      }
-    }
-
-    const sortByWaitlistOrder = (list: InlineMemberEntry[]) => {
-      return [...list].sort((a, b) => {
-        if (waitlistOrderMode === 'CUSTOM') {
-          const posA = a.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
-          const posB = b.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
-          if (posA !== posB) return posA - posB;
-        }
-
-        const queueA = a.joinedQueueAt ? new Date(a.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
-        const queueB = b.joinedQueueAt ? new Date(b.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
-        if (queueA !== queueB) return queueA - queueB;
-        return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
-      });
-    };
+    const autoPartitioned = partitionAutomaticParticipants(convertedEntries, maxCapacity, activeUserId);
 
     return {
-      going: prioritizeUserAndSortGoing(going),
-      invited: prioritizeUserAndSortGoing(invited),
-      waitlist: sortByWaitlistOrder(waitlist),
-      skipped: prioritizeUserAndSortGoing(skipped)
+      goingJoinedCount: autoPartitioned.goingJoinedCount,
+      going: autoPartitioned.going,
+      invited: [],
+      waitlist: autoPartitioned.waitlist,
+      skipped: autoPartitioned.skipped,
     };
-  }, [members, planDbParticipants, liveAssignedParticipants, activeUserId, isAssignedMode, waitlistOrderMode, plan.id, (plan as any).dbUuid, plan.status]);
+  }, [members, planDbParticipants, liveAssignedParticipants, activeUserId, isAssignedMode, waitlistOrderMode, plan.id, (plan as any).dbUuid, plan.status, plan.maxSpots, plan.capacity, plan.joinLimit, plan.category]);
 
   const tabs = useMemo(() => {
     const t: { key: InlineTab; label: string; count: number }[] = [];
@@ -382,12 +353,10 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
       }
     } else {
-      t.push({ key: 'going', label: 'Joined', count: groups.going.length });
+      const actualJoinedCount = (groups as any).goingJoinedCount ?? groups.going.length;
+      t.push({ key: 'going', label: 'Joined', count: actualJoinedCount });
       if (groups.waitlist.length > 0) {
         t.push({ key: 'waitlist', label: 'Waitlisted', count: groups.waitlist.length });
-      }
-      if (groups.invited.length > 0) {
-        t.push({ key: 'invited', label: 'Invited', count: groups.invited.length });
       }
       if (groups.skipped.length > 0) {
         t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
