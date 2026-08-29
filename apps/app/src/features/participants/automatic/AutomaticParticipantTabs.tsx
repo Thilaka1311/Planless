@@ -68,7 +68,7 @@ export const AutomaticParticipantTabs: React.FC<AutomaticParticipantTabsProps> =
 
         {visibleTabs.map((key) => {
           let label = '';
-          if (key === 'invited') label = 'Invited';
+          if (key === 'invited') label = `Invited (${invitedCount})`;
           if (key === 'going') label = `Joined (${goingCount} / ${capacity})`;
           if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
           if (key === 'skipped') label = `Skipped`;

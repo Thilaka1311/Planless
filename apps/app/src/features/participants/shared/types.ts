@@ -72,7 +72,7 @@ export interface SharedParticipantScreenProps {
   pendingLeaveRequests?: PendingLeaveParticipant[];
   onReplaceLeaveParticipant?: (participantId: string) => void;
   onKeepPaymentLeaveParticipant?: (participantId: string) => void;
-  onInviteSkipped?: (friend: Friend, target: 'GOING' | 'WAITLIST') => Promise<void> | void;
+  onInviteSkipped?: (friend: Friend, target?: 'GOING' | 'WAITLIST') => Promise<void> | void;
 }
 
 export type ParticipantManagementScreenProps = SharedParticipantScreenProps;

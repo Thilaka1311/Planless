@@ -17,8 +17,7 @@ interface PlanSettingsScreenProps {
     allowParticipantInvites?: boolean;
     maxParticipants?: number;
   }) => Promise<void> | void;
-  onUpdatePlanDetails?: (updates: { participant_filtering?: "AUTOMATIC" | "ASSIGNED" }) => Promise<void> | void;
-  onWaitlistModeChange?: (mode: "auto" | "assigned") => Promise<void> | void;
+  onUpdatePlanDetails?: (updates: any) => Promise<void> | void;
   onDemoteHost?: (userId: string) => Promise<void> | void;
   onRemoveParticipant?: (userId: string) => Promise<void> | void;
   onSelectHost?: (hostItem: { id: string; dbUuid: string; name: string; avatar: string; isHost: boolean }) => void;
@@ -37,7 +36,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   onBack,
   onUpdateSettings,
   onUpdatePlanDetails,
-  onWaitlistModeChange,
+
   onDemoteHost,
   onRemoveParticipant,
   onSelectHost,

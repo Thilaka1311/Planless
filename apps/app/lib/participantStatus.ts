@@ -259,8 +259,7 @@ export function checkHasValidWaitlistReplacement(
     // AUTOMATIC mode:
     const activeWaitlisted = freshParticipants.filter((pp: any) => {
       const status = normalizeStatus(pp.rsvp_status || pp.joinState);
-      const group = String(pp.assigned_group || pp.assignedGroup || '').trim().toUpperCase();
-      return status !== 'INVITED' && status !== 'SKIPPED' && group !== 'GOING';
+      return status === 'WAITLISTED';
     });
 
     const candidate = activeWaitlisted.length > 0 ? activeWaitlisted[0] : null;
@@ -297,24 +296,18 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   const cap = Math.max(0, capacity || 0);
 
   const skippedMembers: T[] = [];
-  const nonSkippedMembers: T[] = [];
+  const joinedMembers: T[] = [];
+  const waitlistedMembers: T[] = [];
+  const unacceptedMembers: T[] = [];
 
   for (const m of members) {
     const status = normalizeStatus(m.rsvp_status || m.joinState || m.rsvpStatus);
     if (status === 'SKIPPED') {
       skippedMembers.push(m);
-    } else {
-      nonSkippedMembers.push(m);
-    }
-  }
-
-  const acceptedMembers: T[] = [];
-  const unacceptedMembers: T[] = [];
-
-  for (const m of nonSkippedMembers) {
-    const status = normalizeStatus(m.rsvp_status || m.joinState || m.rsvpStatus);
-    if (status === 'JOINED' || status === 'WAITLISTED') {
-      acceptedMembers.push(m);
+    } else if (status === 'JOINED') {
+      joinedMembers.push(m);
+    } else if (status === 'WAITLISTED') {
+      waitlistedMembers.push(m);
     } else {
       unacceptedMembers.push(m);
     }
@@ -333,25 +326,38 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
     });
   };
 
-  const sortedAccepted = sortByTimestamp(acceptedMembers);
-  const sortedUnaccepted = sortByTimestamp(unacceptedMembers);
+  const sortAlpha = (items: T[]) => {
+    return [...items].sort((a, b) => {
+      const nameA = a.name || a.full_name || '';
+      const nameB = b.name || b.full_name || '';
+      return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+    });
+  };
 
-  const joinedAccepted = sortedAccepted.slice(0, cap);
-  const overflowAccepted = sortedAccepted.slice(cap);
+  const sortedJoined = sortByTimestamp(joinedMembers);
+  const sortedWaitlist = sortByTimestamp(waitlistedMembers);
+  const sortedUnaccepted = sortAlpha(unacceptedMembers);
 
-  const availableGoingSpots = cap - joinedAccepted.length;
+  const isFull = cap > 0 && sortedJoined.length >= cap;
 
-  const goingInvited = availableGoingSpots > 0 ? sortedUnaccepted.slice(0, availableGoingSpots) : [];
-  const overflowUnaccepted = availableGoingSpots > 0 ? sortedUnaccepted.slice(availableGoingSpots) : sortedUnaccepted;
+  let finalGoingRaw: T[] = [];
+  let finalWaitlistRaw: T[] = [];
 
-  const finalGoingRaw = [...joinedAccepted, ...goingInvited];
-  const finalWaitlistRaw = [...overflowAccepted, ...overflowUnaccepted];
+  if (!isFull) {
+    // Capacity NOT reached: All non-skipped participants are in Going/Invited.
+    finalGoingRaw = [...sortedJoined, ...sortedWaitlist, ...sortedUnaccepted];
+    finalWaitlistRaw = [];
+  } else {
+    // Capacity REACHED: Joined participants fill Going. Overflow participants (Waitlisted + Invited) go to Waitlist.
+    finalGoingRaw = [...sortedJoined];
+    finalWaitlistRaw = [...sortedWaitlist, ...sortedUnaccepted];
+  }
 
   return {
     going: sortGoingParticipants(finalGoingRaw, activeUserId),
     waitlist: finalWaitlistRaw,
     skipped: sortGoingParticipants(skippedMembers, activeUserId),
-    goingJoinedCount: joinedAccepted.length,
+    goingJoinedCount: sortedJoined.length,
     capacity: cap,
   };
 }

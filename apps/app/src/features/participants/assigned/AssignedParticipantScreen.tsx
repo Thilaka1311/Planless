@@ -296,6 +296,14 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
 
 
+      {effectiveIsHost && pendingLeaveRequests && pendingLeaveRequests.length > 0 && (
+        <PendingDecisionsSection
+          pendingRequests={pendingLeaveRequests}
+          onReplaceParticipant={onReplaceLeaveParticipant}
+          onKeepPayment={onKeepPaymentLeaveParticipant}
+        />
+      )}
+
       <AssignedParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}

@@ -336,7 +336,7 @@ export const CreatePlanScreen = ({
           userId: form.activeUserId,
           name: form.userProfile.name,
           avatar: form.userProfile.avatar,
-          joinState: "going",
+          joinState: "JOINED",
           reminderState: "none",
           joinedAt: new Date().toISOString(),
           checkedIn: true,
@@ -345,9 +345,9 @@ export const CreatePlanScreen = ({
           userId: f.id || f.dbUuid,
           name: f.name,
           avatar: f.avatar || "",
-          joinState: "delivered" as const,
+          joinState: "INVITED" as const,
           reminderState: "none" as const,
-          joinedAt: null,
+          joinedAt: "",
           checkedIn: false,
         })),
       ],
@@ -356,7 +356,7 @@ export const CreatePlanScreen = ({
           userId: form.activeUserId,
           name: form.userProfile.name,
           avatar: form.userProfile.avatar,
-          joinState: "going",
+          joinState: "JOINED",
           reminderState: "none",
           joinedAt: new Date().toISOString(),
           checkedIn: true,
@@ -365,9 +365,9 @@ export const CreatePlanScreen = ({
           userId: f.id || f.dbUuid,
           name: f.name,
           avatar: f.avatar || "",
-          joinState: "delivered" as const,
+          joinState: "INVITED" as const,
           reminderState: "none" as const,
-          joinedAt: null,
+          joinedAt: "",
           checkedIn: false,
         })),
       ],
@@ -427,7 +427,7 @@ export const CreatePlanScreen = ({
     const matchedCircleId = null;
 
     try {
-      const { dbPlanRow, dbPartRow, inviteeUuids, hostRespondedAt } = await createPlan(
+      const { dbPlanRow, dbPartRow, inviteeUuids, hostJoinedAt } = await createPlan(
         newDbPlan,
         [],
         form.selectedFriends,
@@ -802,7 +802,7 @@ export const CreatePlanScreen = ({
         // 2. Setup category and subcategory
         const lowerCategory = item.category ? item.category.toLowerCase() : "custom";
         setSelectedCategory(lowerCategory as any);
-        setSelectedSubcategory(item.subcategory ? item.subcategory.toLowerCase() : null);
+        setSelectedSubcategory(item.subcategory ? (item.subcategory.toLowerCase() as any) : null);
 
         // Store selected discovery item id
         if (form.setDiscoveryItemId) form.setDiscoveryItemId(item.id);
@@ -813,10 +813,10 @@ export const CreatePlanScreen = ({
         form.setCustomCoverImage(item.cover_image_url || "/assets/plan-covers/default.png");
 
         // Pre-populate coordinate mapping metadata from discovery selection
-        if (form.setPlaceId) form.setPlaceId(item.place_id || null);
-        if (form.setPlaceAddress) form.setPlaceAddress(item.place_address || item.location || null);
-        if (form.setLatitude) form.setLatitude(item.latitude || null);
-        if (form.setLongitude) form.setLongitude(item.longitude || null);
+        if (form.setPlaceId) form.setPlaceId((item as any).place_id || null);
+        if (form.setPlaceAddress) form.setPlaceAddress((item as any).place_address || item.location || null);
+        if (form.setLatitude) form.setLatitude((item as any).latitude || null);
+        if (form.setLongitude) form.setLongitude((item as any).longitude || null);
 
         // Notes, Cost, RSVP Deadline, and Participants are intentionally left empty/default
         form.setCostAmount(0);

@@ -71,8 +71,8 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
       }}
     >
       {showIndex && index !== undefined && (
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255, 255, 255, 0.3)', marginRight: 10, minWidth: 16 }}>
-          #{index}
+        <span style={{ fontSize: 11, fontWeight: 700, color: !isInvited ? 'rgba(255, 255, 255, 0.3)' : 'transparent', marginRight: 10, minWidth: 16 }}>
+          {!isInvited ? `#${index}` : ''}
         </span>
       )}
       {renderAvatar()}

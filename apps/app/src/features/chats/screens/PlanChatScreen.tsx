@@ -1030,13 +1030,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               console.error("Failed to update plan details:", err);
             }
           }}
-          onWaitlistModeChange={async (newMode) => {
-            if (newMode === 'assigned') {
-              await updatePlanDetails(plan.id, { participant_filtering: 'ASSIGNED' });
-            } else {
-              goToPage(0); // Switch to Participants tab to initiate validation & selection sheet
-            }
-          }}
+
           onDemoteHost={async (uId) => {
             try {
               await demoteHostToParticipant(plan.id, uId);

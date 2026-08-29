@@ -106,7 +106,7 @@ interface PlansContextType {
   promoteParticipantToHost: (planId: string, participantUserUuid: string) => Promise<void>;
   demoteHostToParticipant: (planId: string, participantUserUuid: string) => Promise<void>;
   reorderWaitlist: (planId: string, orderedUserUuids: string[]) => Promise<void>;
-  switchToAutomaticWaitlistMode: (planId: string, promotedUserUuids?: string[]) => Promise<void>;
+
   swapParticipants: (planId: string, goingUserId: string, waitlistUserId: string) => Promise<void>;
   removeAndReplaceWithWaitlist: (planId: string, removeUserId: string, promoteUserId: string) => Promise<void>;
 }
@@ -514,8 +514,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     moveParticipantToInvited,
     swapParticipants,
     removeAndReplaceWithWaitlist,
-    reorderWaitlist,
-    switchToAutomaticWaitlistMode
+    reorderWaitlist
   } = usePlanParticipants({
     userId,
     dbUsers: dbUsers,
@@ -1240,8 +1239,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     demoteHostToParticipant,
     swapParticipants,
     removeAndReplaceWithWaitlist,
-    reorderWaitlist,
-    switchToAutomaticWaitlistMode
+    reorderWaitlist
   }), [
     plans, dbPlans, dbPlanParticipants,
     dbPlanOutcomes, dbMemories, dbMemoryResults, dbPlanTeamAssignments,
@@ -1258,7 +1256,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     addParticipantsToPlan, promoteWaitlistParticipant, rebalanceCapacity, getAvailableCapacity,
     moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited,
     updatePlanSettings, promoteParticipantToHost, demoteHostToParticipant,
-    swapParticipants, removeAndReplaceWithWaitlist, replaceParticipant, moveParticipantToWaitlistAndDecreaseCapacity, reorderWaitlist, switchToAutomaticWaitlistMode
+    swapParticipants, removeAndReplaceWithWaitlist, replaceParticipant, moveParticipantToWaitlistAndDecreaseCapacity, reorderWaitlist
   ]);
 
   return (

@@ -497,7 +497,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     promoteParticipantToHost,
     demoteHostToParticipant,
     reorderWaitlist,
-    switchToAutomaticWaitlistMode,
+
     swapParticipants,
     removeAndReplaceWithWaitlist,
     replaceParticipant,
@@ -1162,15 +1162,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onUpdatePlanDetails={async (updates) => {
           await updatePlanDetails(selectedPlan.id, updates);
         }}
-        onWaitlistModeChange={async (newMode) => {
-          if (newMode === 'assigned') {
-            await updatePlanDetails(selectedPlan.id, { participant_filtering: 'ASSIGNED' });
-          } else {
-            // Open Participant Management screen so validation & selection bottom sheet run cleanly
-            setShowPlanSettingsScreen(false);
-            setShowParticipantManagement(true);
-          }
-        }}
+
         onDemoteHost={async (userId) => {
           await demoteHostToParticipant(selectedPlan.id, userId);
         }}
@@ -1537,13 +1529,12 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 assignedGroup
               })}
               onReorderWaitlist={(planId, orderedUserUuids) => reorderWaitlist(planId, orderedUserUuids)}
-              onSwitchToAutomaticMode={(planId, userIds) => switchToAutomaticWaitlistMode(planId, userIds)}
+
               onConfirmReplacement={(planId, targetId, replacementId) => replaceParticipant(planId, targetId, replacementId)}
               onOpenSettings={() => {
                 setShowParticipantManagement(false);
                 setShowPlanSettingsScreen(true);
               }}
-              showWaitlistMode={false}
             />
           </motion.div>
         )}
@@ -1637,11 +1628,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         isOpen={showLeavePlanConfirm}
         isSkipping={isSkipping}
         onConfirm={async () => {
-          console.log('[LEAVE HANDLER ENTERED]');
-          console.log('source: PlansPreviewScreen');
-          console.log('planId:', planUuid);
-          console.log('userId:', resolvedUserUuid);
-          
           setShowLeavePlanConfirm(false);
           const isPaidPlan = rawDbPlan && rawDbPlan.total_cost !== undefined && rawDbPlan.total_cost !== null && Number(rawDbPlan.total_cost) > 0;
           const isJoined = currentStatus === "JOINED";
@@ -1659,37 +1645,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               }
 
               const mode = rawDbPlan?.participant_filtering || (selectedPlan as any)?.participantFiltering || "AUTOMATIC";
-              
-              const pos1Candidate = freshParticipants?.find(p => p.assigned_group === 'WAITLIST' && p.waitlist_position === 1);
-              
-              console.log('[ASSIGNED #1 AUDIT]');
-              console.log('plan_id:', planUuid);
-              console.log('user_id:', pos1Candidate?.user_id);
-              console.log('assigned_group:', pos1Candidate?.assigned_group);
-              console.log('waitlist_position:', pos1Candidate?.waitlist_position);
-              console.log('rsvp_status:', pos1Candidate?.rsvp_status);
-
-              const { hasReplacement, candidate } = checkHasValidWaitlistReplacement(freshParticipants, mode);
-
-              console.log('[REAL PAID LEAVE DECISION]');
-              console.log(JSON.stringify({
-                planId: planUuid,
-                currentUserId: resolvedUserUuid,
-                waitlistMode: mode,
-                waitlistCandidates: freshParticipants?.filter(p => p.assigned_group === 'WAITLIST'),
-                positionOneCandidate: pos1Candidate,
-                positionOneIsAccepted: pos1Candidate ? (pos1Candidate.rsvp_status !== 'INVITED' && pos1Candidate.rsvp_status !== 'SKIPPED') : false,
-                hasValidReplacement: hasReplacement,
-                finalDecision: hasReplacement ? 'ALLOW_IMMEDIATE_LEAVE' : 'SHOW_LEAVE_REQUEST_SHEET'
-              }, null, 2));
-
-              console.log('[LEAVE ELIGIBILITY RESULT]');
-              console.log('hasValidReplacement:', hasReplacement);
-              console.log('decision:', hasReplacement ? 'DIRECT_LEAVE' : 'LEAVE_REQUEST');
+              const { hasReplacement } = checkHasValidWaitlistReplacement(freshParticipants, mode);
 
               if (!hasReplacement) {
-                console.log('[LEAVE SHEET]');
-                console.log('sheet: LEAVE_REQUEST');
                 // FLOW 2 — NO VALID WAITLIST REPLACEMENT -> Show second bottom sheet ("Leave request required")
                 setShowPaidLeaveConfirmation(true);
                 return;
@@ -1699,8 +1657,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             }
           }
 
-          console.log('[LEAVE SHEET]');
-          console.log('sheet: DIRECT_LEAVE');
           // FLOW 1 — HAS ELIGIBLE WAITLIST / FREE PLAN / WAITLISTED PARTICIPANT -> Allow immediate leave
           handleConfirmSkip();
         }}

@@ -6,13 +6,14 @@ import { PlanSizeCard } from '../shared/PlanSizeCard';
 import { partitionAutomaticParticipants } from '../../../../lib/participantStatus';
 
 import { AutomaticParticipantTabs } from './AutomaticParticipantTabs';
-import { AutomaticParticipantActions } from './AutomaticParticipantActions';
+import { AutomaticWaitlistActions } from './AutomaticWaitlistActions';
 import { GoingSection } from '../components/GoingSection';
 import { WaitlistSection } from '../components/WaitlistSection';
 import { StackingFriends } from '../components/StackingFriends';
 import { ContinueButton } from '../../create/components/ContinueButton';
 import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
 import { PendingDecisionsSection } from '../shared/PendingDecisionsSection';
+import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
 
 interface AutomaticParticipantScreenProps extends SharedParticipantScreenProps {
   isHostSelected?: boolean;
@@ -57,7 +58,9 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   showWaitlistMode = true,
   onReplaceLeaveParticipant,
   onKeepPaymentLeaveParticipant,
+  pendingLeaveRequests,
   currentPage,
+  onInviteSkipped,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
@@ -113,15 +116,18 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
     if (mode === 'wizard') {
       return ['going'];
     }
-    const tabs: ParticipantTab[] = ['going'];
-    if (displayWaitlist.length > 0) {
+    const tabs: ParticipantTab[] = [];
+    if (!isFull) {
+      tabs.push('invited');
+    } else {
+      tabs.push('going');
       tabs.push('waitlist');
     }
     if (displaySkipped.length > 0) {
       tabs.push('skipped');
     }
     return tabs;
-  }, [mode, displayWaitlist.length, displaySkipped.length]);
+  }, [mode, isFull, displaySkipped.length]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>('going');
   const initialMountRef = React.useRef(true);
@@ -137,6 +143,8 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         defaultTab = initialTab;
       } else if (visibleTabs.includes('going')) {
         defaultTab = 'going';
+      } else if (visibleTabs.includes('invited')) {
+        defaultTab = 'invited';
       } else if (visibleTabs.includes('waitlist')) {
         defaultTab = 'waitlist';
       } else {
@@ -149,7 +157,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
 
   useEffect(() => {
     if (visibleTabs.length > 0 && !visibleTabs.includes(activeTab)) {
-      const fallbackTab = (['going', 'waitlist', 'skipped'] as ParticipantTab[]).find((t) => visibleTabs.includes(t)) || visibleTabs[0];
+      const fallbackTab = (['going', 'invited', 'waitlist', 'skipped'] as ParticipantTab[]).find((t) => visibleTabs.includes(t)) || visibleTabs[0];
       setActiveTab(fallbackTab);
     }
   }, [visibleTabs, activeTab]);
@@ -158,6 +166,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   const [selectedItem, setSelectedItem] = useState<Friend | null>(null);
   const [sheetType, setSheetType] = useState<ParticipantTab | null>(null);
   const [showConfirmRemove, setShowConfirmRemove] = useState(false);
+  const [viewProfileUserId, setViewProfileUserId] = useState<string | null>(null);
   const [isPlanSizeEditing, setIsPlanSizeEditing] = useState(false);
 
   const isInviteOnly = managementMode === 'invite_only' || (!isHostUser && managementMode !== 'host');
@@ -220,19 +229,27 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         </>
       )}
 
+      {effectiveIsHost && pendingLeaveRequests && pendingLeaveRequests.length > 0 && (
+        <PendingDecisionsSection
+          pendingRequests={pendingLeaveRequests}
+          onReplaceParticipant={onReplaceLeaveParticipant}
+          onKeepPayment={onKeepPaymentLeaveParticipant}
+        />
+      )}
+
       <AutomaticParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
         goingCount={actualJoinedCount}
         capacity={capacity}
         waitlistCount={displayWaitlist.length}
-        invitedCount={0}
+        invitedCount={displayGoing.length}
         onTabChange={setActiveTab}
       />
 
       {/* List content — Automatic Queue (No drag & drop / reordering) */}
       <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 8, flex: 1, overflowY: 'auto' }}>
-        {activeTab === 'going' && (
+        {(activeTab === 'going' || activeTab === 'invited') && (
           <GoingSection
             goingList={mode === 'wizard' ? [...(hostItem ? [hostItem] : []), ...selectedFriends] : displayGoing}
             onItemTap={effectiveIsHost ? (item) => handleItemTap(item, (item.rsvpStatus === 'INVITED' || item.isAccepted === false) ? 'invited' : 'going') : undefined}
@@ -275,7 +292,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       )}
 
       {effectiveIsHost && (
-        <AutomaticParticipantActions
+        <AutomaticWaitlistActions
           selectedItem={selectedItem}
           sheetType={sheetType}
           showConfirmRemove={showConfirmRemove}
@@ -283,23 +300,27 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           userProfile={userProfile}
           onClose={closeSheet}
           onShowConfirmRemove={setShowConfirmRemove}
-          onMoveToGoing={onMoveToGoing}
-          onMoveToWaitlist={onMoveToWaitlist}
-          onMoveToInvited={onMoveToInvited}
           onPromoteHost={onPromoteHost}
           onDemoteHost={onDemoteHost}
           onRemoveParticipant={onRemoveParticipant || (() => {})}
           onReplaceLeaveParticipant={onReplaceLeaveParticipant}
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
+          onInviteSkipped={onInviteSkipped ? (item) => onInviteSkipped(item) : undefined}
+          onViewProfile={(item) => setViewProfileUserId(item.dbUuid || item.id)}
         />
       )}
+
+      <FriendProfileViewerBottomSheet
+        friendUserId={viewProfileUserId}
+        onClose={() => setViewProfileUserId(null)}
+      />
 
       {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
       {(currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
         <button
           type="button"
           onClick={() => onAddFriends(activeTab)}
-          title={activeTab === 'going' ? 'Add to Joined' : 'Add to Waitlist'}
+          title="Invite to Plan"
           style={{
             bottom: 'calc(2.25rem + env(safe-area-inset-bottom, 0px))',
             right: 'calc(2rem + env(safe-area-inset-right, 0px))',

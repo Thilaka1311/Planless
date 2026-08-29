@@ -58,7 +58,8 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
   const isAssignedMode = normalizedWaitlistMode === 'assigned';
   const waitlistOrderMode = plan.waitlistOrderMode || (plan as any).waitlist_order_mode || 'AUTO';
 
-  console.log('[InlineParticipantView] rawWaitlistMode:', rawWaitlistMode, 'normalizedMode:', normalizedWaitlistMode, 'isAssignedMode:', isAssignedMode);
+  const isCompletedPlan = plan.status === 'COMPLETED';
+  const maxCapacity = plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
 
   // Helper to extract normalized final state for completed plans
   const getMemberFinalState = (m: any): string | null => {
@@ -83,7 +84,6 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     });
     if (!currentMember) return 'going';
 
-    const isCompletedPlan = plan.status === 'COMPLETED';
     if (isCompletedPlan) {
       const fs = getMemberFinalState(currentMember) || normalizeStatus(currentMember.joinState || (currentMember as any).rsvp_status);
       if (fs === 'JOINED') return 'going';
@@ -119,38 +119,23 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         .eq('plan_id', targetPlanUuid);
       
       if (!error && data) {
-        console.log(`[WAITLIST PIPELINE 4 - REFETCH] (${reason})`, { planId: targetPlanUuid, rows: data });
         setLiveAssignedParticipants(data as any[]);
-        console.log(`[WAITLIST PIPELINE 5 - LIVE STATE]`, (data as any[]).map(d => `${d.user_id} -> ${d.assigned_group} -> ${d.waitlist_position}`));
       }
     };
 
     fetchParticipants('INITIAL_MOUNT');
 
-    console.log(`[WAITLIST PIPELINE - SUBSCRIBE] planId: ${targetPlanUuid}`);
     const channel = supabase.channel(`inline-participants-${targetPlanUuid}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'plan_participants', filter: `plan_id=eq.${targetPlanUuid}` },
-        (payload) => {
-          const payloadNew = payload.new as any;
-          const payloadOld = payload.old as any;
-          console.log(`[WAITLIST PIPELINE 3 - REALTIME EVENT]`, {
-            event: payload.eventType,
-            plan_id: payloadNew?.plan_id || payloadOld?.plan_id,
-            user_id: payloadNew?.user_id || payloadOld?.user_id,
-            old_position: payloadOld?.waitlist_position,
-            new_position: payloadNew?.waitlist_position,
-          });
+        () => {
           fetchParticipants('REALTIME_EVENT');
         }
       )
-      .subscribe((status) => {
-        console.log(`[WAITLIST PIPELINE - SUBSCRIBE STATUS]`, status);
-      });
+      .subscribe();
 
     return () => {
-      console.log(`[WAITLIST PIPELINE - CLEANUP] planId: ${targetPlanUuid}`);
       supabase.removeChannel(channel);
     };
   }, [isAssignedMode, targetPlanUuid]);
@@ -171,8 +156,6 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
       return sortGoingParticipants(list, activeUserId);
     };
 
-    const isCompletedPlan = plan.status === 'COMPLETED';
-
     // ----------------------------------------------------------------------
     // NEW CLEAN ASSIGNED MODE PIPELINE
     // ----------------------------------------------------------------------
@@ -182,19 +165,6 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
       const skipped: InlineMemberEntry[] = [];
 
       const activeSource = liveAssignedParticipants || planDbParticipants;
-
-      console.log('[INLINE_ASSIGNED_DB]', {
-        planId: plan.id,
-        usingLiveSource: liveAssignedParticipants !== null,
-        participants: activeSource.map(pp => ({
-          userId: pp.user_id,
-          name: members.find(m => (m.userUuid || m.userId || (m as any).user_id || (m as any).id) === pp.user_id)?.name,
-          assignedGroup: pp.assigned_group,
-          waitlistPosition: pp.waitlist_position,
-          status: pp.rsvp_status,
-          skipReason: pp.skip_reason
-        }))
-      });
 
       // 1. Create lookup map for canonical user_id -> dbRow
       const dbRowByUserId = new Map<string, any>();
@@ -278,9 +248,6 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         return posA - posB;
       });
 
-      console.log('[WAITLIST PIPELINE 6 - INLINE RENDER]');
-      waitlistSorted.forEach((w, idx) => console.log(`${idx + 1}. ${w.name} (${w.userId}) -> ${w.waitlistPosition}`));
-
       return {
         going: prioritizeUserAndSortGoing(going),
         invited: [], // No invited section in assigned mode
@@ -292,7 +259,6 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     // ----------------------------------------------------------------------
     // AUTOMATIC MODE PIPELINE (Centralized via partitionAutomaticParticipants)
     // ----------------------------------------------------------------------
-    const maxCapacity = plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
 
     const convertedEntries: InlineMemberEntry[] = members.map((m) => {
       const isHostRole = m.role === 'HOST' || m.isHost === true;
@@ -321,15 +287,14 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     return {
       goingJoinedCount: autoPartitioned.goingJoinedCount,
       going: autoPartitioned.going,
-      invited: [],
+      invited: autoPartitioned.going,
       waitlist: autoPartitioned.waitlist,
       skipped: autoPartitioned.skipped,
     };
-  }, [members, planDbParticipants, liveAssignedParticipants, activeUserId, isAssignedMode, waitlistOrderMode, plan.id, (plan as any).dbUuid, plan.status, plan.maxSpots, plan.capacity, plan.joinLimit, plan.category]);
+  }, [members, planDbParticipants, liveAssignedParticipants, activeUserId, isAssignedMode, waitlistOrderMode, plan.id, (plan as any).dbUuid, isCompletedPlan, maxCapacity]);
 
   const tabs = useMemo(() => {
     const t: { key: InlineTab; label: string; count: number }[] = [];
-    const isCompletedPlan = plan.status === 'COMPLETED';
 
     if (isCompletedPlan) {
       if (groups.going.length > 0 || (groups.waitlist.length === 0 && groups.invited.length === 0 && groups.skipped.length === 0)) {
@@ -354,16 +319,21 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
       }
     } else {
       const actualJoinedCount = (groups as any).goingJoinedCount ?? groups.going.length;
-      t.push({ key: 'going', label: 'Joined', count: actualJoinedCount });
-      if (groups.waitlist.length > 0) {
-        t.push({ key: 'waitlist', label: 'Waitlisted', count: groups.waitlist.length });
+      const isFull = actualJoinedCount >= maxCapacity;
+
+      if (!isFull) {
+        t.push({ key: 'invited', label: 'Invited', count: groups.going.length });
+      } else {
+        t.push({ key: 'going', label: 'Joined', count: actualJoinedCount });
+        t.push({ key: 'waitlist', label: 'Waitlist', count: groups.waitlist.length });
       }
+
       if (groups.skipped.length > 0) {
         t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
       }
     }
     return t;
-  }, [groups, isAssignedMode, plan.status]);
+  }, [groups, isAssignedMode, isCompletedPlan, maxCapacity]);
 
   React.useEffect(() => {
     if (tabs.length > 0 && !tabs.find(t => t.key === activeTab)) {
@@ -372,14 +342,11 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
   }, [tabs, activeTab]);
 
   const activeList = groups[activeTab] || [];
-  const allForStrip = plan.status === 'COMPLETED' ? [...groups.going, ...groups.skipped] : [...groups.going, ...groups.invited, ...groups.waitlist];
+  const allForStrip = isCompletedPlan ? [...groups.going, ...groups.skipped] : [...groups.going, ...groups.invited, ...groups.waitlist];
   const maxAvatars = 4;
   const visibleAvatars = allForStrip.slice(0, maxAvatars);
   const overflowCount = allForStrip.length - maxAvatars;
 
-  const maxCapacity = plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
-
-  const isCompletedPlan = plan.status === 'COMPLETED';
   const isParticipantView = !isHostUser && !isCompletedPlan;
 
   const completedCount = (plan as any).attended_participants ?? (plan as any).attendedParticipants ?? groups.going.length;
@@ -487,10 +454,13 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                       person.isAccepted ? 'opacity-100' : 'opacity-70'
                     }`}
                   >
-                    {activeTab === 'waitlist' && (
+                    {activeTab === 'waitlist' && person.isAccepted && (
                       <span className="text-[11px] font-bold text-white/30 min-w-[18px] font-sans">
                         #{idx + 1}
                       </span>
+                    )}
+                    {activeTab === 'waitlist' && !person.isAccepted && (
+                      <span className="text-[11px] font-bold text-transparent min-w-[18px] font-sans"></span>
                     )}
                     <div className="relative flex-shrink-0">
                       <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800">
@@ -607,7 +577,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
               </div>
 
               <span className="text-[13px] font-medium text-white/70 font-sans">
-                {groups.going.length} {groups.going.length === 1 ? 'participant' : 'participants'}
+                {allForStrip.length} {allForStrip.length === 1 ? 'participant' : 'participants'}
               </span>
             </div>
 
@@ -749,10 +719,13 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                           person.isAccepted ? 'opacity-100' : 'opacity-70'
                         }`}
                       >
-                        {activeTab === 'waitlist' && (
+                        {activeTab === 'waitlist' && person.isAccepted && (
                           <span className="text-[11px] font-bold text-white/30 min-w-[18px] font-sans">
                             #{idx + 1}
                           </span>
+                        )}
+                        {activeTab === 'waitlist' && !person.isAccepted && (
+                          <span className="text-[11px] font-bold text-transparent min-w-[18px] font-sans"></span>
                         )}
                         <div className="relative flex-shrink-0">
                           <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800">

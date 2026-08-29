@@ -35,13 +35,11 @@ interface PlanParticipantManagementWrapperProps {
   onUpdatePlanCapacity?: (planId: string, capacity: number, options?: { totalCost?: number }) => Promise<void> | void;
   onAddParticipants?: (planId: string, userIds: string[], circleIds: string[], targetGroup?: 'GOING' | 'WAITLIST') => Promise<void>;
   onReorderWaitlist?: (planId: string, orderedUserUuids: string[]) => Promise<void>;
-  onSwitchToAutomaticMode?: (planId: string, promotedUserUuids?: string[]) => Promise<void>;
   onOpenSettings?: () => void;
   onOpenActivity?: () => void;
   onPlanSizeEditingChange?: (isEditing: boolean) => void;
   onBottomSheetStateChange?: (isOpen: boolean) => void;
   onCancelPlan?: (planId: string) => Promise<void>;
-  showWaitlistMode?: boolean;
   replaceTargetUserId?: string | null;
   onCancelReplacement?: () => void;
   onConfirmReplacement?: (planId: string, targetUserId: string, replacementUserId: string) => Promise<void>;
@@ -110,14 +108,14 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   onUpdatePlanCapacity,
   onAddParticipants,
   onReorderWaitlist,
-  onSwitchToAutomaticMode,
+
   onOpenSettings,
   onOpenActivity,
   onPlanSizeEditingChange,
   onBottomSheetStateChange,
   onCancelPlan,
   displayMode = 'standalone',
-  showWaitlistMode = false,
+
   replaceTargetUserId = null,
   onCancelReplacement,
   onConfirmReplacement,
@@ -228,16 +226,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         const canonicalFriends = await getCompleteCurrentUserFriends(targetUserId);
         if (isMounted) {
           setFetchedFriends(canonicalFriends);
-          console.log("[REPLACE FRIEND LIST AUDIT]", {
-            currentUserId: targetUserId,
-            loadingState: false,
-            rawFriendshipsReturned: canonicalFriends.length,
-            acceptedFriendshipsCount: canonicalFriends.length,
-            profilesResolved: canonicalFriends.length,
-            sampleFriends: canonicalFriends.slice(0, 3).map((f: any) => ({ id: f.id, name: f.full_name })),
-            totalCompleteFriendCount: canonicalFriends.length,
-            paginationUsed: false
-          });
         }
       } catch (err) {
         console.error("[REPLACE FRIEND LIST AUDIT] Error fetching friends:", err);
@@ -358,13 +346,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           profile_photo: m.avatar || m.profile_photo || m.profile_photo_path || ""
         });
       }
-    });
-
-    console.log("[REPLACE CANDIDATE AUDIT]", {
-      completeFriendCount: activeFriendList.length,
-      joinedExclusions: Array.from(joinedParticipantUserIds),
-      finalCandidateCount: list.length,
-      sampleCandidateNames: list.slice(0, 5).map(c => c.full_name)
     });
 
     return list;
@@ -513,11 +494,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
    * WAITLIST: invites directly with assigned_group=WAITLIST (rsvp_status=INVITED).
    * Uses the canonical invite_participants RPC which reactivates the existing row cleanly.
    */
-  const handleInviteSkipped = useCallback(async (friend: Friend, target: 'GOING' | 'WAITLIST') => {
+  const handleInviteSkipped = useCallback(async (friend: Friend, target?: 'GOING' | 'WAITLIST') => {
     if (!onAddParticipants) return;
     const userId = friend.dbUuid || friend.id;
     try {
-      if (target === 'GOING' && onUpdatePlanCapacity) {
+      if (waitlistMode === 'assigned' && target === 'GOING' && onUpdatePlanCapacity) {
         // Increase capacity by 1 to make room
         const currentCapacity = Math.max(2, plan.joinLimit || plan.capacity || 2);
         const newCapacity = currentCapacity + 1;
@@ -910,19 +891,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const waitlistList: Friend[] = useMemo(() => {
     const currentPlanId = plan.id || plan.dbUuid;
     const rawList = waitlistMembers.map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, currentPlanId));
-    const sorted = sortByWaitlistOrder(rawList);
-    if (waitlistMode === 'assigned') {
-      console.log('[WAITLIST PIPELINE 7 - MANAGEMENT RENDER]');
-      console.table(
-        sorted.map((f) => ({
-          name: f.name,
-          user_id: f.dbUuid || f.id,
-          assigned_group: f.assignedGroup,
-          waitlist_position: f.waitlistPosition,
-        }))
-      );
-    }
-    return sorted;
+    return sortByWaitlistOrder(rawList);
   }, [waitlistMembers, hostId, activeUserId, dbPlanParticipants, sortByWaitlistOrder, waitlistMode, plan.id, plan.dbUuid]);
 
   const skippedList: Friend[] = useMemo(() => {
@@ -1511,31 +1480,18 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     // 1. Keep the exact visual waitlist order locally
     setLocalWaitlist(finalWaitlist);
 
-    console.log("[ASSIGNED_WAITLIST_REORDER] Local order:");
-    finalWaitlist.forEach((f, idx) => {
-      console.log(`  ${f.name} / ${f.dbUuid || f.id} -> position ${idx + 1}`);
-    });
-
     // 2. Clear any pending database sync timer
     if (reorderTimeoutRef.current) {
-      console.log("[ASSIGNED_WAITLIST_REORDER] Debounce reset");
       clearTimeout(reorderTimeoutRef.current);
-    } else {
-      console.log("[ASSIGNED_WAITLIST_REORDER] Debounce started");
     }
 
     // 3. Sync the final order to the database only after 2 seconds of inactivity
     reorderTimeoutRef.current = setTimeout(async () => {
       try {
-        console.log("[ASSIGNED_WAITLIST_REORDER] Persisting final order");
         const userUuids = finalWaitlist.map((f) => f.dbUuid || f.id);
-        console.log("[ASSIGNED_WAITLIST_REORDER] Database payload:", userUuids);
 
         if (onReorderWaitlist && userUuids.length > 0) {
           await onReorderWaitlist(plan.id, userUuids);
-          console.log("[ASSIGNED_WAITLIST_REORDER] Database result: SUCCESS");
-        } else {
-          console.log("[ASSIGNED_WAITLIST_REORDER] Skipping DB update: Empty list or onReorderWaitlist missing");
         }
       } catch (err) {
         console.error("[ASSIGNED_WAITLIST_REORDER] Database error:", err);
@@ -1545,10 +1501,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     }, 2000);
   }, [plan.id, onReorderWaitlist]);
 
-  // ── Switch to Automatic Mode State & Handler ──
-  const [showAutomaticSelectionSheet, setShowAutomaticSelectionSheet] = useState(false);
-  const [showAutomaticWarningSheet, setShowAutomaticWarningSheet] = useState(false);
-
+  // ── Switch to Automatic Mode State & Handler (REMOVED) ──
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
 
   const isAnyBottomSheetOpen = Boolean(
@@ -1558,8 +1511,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     pendingPromoteToGoing ||
     pendingMoveToWaitlist ||
     pendingRemoveGoing ||
-    showAutomaticSelectionSheet ||
-    showAutomaticWarningSheet ||
     guidedAdjustmentState ||
     swapState ||
     showAddFriendsPicker
@@ -1578,51 +1529,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
   const vacantSpots = Math.max(0, capacity - goingMembers.length);
 
-  // Eligible participants are strictly those with assigned_group = WAITLIST and rsvp_status = JOINED
-  const eligibleWaitlist = useMemo(() => {
-    return waitlistList.filter((f) => {
-      const isJoined = f.rsvpStatus === 'JOINED' || f.isAccepted === true;
-      return isJoined;
-    });
-  }, [waitlistList]);
-
-  const handleWaitlistModeChange = useCallback(async (newMode: 'automatic' | 'assigned') => {
-    if (newMode === 'assigned' || waitlistMode === newMode) return;
-
-    if (!onSwitchToAutomaticMode) return;
-
-    // Case 1: Vacant GOING spots exist AND eligible waitlist participants exist -> Show selection bottom sheet
-    if (vacantSpots > 0 && eligibleWaitlist.length > 0) {
-      setShowAutomaticSelectionSheet(true);
-      return;
-    }
-
-    // Case 2: Vacant GOING spots exist BUT NO eligible waitlist participants -> Show warning bottom sheet and block
-    if (vacantSpots > 0 && eligibleWaitlist.length === 0) {
-      setShowAutomaticWarningSheet(true);
-      return;
-    }
-
-    // Case 3: GOING is already full (vacantSpots === 0) -> Switch directly
-    try {
-      await onSwitchToAutomaticMode(plan.id, []);
-      showToast("✓ Waitlist mode switched to Automatic");
-    } catch (err: any) {
-      console.error("[handleWaitlistModeChange] Error switching to Automatic:", err);
-      showToast(err?.message || "Failed to switch waitlist mode");
-    }
-  }, [waitlistMode, onSwitchToAutomaticMode, vacantSpots, eligibleWaitlist.length, plan.id, showToast]);
-
-  const handleConfirmAutomaticSelection = useCallback(async (selectedUserIds: string[]) => {
-    if (!onSwitchToAutomaticMode) return;
-    try {
-      await onSwitchToAutomaticMode(plan.id, selectedUserIds);
-      showToast("✓ Participants promoted & switched to Automatic");
-    } catch (err: any) {
-      console.error("[handleConfirmAutomaticSelection] Error:", err);
-      showToast(err?.message || "Failed to switch waitlist mode");
-    }
-  }, [onSwitchToAutomaticMode, plan.id, showToast]);
 
   // Compute leaving participant & selected replacement friend for replacement mode  // isReplacementMode already declared at the top of the component
   const leavingParticipant = useMemo(() => {
@@ -1664,7 +1570,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         isHost={effectiveIsHost}
         isHostUser={effectiveIsHost}
         waitlistMode={waitlistMode}
-        onWaitlistModeChange={handleWaitlistModeChange}
         externalGoingList={displayGoingList}
         externalWaitlist={displayWaitlist}
         externalInvitedList={invitedList}
@@ -1686,7 +1591,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         onOpenActivity={onOpenActivity}
         onPlanSizeEditingChange={onPlanSizeEditingChange}
         onBottomSheetStateChange={setIsActionSheetOpen}
-        showWaitlistMode={showWaitlistMode}
+        showWaitlistMode={false}
         onReorderWaitlist={effectiveIsHost && waitlistMode === 'assigned' ? handleReorderWaitlist : undefined}
         onReorderWaitlistComplete={effectiveIsHost && waitlistMode === 'assigned' ? handleReorderWaitlistComplete : undefined}
         canParticipantInvite={canParticipantInvite}
@@ -1767,20 +1672,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         onClose={handleCancelPendingRemoveGoing}
       />
 
-      {/* Switch to Automatic Selection Bottom Sheet (Case 1) */}
-      <SwitchToAutomaticSelectionBottomSheet
-        isOpen={showAutomaticSelectionSheet}
-        vacantSpots={vacantSpots}
-        eligibleWaitlist={eligibleWaitlist}
-        onConfirm={handleConfirmAutomaticSelection}
-        onClose={() => setShowAutomaticSelectionSheet(false)}
-      />
-
-      {/* Switch to Automatic Warning Bottom Sheet (Case 2) */}
-      <SwitchToAutomaticWarningBottomSheet
-        isOpen={showAutomaticWarningSheet}
-        onClose={() => setShowAutomaticWarningSheet(false)}
-      />
 
       {/* Guided Capacity Adjustment Bottom Sheet (Assigned Mode Capacity Change) */}
       <GuidedCapacityAdjustmentBottomSheet
