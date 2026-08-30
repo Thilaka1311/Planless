@@ -255,28 +255,32 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           onOpenSettings={onOpenSettings}
           onOpenActivity={onOpenActivity}
           displayMode={displayMode}
+          mode={mode}
         />
       )}
 
       {!isCompletedPlan && effectiveIsHost && (
         <>
-          <div className={displayMode === 'embedded' ? "pt-4" : ""}>
-            <PlanSizeCard
-              capacity={capacity}
-              maxCapacity={maxCapacity}
-              isHostUser={effectiveIsHost}
-              isInviteOnly={isInviteOnly}
-              onConfirmAdjustCapacity={handleApplyCapacityChange}
-              onEditingChange={(editing) => {
-                if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
-              }}
-            />
-          </div>
+          {mode !== 'wizard' && (
+            <div className={displayMode === 'embedded' ? "pt-4" : ""}>
+              <PlanSizeCard
+                capacity={capacity}
+                maxCapacity={maxCapacity}
+                isHostUser={effectiveIsHost}
+                isInviteOnly={isInviteOnly}
+                onConfirmAdjustCapacity={handleApplyCapacityChange}
+                onEditingChange={(editing) => {
+                  if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
+                }}
+              />
+            </div>
+          )}
           {showWaitlistMode && (
             <WaitlistModeSelector
               waitlistMode={waitlistMode}
               onWaitlistModeChange={onWaitlistModeChange}
               isHost={effectiveIsHost}
+              variant={mode === 'wizard' ? 'plain' : 'card'}
             />
           )}
         </>
@@ -406,7 +410,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       />
 
       {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
-      {!isCompletedPlan && (currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
+      {!isCompletedPlan && mode !== 'wizard' && (currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
         <button
           type="button"
           onClick={() => onAddFriends(activeTab)}

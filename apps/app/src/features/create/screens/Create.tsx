@@ -525,16 +525,8 @@ export const CreatePlanScreen = ({
           }
         }}
         onContinue={() => {
-          const totalParticipants = (form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0);
-          const capacity = form.totalCapacity || 2;
-          if (returnToWhoActually) {
-            setReturnToWhoActually(false);
-            setCreatePhase('who-actually');
-          } else if (totalParticipants > capacity) {
-            setCreatePhase('who-actually');
-          } else {
-            setCreatePhase('review');
-          }
+          setReturnToWhoActually(false);
+          setCreatePhase('who-actually');
         }}
         selectedCategory={selectedCategory}
         selectedSubcategory={selectedSubcategory}
@@ -577,13 +569,7 @@ export const CreatePlanScreen = ({
           selectedCategory={selectedCategory}
           selectedSubcategory={selectedSubcategory}
           onBack={() => {
-            const totalParticipants = (form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0);
-            const capacity = form.totalCapacity || 2;
-            if (totalParticipants > capacity) {
-              setCreatePhase('who-actually');
-            } else {
-              setCreatePhase('who');
-            }
+            setCreatePhase('who-actually');
           }}
           onEditDate={() => {
             setCameFromReview(true);

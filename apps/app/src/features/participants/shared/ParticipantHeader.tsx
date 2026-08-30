@@ -9,6 +9,8 @@ interface ParticipantHeaderProps {
   onOpenSettings?: () => void;
   onOpenActivity?: () => void;
   displayMode?: 'standalone' | 'embedded';
+  mode?: string;
+  hideTitle?: boolean;
 }
 
 export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
@@ -19,8 +21,34 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
   onOpenSettings,
   onOpenActivity,
   displayMode = 'standalone',
+  mode,
+  hideTitle = false,
 }) => {
   const isStandalone = displayMode === 'standalone';
+  const isWizard = mode === 'wizard' || hideTitle;
+
+  if (isWizard) {
+    return (
+      <div
+        className="w-full shrink-0 px-5 flex items-center bg-[#000000] relative z-40"
+        style={{ height: '56px', boxSizing: 'border-box' }}
+      >
+        {isStandalone && onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="p-2 -ml-2 text-white hover:text-white/80 active:scale-95 transition cursor-pointer flex items-center justify-center mr-2"
+            title="Back"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+        )}
+        <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: '#FFFFFF', letterSpacing: '-0.02em', fontFamily: 'Inter, sans-serif' }}>
+          Waitlist Mode
+        </h1>
+      </div>
+    );
+  }
 
   return (
     <div

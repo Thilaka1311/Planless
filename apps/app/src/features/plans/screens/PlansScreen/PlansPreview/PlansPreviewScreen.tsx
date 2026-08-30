@@ -61,6 +61,7 @@ import {
   EditDetailsBottomSheet,
   JoinPlanConfirmationBottomSheet,
   SkipPlanConfirmationDialog,
+  EditCapacityBottomSheet,
 } from "../../../components/BottomSheets";
 import { HostAttendanceScreen } from "../../../../completion/docs/Screens/HostAttendanceScreen";
 
@@ -444,8 +445,11 @@ function InlineLocationEditor({
 // MAIN DETAILED PLAN SCREEN COMPONENT
 // ==========================================
 export interface PlansDetailsScreenProps {
-  planId: string;
+  planId?: string;
+  plan?: Plan;
+  createMode?: boolean;
   onClose: () => void;
+  onBack?: () => void;
   userProfile: UserProfile;
   activeUserId?: string;
   onNavigateToCircle?: (circleId: string) => void;
@@ -456,11 +460,18 @@ export interface PlansDetailsScreenProps {
   onPlanCancelled?: (planId: string) => void;
   onOpenChat?: (planId: string) => void;
   onOpenExpenses?: (planId: string) => void;
+  onEditParticipants?: () => void;
+  onAdjustCapacity?: (newCapacity: number) => void;
+  onSubmit?: () => void;
+  isSubmitting?: boolean;
 }
 
 export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   planId,
+  plan,
+  createMode = false,
   onClose,
+  onBack,
   userProfile,
   activeUserId,
   onNavigateToCircle,
@@ -471,6 +482,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   onPlanCancelled,
   onOpenChat,
   onOpenExpenses,
+  onEditParticipants,
+  onAdjustCapacity,
+  onSubmit,
+  isSubmitting = false,
 }) => {
   const { showToast } = useToast();
   const {
@@ -503,7 +518,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     replaceParticipant,
     manageCompletedPlanParticipants,
   } = usePlansStore();
-  const selectedPlan = useLivePlan(planId);
+  const livePlan = useLivePlan(planId || '');
+  const selectedPlan = (createMode && plan) ? plan : livePlan;
 
   // States
   const [isSavingLocation, setIsSavingLocation] = useState(false);
@@ -527,6 +543,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [isEditingCostSheetOpen, setIsEditingCostSheetOpen] = useState(false);
   const [isCostPopoverOpen, setIsCostPopoverOpen] = useState(false);
   const [editTotalCostInput, setEditTotalCostInput] = useState<string>("");
+
+  const [isEditingCapacitySheetOpen, setIsEditingCapacitySheetOpen] = useState(false);
 
   const [isEditingDetailsSheetOpen, setIsEditingDetailsSheetOpen] = useState(false);
   const [tempTitle, setTempTitle] = useState("");
@@ -658,6 +676,18 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       showToast("Unable to update. Please try again.");
     } finally {
       setIsSavingDetails(false);
+    }
+  };
+
+  const handleCapacityChange = async (newCapacity: number) => {
+    if (createMode) {
+      onAdjustCapacity?.(newCapacity);
+    } else if (selectedPlan?.id) {
+      try {
+        await updatePlanDetails(selectedPlan.id, { max_participants: newCapacity });
+      } catch (err) {
+        console.error("Failed to update plan capacity:", err);
+      }
     }
   };
 
@@ -793,9 +823,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     );
   }, [dbPlanParticipants, selectedPlan, planUuid, activeUserId, resolvedUserUuid, userProfile]);
 
-  const isHost = myParticipantRecord
-    ? (myParticipantRecord.role === "HOST")
-    : (selectedPlan?.members ? selectedPlan.members.some(m => (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid) && m.isHost) : false);
+  const isHost = createMode
+    ? true
+    : myParticipantRecord
+      ? (myParticipantRecord.role === "HOST")
+      : (selectedPlan?.members ? selectedPlan.members.some(m => (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid) && m.isHost) : false);
 
   const isCancelled = Boolean((selectedPlan?.status || "").toUpperCase() === "CANCELLED");
   const isCompleted = Boolean((selectedPlan?.status || "").toUpperCase() === "COMPLETED");
@@ -908,8 +940,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   }, [selectedPlan]);
 
   const rawDbPlan = useMemo(() => {
+    if (createMode && plan) return plan as any;
     return dbPlans.find(p => p.id === planUuid);
-  }, [dbPlans, planUuid]);
+  }, [dbPlans, planUuid, createMode, plan]);
 
   const hasCost = rawDbPlan ? (rawDbPlan.total_cost !== undefined && rawDbPlan.total_cost !== null && Number(rawDbPlan.total_cost) > 0) : false;
   const costText = useMemo(() => {
@@ -1222,24 +1255,32 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               viewerId={resolvedUserUuid}
               onClose={onClose}
               isHost={isHost && !isCancelled && !isCompleted}
-              onOpenChat={() => {
-                if (onOpenChat) {
-                  onOpenChat(selectedPlan.id);
-                } else {
-                  setSelectedChatPlanId(selectedPlan.id);
-                }
-              }}
-              onOpenExpenses={() => {
-                if (onOpenExpenses) {
-                  onOpenExpenses(selectedPlan.id);
-                } else {
-                  setShowPlanBalancesScreen(true);
-                }
-              }}
+              onOpenChat={
+                createMode
+                  ? undefined
+                  : () => {
+                      if (onOpenChat) {
+                        onOpenChat(selectedPlan.id);
+                      } else {
+                        setSelectedChatPlanId(selectedPlan.id);
+                      }
+                    }
+              }
+              onOpenExpenses={
+                createMode
+                  ? undefined
+                  : () => {
+                      if (onOpenExpenses) {
+                        onOpenExpenses(selectedPlan.id);
+                      } else {
+                        setShowPlanBalancesScreen(true);
+                      }
+                    }
+              }
               onOpenSettings={
-                isHost && !isCancelled && !isCompleted
-                  ? () => setShowPlanSettingsScreen(true)
-                  : undefined
+                createMode || !isHost || isCancelled || isCompleted
+                  ? undefined
+                  : () => setShowPlanSettingsScreen(true)
               }
             />
 
@@ -1259,26 +1300,45 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               <div className="w-full bg-black/15 backdrop-blur-3xl border border-white/[0.06] shadow-lg rounded-2xl relative">
                 <div className="p-4 space-y-2.5">
                   {/* 1. Date & Time Row (Row 1) */}
-                  <button
-                    type="button"
-                    disabled={!isHost || isCancelled || isCompleted}
-                    onClick={() => {
-                      if (isCancelled || isCompleted) return;
-                      const planDate = new Date(selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt);
-                      const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : new Date(planDate.getTime() - 12 * 60 * 60 * 1000);
-                      setTempDate(getLocalDateString(planDate));
-                      setTempTime(getLocalTimeString(planDate));
-                      setTempRSVPDate(getLocalDateString(planRSVP));
-                      setTempRSVPTime(getLocalTimeString(planRSVP));
-                      setIsEditingDateTimeSheetOpen(true);
-                    }}
-                    className="w-full flex items-center gap-3 text-left hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
-                  >
-                    <CalendarDays className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                    <span className="text-[13px] font-sans font-semibold text-white tracking-wide truncate">
-                      {formatPlanDate((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)}
-                    </span>
-                  </button>
+                  <div className="w-full flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      disabled={!isHost || isCancelled || isCompleted}
+                      onClick={() => {
+                        if (isCancelled || isCompleted) return;
+                        const planDate = new Date(selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt);
+                        const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : new Date(planDate.getTime() - 12 * 60 * 60 * 1000);
+                        setTempDate(getLocalDateString(planDate));
+                        setTempTime(getLocalTimeString(planDate));
+                        setTempRSVPDate(getLocalDateString(planRSVP));
+                        setTempRSVPTime(getLocalTimeString(planRSVP));
+                        setIsEditingDateTimeSheetOpen(true);
+                      }}
+                      className="flex-1 min-w-0 flex items-center gap-3 text-left hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+                    >
+                      <CalendarDays className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <span className="text-[13px] font-sans font-semibold text-white tracking-wide truncate">
+                        {formatPlanDate((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)}
+                      </span>
+                    </button>
+
+                    {/* Plan Size Indicator (Right side of Date & Time row / above Free) */}
+                    {Boolean(selectedPlan.capacity || (selectedPlan as any).max_participants || selectedPlan.maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants) && (
+                      <button
+                        type="button"
+                        id="hero_plan_size_btn"
+                        disabled={!isHost || isCancelled || isCompleted}
+                        onClick={() => {
+                          if (isCancelled || isCompleted) return;
+                          setIsEditingCapacitySheetOpen(true);
+                        }}
+                        className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+                      >
+                        <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
+                        <span>{selectedPlan.capacity || (selectedPlan as any).max_participants || selectedPlan.maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants}</span>
+                      </button>
+                    )}
+                  </div>
 
                   {/* 2. Location (Row 2) – inline autocomplete */}
                   <InlineLocationEditor
@@ -1396,18 +1456,20 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             />
           )}
 
-          {/* Fixed Manage Participants action for host — floating icon + text only, tightly anchored above LiveActionButton */}
+          {/* Fixed Manage Participants action for host — floating icon + text only, tightly anchored above LiveActionButton / Create Plan button */}
           {isHost && !isCancelled && (
             <div className="fixed bottom-[58px] left-6 right-6 z-40 flex items-center justify-center pointer-events-auto">
               <button
                 type="button"
                 id="host_manage_participants_btn"
                 onClick={
-                  isCompleted
-                    ? !isManagementExpired
-                      ? () => setShowAttendanceSheet(true)
-                      : () => showToast("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.")
-                    : () => setShowParticipantManagement(true)
+                  createMode
+                    ? () => onEditParticipants?.()
+                    : isCompleted
+                      ? !isManagementExpired
+                        ? () => setShowAttendanceSheet(true)
+                        : () => showToast("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.")
+                      : () => setShowParticipantManagement(true)
                 }
                 className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
               >
@@ -1417,32 +1479,46 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             </div>
           )}
 
-          <LiveActionButton
-            myParticipantRecord={myParticipantRecord}
-            isCancelled={isCancelled}
-            isCompleted={isCompleted}
-            isManagementExpired={isManagementExpired}
-            className={(myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT") ? "!bottom-24" : ""}
-            onClick={
-              isCompleted && isHost
-                ? !isManagementExpired
-                  ? () => setShowAttendanceSheet(true)
-                  : () => showToast("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.")
-                : isCompleted
-                  ? undefined
-                  : isHost && isCancelled
-                    ? () => setShowRestorePlanConfirm(true)
-                  : isHost
-                    ? () => setShowCancelPlanConfirm(true)
-                    : myParticipantRecord?.rsvp_status === "JOINED" && myParticipantRecord?.leave_requested
-                      ? () => setShowCancelLeaveRequestConfirmation(true)
-                      : currentStatus === "JOINED" && !alreadySkipped
-                        ? () => setShowLeavePlanConfirm(true)
-                        : currentStatus === "WAITLISTED" && !alreadySkipped
-                          ? () => setShowSkipConfirmation(true)
-                          : undefined
-            }
-          />
+          {createMode ? (
+            <div className="fixed bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black via-black/90 to-transparent z-40">
+              <button
+                type="button"
+                id="create-plan-submit-btn"
+                disabled={isSubmitting}
+                onClick={onSubmit}
+                className="w-full py-4 bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white font-sans font-bold text-[15px] rounded-full transition-all cursor-pointer shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isSubmitting ? "Creating Plan…" : "Create Plan"}
+              </button>
+            </div>
+          ) : (
+            <LiveActionButton
+              myParticipantRecord={myParticipantRecord}
+              isCancelled={isCancelled}
+              isCompleted={isCompleted}
+              isManagementExpired={isManagementExpired}
+              className={(myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT") ? "!bottom-24" : ""}
+              onClick={
+                isCompleted && isHost
+                  ? !isManagementExpired
+                    ? () => setShowAttendanceSheet(true)
+                    : () => showToast("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.")
+                  : isCompleted
+                    ? undefined
+                    : isHost && isCancelled
+                      ? () => setShowRestorePlanConfirm(true)
+                    : isHost
+                      ? () => setShowCancelPlanConfirm(true)
+                      : myParticipantRecord?.rsvp_status === "JOINED" && myParticipantRecord?.leave_requested
+                        ? () => setShowCancelLeaveRequestConfirmation(true)
+                        : currentStatus === "JOINED" && !alreadySkipped
+                          ? () => setShowLeavePlanConfirm(true)
+                          : currentStatus === "WAITLISTED" && !alreadySkipped
+                            ? () => setShowSkipConfirmation(true)
+                            : undefined
+              }
+            />
+          )}
           {myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" && (
             <div className="fixed bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black via-black/90 to-transparent z-40">
               <button
@@ -1840,6 +1916,27 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onCoverImageChange={setTempCoverImage}
         onSave={handleSaveDetails}
         onClose={() => setIsEditingDetailsSheetOpen(false)}
+      />
+
+      {/* ---------------- 👥 EDIT CAPACITY / PLAN SIZE BOTTOM SHEET ---------------- */}
+      <EditCapacityBottomSheet
+        isOpen={isEditingCapacitySheetOpen}
+        capacity={Number(
+          selectedPlan?.capacity ||
+          (selectedPlan as any)?.max_participants ||
+          selectedPlan?.maxParticipants ||
+          selectedPlan?.joinLimit ||
+          rawDbPlan?.max_participants ||
+          2
+        )}
+        invitedCount={
+          selectedPlan?.members?.length ||
+          (createMode && plan?.members ? plan.members.length : undefined)
+        }
+        minCapacity={2}
+        maxCapacity={50}
+        onCapacityChange={handleCapacityChange}
+        onClose={() => setIsEditingCapacitySheetOpen(false)}
       />
 
       {/* Location bottom sheet removed – location editing is now inline */}

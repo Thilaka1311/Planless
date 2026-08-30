@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, Trash2 } from "lucide-react";
+import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, Trash2, Minus, Plus, Users } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { HostInfo } from "./HeroHeader";
 
@@ -2391,4 +2391,190 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
     </div>
   );
 };
+
+// ----------------------------------------------------------------------
+// 15. EDIT PLAN SIZE / CAPACITY BOTTOM SHEET
+// ----------------------------------------------------------------------
+export interface EditCapacityBottomSheetProps {
+  isOpen: boolean;
+  capacity: number;
+  invitedCount?: number;
+  minCapacity?: number;
+  maxCapacity?: number;
+  onCapacityChange: (newCapacity: number) => void;
+  onSave?: () => void;
+  onClose: () => void;
+}
+
+export const EditCapacityBottomSheet: React.FC<EditCapacityBottomSheetProps> = ({
+  isOpen,
+  capacity,
+  invitedCount,
+  minCapacity = 2,
+  maxCapacity = 50,
+  onCapacityChange,
+  onSave,
+  onClose,
+}) => {
+  const effectiveMaxCapacity = invitedCount !== undefined ? Math.min(maxCapacity, invitedCount) : maxCapacity;
+  const currentCapacity = Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity || minCapacity));
+  const [showInviteHint, setShowInviteHint] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setShowInviteHint(false);
+    }
+  }, [isOpen]);
+
+  const handleDecrement = () => {
+    setShowInviteHint(false);
+    if (currentCapacity > minCapacity) {
+      onCapacityChange(currentCapacity - 1);
+    }
+  };
+
+  const handleIncrement = () => {
+    if (currentCapacity < effectiveMaxCapacity) {
+      setShowInviteHint(false);
+      onCapacityChange(currentCapacity + 1);
+    } else {
+      setShowInviteHint(true);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/60 z-60 pointer-events-auto"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            style={{
+              position: "fixed",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              maxHeight: "85vh",
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              zIndex: 65,
+              padding: "16px 20px calc(32px + env(safe-area-inset-bottom, 0px))",
+              color: "#FFFFFF",
+              boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.3)",
+              display: "flex",
+              flexDirection: "column",
+              pointerEvents: "auto",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+              <div style={{ width: 36, height: 5, borderRadius: 2.5, background: "rgba(255, 255, 255, 0.15)" }} />
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", marginBottom: 18, textAlign: "left" }}>
+              <span style={{ fontSize: 18, fontWeight: 700, color: "#FFFFFF", fontFamily: "Inter, sans-serif" }}>
+                Plan Size
+              </span>
+              <span style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.45)", marginTop: 4, fontFamily: "Inter, sans-serif" }}>
+                Set the total number of participants (including you)
+              </span>
+              {Boolean(invitedCount) && (
+                <div className="mt-3 flex items-center gap-1.5">
+                  <span className="text-[13px] font-semibold text-white/70">
+                    Invited: <span className="text-white font-bold">{invitedCount}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Stepper Card */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                background: "rgba(255, 255, 255, 0.05)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                borderRadius: 16,
+                padding: "16px 20px",
+                marginBottom: showInviteHint ? 14 : 24,
+              }}
+            >
+              <button
+                type="button"
+                id="capacity_decrement_btn"
+                disabled={currentCapacity <= minCapacity}
+                onClick={handleDecrement}
+                className="w-12 h-12 rounded-full bg-white/[0.08] hover:bg-white/[0.14] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center justify-center text-white text-xl font-bold cursor-pointer"
+              >
+                <Minus className="w-5 h-5" />
+              </button>
+
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-[#FF6B2C]" />
+                  <span className="text-[28px] font-bold text-white leading-none tracking-tight">
+                    {currentCapacity}
+                  </span>
+                </div>
+                <span className="text-[12px] text-white/40 font-medium">
+                  {currentCapacity === 1 ? "person" : "people"}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                id="capacity_increment_btn"
+                onClick={handleIncrement}
+                className={`w-12 h-12 rounded-full bg-white/[0.08] hover:bg-white/[0.14] active:scale-95 transition flex items-center justify-center text-white text-xl font-bold cursor-pointer ${
+                  currentCapacity >= effectiveMaxCapacity ? "opacity-60" : ""
+                }`}
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Error / Hint Message */}
+            <AnimatePresence>
+              {showInviteHint && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  className="mb-4 text-center"
+                >
+                  <span className="text-[13px] font-medium text-amber-400">
+                    Invite more people to increase the plan capacity.
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <button
+              type="button"
+              id="capacity_done_btn"
+              onClick={() => {
+                onSave?.();
+                onClose();
+              }}
+              className="w-full py-4 rounded-2xl bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] transition-all text-white font-semibold text-[15px] cursor-pointer shadow-lg"
+            >
+              Done
+            </button>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
 

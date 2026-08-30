@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Clock, Hourglass, MapPin, ChevronRight } from "lucide-react";
+import { Clock, Hourglass, MapPin, ChevronRight, Users } from "lucide-react";
 import { formatPlanDate } from "../../../../lib/mappers";
 import { formatDeadlineFull } from "../../home/components/PlanCard";
 import { useRSVPDeadline } from "../utils/rsvpFormatter";
@@ -14,6 +14,7 @@ interface HeroMetadataCardProps {
   maxParticipants?: number | null;
   isHost?: boolean;
   onEditCost?: () => void;
+  onEditCapacity?: () => void;
   urgencyColor: string;
   responseDeadlineAt?: any;
   location: string;
@@ -28,6 +29,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
   maxParticipants,
   isHost,
   onEditCost,
+  onEditCapacity,
   urgencyColor,
   responseDeadlineAt,
   location,
@@ -49,11 +51,24 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
 
       {/* Event Information (Upper Section) */}
       <div className="p-4 space-y-3.5 font-sans relative z-10">
-        <div className="flex items-center gap-2 text-white/95">
-          <Clock className="w-4 h-4 text-white/50 flex-shrink-0" />
-          <span className="text-[11px] font-medium leading-none">
-            {formatPlanDate(datetime || createdAt)}
-          </span>
+        <div className="flex items-center justify-between gap-2 text-white/95">
+          <div className="flex items-center gap-2 min-w-0">
+            <Clock className="w-4 h-4 text-white/50 flex-shrink-0" />
+            <span className="text-[11px] font-medium leading-none truncate">
+              {formatPlanDate(datetime || createdAt)}
+            </span>
+          </div>
+          {Boolean(maxParticipants) && (
+            <button
+              type="button"
+              disabled={!isHost}
+              onClick={() => onEditCapacity?.()}
+              className="flex items-center gap-1.5 text-white/90 text-[11px] font-medium leading-none shrink-0 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1 -m-1 rounded-lg cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+            >
+              <Users className="w-3.5 h-3.5 text-white/50 flex-shrink-0" />
+              <span>{maxParticipants}</span>
+            </button>
+          )}
         </div>
         {hasCost && costText && (
           <div className="relative">

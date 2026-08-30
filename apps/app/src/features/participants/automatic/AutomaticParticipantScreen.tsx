@@ -131,7 +131,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       return tabs;
     }
     if (mode === 'wizard') {
-      return ['going'];
+      return ['invited'];
     }
     const tabs: ParticipantTab[] = [];
     if (!isFull) {
@@ -146,12 +146,12 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
     return tabs;
   }, [mode, isFull, displaySkipped.length, isCompletedPlan]);
 
-  const [activeTab, setActiveTab] = useState<ParticipantTab>('going');
+  const [activeTab, setActiveTab] = useState<ParticipantTab>(mode === 'wizard' ? 'invited' : 'going');
   const initialMountRef = React.useRef(true);
 
   useEffect(() => {
     if (mode === 'wizard') {
-      setActiveTab('going');
+      setActiveTab('invited');
       return;
     }
     if (initialMountRef.current && visibleTabs.length > 0) {
@@ -222,29 +222,33 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           onOpenSettings={onOpenSettings}
           onOpenActivity={onOpenActivity}
           displayMode={displayMode}
+          mode={mode}
         />
       )}
 
       {!isCompletedPlan && effectiveIsHost && (
         <>
-          <div className={displayMode === 'embedded' ? "pt-4" : ""}>
-            <PlanSizeCard
-              capacity={capacity}
-              maxCapacity={maxCapacity}
-              isHostUser={effectiveIsHost}
-              isInviteOnly={isInviteOnly}
-              onConfirmAdjustCapacity={onAdjustCapacity}
-              onEditingChange={(editing) => {
-                setIsPlanSizeEditing(editing);
-                if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
-              }}
-            />
-          </div>
+          {mode !== 'wizard' && (
+            <div className={displayMode === 'embedded' ? "pt-4" : ""}>
+              <PlanSizeCard
+                capacity={capacity}
+                maxCapacity={maxCapacity}
+                isHostUser={effectiveIsHost}
+                isInviteOnly={isInviteOnly}
+                onConfirmAdjustCapacity={onAdjustCapacity}
+                onEditingChange={(editing) => {
+                  setIsPlanSizeEditing(editing);
+                  if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
+                }}
+              />
+            </div>
+          )}
           {showWaitlistMode && (
             <WaitlistModeSelector
               waitlistMode={waitlistMode}
               onWaitlistModeChange={onWaitlistModeChange}
               isHost={effectiveIsHost}
+              variant={mode === 'wizard' ? 'plain' : 'card'}
             />
           )}
         </>
@@ -264,7 +268,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         goingCount={isCompletedPlan ? displayGoing.length : actualJoinedCount}
         capacity={capacity}
         waitlistCount={displayWaitlist.length}
-        invitedCount={displayGoing.length}
+        invitedCount={mode === 'wizard' ? ((hostItem ? 1 : 0) + selectedFriends.length) : (isFull ? displayGoing.length + displayWaitlist.length : displayGoing.length)}
         skippedCount={displaySkipped.length}
         isCompletedPlan={isCompletedPlan}
         onTabChange={setActiveTab}
@@ -339,7 +343,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       />
 
       {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
-      {!isCompletedPlan && (currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
+      {!isCompletedPlan && mode !== 'wizard' && (currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
         <button
           type="button"
           onClick={() => onAddFriends(activeTab)}

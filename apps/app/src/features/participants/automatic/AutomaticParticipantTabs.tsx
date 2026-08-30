@@ -62,11 +62,11 @@ export const AutomaticParticipantTabs: React.FC<AutomaticParticipantTabsProps> =
             bottom: 3,
             left: pillLeft,
             width: pillWidth,
-            background: activeTab === 'going' ? '#064E3B' : activeTab === 'waitlist' ? '#b45309' : activeTab === 'skipped' ? '#991b1b' : 'rgba(255, 255, 255, 0.15)',
+            background: activeTab === 'going' ? '#064E3B' : activeTab === 'invited' ? 'rgba(255, 255, 255, 0.14)' : activeTab === 'waitlist' ? '#b45309' : activeTab === 'skipped' ? '#991b1b' : 'rgba(255, 255, 255, 0.15)',
             borderRadius: 17,
             transition: 'all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.4)',
-            border: activeTab === 'going' ? '1px solid #059669' : activeTab === 'waitlist' ? '1px solid #d97706' : activeTab === 'skipped' ? '1px solid #dc2626' : '1px solid rgba(255,255,255,0.1)',
+            border: activeTab === 'going' ? '1px solid #059669' : activeTab === 'invited' ? '1px solid rgba(255, 255, 255, 0.12)' : activeTab === 'waitlist' ? '1px solid #d97706' : activeTab === 'skipped' ? '1px solid #dc2626' : '1px solid rgba(255,255,255,0.1)',
           }}
         />
 
