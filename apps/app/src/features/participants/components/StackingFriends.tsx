@@ -15,6 +15,7 @@ interface StackingFriendsProps {
   onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void;
   onClick?: () => void;
   isItemDragged?: boolean;
+  className?: string;
 }
 
 export const StackingFriends: React.FC<StackingFriendsProps> = ({
@@ -26,13 +27,38 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
   onDragEnd,
   onDragOver,
   onClick,
-  isItemDragged = false
+  isItemDragged = false,
+  className = '',
 }) => {
-  const isInvited = item.isAccepted === false || item.rsvpStatus === 'INVITED';
+  const isSkipped = item.rsvpStatus === 'SKIPPED' || (item as any).rsvp_status === 'SKIPPED' || Boolean(item.skipReason || (item as any).skip_reason);
+  const isDulled = item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED' || isSkipped;
+  const skipReasonText = formatSkipReason(item.skipReason || (item as any).skip_reason || (isSkipped ? 'SKIPPED' : null));
+
+  const indexLabel = (() => {
+    if (!showIndex) return null;
+    const rawPos = typeof item.waitlistPosition === 'number'
+      ? item.waitlistPosition
+      : (typeof (item as any).waitlist_position === 'number' ? (item as any).waitlist_position : null);
+
+    if (rawPos !== null) {
+      return `#${rawPos}`;
+    }
+
+    const rsvp = item.rsvpStatus || (item as any).rsvp_status;
+    if (rsvp === 'INVITED') {
+      return null;
+    }
+
+    if (index !== undefined && (rsvp === 'WAITLISTED' || item.isAccepted)) {
+      return `#${index}`;
+    }
+
+    return null;
+  })();
 
   const renderAvatar = () => {
     return (
-      <div style={{ position: 'relative', width: 28, height: 28, marginRight: 12, flexShrink: 0, opacity: isInvited ? 0.6 : 1 }}>
+      <div style={{ position: 'relative', width: 28, height: 28, marginRight: 12, flexShrink: 0, opacity: isDulled ? 0.6 : 1 }}>
         <UserAvatar
           src={item.avatar}
           alt={item.name}
@@ -60,25 +86,50 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         boxShadow: 'none',
         zIndex: isItemDragged ? 0 : 1,
         position: 'relative',
-        opacity: isItemDragged ? 0.25 : isInvited ? 0.55 : 1,
+        opacity: isItemDragged ? 0.25 : isDulled ? 0.55 : 1,
         transition: 'background 0.2s ease, opacity 0.2s ease',
       }}
+      className={`select-none ${className}`}
       onMouseEnter={(e) => {
-        if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+        if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
       }}
       onMouseLeave={(e) => {
         if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = 'transparent';
       }}
     >
-      {showIndex && index !== undefined && (
-        <span style={{ fontSize: 11, fontWeight: 700, color: !isInvited ? 'rgba(255, 255, 255, 0.3)' : 'transparent', marginRight: 10, minWidth: 16 }}>
-          {!isInvited ? `#${index}` : ''}
+      {showIndex && (
+        <span style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: 'rgba(255, 255, 255, 0.4)',
+          marginRight: 10,
+          width: 24,
+          minWidth: 24,
+          display: 'inline-flex',
+          alignItems: 'center',
+          flexShrink: 0,
+          fontFamily: 'Inter, sans-serif'
+        }}>
+          {indexLabel || ''}
         </span>
       )}
       {renderAvatar()}
-      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: isInvited ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
+      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: isDulled ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
         {item.name}
       </span>
+      {skipReasonText && (
+        <span style={{
+          fontSize: 11,
+          fontWeight: 500,
+          color: 'rgba(255, 255, 255, 0.5)',
+          marginRight: item.isHost ? 10 : 4,
+          lineHeight: 1,
+          flexShrink: 0,
+          fontFamily: 'Inter, sans-serif',
+        }}>
+          {skipReasonText}
+        </span>
+      )}
       {(item.leave_requested || (item as any).leaveRequested) && (
         <span
           title="Requested to leave"
@@ -86,7 +137,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
             fontSize: 15,
             fontWeight: 700,
             color: '#F59E0B',
-            marginRight: item.isHost || (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? 10 : 4,
+            marginRight: item.isHost || isDulled ? 10 : 4,
             lineHeight: 1,
             flexShrink: 0,
             fontFamily: 'Inter, sans-serif',

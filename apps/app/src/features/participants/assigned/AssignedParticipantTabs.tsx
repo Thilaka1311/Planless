@@ -9,6 +9,7 @@ interface AssignedParticipantTabsProps {
   capacity: number;
   waitlistCount: number;
   skippedCount?: number;
+  isCompletedPlan?: boolean;
   onTabChange: (tab: ParticipantTab) => void;
 }
 
@@ -19,6 +20,7 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
   capacity,
   waitlistCount,
   skippedCount,
+  isCompletedPlan,
   onTabChange,
 }) => {
   // Filter visible tabs to strictly exclude 'invited'
@@ -70,9 +72,14 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
 
         {filteredTabs.map((key) => {
           let label = '';
-          if (key === 'going') label = `Joined (${goingCount} / ${capacity})`;
-          if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
-          if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
+          if (isCompletedPlan) {
+            if (key === 'going') label = `Attended (${goingCount})`;
+            if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
+          } else {
+            if (key === 'going') label = `Joined (${goingCount} / ${capacity})`;
+            if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
+            if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
+          }
 
           return (
             <button

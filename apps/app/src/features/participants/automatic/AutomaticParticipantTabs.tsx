@@ -9,6 +9,8 @@ interface AutomaticParticipantTabsProps {
   capacity: number;
   waitlistCount: number;
   invitedCount: number;
+  skippedCount?: number;
+  isCompletedPlan?: boolean;
   onTabChange: (tab: ParticipantTab) => void;
 }
 
@@ -19,6 +21,8 @@ export const AutomaticParticipantTabs: React.FC<AutomaticParticipantTabsProps> =
   capacity,
   waitlistCount,
   invitedCount,
+  skippedCount,
+  isCompletedPlan,
   onTabChange,
 }) => {
   const tabCount = visibleTabs.length;
@@ -68,10 +72,15 @@ export const AutomaticParticipantTabs: React.FC<AutomaticParticipantTabsProps> =
 
         {visibleTabs.map((key) => {
           let label = '';
-          if (key === 'invited') label = `Invited (${invitedCount})`;
-          if (key === 'going') label = `Joined (${goingCount} / ${capacity})`;
-          if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
-          if (key === 'skipped') label = `Skipped`;
+          if (isCompletedPlan) {
+            if (key === 'going') label = `Attended (${goingCount})`;
+            if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
+          } else {
+            if (key === 'invited') label = `Invited (${invitedCount})`;
+            if (key === 'going') label = `Joined (${goingCount} / ${capacity})`;
+            if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
+            if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
+          }
 
           return (
             <button

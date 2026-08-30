@@ -25,6 +25,72 @@ const getMemberFinalState = (member: any): 'JOINED' | 'SKIPPED' => {
   return 'SKIPPED';
 };
 
+const getPlanDateTime = (plan: any): Date => {
+  const raw = plan.datetime || (plan as any).scheduled_at || (plan as any).event_date;
+  if (raw && typeof raw === 'string' && raw.includes('-')) {
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const baseDate = plan.createdAt ? new Date(plan.createdAt) : new Date();
+  const dateStr = (plan.date || '').trim();
+  const timeStr = (plan.time || '').trim().replace(/⏰/g, '');
+
+  let targetDate = new Date(baseDate);
+
+  if (dateStr) {
+    const upper = dateStr.toUpperCase();
+    if (upper === 'TODAY') {
+      targetDate = new Date(baseDate);
+    } else if (upper === 'TOMORROW') {
+      targetDate = new Date(baseDate);
+      targetDate.setDate(targetDate.getDate() + 1);
+    } else {
+      const parsed = new Date(dateStr);
+      if (!isNaN(parsed.getTime())) {
+        targetDate = parsed;
+      }
+    }
+  }
+
+  if (timeStr) {
+    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const ampm = match[3]?.toUpperCase();
+      if (ampm === 'PM' && hours < 12) hours += 12;
+      if (ampm === 'AM' && hours === 12) hours = 0;
+      targetDate.setHours(hours, minutes, 0, 0);
+      return targetDate;
+    }
+  }
+
+  if (plan.createdAt) {
+    const d = new Date(plan.createdAt);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  return targetDate;
+};
+
+const formatPlanDateParts = (dateObj: Date): { date: string; time: string } => {
+  if (isNaN(dateObj.getTime()) || dateObj.getTime() === 0) {
+    return { date: '', time: '' };
+  }
+  const month = dateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+  const day = dateObj.getDate();
+  const date = `${month} ${day}`;
+
+  const time = dateObj.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  return { date, time };
+};
+
 export const PastPlans: React.FC<PastPlansProps> = React.memo(({
   onBack,
   setSelectedPlanId,
@@ -33,7 +99,7 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
   const { activeUserUuid } = useProfileStore();
 
   const completedPlans = useMemo(() => {
-    return plans.filter((p) => {
+    const filtered = plans.filter((p) => {
       if ((p.status || "").toUpperCase() !== "COMPLETED") return false;
 
       const myMember = p.members.find(m => {
@@ -41,6 +107,15 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
         return activeUserUuid && mId === activeUserUuid;
       });
       return Boolean(myMember);
+    });
+
+    return [...filtered].sort((a, b) => {
+      const timeA = getPlanDateTime(a).getTime();
+      const timeB = getPlanDateTime(b).getTime();
+      if (timeA !== timeB) {
+        return timeB - timeA; // Descending: newest -> oldest
+      }
+      return (a.title || '').localeCompare(b.title || '');
     });
   }, [plans, activeUserUuid]);
 
@@ -99,6 +174,9 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
                 statusColor = 'text-rose-400';
               }
 
+              const dateObj = getPlanDateTime(plan);
+              const dateParts = formatPlanDateParts(dateObj);
+
               return (
                 <div
                   key={plan.id}
@@ -106,7 +184,18 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
                   className="w-full flex items-center justify-between gap-3.5 py-2.5 cursor-pointer active:opacity-80 transition-all"
                 >
                   <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-800 shrink-0 relative border border-white/10">
+                    {/* Date + Time on the FAR LEFT */}
+                    <div className="w-[68px] min-w-[68px] flex flex-col justify-center shrink-0 text-left font-sans leading-tight">
+                      <span className="text-[12px] font-bold text-white tracking-wide uppercase">
+                        {dateParts.date}
+                      </span>
+                      <span className="text-[11px] font-medium text-zinc-400 mt-0.5">
+                        {dateParts.time}
+                      </span>
+                    </div>
+
+                    {/* Circular Plan Image */}
+                    <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-800 shrink-0 relative border border-white/10">
                       <DiscoveryImages
                         src={plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory)}
                         category={plan.category}
@@ -114,7 +203,7 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
                         className="w-full h-full object-cover"
                       />
                     </div>
-                    <h3 className="text-sm font-bold text-white truncate">
+                    <h3 className="text-sm font-bold text-white truncate flex-1 min-w-0">
                       {plan.title}
                     </h3>
                   </div>

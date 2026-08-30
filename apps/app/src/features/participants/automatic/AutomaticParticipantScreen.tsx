@@ -61,6 +61,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   pendingLeaveRequests,
   currentPage,
   onInviteSkipped,
+  isCompletedPlan,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
@@ -76,6 +77,14 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
     : null;
 
   const partitioned = useMemo(() => {
+    if (isCompletedPlan) {
+      return {
+        going: externalGoingList,
+        waitlist: [],
+        skipped: externalSkippedList || [],
+        goingJoinedCount: externalGoingList.length,
+      };
+    }
     if (mode === 'wizard') {
       const allWizard = [...(hostItem ? [hostItem] : []), ...selectedFriends];
       return {
@@ -103,6 +112,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
     capacity,
     isHostSelected,
     userProfile,
+    isCompletedPlan,
   ]);
 
   const displayGoing = partitioned.going;
@@ -113,6 +123,13 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   const isFull = capacity > 0 && actualJoinedCount >= capacity;
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
+    if (isCompletedPlan) {
+      const tabs: ParticipantTab[] = ['going'];
+      if (displaySkipped.length > 0) {
+        tabs.push('skipped');
+      }
+      return tabs;
+    }
     if (mode === 'wizard') {
       return ['going'];
     }
@@ -127,7 +144,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       tabs.push('skipped');
     }
     return tabs;
-  }, [mode, isFull, displaySkipped.length]);
+  }, [mode, isFull, displaySkipped.length, isCompletedPlan]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>('going');
   const initialMountRef = React.useRef(true);
@@ -172,6 +189,10 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   const isInviteOnly = managementMode === 'invite_only' || (!isHostUser && managementMode !== 'host');
 
   const handleItemTap = (item: Friend, type: ParticipantTab) => {
+    if (isCompletedPlan) {
+      setViewProfileUserId(item.dbUuid || item.id);
+      return;
+    }
     if (isInviteOnly || isPlanSizeEditing) return;
     setSelectedItem(item);
     setSheetType(type);
@@ -204,7 +225,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         />
       )}
 
-      {effectiveIsHost && (
+      {!isCompletedPlan && effectiveIsHost && (
         <>
           <div className={displayMode === 'embedded' ? "pt-4" : ""}>
             <PlanSizeCard
@@ -240,10 +261,12 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       <AutomaticParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
-        goingCount={actualJoinedCount}
+        goingCount={isCompletedPlan ? displayGoing.length : actualJoinedCount}
         capacity={capacity}
         waitlistCount={displayWaitlist.length}
         invitedCount={displayGoing.length}
+        skippedCount={displaySkipped.length}
+        isCompletedPlan={isCompletedPlan}
         onTabChange={setActiveTab}
       />
 
@@ -316,7 +339,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       />
 
       {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
-      {(currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
+      {!isCompletedPlan && (currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
         <button
           type="button"
           onClick={() => onAddFriends(activeTab)}

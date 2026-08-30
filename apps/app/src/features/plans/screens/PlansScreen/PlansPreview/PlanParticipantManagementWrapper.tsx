@@ -46,19 +46,42 @@ interface PlanParticipantManagementWrapperProps {
   currentPage?: number;
 }
 
-function memberToFriend(m: any, hostId: string, activeUserId?: string, dbPlanParticipants: any[] = [], currentPlanId?: string): Friend {
+const getMemberFinalState = (m: any): string | null => {
+  if (!m) return null;
+  const raw = m.final_state || m.finalState || m.final_attendance || m.finalAttendance;
+  if (raw) {
+    const s = String(raw).toUpperCase();
+    if (s === 'JOINED' || s === 'ATTENDED') return 'JOINED';
+    if (s === 'WAITLISTED') return 'WAITLISTED';
+    if (s === 'INVITED') return 'INVITED';
+    if (s === 'SKIPPED' || s === 'DID_NOT_ATTEND') return 'SKIPPED';
+    return s;
+  }
+  return null;
+};
+
+const memberToFriend = (
+  m: any,
+  hostId: string,
+  activeUserId: string,
+  dbPlanParticipants: any[],
+  currentPlanId?: string
+): Friend => {
   const id = m.userUuid || m.userId || m.user_id || m.id || m.dbUuid;
   const isHostRole = (m.role || '').toUpperCase() === 'HOST';
   const isCurrentUser = Boolean(
     activeUserId && (id === activeUserId || m.userUuid === activeUserId || m.userId === activeUserId || m.user_id === activeUserId || m.dbUuid === activeUserId)
   );
-  const status = normalizeStatus(m.joinState || m.rsvp_status);
-  const isAccepted = status !== 'INVITED';
 
   const dbPp = dbPlanParticipants.find((pp: any) => 
     (!currentPlanId || pp.plan_id === currentPlanId) &&
     (pp.user_id === id || pp.user_id === m.userUuid || pp.user_id === m.userId || pp.user_id === m.user_id || pp.user_id === m.dbUuid)
   );
+
+  const status = dbPp
+    ? normalizeStatus(dbPp.rsvp_status)
+    : normalizeStatus(m.joinState || m.rsvp_status);
+  const isAccepted = status !== 'INVITED' && status !== 'SKIPPED';
 
   const isLeaveRequested = Boolean(
     (dbPp && dbPp.leave_requested === true) ||
@@ -72,6 +95,10 @@ function memberToFriend(m: any, hostId: string, activeUserId?: string, dbPlanPar
     ? dbPp.waitlist_position
     : (m.waitlistPosition ?? m.waitlist_position ?? null);
 
+  const assignedGroup = dbPp
+    ? (dbPp.assigned_group ? (String(dbPp.assigned_group).toUpperCase() as any) : null)
+    : (m.assignedGroup || m.assigned_group || (status === 'WAITLISTED' ? 'WAITLIST' : 'GOING'));
+
   return {
     id,
     dbUuid: m.userUuid || m.userId || m.user_id || m.id || m.dbUuid,
@@ -81,13 +108,13 @@ function memberToFriend(m: any, hostId: string, activeUserId?: string, dbPlanPar
     joinedQueueAt: m.joinedQueueAt || m.joined_queue_at || m.createdAt || m.created_at,
     isAccepted,
     rsvpStatus: status,
-    assignedGroup: m.assignedGroup || m.assigned_group || (status === 'WAITLISTED' ? 'WAITLIST' : 'GOING'),
+    assignedGroup,
     waitlistPosition,
     leave_requested: isLeaveRequested,
     leave_requested_at: leaveRequestedAt,
     skipReason: dbPp?.skip_reason || m.skipReason || m.skip_reason || null,
   };
-}
+};
 
 export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagementWrapperProps> = ({
   plan,
@@ -833,51 +860,79 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     return sortGoingParticipants(list, activeUserId);
   }, [activeUserId]);
 
+  const isCompletedPlan = (plan.status || '').toUpperCase() === 'COMPLETED';
+
   // Determine capacity bounds
   const storedCapacity = plan.joinLimit || plan.capacity || 2;
   const maxCapacity = Math.max(storedCapacity, Math.max(2, allPlanMembers.length));
   const capacity = Math.max(2, storedCapacity);
 
   const goingMembers = useMemo(() => {
+    const currentPlanId = plan.id || plan.dbUuid;
     return allPlanMembers.filter((m) => {
-      const status = normalizeStatus(m.joinState || m.rsvp_status);
+      const id = m.userUuid || m.userId || m.user_id || m.id || m.dbUuid;
+      const dbPp = dbPlanParticipants.find((pp: any) =>
+        (!currentPlanId || pp.plan_id === currentPlanId) &&
+        (pp.user_id === id || pp.user_id === m.userUuid || pp.user_id === m.userId || pp.user_id === m.user_id || pp.user_id === m.dbUuid)
+      );
+      const status = dbPp ? normalizeStatus(dbPp.rsvp_status) : normalizeStatus(m.joinState || m.rsvp_status);
+      const dbGroup = dbPp?.assigned_group;
+      const group = (typeof dbGroup === 'string' ? dbGroup : ((m as any).assignedGroup || (m as any).assigned_group || '')).toUpperCase();
+
+      if (isCompletedPlan) {
+        const finalState = getMemberFinalState(m) || (dbPp ? getMemberFinalState(dbPp) : null);
+        const isAttended = finalState === 'JOINED' || (finalState === null && (
+          waitlistMode === 'assigned'
+            ? (status === 'JOINED' || group === 'GOING' || group === 'JOINED')
+            : (status === 'JOINED')
+        ));
+        return isAttended;
+      }
+
       if (status === 'SKIPPED') return false;
       
       if (waitlistMode === 'assigned') {
-        const group = ((m as any).assignedGroup || (m as any).assigned_group || '').toUpperCase();
         return group === 'GOING' || group === 'JOINED' || (!group && (status === 'JOINED' || status === 'INVITED'));
       }
       if (status === 'INVITED') return false;
       return status === 'JOINED';
     });
-  }, [allPlanMembers, waitlistMode]);
+  }, [allPlanMembers, waitlistMode, dbPlanParticipants, plan.id, plan.dbUuid, isCompletedPlan]);
 
   const isAutomaticFull = waitlistMode === 'automatic' && capacity > 0 && goingMembers.length >= capacity;
 
   const waitlistMembers = useMemo(() => {
+    if (isCompletedPlan) return [];
+    const currentPlanId = plan.id || plan.dbUuid;
     return allPlanMembers.filter((m) => {
-      const status = normalizeStatus(m.joinState || m.rsvp_status);
+      const id = m.userUuid || m.userId || m.user_id || m.id || m.dbUuid;
+      const dbPp = dbPlanParticipants.find((pp: any) =>
+        (!currentPlanId || pp.plan_id === currentPlanId) &&
+        (pp.user_id === id || pp.user_id === m.userUuid || pp.user_id === m.userId || pp.user_id === m.user_id || pp.user_id === m.dbUuid)
+      );
+      const status = dbPp ? normalizeStatus(dbPp.rsvp_status) : normalizeStatus(m.joinState || m.rsvp_status);
       if (status === 'SKIPPED') return false;
 
       if (waitlistMode === 'assigned') {
-        const group = ((m as any).assignedGroup || (m as any).assigned_group || '').toUpperCase();
+        const dbGroup = dbPp?.assigned_group;
+        const group = (typeof dbGroup === 'string' ? dbGroup : ((m as any).assignedGroup || (m as any).assigned_group || '')).toUpperCase();
         return group === 'WAITLIST' || group === 'WAITLISTED' || (!group && status === 'WAITLISTED');
       }
       
       if (status === 'INVITED') return false;
       return status === 'WAITLISTED';
     });
-  }, [allPlanMembers, waitlistMode]);
+  }, [allPlanMembers, waitlistMode, dbPlanParticipants, plan.id, plan.dbUuid, isCompletedPlan]);
 
   const invitedList: Friend[] = useMemo(() => {
-    if (waitlistMode === 'assigned') return [];
+    if (isCompletedPlan || waitlistMode === 'assigned') return [];
     
     const currentPlanId = plan.id || plan.dbUuid;
     const rawInvited = allPlanMembers
       .filter((m) => normalizeStatus(m.joinState || m.rsvp_status) === 'INVITED')
       .map(m => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, currentPlanId));
     return prioritizeCurrentUserAndSort(rawInvited);
-  }, [allPlanMembers, prioritizeCurrentUserAndSort, waitlistMode, hostId, activeUserId, dbPlanParticipants, plan.id, plan.dbUuid]);
+  }, [allPlanMembers, prioritizeCurrentUserAndSort, waitlistMode, hostId, activeUserId, dbPlanParticipants, plan.id, plan.dbUuid, isCompletedPlan]);
 
   const rawGoingList: Friend[] = useMemo(() => {
     const currentPlanId = plan.id || plan.dbUuid;
@@ -897,10 +952,31 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const skippedList: Friend[] = useMemo(() => {
     const currentPlanId = plan.id || plan.dbUuid;
     const rawSkipped = allPlanMembers
-      .filter((m) => normalizeStatus(m.joinState || m.rsvp_status) === 'SKIPPED')
+      .filter((m) => {
+        const id = m.userUuid || m.userId || m.user_id || m.id || m.dbUuid;
+        const dbPp = dbPlanParticipants.find((pp: any) =>
+          (!currentPlanId || pp.plan_id === currentPlanId) &&
+          (pp.user_id === id || pp.user_id === m.userUuid || pp.user_id === m.userId || pp.user_id === m.user_id || pp.user_id === m.dbUuid)
+        );
+        const status = dbPp ? normalizeStatus(dbPp.rsvp_status) : normalizeStatus(m.joinState || m.rsvp_status);
+        const dbGroup = dbPp?.assigned_group;
+        const group = (typeof dbGroup === 'string' ? dbGroup : ((m as any).assignedGroup || (m as any).assigned_group || '')).toUpperCase();
+
+        if (isCompletedPlan) {
+          const finalState = getMemberFinalState(m) || (dbPp ? getMemberFinalState(dbPp) : null);
+          const isAttended = finalState === 'JOINED' || (finalState === null && (
+            waitlistMode === 'assigned'
+              ? (status === 'JOINED' || group === 'GOING' || group === 'JOINED')
+              : (status === 'JOINED')
+          ));
+          return !isAttended;
+        }
+
+        return status === 'SKIPPED';
+      })
       .map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, currentPlanId));
     return prioritizeCurrentUserAndSort(rawSkipped);
-  }, [allPlanMembers, hostId, activeUserId, dbPlanParticipants, prioritizeCurrentUserAndSort, plan.id, plan.dbUuid]);
+  }, [allPlanMembers, hostId, activeUserId, dbPlanParticipants, prioritizeCurrentUserAndSort, plan.id, plan.dbUuid, isCompletedPlan, waitlistMode]);
 
   // Determine which tab to show by default: the one containing the current user
   const initialTab: 'going' | 'waitlist' | 'invited' = useMemo(() => {
@@ -910,6 +986,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       return mId === activeUserId;
     });
     if (!currentMember) return 'going';
+    if (isCompletedPlan) return 'going';
     if (waitlistMode === 'assigned') {
       const group = (currentMember as any).assignedGroup || (currentMember as any).assigned_group;
       return group === 'WAITLIST' ? 'waitlist' : 'going';
@@ -918,7 +995,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     if (status === 'WAITLISTED') return 'waitlist';
     if (status === 'INVITED') return 'invited';
     return 'going'; // JOINED or HOST → Going tab
-  }, [allPlanMembers, activeUserId, waitlistMode]);
+  }, [allPlanMembers, activeUserId, waitlistMode, isCompletedPlan]);
 
   // Formatted event date/time for header popover
   const eventDateObj = plan.datetime ? new Date(plan.datetime) : null;
@@ -1461,44 +1538,25 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     return rawList.filter(w => !goingUserIds.has(w.dbUuid || w.id));
   }, [localWaitlist, waitlistList, displayGoingList]);
 
-  const reorderTimeoutRef = useRef<any>(null);
-
-  useEffect(() => {
-    return () => {
-      if (reorderTimeoutRef.current) {
-        clearTimeout(reorderTimeoutRef.current);
-      }
-    };
-  }, []);
-
   const handleReorderWaitlist = useCallback((newWaitlist: Friend[]) => {
     // ONLY update local visual state during active dragging for 60fps smooth UI
     setLocalWaitlist(newWaitlist);
   }, []);
 
-  const handleReorderWaitlistComplete = useCallback((finalWaitlist: Friend[]) => {
+  const handleReorderWaitlistComplete = useCallback(async (finalWaitlist: Friend[]) => {
     // 1. Keep the exact visual waitlist order locally
     setLocalWaitlist(finalWaitlist);
 
-    // 2. Clear any pending database sync timer
-    if (reorderTimeoutRef.current) {
-      clearTimeout(reorderTimeoutRef.current);
-    }
+    // 2. Immediately sync the final order to the database upon drop
+    try {
+      const userUuids = finalWaitlist.map((f) => f.dbUuid || f.id);
 
-    // 3. Sync the final order to the database only after 2 seconds of inactivity
-    reorderTimeoutRef.current = setTimeout(async () => {
-      try {
-        const userUuids = finalWaitlist.map((f) => f.dbUuid || f.id);
-
-        if (onReorderWaitlist && userUuids.length > 0) {
-          await onReorderWaitlist(plan.id, userUuids);
-        }
-      } catch (err) {
-        console.error("[ASSIGNED_WAITLIST_REORDER] Database error:", err);
-      } finally {
-        reorderTimeoutRef.current = null;
+      if (onReorderWaitlist && userUuids.length > 0) {
+        await onReorderWaitlist(plan.id, userUuids);
       }
-    }, 2000);
+    } catch (err) {
+      console.error("[ASSIGNED_WAITLIST_REORDER] Database error:", err);
+    }
   }, [plan.id, onReorderWaitlist]);
 
   // ── Switch to Automatic Mode State & Handler (REMOVED) ──
@@ -1600,6 +1658,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         onKeepPaymentLeaveParticipant={handleKeepPaymentLeaveParticipant}
         onInviteSkipped={effectiveIsHost ? handleInviteSkipped : undefined}
         onMoveToInvited={effectiveIsHost ? handleMoveToInvited : undefined}
+        isCompletedPlan={isCompletedPlan}
       />
 
       {isPickerOpen && (
@@ -1665,7 +1724,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         hasWaitlist={waitlistList.length > 0}
         goingCount={goingMembers.length}
         waitlistCount={waitlistList.length}
-        onMoveToWaitlist={handleMoveToWaitlistForRemoveGoing}
         onDecreaseCapacity={handleConfirmDecreaseCapacityForRemoveGoing}
         onReplaceParticipant={handleOpenRemoveGoingReplacePickerFull}
         onCancelPlan={onCancelPlan ? () => onCancelPlan(plan.id) : undefined}

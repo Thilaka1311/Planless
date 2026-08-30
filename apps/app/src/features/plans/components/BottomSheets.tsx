@@ -1733,13 +1733,12 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
 // ----------------------------------------------------------------------
 // 10C. REMOVE GOING PARTICIPANT BOTTOM SHEET (Assigned Mode Case 1)
 // ----------------------------------------------------------------------
-interface RemoveGoingParticipantBottomSheetProps {
+export interface RemoveGoingParticipantBottomSheetProps {
   isOpen: boolean;
-  participant: { name: string; avatar?: string } | null;
-  hasWaitlist: boolean;
+  participant: { name: string; avatar: string } | null;
+  hasWaitlist?: boolean;
   goingCount?: number;
   waitlistCount?: number;
-  onMoveToWaitlist?: () => void;
   onDecreaseCapacity: () => void;
   onReplaceParticipant?: () => void;
   onCancelPlan?: () => void;
@@ -1752,14 +1751,13 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
   hasWaitlist: rawHasWaitlist,
   goingCount,
   waitlistCount,
-  onMoveToWaitlist,
   onDecreaseCapacity,
   onReplaceParticipant,
   onCancelPlan,
   onClose,
 }) => {
   if (!isOpen || !participant) return null;
-  const hasWaitlist = waitlistCount !== undefined ? waitlistCount > 0 : rawHasWaitlist;
+  const hasWaitlist = waitlistCount !== undefined ? waitlistCount > 0 : !!rawHasWaitlist;
   const canDecreaseCapacity = goingCount === undefined || goingCount > 2;
 
   return (
@@ -1808,34 +1806,7 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
 
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Action 0: Move to Waitlist instead */}
-          {onMoveToWaitlist && (
-            <button
-              type="button"
-              onClick={onMoveToWaitlist}
-              style={{
-                width: '100%',
-                height: 48,
-                padding: '0 14px',
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: 'none',
-                borderRadius: 12,
-                color: '#FFFFFF',
-                textAlign: 'left',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-              }}
-            >
-              <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">
-                <TrendingDown className="w-4 h-4" />
-              </div>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Move to waitlist instead</span>
-            </button>
-          )}
-
-          {/* Action 1: Decrease Plan Size */}
+          {/* Action 1: Decrease Plan Size (Only shown when goingCount > 2) */}
           {canDecreaseCapacity && (
             <button
               type="button"
@@ -1890,7 +1861,7 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
           )}
 
           {/* Action: Cancel Plan (Only shown when no other actions are possible) */}
-          {!hasWaitlist && !onMoveToWaitlist && onCancelPlan && (
+          {!hasWaitlist && onCancelPlan && (
             <button
               type="button"
               onClick={onCancelPlan}

@@ -532,21 +532,27 @@ export function usePlanParticipants({
     applyParticipantOptimisticUpdate(planUuid, userUuid, {
       role: "PARTICIPANT",
       rsvp_status: "SKIPPED",
+      assigned_group: null,
+      waitlist_position: null,
       responded_at: new Date().toISOString(),
       skip_reason: "LEFT"
     } as any);
 
-    await updateParticipantStatus(planUuid, userUuid, "SKIPPED", undefined, new Date().toISOString(), "LEFT");
+    // Persist via trusted SECURITY DEFINER RPC
+    try {
+      await api.leavePlanRPC(planUuid);
+    } catch (rpcError) {
+      console.error("[PlansContext leavePlan] leavePlanRPC failed.", rpcError);
+      await refreshPlans();
+      throw rpcError;
+    }
 
     await handleParticipantStatusChange(planUuid, userUuid, leaverParticipantRecord?.rsvp_status, "SKIPPED");
     await unassignTeam(planUuid, userUuid);
-    await promoteWaitlistIfSpotsAvailable(planUuid, { bypassDeadlineCheck: true });
-    await renumberWaitlistPositions(planUuid);
-    // Recalculate wallet splits after a participant leaves Going
-    recalculateWalletExpenses(planUuid).catch(err =>
-      console.error("[leavePlan] recalculateWalletExpenses failed:", err)
-    );
-  }, [plans, dbPlans, resolveUserUuid, isUuid, dbPlanParticipants, handleParticipantStatusChange, unassignTeam, applyParticipantOptimisticUpdate]);
+
+    // Refresh everything because RPC might have promoted Waitlist #1
+    await refreshPlans(["plan_participants", "wallet_expenses", "wallet_expense_participants"]);
+  }, [plans, dbPlans, resolveUserUuid, isUuid, dbPlanParticipants, handleParticipantStatusChange, unassignTeam, applyParticipantOptimisticUpdate, refreshPlans]);
 
   const skipPlan = useCallback(async (rawPlanId: string, userId: string) => {
     const planId = cleanPlanId(rawPlanId);
@@ -584,29 +590,26 @@ export function usePlanParticipants({
       applyParticipantOptimisticUpdate(planUuid, userUuid, {
         role: "PARTICIPANT",
         rsvp_status: "SKIPPED",
+        assigned_group: null,
         waitlist_position: null,
         responded_at: new Date().toISOString(),
         skip_reason: targetSkipReason
       } as any);
 
-      const result = await updateParticipantStatus(planUuid, userUuid, "SKIPPED", undefined, new Date().toISOString(), targetSkipReason);
-      if (!result) {
-        console.warn("[skipPlan] Direct status update returned null");
-      }
+      // Persist via trusted SECURITY DEFINER RPC
+      await api.leavePlanRPC(planUuid);
 
       await handleParticipantStatusChange(planUuid, userUuid, existingBefore.rsvp_status, "SKIPPED");
       await unassignTeam(planUuid, userUuid);
-      await promoteWaitlistIfSpotsAvailable(planUuid, { bypassDeadlineCheck: true });
-      await renumberWaitlistPositions(planUuid);
-      // Recalculate wallet splits after a participant leaves
-      recalculateWalletExpenses(planUuid).catch(err =>
-        console.error("[skipPlan] recalculateWalletExpenses failed:", err)
-      );
+
+      // Refresh everything because RPC might have promoted Waitlist #1
+      await refreshPlans(["plan_participants", "wallet_expenses", "wallet_expense_participants"]);
     } catch (error) {
       console.error(`[PlansContext] skipPlan DB write failed:`, error);
+      await refreshPlans();
       throw error;
     }
-  }, [plans, resolveUserUuid, isUuid, dbPlanParticipants, handleParticipantStatusChange, unassignTeam, applyParticipantOptimisticUpdate]);
+  }, [plans, resolveUserUuid, isUuid, dbPlanParticipants, handleParticipantStatusChange, unassignTeam, applyParticipantOptimisticUpdate, refreshPlans]);
 
   const requestPaidPlanLeave = useCallback(async (rawPlanId: string) => {
     const planId = cleanPlanId(rawPlanId);
@@ -902,8 +905,11 @@ export function usePlanParticipants({
         const participantName = inviteeUser?.full_name || (inviteeUser as any)?.name || "Participant";
         const participantAvatarUrl = (inviteeUser as any)?.avatar_url || (inviteeUser as any)?.profile_photo || null;
 
-        const isGroupAdd = effectiveAssignedGroup === 'GOING' || effectiveAssignedGroup === 'WAITLIST';
-        const activityType = isGroupAdd ? 'participant_added' : 'participant_invited';
+        const activityType = effectiveAssignedGroup === 'GOING'
+          ? 'participant_moved_to_joined'
+          : effectiveAssignedGroup === 'WAITLIST'
+            ? 'participant_moved_to_waitlist'
+            : 'participant_invites_toggled';
         const groupValue = effectiveAssignedGroup === 'GOING' ? 'going' : effectiveAssignedGroup === 'WAITLIST' ? 'waitlist' : null;
 
         (supabase as any)
