@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from './types';
+import { formatSkipReason } from '../../../../lib/participantStatus';
 
 interface ParticipantActionSheetProps {
   selectedItem: Friend | null;
@@ -100,7 +101,13 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 16, fontWeight: 600 }}>{selectedItem.name}</span>
             <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)' }}>
-              {sheetType === 'going' ? 'Going' : sheetType === 'waitlist' ? 'Waitlist' : 'Invited'}
+              {sheetType === 'going'
+                ? 'Going'
+                : sheetType === 'waitlist'
+                ? 'Waitlist'
+                : sheetType === 'skipped'
+                ? (formatSkipReason(selectedItem.skipReason) || 'Skipped')
+                : 'Invited'}
             </span>
           </div>
         </div>
@@ -110,7 +117,7 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
             {/* Move actions — only in Assigned mode */}
             {onMoveToWaitlist && sheetType === 'going' && !selectedItem.isHost && (mode === 'wizard' || waitlistMode === 'assigned') && (
               <button
-                onClick={() => onMoveToWaitlist(selectedItem)}
+                onClick={() => executeActionWithImmediateDismiss(() => onMoveToWaitlist!(selectedItem))}
                 style={{ width: '100%', padding: '14px', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
               >
                 Move to Waitlist
@@ -125,8 +132,8 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
               </button>
             )}
 
-            {/* Make Host — only when participant has accepted (rsvpStatus === 'JOINED') and not in waitlist */}
-            {onPromoteHost && sheetType !== 'waitlist' && (selectedItem.rsvpStatus === 'JOINED' || selectedItem.isAccepted === true) && !selectedItem.isHost && (
+            {/* Make Host — only when participant has accepted (rsvpStatus === 'JOINED') and not in waitlist/skipped */}
+            {onPromoteHost && sheetType !== 'waitlist' && sheetType !== 'skipped' && selectedItem.rsvpStatus === 'JOINED' && !selectedItem.isHost && (
               <button
                 onClick={() => {
                   executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));

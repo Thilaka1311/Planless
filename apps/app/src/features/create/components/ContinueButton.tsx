@@ -1,57 +1,33 @@
 import React from 'react';
+import { ArrowRight } from 'lucide-react';
 
 interface ContinueButtonProps {
   onClick: () => void;
   disabled?: boolean;
-  text: string;
+  text?: string;
+  title?: string;
 }
 
 export const ContinueButton: React.FC<ContinueButtonProps> = ({
   onClick,
   disabled = false,
-  text
+  text,
+  title,
 }) => {
+  if (disabled) return null;
+
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
+      title={title || text || "Continue"}
       style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: '16px 20px',
-        background: 'linear-gradient(to top, #000000 80%, rgba(0,0,0,0))',
-        zIndex: 40,
-        paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
-        pointerEvents: 'auto'
+        bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))',
+        right: 'calc(1.25rem + env(safe-area-inset-right, 0px))',
       }}
+      className="fixed z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-150 cursor-pointer pointer-events-auto select-none"
     >
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onClick}
-        style={{
-          width: '100%',
-          height: 48,
-          borderRadius: 14,
-          border: 'none',
-          background: disabled ? 'rgba(255, 255, 255, 0.15)' : '#FFFFFF',
-          color: disabled ? 'rgba(255, 255, 255, 0.3)' : '#000000',
-          fontSize: 15,
-          fontWeight: 700,
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          boxShadow: disabled ? 'none' : '0 4px 12px rgba(0,0,0,0.5)',
-          transition: 'all 0.2s',
-          fontFamily: 'Inter, sans-serif'
-        }}
-        onMouseEnter={(e) => {
-          if (!disabled) e.currentTarget.style.opacity = '0.9';
-        }}
-        onMouseLeave={(e) => {
-          if (!disabled) e.currentTarget.style.opacity = '1';
-        }}
-      >
-        {text}
-      </button>
-    </div>
+      <ArrowRight className="w-6 h-6 text-white stroke-[2.5]" />
+    </button>
   );
 };

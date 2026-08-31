@@ -282,6 +282,45 @@ export async function removeParticipantRPC(
 }
 
 /**
+ * Invokes the replace_participant SECURITY DEFINER RPC.
+ * Authorized for any Host.
+ * Atomically replaces a target participant with a replacement participant
+ * without requiring an active leave request.
+ */
+export async function replaceParticipantRPC(
+  planId: string,
+  targetUserId: string,
+  replacementUserId: string
+): Promise<any> {
+  const { data, error } = await supabase.rpc("replace_participant" as any, {
+    p_plan_id: planId,
+    p_target_user_id: targetUserId,
+    p_replacement_user_id: replacementUserId,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Invokes the move_participant_to_waitlist_and_decrease_capacity SECURITY DEFINER RPC.
+ * Authorized for any Host.
+ * Atomically moves a target participant from GOING to WAITLIST and decreases plan capacity by 1.
+ */
+export async function moveParticipantToWaitlistAndDecreaseCapacityRPC(
+  planId: string,
+  targetUserId: string
+): Promise<any> {
+  const { data, error } = await supabase.rpc("move_participant_to_waitlist_and_decrease_capacity" as any, {
+    p_plan_id: planId,
+    p_target_user_id: targetUserId,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Invokes the complete_plan SECURITY DEFINER RPC.
  * Authorized only for the Plan Host.
  * Finalizes participant attendance and completes the plan.

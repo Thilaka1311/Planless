@@ -1,14 +1,7 @@
 import React from 'react';
 import { Reorder } from 'motion/react';
 import { StackingFriends } from './StackingFriends';
-
-interface Friend {
-  id: string;
-  dbUuid: string;
-  name: string;
-  avatar: string;
-  isHost?: boolean;
-}
+import { Friend } from '../shared/types';
 
 interface WaitlistSectionProps {
   waitlist: Friend[];
@@ -31,6 +24,8 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
   showIndex = true,
   indexOffset = 1,
 }) => {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
   if (waitlist.length === 0 && !onAddFriends) {
     return (
       <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
@@ -42,14 +37,14 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+    <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%', position: 'relative' }}>
       {reorderable && onReorder && waitlist.length > 1 ? (
         <Reorder.Group
           axis="y"
           values={waitlist}
           onReorder={onReorder}
           as="div"
-          style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}
+          style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}
         >
           {waitlist.map((item, idx) => {
             const itemKey = item.dbUuid || item.id;
@@ -60,6 +55,8 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
                 id={itemKey}
                 as="div"
                 layoutId={itemKey}
+                dragConstraints={containerRef}
+                dragElastic={0}
                 onDragEnd={() => {
                   if (onReorderComplete) {
                     onReorderComplete(waitlist);
@@ -67,8 +64,8 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
                 }}
                 transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                 whileDrag={{
-                  scale: 1.02,
-                  boxShadow: '0 12px 28px rgba(0, 0, 0, 0.7)',
+                  scale: 1.01,
+                  boxShadow: '0 8px 20px rgba(0, 0, 0, 0.6)',
                   zIndex: 50,
                 }}
                 style={{ position: 'relative', cursor: 'grab', touchAction: 'none' }}
@@ -86,7 +83,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
       ) : (
         waitlist.map((item, idx) => (
           <StackingFriends
-            key={item.id}
+            key={item.dbUuid || item.id}
             item={item}
             index={idx + indexOffset}
             showIndex={showIndex}

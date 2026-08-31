@@ -50,6 +50,8 @@ interface HeroHeaderProps {
   onOpenChat?: () => void;
   /** Called when the user taps Expenses in the chat header menu */
   onOpenExpenses?: () => void;
+  currentPage?: number;
+  onSelectPage?: (pageIndex: number) => void;
 }
 
 export const HeroHeader: React.FC<HeroHeaderProps> = ({
@@ -72,6 +74,8 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   onOpenParticipants,
   onOpenActivity,
   onOpenExpenses,
+  currentPage,
+  onSelectPage,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
@@ -95,8 +99,13 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   const handleSaveTitle = async () => {
     setIsEditingTitle(false);
     const trimmed = tempTitle.trim();
-    if (!trimmed || trimmed === title) {
-      setTempTitle(title);
+    if (!trimmed || trimmed === "Set a title" || trimmed === "Enter Title") {
+      if (onEditTitle) {
+        try {
+          await onEditTitle("");
+        } catch {}
+      }
+      setTempTitle("");
       return;
     }
     if (trimmed.length > 50) return;
@@ -152,10 +161,10 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
         {/* Gradient overlay — exact same as Plan Details hero */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 pointer-events-none z-10" />
 
-        {/* Glass bar — rounded-b-2xl + bg-black/30 backdrop-blur-xl, pixel-for-pixel match of Plan Details HeroHeader */}
+        {/* Glass bar — rounded-b-2xl + bg-black/30 backdrop-blur-xl */}
         <div
           id="immersive-plan-glass-header"
-          className="relative z-30 bg-black/30 backdrop-blur-xl shadow-lg rounded-b-2xl pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-3 px-4"
+          className="relative z-30 bg-black/30 backdrop-blur-xl shadow-lg rounded-b-2xl pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-2 px-4"
         >
           <div className="w-full flex items-center gap-3">
             {/* Back button — isolated: does NOT trigger onHeaderPress */}
@@ -209,100 +218,100 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               </button>
             </div>
           </div>
+
+          {/* 3-Way Navigation Tab Bar (Participants | Chat | Activity) */}
+          {onSelectPage !== undefined && (
+            <div className="relative w-full flex items-center border-t border-white/10 mt-2.5 pt-0.5 pb-0.5">
+              <button
+                type="button"
+                onClick={() => onSelectPage(0)}
+                className={`flex-1 py-1.5 text-center text-xs sm:text-sm transition-colors cursor-pointer select-none ${
+                  currentPage === 0 ? "font-bold text-white" : "font-medium text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Participants
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelectPage(1)}
+                className={`flex-1 py-1.5 text-center text-xs sm:text-sm transition-colors cursor-pointer select-none ${
+                  currentPage === 1 ? "font-bold text-white" : "font-medium text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Chat
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelectPage(2)}
+                className={`flex-1 py-1.5 text-center text-xs sm:text-sm transition-colors cursor-pointer select-none ${
+                  currentPage === 2 ? "font-bold text-white" : "font-medium text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Activity
+              </button>
+
+              {/* Animated Active Orange Indicator Line */}
+              <motion.div
+                className="absolute bottom-0 h-[2.5px] bg-[#FF6B2C] rounded-full"
+                initial={false}
+                animate={{
+                  left: `${((currentPage ?? 1) * 100) / 3}%`,
+                  width: `${100 / 3}%`,
+                }}
+                transition={{ type: "spring", stiffness: 450, damping: 35 }}
+              />
+            </div>
+          )}
         </div>
 
-        {/* Clean Native Planless 4-Item Action Sheet */}
+        {/* Inline Popover / Dropdown Menu for Plan Chat Header */}
         <AnimatePresence>
           {menuOpen && (
-            <div className="fixed inset-0 z-[100] flex items-end justify-center pointer-events-auto">
-              {/* Backdrop Overlay */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+            <div className="fixed inset-0 z-[100] pointer-events-auto">
+              {/* Invisible Backdrop for outside click dismiss */}
+              <div
                 onClick={(e) => {
                   e.stopPropagation();
                   setMenuOpen(false);
                 }}
-                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                className="absolute inset-0 bg-transparent"
               />
 
-              {/* Action Sheet Card */}
+              {/* Compact Inline Popover Card anchored near top-right menu button */}
               <motion.div
-                initial={{ y: "100%" }}
-                animate={{ y: 0 }}
-                exit={{ y: "100%" }}
-                transition={{ type: "spring", damping: 28, stiffness: 350 }}
+                initial={{ opacity: 0, scale: 0.92, y: -6 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.92, y: -6 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
                 onClick={(e) => e.stopPropagation()}
-                className="relative w-full max-w-md bg-[#0d0d11] border-t border-white/10 rounded-t-3xl p-5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-2xl z-10 flex flex-col space-y-1 text-left"
+                className="absolute top-[calc(3.25rem+env(safe-area-inset-top,0px))] right-4 min-w-[170px] bg-[#121216]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-1.5 z-10 flex flex-col space-y-0.5 text-left select-none"
               >
-                {/* Top Handle Bar */}
-                <div className="w-10 h-1 rounded-full bg-zinc-700/80 mx-auto mb-4 shrink-0" />
-
-                {/* 1. Participants */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onOpenParticipants?.();
-                  }}
-                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl hover:bg-white/[0.06] active:bg-white/10 transition-colors text-left group cursor-pointer"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-zinc-800/80 border border-white/10 flex items-center justify-center text-zinc-300 group-hover:text-white shrink-0">
-                    <Users className="w-5 h-5" />
-                  </div>
-                  <span className="text-sm font-semibold text-white tracking-tight">
-                    Participants
-                  </span>
-                </button>
-
-                {/* 2. Activity */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onOpenActivity?.();
-                  }}
-                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl hover:bg-white/[0.06] active:bg-white/10 transition-colors text-left group cursor-pointer"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-zinc-800/80 border border-white/10 flex items-center justify-center text-zinc-300 group-hover:text-white shrink-0">
-                    <Activity className="w-5 h-5" />
-                  </div>
-                  <span className="text-sm font-semibold text-white tracking-tight">
-                    Activity
-                  </span>
-                </button>
-
-                {/* 3. Expenses */}
+                {/* 1. Expenses */}
                 <button
                   type="button"
                   onClick={() => {
                     setMenuOpen(false);
                     onOpenExpenses?.();
                   }}
-                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl hover:bg-white/[0.06] active:bg-white/10 transition-colors text-left group cursor-pointer"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
                 >
-                  <div className="w-9 h-9 rounded-xl bg-zinc-800/80 border border-white/10 flex items-center justify-center text-zinc-300 group-hover:text-white shrink-0">
-                    <CreditCard className="w-5 h-5" />
-                  </div>
-                  <span className="text-sm font-semibold text-white tracking-tight">
+                  <CreditCard className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
+                  <span className="text-xs font-semibold text-white tracking-tight">
                     Expenses
                   </span>
                 </button>
 
-                {/* 4. Settings */}
+                {/* 2. Settings */}
                 <button
                   type="button"
                   onClick={() => {
                     setMenuOpen(false);
                     onOpenSettings?.();
                   }}
-                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl hover:bg-white/[0.06] active:bg-white/10 transition-colors text-left group cursor-pointer"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
                 >
-                  <div className="w-9 h-9 rounded-xl bg-zinc-800/80 border border-white/10 flex items-center justify-center text-zinc-300 group-hover:text-white shrink-0">
-                    <Settings className="w-5 h-5" />
-                  </div>
-                  <span className="text-sm font-semibold text-white tracking-tight">
+                  <Settings className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
+                  <span className="text-xs font-semibold text-white tracking-tight">
                     Settings
                   </span>
                 </button>
@@ -417,7 +426,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
 
         {/* Circular Plan Avatar & Centered Title */}
         <div
-          onClick={onHeaderPress}
+          onClick={!isEditingTitle && onHeaderPress ? onHeaderPress : undefined}
           className={`flex flex-col items-center max-w-full ${onHeaderPress ? "cursor-pointer pointer-events-auto" : "pointer-events-none"}`}
         >
           {coverImage && (
@@ -430,17 +439,48 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
             </div>
           )}
 
-          <h1
-            className="text-[17px] font-bold text-white tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full line-clamp-2 break-words"
-            style={{
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
-          >
-            {title}
-          </h1>
+          {isEditingTitle ? (
+            <div className="pointer-events-auto px-4 w-full max-w-[320px]">
+              <input
+                ref={titleInputRef}
+                type="text"
+                value={tempTitle === "Set a title" || tempTitle === "Enter Title" ? "" : tempTitle}
+                onChange={(e) => setTempTitle(e.target.value)}
+                onBlur={handleSaveTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveTitle();
+                  if (e.key === "Escape") {
+                    setIsEditingTitle(false);
+                    setTempTitle(title);
+                  }
+                }}
+                placeholder="Set a title"
+                className="w-full bg-transparent border-none outline-none text-center text-[17px] font-bold text-white tracking-[0.08em] leading-tight placeholder:text-white/60 placeholder:font-semibold focus:outline-none focus:ring-0 p-0 m-0 shadow-none"
+                maxLength={50}
+              />
+            </div>
+          ) : (
+            <h1
+              onClick={(e) => {
+                if (isHost && onEditTitle) {
+                  e.stopPropagation();
+                  setTempTitle(title === "Set a title" || title === "Enter Title" ? "" : title);
+                  setIsEditingTitle(true);
+                }
+              }}
+              className={`text-[17px] font-bold tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full line-clamp-2 break-words ${
+                isHost && onEditTitle ? "cursor-pointer pointer-events-auto hover:opacity-90 active:opacity-75" : ""
+              } ${!title || title === "Set a title" || title === "Enter Title" ? "text-white/60 font-semibold" : "text-white"}`}
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {title && title !== "Enter Title" ? title : "Set a title"}
+            </h1>
+          )}
         </div>
 
         {/* Centered Hosted By with Overlapping Avatars (Plan Details Mode) */}

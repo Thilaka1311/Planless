@@ -17,8 +17,7 @@ interface PlanSettingsScreenProps {
     allowParticipantInvites?: boolean;
     maxParticipants?: number;
   }) => Promise<void> | void;
-  onUpdatePlanDetails?: (updates: { participant_filtering?: "AUTOMATIC" | "ASSIGNED" }) => Promise<void> | void;
-  onWaitlistModeChange?: (mode: "auto" | "assigned") => Promise<void> | void;
+  onUpdatePlanDetails?: (updates: any) => Promise<void> | void;
   onDemoteHost?: (userId: string) => Promise<void> | void;
   onRemoveParticipant?: (userId: string) => Promise<void> | void;
   onSelectHost?: (hostItem: { id: string; dbUuid: string; name: string; avatar: string; isHost: boolean }) => void;
@@ -37,7 +36,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   onBack,
   onUpdateSettings,
   onUpdatePlanDetails,
-  onWaitlistModeChange,
+
   onDemoteHost,
   onRemoveParticipant,
   onSelectHost,
@@ -444,37 +443,32 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         {/* SECTION 1 — PARTICIPANTS (HOST MODE ONLY) */}
         {/* ========================================== */}
         {isHostMode && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 px-1">
+          <div className="space-y-3 px-1">
+            <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-[#FF6B2C]" />
               <h2 className="text-xs font-bold text-zinc-400">
                 Participants
               </h2>
             </div>
 
-            <div className="bg-[#111111] border border-white/[0.08] rounded-2xl p-4.5">
-              {/* Setting 1: Allow participants to invite others */}
-              <div className="flex items-center justify-between gap-4">
-                <div className="space-y-0.5 pr-2">
-                  <span className="text-sm font-semibold text-white block">
-                    Allow Participants to Invite Others
-                  </span>
-                  <span className="text-xs text-zinc-400 block leading-relaxed">
-                    Participants can invite additional people to this plan.
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleToggleInvites}
-                  className={`w-11 h-6 rounded-full p-0.5 transition-colors duration-200 cursor-pointer flex-shrink-0 ${allowInvites ? "bg-[#FF6B2C]" : "bg-zinc-800"
-                    }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full bg-white transition-transform duration-200 ${allowInvites ? "translate-x-5" : "translate-x-0"
-                      }`}
-                  />
-                </button>
-              </div>
+            {/* Setting 1: Allow participants to invite others */}
+            <div className="flex items-center justify-between gap-4 py-2">
+              <span className="text-sm font-semibold text-white block pr-2">
+                Allow Participants to Invite Others
+              </span>
+              <button
+                type="button"
+                onClick={handleToggleInvites}
+                className={`w-11 h-6 rounded-full p-0.5 transition-colors duration-200 cursor-pointer flex-shrink-0 ${
+                  allowInvites ? "bg-[#FF6B2C]" : "bg-zinc-800"
+                }`}
+              >
+                <div
+                  className={`w-5 h-5 rounded-full bg-white transition-transform duration-200 ${
+                    allowInvites ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
             </div>
           </div>
         )}
@@ -482,8 +476,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         {/* ========================================== */}
         {/* SECTION 2 — HOSTS */}
         {/* ========================================== */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
+        <div className="space-y-3 px-1">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Crown className="w-4 h-4 text-[#FF6B2C]" />
               <h2 className="text-xs font-bold text-zinc-400">
@@ -503,12 +497,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
             )}
           </div>
 
-          <div className="bg-[#111111] border border-white/[0.08] rounded-2xl p-4.5 space-y-4">
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Hosts can edit plan settings, manage waitlists, invite participants, and manage host roles.
-            </p>
-
-            <div className="space-y-2.5">
+          <div className="space-y-2 py-1">
+            <div className="space-y-2">
               {allHosts.length > 0 ? (
                 allHosts.map((h) => (
                   <div
@@ -519,8 +509,9 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                       setShowConfirmRemoveHost(false);
                       if (onSelectHost) onSelectHost(h);
                     }}
-                    className={`flex items-center justify-between p-3 bg-black/40 border border-white/[0.06] rounded-xl transition ${isHostMode ? "hover:bg-white/[0.04] active:scale-[0.99] cursor-pointer" : ""
-                      }`}
+                    className={`flex items-center justify-between py-2 transition ${
+                      isHostMode ? "hover:opacity-80 active:scale-[0.99] cursor-pointer" : ""
+                    }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="relative flex-shrink-0">
@@ -540,7 +531,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                   </div>
                 ))
               ) : (
-                <div className="p-3 bg-black/20 border border-dashed border-white/10 rounded-xl text-center">
+                <div className="py-2 text-center">
                   <span className="text-xs text-zinc-500">
                     No hosts assigned.
                   </span>
@@ -550,7 +541,10 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           </div>
         </div>
 
-        <div className="space-y-2.5">
+        {/* ========================================== */}
+        {/* SECTION 3 — DESTRUCTIVE ACTIONS */}
+        {/* ========================================== */}
+        <div className="pt-2 space-y-3 px-1">
           <button
             type="button"
             disabled={isLeaving}
@@ -561,9 +555,9 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                 executeLeavePlanFlow();
               }
             }}
-            className="w-full bg-[#111111] hover:bg-red-500/10 active:scale-[0.99] border border-white/[0.08] hover:border-red-500/30 rounded-2xl p-4 flex items-center gap-3.5 transition cursor-pointer group text-left"
+            className="w-full py-2.5 flex items-center gap-3.5 transition cursor-pointer active:scale-[0.99] group text-left"
           >
-            <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-105 transition flex-shrink-0">
+            <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center text-red-500 group-hover:scale-105 transition flex-shrink-0">
               <LogOut className="w-4.5 h-4.5 text-red-500" />
             </div>
             <span className="text-sm font-semibold text-red-500 tracking-wide">
@@ -575,9 +569,9 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
             <button
               type="button"
               onClick={() => setShowCancelModal(true)}
-              className="w-full bg-[#111111] hover:bg-red-500/10 active:scale-[0.99] border border-white/[0.08] hover:border-red-500/30 rounded-2xl p-4 flex items-center gap-3.5 transition cursor-pointer group text-left"
+              className="w-full py-2.5 flex items-center gap-3.5 transition cursor-pointer active:scale-[0.99] group text-left"
             >
-              <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-105 transition flex-shrink-0">
+              <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center text-red-500 group-hover:scale-105 transition flex-shrink-0">
                 <Trash2 className="w-4.5 h-4.5 text-red-500" />
               </div>
               <span className="text-sm font-semibold text-red-500 tracking-wide">

@@ -11,6 +11,7 @@ export interface Friend {
   waitlistPosition?: number | null;
   leave_requested?: boolean;
   leave_requested_at?: string | null;
+  skipReason?: string | null;
 }
 
 export type ParticipantTab = 'going' | 'waitlist' | 'invited' | 'skipped';
@@ -29,7 +30,8 @@ export interface SharedParticipantScreenProps {
   category?: string;
   eventDate?: string;
   eventTime?: string;
-  capacity: number;
+  capacity?: number;
+  isCapacityConfigured?: boolean;
   maxCapacity?: number;
   userProfile?: any;
   mode?: 'wizard' | 'editor';
@@ -53,6 +55,7 @@ export interface SharedParticipantScreenProps {
   onOpenActivity?: () => void;
   initialTab?: ParticipantTab;
   displayMode?: 'standalone' | 'embedded';
+  currentPage?: number;
   onPlanSizeEditingChange?: (isEditing: boolean) => void;
   isHostSelected?: boolean;
   selectedFriends?: Friend[];
@@ -70,6 +73,10 @@ export interface SharedParticipantScreenProps {
   pendingLeaveRequests?: PendingLeaveParticipant[];
   onReplaceLeaveParticipant?: (participantId: string) => void;
   onKeepPaymentLeaveParticipant?: (participantId: string) => void;
+  onInviteSkipped?: (friend: Friend, target?: 'GOING' | 'WAITLIST') => Promise<void> | void;
+  isCompletedPlan?: boolean;
+  initialOpenPlanSizeSheet?: boolean;
+  onPlanSizeSheetDismissed?: () => void;
 }
 
 export type ParticipantManagementScreenProps = SharedParticipantScreenProps;

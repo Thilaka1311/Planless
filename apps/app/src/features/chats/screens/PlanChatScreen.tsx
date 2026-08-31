@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
-import { ArrowLeft, SendHorizontal, MessageSquare, ChevronDown, CheckCheck, Check } from "lucide-react";
+import { ArrowLeft, SendHorizontal, MessageSquare, ChevronDown, CheckCheck, Check, BanknoteArrowUp } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plan } from "../../../core/types";
 import { usePlansStore } from "../../plans/state/PlansContext";
@@ -17,6 +17,7 @@ import { ActivityTimelineScreen } from "./ActivityTimelineScreen";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { useHorizontalPager } from "../hooks/useHorizontalPager";
 import { useChatCache, ChatMessage } from "../hooks/useChatCache";
+import { AddCost } from "../../wallet/screens/AddCost";
 
 interface PlanChatScreenProps {
   planId: string;
@@ -36,8 +37,8 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, dbUsers, activeUserId, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
-  const { profile: userProfile, activeUserUuid } = useProfileStore();
+  const { plans, dbPlanParticipants, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, replaceParticipant, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
+  const { userProfile, activeUserId, activeUserUuid, dbUsers } = useProfileStore();
 
   const senderUuid =
     userProfile?.dbUuid ||
@@ -271,213 +272,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
 
   // Add Cost Bottom Sheet state
   const [showAddCostSheet, setShowAddCostSheet] = useState(false);
-  const [costTitle, setCostTitle] = useState("");
-  const [costAmount, setCostAmount] = useState("");
-  const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([]);
-  const [submittingCost, setSubmittingCost] = useState(false);
-
-  // Derive all JOINED participants (including host and active user) for this plan
-  const joinedParticipants = useMemo(() => {
-    if (!plan) return [];
-    const targetPlanId = plan.dbUuid || plan.id;
-    const cleanId = (id: string) => String(id || "").toLowerCase().trim();
-    const myId = currentUserId || activeUserId || userProfile?.dbUuid;
-
-    // Filter dbPlanParticipants for this plan with status JOINED (or 'going')
-    const participantsForPlan = dbPlanParticipants.filter((pp) => {
-      const isTargetPlan =
-        cleanId(pp.plan_id) === cleanId(targetPlanId) ||
-        (plan.id && cleanId(pp.plan_id) === cleanId(plan.id)) ||
-        (plan.dbUuid && cleanId(pp.plan_id) === cleanId(plan.dbUuid));
-      const status = String(pp.rsvp_status || "").toUpperCase();
-      return isTargetPlan && (status === "JOINED" || status === "GOING");
-    });
-
-    const userMap = new Map<string, { id: string; name: string; avatar: string }>();
-
-    // Helper to resolve user name and avatar
-    const resolveUser = (userId: string) => {
-      const isMe =
-        (myId && cleanId(userId) === cleanId(myId)) ||
-        (userProfile?.dbUuid && cleanId(userId) === cleanId(userProfile.dbUuid)) ||
-        (activeUserId && cleanId(userId) === cleanId(activeUserId));
-
-      // 1. Check dbUsers
-      const uObj = (dbUsers || []).find(
-        (u) => cleanId(u.id) === cleanId(userId) || cleanId(u.user_id) === cleanId(userId) || cleanId(u.public_id) === cleanId(userId)
-      );
-
-      // 2. Check plan.members
-      const mObj = (plan.members || []).find(
-        (m: any) => cleanId(m.userId) === cleanId(userId) || cleanId(m.userUuid) === cleanId(userId) || cleanId(m.user_id) === cleanId(userId) || cleanId(m.id) === cleanId(userId)
-      );
-
-      const fullName = isMe
-        ? "You"
-        : uObj?.full_name || uObj?.name || mObj?.name || "Participant";
-
-      const avatar =
-        uObj?.profile_photo_path ||
-        uObj?.profile_photo ||
-        uObj?.avatar_url ||
-        uObj?.avatar ||
-        mObj?.avatar ||
-        mObj?.profilePhoto ||
-        (isMe ? userProfile?.avatar || "" : "");
-
-      return {
-        id: userId,
-        name: fullName,
-        avatar: avatar || "",
-      };
-    };
-
-    // Include participants from dbPlanParticipants
-    participantsForPlan.forEach((pp) => {
-      if (pp.user_id && !userMap.has(pp.user_id)) {
-        userMap.set(pp.user_id, resolveUser(pp.user_id));
-      }
-    });
-
-    // Also check plan.members with JOINED / GOING status or host
-    (plan.members || []).forEach((m: any) => {
-      const mId = m.userId || m.userUuid || m.user_id || m.id;
-      const status = String(m.status || m.rsvp_status || "").toUpperCase();
-      const isHost = m.role === "HOST" || m.isHost || mId === plan.hostId;
-      if (mId && (status === "JOINED" || status === "GOING" || isHost) && !userMap.has(mId)) {
-        userMap.set(mId, resolveUser(mId));
-      }
-    });
-
-    // Ensure current user is included if they are part of the plan / host
-    if (myId && !userMap.has(myId)) {
-      userMap.set(myId, resolveUser(myId));
-    }
-
-    return Array.from(userMap.values());
-  }, [plan, dbPlanParticipants, dbUsers, currentUserId, activeUserId, userProfile]);
-
-  // When Add Cost sheet opens, default selection to all JOINED participants
-  const handleOpenAddCostSheet = () => {
-    const defaultSelected = joinedParticipants.map((p) => p.id);
-    setSelectedParticipantIds(defaultSelected);
-    setShowAddCostSheet(true);
-  };
-
-  const toggleParticipantSelection = (pId: string) => {
-    setSelectedParticipantIds((prev) =>
-      prev.includes(pId) ? prev.filter((id) => id !== pId) : [...prev, pId]
-    );
-  };
-
-  const handleSendCostMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const titleTrimmed = costTitle.trim();
-    const parsedAmount = parseFloat(costAmount.trim());
-
-    if (!titleTrimmed || isNaN(parsedAmount) || parsedAmount <= 0 || selectedParticipantIds.length === 0) {
-      return;
-    }
-
-    let effectiveSenderUuid = senderUuid;
-    if (!effectiveSenderUuid) {
-      try {
-        const { data: authData } = await supabase.auth.getUser();
-        if (authData?.user?.id) {
-          effectiveSenderUuid = authData.user.id;
-        }
-      } catch (err) {
-        console.error("Failed async auth user fallback:", err);
-      }
-    }
-
-    if (!effectiveSenderUuid) return;
-
-    setSubmittingCost(true);
-    const countSelected = selectedParticipantIds.length;
-    const costPerPerson = Math.round((parsedAmount / countSelected) * 100) / 100;
-
-    // Chat message content — used for rendering the cost card in the timeline.
-    // splitWith is kept for UI rendering only; Wallet truth is in wallet_expense_participants.
-    const costPayloadContent = JSON.stringify({
-      title: titleTrimmed,
-      amount: parsedAmount,
-      splitWith: selectedParticipantIds,
-      costPerPerson,
-    });
-
-    const tempId = `temp-cost-${Date.now()}`;
-    const optimisticMsg: ChatMessage = {
-      id: tempId,
-      plan_id: targetPlanUuid,
-      sender_id: effectiveSenderUuid,
-      message_type: "cost",
-      content: costPayloadContent,
-      created_at: new Date().toISOString(),
-    };
-
-    appendOptimisticMessage(optimisticMsg);
-    setShowAddCostSheet(false);
-    setCostTitle("");
-    setCostAmount("");
-    scrollToBottom(false);
-
-    try {
-      // Step 1: Insert the cost chat message
-      const { data: msgData, error: msgError } = await supabase
-        .from("plan_messages")
-        .insert({
-          plan_id: targetPlanUuid,
-          sender_id: effectiveSenderUuid,
-          content: costPayloadContent,
-          message_type: "cost" as const,
-        })
-        .select()
-        .single();
-
-      if (msgError || !msgData) {
-        console.error("[PlanChatScreen] Failed to insert cost plan_message:", msgError);
-        removeOptimisticMessage(tempId);
-        return;
-      }
-
-      replaceOptimisticMessage(tempId, msgData as ChatMessage);
-      scrollToBottom(false);
-
-      // Step 2: Atomically create wallet_expenses + wallet_expense_participants via RPC
-      // Ensure Payer is always part of the final participant split and resolve UUIDs
-      const resolveUserUuid = (rawId: string): string => {
-        const u = (dbUsers || []).find(
-          (usr) => usr.id === rawId || usr.user_id === rawId || usr.public_id === rawId
-        );
-        return u?.id || rawId;
-      };
-
-      const resolvedPayerUuid = resolveUserUuid(effectiveSenderUuid);
-      const resolvedParticipantUuids = selectedParticipantIds.map(resolveUserUuid);
-      const finalParticipantIds = Array.from(new Set([resolvedPayerUuid, ...resolvedParticipantUuids]));
-
-      const { error: rpcError } = await supabase.rpc("insert_cost_expense", {
-        p_plan_id: targetPlanUuid,
-        p_message_id: msgData.id,
-        p_payer_id: resolvedPayerUuid,
-        p_title: titleTrimmed,
-        p_total_amount: parsedAmount,
-        p_participant_ids: finalParticipantIds,
-      });
-
-      if (rpcError) {
-        console.error("[PlanChatScreen] insert_cost_expense RPC failed:", rpcError);
-        // The chat message was created successfully — do not roll it back.
-        // The wallet record can be retried. Log the error and continue.
-      }
-    } catch (err) {
-      console.error("[PlanChatScreen] Exception inserting cost plan_message:", err);
-      removeOptimisticMessage(tempId);
-    } finally {
-      setSubmittingCost(false);
-    }
-  };
 
   // Dynamic timeline event item (combines user messages and derived system events)
   interface TimelineItem {
@@ -496,10 +290,57 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
 
     // 1. User messages from plan_messages
     messages.forEach((msg) => {
+      const isSystemMsg = msg.message_type === "system";
+      const sysType = msg.system_message_type;
+
+      if (isSystemMsg) {
+        // Do NOT display participant join or leave system messages in Plan Chat
+        const isJoinOrLeave =
+          sysType === SystemMessageType.PARTICIPANT_JOINED ||
+          sysType === SystemMessageType.PARTICIPANT_LEFT ||
+          sysType === ("PARTICIPANT_JOINED" as any) ||
+          sysType === ("PARTICIPANT_LEFT" as any) ||
+          (msg.content && (/\bjoined\b/i.test(msg.content) || /\bleft\b/i.test(msg.content)));
+
+        if (isJoinOrLeave) {
+          return;
+        }
+
+        let content = msg.content;
+        const isSenderCurrentUser = Boolean(
+          (currentUserId && msg.sender_id && String(currentUserId).toLowerCase() === String(msg.sender_id).toLowerCase()) ||
+          (activeUserId && msg.sender_id && String(activeUserId).toLowerCase() === String(msg.sender_id).toLowerCase())
+        );
+
+        const isCreatedMsg =
+          sysType === SystemMessageType.PLAN_CREATED ||
+          sysType === ("PLAN_CREATED" as any) ||
+          (msg.content && /\bcreated\b/i.test(msg.content));
+
+        if (isCreatedMsg && isSenderCurrentUser) {
+          if (plan?.title && content.includes(plan.title)) {
+            content = `You created ${plan.title}`;
+          } else {
+            content = content.replace(/^[^\s]+(\s+[^\s]+)?\s+created/i, "You created");
+          }
+        }
+
+        items.push({
+          id: msg.id,
+          isSystem: true,
+          systemType: msg.system_message_type || undefined,
+          messageType: msg.message_type,
+          content,
+          senderId: msg.sender_id,
+          createdAt: msg.created_at,
+        });
+        return;
+      }
+
       items.push({
         id: msg.id,
-        isSystem: msg.message_type === "system",
-        systemType: msg.system_message_type || undefined,
+        isSystem: false,
+        systemType: undefined,
         messageType: msg.message_type,
         content: msg.content,
         senderId: msg.sender_id,
@@ -510,98 +351,65 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     if (plan) {
       const targetPlanId = plan.dbUuid || plan.id;
 
-      // 2. Event 1: Plan created (from plans.created_at)
+      // 2. Event: Plan created (from plans.created_at)
       if (plan.createdAt) {
-        let hostName = (plan.creatorName || "").trim();
-        if (!hostName) {
-          const matchUser = (dbUsers || []).find(
-            (u) => u.id === plan.hostId || u.public_id === plan.hostId || u.id === plan.creatorId
-          );
-          if (matchUser?.full_name) {
-            hostName = matchUser.full_name;
-          } else {
-            const hostMember = (plan.members || []).find(
-              (m) => m.role === "HOST" || m.isHost || m.userId === plan.hostId
-            );
-            if (hostMember?.name) {
-              hostName = hostMember.name;
-            } else if (
-              plan.hostId === userProfile?.dbUuid ||
-              plan.creatorId === userProfile?.dbUuid ||
-              plan.hostId === activeUserId
-            ) {
-              hostName = userProfile?.name || "";
-            }
-          }
-        }
-
-        const createdMessageText = hostName && plan.title
-          ? `${hostName} created ${plan.title}`
-          : "Plan created";
-
-        items.push({
-          id: `sys-created-${targetPlanId}`,
-          isSystem: true,
-          systemType: SystemMessageType.PLAN_CREATED,
-          content: createdMessageText,
-          createdAt: plan.createdAt,
-        });
-      }
-
-      // 3. Event 2: Participant joined (only for non-host confirmed JOINED participants)
-      const targetParticipants = dbPlanParticipants.filter((pp) => {
-        const isTargetPlan = pp.plan_id === targetPlanId || pp.plan_id === plan.id;
-        const isJoinedStatus = normalizeStatus(pp.rsvp_status) === "JOINED";
-        const isHost =
-          pp.role === "HOST" ||
-          pp.user_id === plan.hostId ||
-          pp.user_id === plan.creatorId;
-
-        return isTargetPlan && isJoinedStatus && !isHost;
-      });
-
-      targetParticipants.forEach((pp, pIdx) => {
-        // Resolve participant user name from dbUsers, plan.members, or userProfile
-        let participantName = "";
-        const matchUser = (dbUsers || []).find(
-          (u) => u.id === pp.user_id || u.public_id === pp.user_id
+        const hasDbPlanCreatedMsg = items.some(
+          (item) =>
+            item.isSystem &&
+            (item.systemType === SystemMessageType.PLAN_CREATED ||
+              (item.content && item.content.toLowerCase().includes("created")))
         );
-        if (matchUser?.full_name) {
-          participantName = matchUser.full_name;
-        } else {
-          const matchMember = (plan.members || []).find(
-            (m) => m.userId === pp.user_id || m.userUuid === pp.user_id
+
+        if (!hasDbPlanCreatedMsg) {
+          const hostOrCreatorId = plan.hostId || plan.creatorId || (plan as any).creator_id || (plan as any).host_id;
+
+          const isCurrentUserCreator = Boolean(
+            (currentUserId && hostOrCreatorId && String(currentUserId).toLowerCase() === String(hostOrCreatorId).toLowerCase()) ||
+            (userProfile?.dbUuid && hostOrCreatorId && String(userProfile.dbUuid).toLowerCase() === String(hostOrCreatorId).toLowerCase()) ||
+            (activeUserId && hostOrCreatorId && String(activeUserId).toLowerCase() === String(hostOrCreatorId).toLowerCase())
           );
-          if (matchMember?.name) {
-            participantName = matchMember.name;
-          } else if (
-            pp.user_id === userProfile?.dbUuid ||
-            pp.user_id === activeUserId
-          ) {
-            participantName = userProfile?.name || "You";
+
+          let createdMessageText = "";
+          if (isCurrentUserCreator) {
+            createdMessageText = plan.title ? `You created ${plan.title}` : "You created a plan";
           } else {
-            participantName = "Someone";
+            let hostName = (plan.creatorName || "").trim();
+            if (!hostName) {
+              const matchUser = (dbUsers || []).find(
+                (u: any) => u.id === hostOrCreatorId || u.public_id === hostOrCreatorId
+              );
+              if (matchUser?.full_name) {
+                hostName = matchUser.full_name;
+              } else {
+                const hostMember = (plan.members || []).find(
+                  (m) => m.role === "HOST" || m.isHost || m.userId === hostOrCreatorId || m.userUuid === hostOrCreatorId
+                );
+                if (hostMember?.name) {
+                  hostName = hostMember.name;
+                }
+              }
+            }
+            createdMessageText = hostName && plan.title
+              ? `${hostName} created ${plan.title}`
+              : "Plan created";
           }
+
+          items.push({
+            id: `sys-created-${targetPlanId}`,
+            isSystem: true,
+            systemType: SystemMessageType.PLAN_CREATED,
+            content: createdMessageText,
+            createdAt: plan.createdAt,
+          });
         }
-
-        const stablePartId = pp.id || (pp as any).dbUuid || pp.user_id || `pIdx-${pIdx}`;
-        const generatedKey = `sys-joined-${stablePartId}`;
-
-        items.push({
-          id: generatedKey,
-          isSystem: true,
-          systemType: SystemMessageType.PARTICIPANT_JOINED,
-          content: `${participantName} joined`,
-          createdAt: pp.responded_at || pp.created_at || plan.createdAt,
-        });
-      });
+      }
     }
 
-    // 4. Sort unified timeline chronologically by createdAt ASC
+    // 3. Sort unified timeline chronologically by createdAt ASC
     return items.sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
-  }, [messages, plan, dbPlanParticipants, dbUsers, userProfile, activeUserId]);
+  }, [messages, plan, dbUsers, userProfile, activeUserId, currentUserId]);
 
   // Ref to chat message scroll container & intelligent scroll state
   const chatMessagesRef = useRef<HTMLDivElement>(null);
@@ -699,10 +507,12 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             viewerId={currentUserId}
             onClose={onBack}
             isHost={isHost && !isCancelled}
-            coverImage={plan.coverImage || plan.customCoverUrl || getPlanCover(plan.category, (plan as any).subcategory || (plan as any).sports_type)}
+            coverImage={plan.coverImage || (plan as any).customCoverUrl || getPlanCover(plan.category, (plan as any).subcategory || (plan as any).sports_type)}
             category={plan.category}
             hideHostAttribution={true}
             onHeaderPress={isBottomSheetOpen ? undefined : onOpenPlanDetails}
+            currentPage={currentPage}
+            onSelectPage={(pageIdx) => { if (!isBottomSheetOpen) goToPage(pageIdx); }}
             onOpenParticipants={() => { if (!isBottomSheetOpen) goToPage(0); }}
             onOpenActivity={() => { if (!isBottomSheetOpen) goToPage(2); }}
             onOpenExpenses={() => { if (!isBottomSheetOpen) setShowBalancesScreen(true); }}
@@ -718,28 +528,10 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         </div>
       )}
 
-      {/* FLOATING TEMPORARY PAGE INDICATOR OVERLAY */}
-      <AnimatePresence>
-        {overlayPage !== null && (
-          <motion.div
-            key={`page-overlay-${overlayPage}`}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="absolute top-[calc(64px+14px+env(safe-area-inset-top,0px))] left-1/2 -translate-x-1/2 z-40 pointer-events-none"
-          >
-            <div className="px-4 py-2 rounded-full bg-zinc-900/80 backdrop-blur-md border border-white/10 shadow-2xl text-white text-xs font-medium tracking-wide">
-              {PAGE_NAMES[overlayPage]}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* 2. DEDICATED RESIZABLE PAGER CONTAINER — Only this area resizes when keyboard opens */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden relative w-full touch-pan-y select-none pt-[64px]"
+        className="flex-1 overflow-hidden relative w-full touch-pan-y select-none pt-[calc(96px+env(safe-area-inset-top,0px))]"
         style={{ touchAction: "pan-y" }}
       >
         <motion.div
@@ -757,6 +549,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 isHost={isHost}
                 isCreatorHost={isHost}
                 displayMode="embedded"
+                currentPage={currentPage}
                 onBack={() => goToPage(1)}
                 onMoveToGoing={(pId, uId, opts) => moveParticipantToGoing(pId, uId, opts)}
                 onMoveToWaitlist={(pId, uId) => moveParticipantToWaitlist(pId, uId)}
@@ -792,7 +585,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 showWaitlistMode={false}
                 replaceTargetUserId={replaceTargetUserId}
                 onCancelReplacement={() => setReplaceTargetUserId(null)}
-                onConfirmReplacement={(pId, targetId, replacementId) => resolvePaidPlanLeaveRequest(pId, targetId, 'REPLACED', replacementId)}
+                onConfirmReplacement={(pId, targetId, replacementId) => replaceParticipant(pId, targetId, replacementId)}
               />
             )}
           </div>
@@ -801,7 +594,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           <div
             className="w-1/3 h-full overflow-hidden flex flex-col justify-between flex-shrink-0 relative"
             style={{
-              height: keyboardOpen && viewportHeight ? `${viewportHeight - 64}px` : "100%",
+              height: keyboardOpen && viewportHeight ? `${viewportHeight - 96}px` : "100%",
             }}
           >
             <div
@@ -879,11 +672,11 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                       senderAvatarSrc = memberMatch.avatar || "";
                     } else {
                       const userMatch = (dbUsers || []).find(
-                        (u) => u.id === item.senderId || u.public_id === item.senderId
+                        (u: any) => u.id === item.senderId || u.public_id === item.senderId
                       );
                       if (userMatch) {
-                        senderName = userMatch.full_name || userMatch.name || "";
-                        senderAvatarSrc = userMatch.avatar_url || "";
+                        senderName = (userMatch as any).full_name || (userMatch as any).name || "";
+                        senderAvatarSrc = (userMatch as any).avatar_url || (userMatch as any).profile_photo_path || "";
                       }
                     }
                   }
@@ -1130,40 +923,59 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 onSubmit={handleSendMessage}
                 className={`bg-black/90 px-4 pt-1.5 ${
                   keyboardOpen ? "pb-1.5" : "pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
-                } flex items-center flex-shrink-0`}
+                } flex items-center gap-2.5 flex-shrink-0`}
               >
-                <div className="relative w-full flex items-center h-[46px] bg-zinc-900/90 border border-white/[0.08] rounded-full px-5 focus-within:border-white/20 transition-all shadow-lg">
+                <div className="relative flex-1 flex items-center h-[46px] bg-zinc-900/90 border border-white/[0.08] rounded-full px-5 focus-within:border-white/20 transition-all shadow-lg min-w-0">
                   <input
                     ref={inputRef}
                     type="text"
-                    placeholder="Send a message..."
+                    placeholder="Message"
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     onFocus={() => {
                       scrollToBottom(false);
                     }}
-                    className="w-full h-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none pr-24 font-sans"
+                    className="w-full h-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none font-sans"
                   />
-
-                  {inputText.trim() ? (
-                    <button
-                      type="submit"
-                      disabled={sending}
-                      onMouseDown={(e) => e.preventDefault()}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#C46A2C] text-white flex items-center justify-center active:scale-95 disabled:opacity-30 disabled:active:scale-100 transition cursor-pointer flex-shrink-0 shadow-md"
-                    >
-                      <SendHorizontal className="w-4 h-4 text-white stroke-[2]" />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleOpenAddCostSheet}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 rounded-full bg-zinc-800 border border-zinc-700 text-xs font-semibold text-white hover:bg-zinc-700 transition cursor-pointer flex items-center gap-1 shadow-md"
-                    >
-                      <span>+ Add Cost</span>
-                    </button>
-                  )}
                 </div>
+
+                <button
+                  type={inputText.trim() ? "submit" : "button"}
+                  disabled={Boolean(inputText.trim()) && sending}
+                  onClick={inputText.trim() ? undefined : () => setShowAddCostSheet(true)}
+                  onMouseDown={(e) => {
+                    if (inputText.trim()) e.preventDefault();
+                  }}
+                  title={inputText.trim() ? "Send Message" : "Add Cost"}
+                  aria-label={inputText.trim() ? "Send Message" : "Add Cost"}
+                  className="w-[46px] h-[46px] rounded-full bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-95 text-white flex items-center justify-center disabled:opacity-30 disabled:active:scale-100 transition-all cursor-pointer flex-shrink-0 shadow-lg shadow-[#FF6B2C]/30 border border-white/10 relative overflow-hidden"
+                >
+                  <AnimatePresence mode="wait" initial={false}>
+                    {inputText.trim() ? (
+                      <motion.div
+                        key="send"
+                        initial={{ opacity: 0, scale: 0.65, rotate: -20 }}
+                        animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                        exit={{ opacity: 0, scale: 0.65, rotate: 20 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
+                        className="flex items-center justify-center"
+                      >
+                        <SendHorizontal className="w-5 h-5 text-white stroke-[2.2]" />
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="add-cost"
+                        initial={{ opacity: 0, scale: 0.65, rotate: 20 }}
+                        animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                        exit={{ opacity: 0, scale: 0.65, rotate: -20 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
+                        className="flex items-center justify-center"
+                      >
+                        <BanknoteArrowUp className="w-5.5 h-5.5 stroke-[2.2] text-white" />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </button>
               </form>
             )}
           </div>
@@ -1182,132 +994,19 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         </motion.div>
       </div>
 
-      {/* ADD COST BOTTOM SHEET */}
-      {showAddCostSheet && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div
-            className="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-zinc-900 pb-3 shrink-0">
-              <h3 className="text-lg font-display font-bold text-white">Add Cost</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddCostSheet(false);
-                  setCostTitle("");
-                  setCostAmount("");
-                }}
-                className="text-zinc-400 hover:text-white text-sm font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-
-            <form onSubmit={handleSendCostMessage} className="space-y-4 pt-1 overflow-y-auto scrollbar-none flex-1">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
-                  Title
-                </label>
-                <input
-                  type="text"
-                  placeholder="What is this expense for?"
-                  value={costTitle}
-                  onChange={(e) => setCostTitle(e.target.value)}
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">
-                  Total Cost (₹)
-                </label>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={costAmount}
-                  onChange={(e) => setCostAmount(e.target.value)}
-                  className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700"
-                  min="1"
-                  step="any"
-                />
-              </div>
-
-              {/* SPLIT WITH SECTION */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                    Split With ({selectedParticipantIds.length})
-                  </label>
-                  {costAmount.trim() && parseFloat(costAmount) > 0 && selectedParticipantIds.length > 0 && (
-                    <span className="text-xs font-mono font-semibold text-[#ff8b66]">
-                      ₹
-                      {Math.round(
-                        (parseFloat(costAmount) / selectedParticipantIds.length) * 100
-                      ) / 100}{" "}
-                      / person
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-none pr-1">
-                  {joinedParticipants.map((p) => {
-                    const isSelected = selectedParticipantIds.includes(p.id);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => toggleParticipantSelection(p.id)}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer text-left ${
-                          isSelected
-                            ? "bg-zinc-900 border-[#C46A2C]/60 text-white"
-                            : "bg-zinc-900/40 border-zinc-800/60 text-zinc-400 hover:bg-zinc-900/80"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <UserAvatar
-                            src={p.avatar}
-                            alt={p.name}
-                            size="w-8 h-8"
-                            className="shrink-0"
-                          />
-                          <span className="font-sans text-xs font-semibold truncate">
-                            {p.name}
-                          </span>
-                        </div>
-
-                        <div
-                          className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
-                            isSelected
-                              ? "bg-[#C46A2C] border-[#C46A2C] text-white"
-                              : "border-zinc-700 bg-transparent"
-                          }`}
-                        >
-                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={
-                  !costTitle.trim() ||
-                  !costAmount.trim() ||
-                  selectedParticipantIds.length === 0 ||
-                  submittingCost
-                }
-                className="w-full h-11 rounded-xl bg-[#C46A2C] text-white font-semibold text-sm active:scale-95 disabled:opacity-40 disabled:active:scale-100 transition cursor-pointer mt-2 shrink-0"
-              >
-                {submittingCost ? "Adding..." : "Add to Chat"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* EXISTING WALLET ADD COST FLOW COMPONENT */}
+      <AddCost
+        isOpen={showAddCostSheet}
+        onClose={() => setShowAddCostSheet(false)}
+        onRefreshBalances={() => {}}
+        activeUserId={currentUserId}
+        entryPoint="plan"
+        initialPlanId={targetPlanUuid}
+        relevantPlans={plan ? [{ id: targetPlanUuid, title: plan.title, cover_image: (plan.coverImage || (plan as any).customCoverUrl) }] : []}
+        dbPlanParticipants={dbPlanParticipants}
+        dbUsers={dbUsers}
+        dbProfiles={dbUsers}
+      />
 
       {/* PLAN SETTINGS SCREEN OVERLAY */}
       {showSettingsScreen && plan && (
@@ -1331,13 +1030,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               console.error("Failed to update plan details:", err);
             }
           }}
-          onWaitlistModeChange={async (newMode) => {
-            if (newMode === 'assigned') {
-              await updatePlanDetails(plan.id, { participant_filtering: 'ASSIGNED' });
-            } else {
-              goToPage(0); // Switch to Participants tab to initiate validation & selection sheet
-            }
-          }}
+
           onDemoteHost={async (uId) => {
             try {
               await demoteHostToParticipant(plan.id, uId);

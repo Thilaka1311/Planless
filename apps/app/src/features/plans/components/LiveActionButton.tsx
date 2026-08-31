@@ -25,7 +25,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
   const skipReason = myParticipantRecord?.skip_reason;
 
   let text = '';
-  let dotColor = 'bg-zinc-400';
   let glassStyle = {
     backgroundColor: 'rgba(24, 24, 27, 0.65)',
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -36,7 +35,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
 
   if (isCancelled) {
     text = "Plan Cancelled";
-    dotColor = 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]';
     glassStyle = {
       backgroundColor: 'rgba(136, 19, 55, 0.28)',
       borderColor: 'rgba(244, 63, 94, 0.25)',
@@ -44,7 +42,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
     };
   } else if (isCompleted) {
     text = "Completed";
-    dotColor = 'bg-emerald-400/80 shadow-[0_0_8px_rgba(52,211,153,0.3)]';
     glassStyle = {
       backgroundColor: 'rgba(24, 24, 27, 0.65)',
       borderColor: 'rgba(255, 255, 255, 0.08)',
@@ -52,7 +49,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
     };
   } else if (isHostRole) {
     text = "You're Hosting";
-    dotColor = 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.6)]';
     glassStyle = {
       backgroundColor: 'rgba(24, 24, 27, 0.65)',
       borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -60,7 +56,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
     };
   } else if (status === 'INVITED') {
     text = "You're Invited";
-    dotColor = 'bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.6)]';
     glassStyle = {
       backgroundColor: 'rgba(30, 58, 138, 0.28)',
       borderColor: 'rgba(59, 130, 246, 0.25)',
@@ -69,7 +64,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
   } else if (status === 'JOINED') {
     if (myParticipantRecord?.leave_requested) {
       text = "Leave Request Pending";
-      dotColor = 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]';
       glassStyle = {
         backgroundColor: 'rgba(120, 53, 15, 0.3)',
         borderColor: 'rgba(245, 158, 11, 0.25)',
@@ -77,7 +71,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
       };
     } else {
       text = "You're Going";
-      dotColor = 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]';
       glassStyle = {
         backgroundColor: 'rgba(6, 78, 59, 0.32)',
         borderColor: 'rgba(16, 185, 129, 0.25)',
@@ -86,7 +79,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
     }
   } else if (status === 'WAITLISTED') {
     text = "You're Waitlisted";
-    dotColor = 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]';
     glassStyle = {
       backgroundColor: 'rgba(120, 53, 15, 0.3)',
       borderColor: 'rgba(245, 158, 11, 0.25)',
@@ -95,7 +87,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
   } else if (status === 'SKIPPED') {
     if (skipReason === 'REMOVED') {
       text = "You've Been Removed";
-      dotColor = 'bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.6)]';
       glassStyle = {
         backgroundColor: 'rgba(136, 19, 55, 0.28)',
         borderColor: 'rgba(244, 63, 94, 0.25)',
@@ -103,7 +94,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
       };
     } else {
       text = "You're Not Attending";
-      dotColor = 'bg-zinc-400';
       glassStyle = {
         backgroundColor: 'rgba(39, 39, 42, 0.45)',
         borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -115,7 +105,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
   }
 
   const isInteractive = Boolean(onClick && (!isCompleted || isHostRole));
-  const showDot = Boolean(isHostRole || isCancelled || isCompleted);
 
   return (
     <motion.div
@@ -132,9 +121,6 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
       }}
       className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-5 py-2.5 rounded-full border backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.45)] flex items-center justify-center gap-2.5 max-w-[90vw] select-none transition-all duration-300 ${isInteractive ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none'} ${className}`}
     >
-      {showDot && (
-        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor} transition-colors duration-300`} />
-      )}
       <AnimatePresence mode="wait">
         <motion.span
           key={text}

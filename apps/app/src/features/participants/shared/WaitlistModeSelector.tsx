@@ -1,113 +1,227 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { ChevronDown, Check } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface WaitlistModeSelectorProps {
   waitlistMode?: 'automatic' | 'assigned';
   onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;
   isHost?: boolean;
+  variant?: 'card' | 'plain';
+  capacity?: number;
+  isCapacityConfigured?: boolean;
+  invitedCount?: number;
 }
 
 export const WaitlistModeSelector: React.FC<WaitlistModeSelectorProps> = ({
   waitlistMode = 'automatic',
   onWaitlistModeChange,
   isHost = true,
+  capacity,
+  isCapacityConfigured,
+  invitedCount,
 }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
   if (!isHost) return null;
 
+  const currentMode = waitlistMode || 'automatic';
+
+  const handleSelect = (mode: 'automatic' | 'assigned') => {
+    onWaitlistModeChange?.(mode);
+    setIsOpen(false);
+  };
+
+  const isConfigured = isCapacityConfigured ?? (capacity !== undefined);
+  const totalInvited = invitedCount ?? 0;
+
+  const getAutomaticDescription = () => {
+    // 1. NO PLAN SIZE SET
+    if (!isConfigured || capacity === undefined) {
+      return 'All invited participants will join. Set a plan size for a waitlist.';
+    }
+
+    const planSize = Math.max(1, capacity);
+    const waitlistedCount = Math.max(0, totalInvited - planSize);
+
+    // 3. PLAN SIZE EQUALS INVITED COUNT
+    if (waitlistedCount === 0) {
+      return 'All invited participants will join.';
+    }
+
+    // 2. PLAN SIZE IS SET AND IS LESS THAN INVITED
+    const base = `The first ${planSize} people will join`;
+    if (waitlistedCount === 1) {
+      return `${base}, and the remaining 1 person will be waitlisted.`;
+    }
+    return `${base}, and the remaining ${waitlistedCount} people will be waitlisted.`;
+  };
+
+  const getAssignedDescription = () => {
+    // 1. NO PLAN SIZE SET
+    if (!isConfigured || capacity === undefined) {
+      return 'All invited participants will join. Set a plan size for a waitlist.';
+    }
+
+    const planSize = Math.max(1, capacity);
+    const waitlistedCount = Math.max(0, totalInvited - planSize);
+
+    // 3. PLAN SIZE EQUALS INVITED COUNT
+    if (waitlistedCount === 0) {
+      return 'All invited participants will join.';
+    }
+
+    // 2. PLAN SIZE IS SET AND IS LESS THAN INVITED
+    return 'You choose who joins and who is waitlisted.';
+  };
+
   return (
-    <div style={{ padding: '0 20px', marginBottom: 12 }}>
+    <div style={{ padding: '0 20px', marginBottom: 12, marginTop: 4, position: 'relative', zIndex: 30 }}>
       <div
         style={{
-          background: '#111111',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: 16,
-          padding: '14px 16px',
           display: 'flex',
-          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           gap: 12,
+          width: '100%',
         }}
+        ref={dropdownRef}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF' }}>
-            Waitlist Mode
-          </span>
-          <span style={{ fontSize: 11, color: '#A1A1AA', lineHeight: 1.4 }}>
-            {waitlistMode === 'assigned'
-              ? 'You decide who is Going and who is Waitlisted. Acceptance order does not affect placement.'
-              : 'Participants fill available spots in the order they accept invitations. Additional participants are automatically waitlisted.'}
-          </span>
-        </div>
-
-        {/* Segmented Control */}
-        <div
+        {/* Left: Mode description */}
+        <span
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            background: 'rgba(255, 255, 255, 0.05)',
-            borderRadius: 12,
-            padding: 3,
-            position: 'relative',
-            height: 38,
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            width: '100%',
+            fontSize: 13,
+            color: '#8E8E93',
+            lineHeight: 1.4,
+            fontFamily: 'Inter, sans-serif',
+            flex: 1,
+            minWidth: 0,
           }}
         >
-          <div
-            style={{
-              position: 'absolute',
-              top: 3,
-              bottom: 3,
-              background: '#FF6B2C',
-              borderRadius: 9,
-              transition: 'all 250ms cubic-bezier(0.2, 0.8, 0.2, 1)',
-              boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-              left: waitlistMode === 'automatic' ? 3 : 'calc(50% + 1.5px)',
-              width: 'calc(50% - 4.5px)',
-            }}
-          />
+          {currentMode === 'assigned'
+            ? getAssignedDescription()
+            : getAutomaticDescription()}
+        </span>
 
+        {/* Right: Compact Dropdown Trigger */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
             type="button"
-            onClick={() => onWaitlistModeChange && onWaitlistModeChange('automatic')}
+            onClick={() => setIsOpen((prev) => !prev)}
             style={{
-              flex: 1,
-              border: 'none',
-              background: 'transparent',
-              fontSize: 12,
-              cursor: 'pointer',
-              zIndex: 10,
-              height: '100%',
-              display: 'flex',
+              display: 'inline-flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: waitlistMode === 'automatic' ? 700 : 500,
-              color: waitlistMode === 'automatic' ? '#FFFFFF' : '#A1A1AA',
-              transition: 'color 200ms',
+              gap: 6,
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: 12,
+              padding: '6px 12px',
+              color: '#FFFFFF',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              fontFamily: 'Inter, sans-serif',
             }}
+            className="hover:bg-white/[0.12] active:scale-[0.98]"
           >
-            Automatic
+            <span>{currentMode === 'assigned' ? 'Assigned' : 'Automatic'}</span>
+            <ChevronDown
+              className="w-3.5 h-3.5 text-white/60 transition-transform duration-200"
+              style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+            />
           </button>
 
-          <button
-            type="button"
-            onClick={() => onWaitlistModeChange && onWaitlistModeChange('assigned')}
-            style={{
-              flex: 1,
-              border: 'none',
-              background: 'transparent',
-              fontSize: 12,
-              cursor: 'pointer',
-              zIndex: 10,
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: waitlistMode === 'assigned' ? 700 : 500,
-              color: waitlistMode === 'assigned' ? '#FFFFFF' : '#A1A1AA',
-              transition: 'color 200ms',
-            }}
-          >
-            Assigned
-          </button>
+          {/* Dropdown Menu */}
+          <AnimatePresence>
+            {isOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 4, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                transition={{ duration: 0.15, ease: 'easeOut' }}
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  minWidth: 140,
+                  background: '#1C1C1E',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: 14,
+                  padding: 4,
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                  zIndex: 50,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleSelect('automatic')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: currentMode === 'automatic' ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                    color: currentMode === 'automatic' ? '#FFFFFF' : '#A1A1AA',
+                    fontSize: 13,
+                    fontWeight: currentMode === 'automatic' ? 600 : 500,
+                    cursor: 'pointer',
+                    fontFamily: 'Inter, sans-serif',
+                    textAlign: 'left',
+                  }}
+                  className="hover:bg-white/[0.08] transition-colors"
+                >
+                  <span>Automatic</span>
+                  {currentMode === 'automatic' && <Check className="w-3.5 h-3.5 text-white" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelect('assigned')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: currentMode === 'assigned' ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                    color: currentMode === 'assigned' ? '#FFFFFF' : '#A1A1AA',
+                    fontSize: 13,
+                    fontWeight: currentMode === 'assigned' ? 600 : 500,
+                    cursor: 'pointer',
+                    fontFamily: 'Inter, sans-serif',
+                    textAlign: 'left',
+                  }}
+                  className="hover:bg-white/[0.08] transition-colors"
+                >
+                  <span>Assigned</span>
+                  {currentMode === 'assigned' && <Check className="w-3.5 h-3.5 text-white" />}
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>

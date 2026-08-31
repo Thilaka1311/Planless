@@ -57,6 +57,7 @@ export interface ActivityEvent {
   rawTargetUserId?: string | null;
   rawSkipReason?: string | null;
   rawMetadata?: any;
+  isDisabled?: boolean;
 }
 
 interface ActivityTimelineScreenProps {
@@ -107,7 +108,7 @@ const formatDateSubtext = (d: Date): string => {
 const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }> = ({ type, isDisabled }) => {
   let iconNode: React.ReactNode = null;
 
-  switch (type) {
+  switch (type as any) {
     // ── PLAN EVENTS ──
     case "plan_created":
       iconNode = <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />;
@@ -166,6 +167,7 @@ const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }>
     case "participant_moved_to_waitlist":
       iconNode = <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />;
       break;
+    case "participant_moved_to_joined":
     case "participant_moved_to_going":
       iconNode = <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />;
       break;
@@ -411,7 +413,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
   const isHost = useMemo(() => {
     if (!plan) return false;
     const userUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId;
-    return plan.creatorId === userUuid || plan.host_id === userUuid || plan.creator_id === userUuid;
+    return plan.creatorId === userUuid || (plan as any).host_id === userUuid || (plan as any).creator_id === userUuid;
   }, [plan, userProfile, activeUserId]);
 
   const handleKeepPayment = useCallback(async (targetUserId: string) => {
@@ -480,7 +482,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
 
       // 3. Global dbUsers list
       const matchUser = dbUsers.find(
-        (u) => u.id === userId || u.public_id === userId || (u as any).user_id === userId || (u as any).dbUuid === userId
+        (u) => u.id === userId || (u as any).public_id === userId || (u as any).user_id === userId || (u as any).dbUuid === userId
       );
       if (matchUser) {
         return {
@@ -527,15 +529,6 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
     const planName = plan?.title || "Plan";
     const currentUserId = userProfile?.dbUuid || (userProfile as any)?.id || (userProfile as any)?.user_id || activeUserId;
 
-    console.log("[ACTIVITY DEBUG] raw plan_activity rows count:", rawActivities.length);
-    const leaveReqRows = rawActivities.filter(a => a.activity_type === "leave_requested");
-    if (leaveReqRows.length > 0) {
-      console.log("[ACTIVITY DEBUG] leave_requested rows:", leaveReqRows);
-      leaveReqRows.forEach(row => {
-        console.log("[ACTIVITY DEBUG] leave_requested metadata:", row.metadata, "currentUserId:", currentUserId);
-      });
-    }
-
     // Convert raw activities into uncollapsed items (newest to oldest)
     const uncollapsed: ActivityEvent[] = rawActivities.map((act) => {
       const actorDetails = act.actor_id ? resolveUserDetails(act.actor_id, false) : { name: "" };
@@ -551,7 +544,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       let accentEdgeColor: string | undefined = undefined;
       let isDisabled: boolean | undefined = undefined;
 
-      switch (act.activity_type) {
+      switch (act.activity_type as string) {
         case "plan_created":
           primaryTitle = planName;
           secondaryDescription = actorDetails.name ? `Plan created by ${actorDetails.name}` : "Plan created";
@@ -570,18 +563,49 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           accentEdgeColor = "#22c55e"; // Green left edge
           break;
         case "participant_left": {
-          if (meta.skip_reason === 'REPLACED') {
-            // Suppress raw trigger event when participant was replaced; leave_requested handles single outcome card
+          if (meta.status === 'PENDING') {
+            // Unresolved / pending leave requests belong exclusively in Host Pending Decisions, filter out
             return null;
           }
-          primaryTitle = targetDetails.name || actorDetails.name || "Someone";
-          secondaryDescription = "Left the plan";
+
+          const originalUserId = act.target_user_id || act.actor_id || "";
+          const originalName = targetDetails.name || actorDetails.name || "Someone";
+          const resolution = meta.resolution;
+
+          if (meta.status === 'RESOLVED' && resolution === 'REPLACED') {
+            const replacementUserId = meta.replacement_user_id;
+            const replacementDetails = replacementUserId
+              ? resolveUserDetails(replacementUserId, true, true)
+              : { name: "Replacement", avatar: null };
+
+            primaryTitle = `${originalName} was replaced`;
+            secondaryDescription = `By ${replacementDetails.name || "Replacement"}`;
+            userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
+            accentEdgeColor = "#ef4444";
+          } else if (meta.status === 'RESOLVED' && resolution === 'KEEP_PAYMENT') {
+            const isViewerOriginal = Boolean(originalUserId && currentUserId && (currentUserId === originalUserId));
+
+            primaryTitle = isViewerOriginal ? "You left" : `${originalName} left`;
+            secondaryDescription = "Payment Kept";
+            accentEdgeColor = "#ef4444";
+            userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
+          } else {
+            if (meta.skip_reason === 'REPLACED') {
+              return null;
+            }
+            const isViewerOriginal = Boolean(originalUserId && currentUserId && (currentUserId === originalUserId));
+            primaryTitle = isViewerOriginal ? "You left" : `${originalName} left`;
+            secondaryDescription = "Left the plan";
+            isUserEvent = true;
+            userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
+          }
+
           isUserEvent = true;
-          userAvatarSrc = targetDetails.avatar;
           leaveRequestData = {
-            targetUserId: act.target_user_id || act.actor_id || "",
-            participantName: primaryTitle,
+            targetUserId: originalUserId,
+            participantName: originalName,
             isPending: false,
+            resolution: resolution as any,
           };
           break;
         }
@@ -600,11 +624,36 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           accentEdgeColor = isGoing ? '#22c55e' : '#eab308';
           break;
         }
+        case "participant_moved_to_joined":
+        case "participant_moved_to_going": {
+          const participantName = targetDetails.name || actorDetails.name || "Participant";
+          const actorName = actorDetails.name;
+          primaryTitle = participantName;
+          secondaryDescription = actorName && act.actor_id !== act.target_user_id
+            ? `Moved to Joined by ${actorName}`
+            : "Moved to Joined";
+          isUserEvent = true;
+          userAvatarSrc = targetDetails.avatar;
+          accentEdgeColor = "#22c55e";
+          break;
+        }
+        case "participant_moved_to_waitlist": {
+          const participantName = targetDetails.name || actorDetails.name || "Participant";
+          const actorName = actorDetails.name;
+          primaryTitle = participantName;
+          secondaryDescription = actorName && act.actor_id !== act.target_user_id
+            ? `Moved to Waitlist by ${actorName}`
+            : "Moved to Waitlist";
+          isUserEvent = true;
+          userAvatarSrc = targetDetails.avatar;
+          accentEdgeColor = "#eab308";
+          break;
+        }
         case "participant_moved": {
           const isToWaitlist = (meta.to || '').toLowerCase() === 'waitlist';
           const participantName = targetDetails.name || actorDetails.name || "Participant";
           const actorName = meta.movedBy ? resolveUserDetails(meta.movedBy, false).name : actorDetails.name;
-          const actionLabel = isToWaitlist ? "Moved to Waitlist" : "Moved to Going";
+          const actionLabel = isToWaitlist ? "Moved to Waitlist" : "Moved to Joined";
 
           primaryTitle = participantName;
           secondaryDescription = actorName ? `${actionLabel} by ${actorName}` : actionLabel;
@@ -614,18 +663,8 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           break;
         }
         case "participant_waitlisted": {
-          // Distinguish: host-moved (actor !== target) vs. participant voluntarily joined
-          const isHostAction = act.actor_id && act.target_user_id && act.actor_id !== act.target_user_id;
           primaryTitle = targetDetails.name || actorDetails.name || "Someone";
-          if (isHostAction) {
-            secondaryDescription = actorDetails.name
-              ? `Added to Waitlist by ${actorDetails.name}`
-              : "Added to Waitlist";
-            // Use same yellow token as the Participant Swap waitlist edge
-            accentEdgeColor = '#eab308';
-          } else {
-            secondaryDescription = "Joined the waitlist";
-          }
+          secondaryDescription = "Joined the waitlist";
           isUserEvent = true;
           userAvatarSrc = targetDetails.avatar;
           break;
@@ -707,47 +746,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           };
           break;
         }
-        case "leave_requested": {
-          const isResolved = meta.status === 'RESOLVED';
-          if (!isResolved) {
-            // Unresolved / pending leave requests belong exclusively in Host Pending Decisions, filter out
-            return null;
-          }
 
-          const originalUserId = act.target_user_id || act.actor_id || "";
-          const originalName = targetDetails.name || actorDetails.name || "Participant";
-          const resolution = meta.resolution;
-
-          if (resolution === 'REPLACED') {
-            const replacementUserId = meta.replacement_user_id;
-            const replacementDetails = replacementUserId
-              ? resolveUserDetails(replacementUserId, true, true)
-              : { name: "Replacement", avatar: null };
-
-            primaryTitle = `${originalName} was replaced`;
-            secondaryDescription = `By ${replacementDetails.name || "Replacement"}`;
-            userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
-            accentEdgeColor = "#ef4444"; // Red left edge for replacement
-          } else {
-            // KEEP_PAYMENT or default
-            const currentUserId = userProfile?.dbUuid || (userProfile as any)?.id || (userProfile as any)?.user_id || activeUserId;
-            const isViewerOriginal = Boolean(originalUserId && currentUserId && (currentUserId === originalUserId));
-
-            primaryTitle = isViewerOriginal ? "You left" : `${originalName} left`;
-            secondaryDescription = "Payment Kept";
-            accentEdgeColor = "#ef4444"; // Red badge
-            userAvatarSrc = targetDetails.avatar || actorDetails.avatar;
-          }
-
-          isUserEvent = true;
-          leaveRequestData = {
-            targetUserId: originalUserId,
-            participantName: originalName,
-            isPending: false,
-            resolution: resolution as any,
-          };
-          break;
-        }
         case "participant_invite_others": {
           const actorName = meta.performed_by_name || actorDetails.name;
           const isEnabled = meta.enabled !== false; // Default to true if not explicitly false (backward-compatible)
@@ -858,12 +857,12 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       };
     }).filter(Boolean) as ActivityEvent[];
 
-    // Deduplicate participant_invite_others: keep ONLY the single most recent change by timestamp (rawDate)
+    // Deduplicate participant_invites_toggled: keep ONLY the single most recent change by timestamp (rawDate)
     let latestInviteOthersId: string | null = null;
     let maxInviteOthersTime = -1;
 
     uncollapsed.forEach((evt) => {
-      if (evt.type === 'participant_invite_others') {
+      if ((evt.type as string) === 'participant_invites_toggled' || (evt.type as string) === 'participant_invite_others') {
         const time = evt.rawDate.getTime();
         if (time > maxInviteOthersTime) {
           maxInviteOthersTime = time;
@@ -872,11 +871,11 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       }
     });
 
-    // Collect set of target user IDs that have a resolved leave_requested event
+    // Collect set of target user IDs that have a resolved participant_left event
     const resolvedLeaveTargetUserIds = new Set<string>();
     const replacementUserIds = new Set<string>();
     uncollapsed.forEach((evt) => {
-      if (evt.type === 'leave_requested') {
+      if (evt.type === 'participant_left' && (evt as any).rawMetadata?.status === 'RESOLVED') {
         if (evt.leaveRequestData?.targetUserId) {
           resolvedLeaveTargetUserIds.add(evt.leaveRequestData.targetUserId);
         }
@@ -892,7 +891,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
     });
 
     const filtered = uncollapsed.filter((evt) => {
-      if (evt.type === 'participant_invite_others') {
+      if ((evt.type as string) === 'participant_invites_toggled' || (evt.type as string) === 'participant_invite_others') {
         return evt.id === latestInviteOthersId;
       }
       // Suppress raw participant_left / participant_removed for users with a resolved leave request or skip_reason

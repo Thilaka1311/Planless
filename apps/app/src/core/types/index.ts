@@ -137,31 +137,19 @@ export interface DbPlanMessage {
 }
 
 export type PlanActivityType =
-  | 'plan_created'
-  | 'participant_invited'
   | 'participant_joined'
-  | 'participant_left'
   | 'participant_waitlisted'
-  | 'participant_promoted'
+  | 'participant_skipped'
+  | 'participant_moved_to_joined'
+  | 'participant_moved_to_waitlist'
   | 'participant_removed'
-  | 'invitation_accepted'
-  | 'invitation_declined'
-  | 'capacity_changed'
-  | 'title_changed'
-  | 'description_changed'
-  | 'date_changed'
-  | 'time_changed'
-  | 'location_changed'
-  | 'host_transferred'
-  | 'plan_cancelled'
-  | 'plan_restored'
-  | 'plan_completed'
-  | 'host_promoted'
+  | 'participant_left'
+  | 'plan_datetime_changed'
+  | 'plan_created'
+  | 'plan_location_changed'
+  | 'participant_invites_toggled'
   | 'participants_swapped'
-  | 'participant_added'
-  | 'participant_invite_others'
-  | 'participant_moved'
-  | 'leave_requested';
+  | 'plan_changed';
 
 // 5c. PLAN_ACTIVITY TABLE (Append-only historical audit log)
 export interface DbPlanActivity {

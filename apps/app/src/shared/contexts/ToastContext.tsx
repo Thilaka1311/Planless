@@ -35,7 +35,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-[#121215] border border-brand-peach/30 text-brand-peach px-4.5 py-2.5 rounded-full text-xs font-mono font-bold uppercase tracking-wider shadow-lg flex items-center gap-1.5 pointer-events-none"
+            className="fixed top-8 left-1/2 -translate-x-1/2 z-[99999] bg-[#121215] border border-brand-peach/30 text-brand-peach px-4.5 py-2.5 rounded-full text-xs font-mono font-bold uppercase tracking-wider shadow-2xl flex items-center gap-1.5 pointer-events-none"
           >
             <span>⚡</span>
             <span>{toastMessage}</span>

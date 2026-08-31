@@ -2,13 +2,8 @@ import React from 'react';
 import { Crown } from 'lucide-react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 
-interface Friend {
-  id: string;
-  dbUuid: string;
-  name: string;
-  avatar: string;
-  isHost?: boolean;
-}
+import { Friend } from '../shared/types';
+import { formatSkipReason } from '../../../../lib/participantStatus';
 
 interface StackingFriendsProps {
   item: Friend;
@@ -20,6 +15,7 @@ interface StackingFriendsProps {
   onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void;
   onClick?: () => void;
   isItemDragged?: boolean;
+  className?: string;
 }
 
 export const StackingFriends: React.FC<StackingFriendsProps> = ({
@@ -31,11 +27,32 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
   onDragEnd,
   onDragOver,
   onClick,
-  isItemDragged = false
+  isItemDragged = false,
+  className = '',
 }) => {
+  const isSkipped = item.rsvpStatus === 'SKIPPED' || (item as any).rsvp_status === 'SKIPPED' || Boolean(item.skipReason || (item as any).skip_reason);
+  const isDulled = item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED' || isSkipped;
+  const skipReasonText = formatSkipReason(item.skipReason || (item as any).skip_reason || (isSkipped ? 'SKIPPED' : null));
+
+  const indexLabel = (() => {
+    if (!showIndex) return null;
+    if (index !== undefined) {
+      return `#${index}`;
+    }
+    const rawPos = typeof item.waitlistPosition === 'number'
+      ? item.waitlistPosition
+      : (typeof (item as any).waitlist_position === 'number' ? (item as any).waitlist_position : null);
+
+    if (rawPos !== null) {
+      return `#${rawPos}`;
+    }
+
+    return null;
+  })();
+
   const renderAvatar = () => {
     return (
-      <div style={{ position: 'relative', width: 28, height: 28, marginRight: 12, flexShrink: 0 }}>
+      <div style={{ position: 'relative', width: 28, height: 28, marginRight: 12, flexShrink: 0, opacity: isDulled ? 0.6 : 1 }}>
         <UserAvatar
           src={item.avatar}
           alt={item.name}
@@ -55,41 +72,66 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
       style={{
         display: 'flex',
         alignItems: 'center',
-        padding: '12px 14px',
-        background: isItemDragged ? 'rgba(255, 255, 255, 0.02)' : '#161619',
-        border: isItemDragged ? '1px dashed rgba(255, 255, 255, 0.15)' : '1px solid rgba(255, 255, 255, 0.05)',
+        padding: '10px 4px',
+        background: isItemDragged ? 'rgba(255, 255, 255, 0.04)' : 'transparent',
+        border: isItemDragged ? '1px dashed rgba(255, 255, 255, 0.15)' : 'none',
         borderRadius: 8,
         cursor: draggable ? 'grab' : (onClick ? 'pointer' : 'default'),
-        boxShadow: isItemDragged ? 'none' : '0 2px 6px rgba(0, 0, 0, 0.3)',
+        boxShadow: 'none',
         zIndex: isItemDragged ? 0 : 1,
         position: 'relative',
-        opacity: isItemDragged ? 0.25 : (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? 0.7 : 1,
-        transition: 'background 0.2s ease, opacity 0.2s ease, box-shadow 0.28s ease',
+        opacity: isItemDragged ? 0.25 : isDulled ? 0.55 : 1,
+        transition: 'background 0.2s ease, opacity 0.2s ease',
       }}
+      className={`select-none ${className}`}
       onMouseEnter={(e) => {
-        if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = '#222227';
+        if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
       }}
       onMouseLeave={(e) => {
-        if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = '#161619';
+        if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = 'transparent';
       }}
     >
-      {showIndex && index !== undefined && (
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255, 255, 255, 0.3)', marginRight: 10, minWidth: 16 }}>
-          #{index}
+      {showIndex && (
+        <span style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: 'rgba(255, 255, 255, 0.4)',
+          marginRight: 10,
+          width: 24,
+          minWidth: 24,
+          display: 'inline-flex',
+          alignItems: 'center',
+          flexShrink: 0,
+          fontFamily: 'Inter, sans-serif'
+        }}>
+          {indexLabel || ''}
         </span>
       )}
       {renderAvatar()}
-      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
+      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: isDulled ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
         {item.name}
       </span>
-      {item.leave_requested && (
+      {skipReasonText && (
+        <span style={{
+          fontSize: 11,
+          fontWeight: 500,
+          color: 'rgba(255, 255, 255, 0.5)',
+          marginRight: item.isHost ? 10 : 4,
+          lineHeight: 1,
+          flexShrink: 0,
+          fontFamily: 'Inter, sans-serif',
+        }}>
+          {skipReasonText}
+        </span>
+      )}
+      {(item.leave_requested || (item as any).leaveRequested) && (
         <span
           title="Requested to leave"
           style={{
             fontSize: 15,
             fontWeight: 700,
             color: '#F59E0B',
-            marginRight: item.isHost || (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? 10 : 4,
+            marginRight: item.isHost || isDulled ? 10 : 4,
             lineHeight: 1,
             flexShrink: 0,
             fontFamily: 'Inter, sans-serif',
@@ -112,36 +154,6 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
           alignItems: 'center',
         }}>
           Host
-        </span>
-      ) : (item.isAccepted === false || item.rsvpStatus === 'INVITED') ? (
-        <span style={{
-          fontSize: 11,
-          fontWeight: 500,
-          color: '#8E8E93',
-          background: 'rgba(255, 255, 255, 0.06)',
-          padding: '2px 8px',
-          borderRadius: 9999,
-          fontFamily: 'Inter, sans-serif',
-          lineHeight: 1.2,
-          display: 'inline-flex',
-          alignItems: 'center',
-        }}>
-          Invited
-        </span>
-      ) : item.rsvpStatus === 'SKIPPED' ? (
-        <span style={{
-          fontSize: 11,
-          fontWeight: 500,
-          color: '#FCA5A5',
-          background: 'rgba(239, 68, 68, 0.15)',
-          padding: '2px 8px',
-          borderRadius: 9999,
-          fontFamily: 'Inter, sans-serif',
-          lineHeight: 1.2,
-          display: 'inline-flex',
-          alignItems: 'center',
-        }}>
-          Skipped
         </span>
       ) : null}
     </div>

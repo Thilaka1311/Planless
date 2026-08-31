@@ -1,9 +1,14 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Crown, Users } from 'lucide-react';
 import { Plan } from '../../../core/types';
-import { normalizeStatus } from '../../../../lib/participantStatus';
+import { normalizeStatus, sortGoingParticipants, formatSkipReason, partitionAutomaticParticipants } from '../../../../lib/participantStatus';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
+import { usePlansStore } from '../state/PlansContext';
+import { supabase } from '../../../../lib/supabaseClient';
+import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
+
+import { isUuid } from '../utils/planUtils';
 
 type InlineTab = 'going' | 'invited' | 'waitlist' | 'skipped';
 
@@ -12,6 +17,7 @@ interface InlineParticipantViewProps {
   activeUserId?: string;
   isHost?: boolean;
   onManageParticipants?: () => void;
+  variant?: 'accordion' | 'flat';
 }
 
 interface InlineMemberEntry {
@@ -20,13 +26,18 @@ interface InlineMemberEntry {
   userId: string;
   isHost: boolean;
   isAccepted: boolean;
+  assignedGroup?: string | null;
   waitlistPosition?: number | null;
   joinedQueueAt?: string | null;
+  skipReason?: string | null;
 }
 
-export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, onManageParticipants }: InlineParticipantViewProps) {
+export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, onManageParticipants, variant = 'accordion' }: InlineParticipantViewProps) {
+  const { dbPlanParticipants } = usePlansStore();
   const members = plan.members || [];
   const hostId = plan.hostId || (plan as any).host_id || (plan as any).creator_id || (plan as any).creatorId;
+
+  const [selectedProfileUserId, setSelectedProfileUserId] = useState<string | null>(null);
 
   const isHostUser = isHostProp ?? Boolean(
     activeUserId && (
@@ -37,9 +48,21 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
 
   const [isExpanded, setIsExpanded] = React.useState(false);
 
-  const planFiltering = plan.participantFiltering || (plan as any).participant_filtering || 'AUTOMATIC';
-  const isAssignedMode = planFiltering === 'ASSIGNED';
+  const rawWaitlistMode =
+    plan.participantFiltering ||
+    (plan as any).participant_filtering ||
+    (plan as any).waitlist_mode ||
+    (plan as any).waitlistMode ||
+    (plan as any).waitlist_type ||
+    (plan as any).waitlistType ||
+    'AUTOMATIC';
+
+  const normalizedWaitlistMode = String(rawWaitlistMode ?? '').trim().toLowerCase();
+  const isAssignedMode = normalizedWaitlistMode === 'assigned';
   const waitlistOrderMode = plan.waitlistOrderMode || (plan as any).waitlist_order_mode || 'AUTO';
+
+  const isCompletedPlan = plan.status === 'COMPLETED';
+  const maxCapacity = plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
 
   // Helper to extract normalized final state for completed plans
   const getMemberFinalState = (m: any): string | null => {
@@ -64,7 +87,6 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     });
     if (!currentMember) return 'going';
 
-    const isCompletedPlan = plan.status === 'COMPLETED';
     if (isCompletedPlan) {
       const fs = getMemberFinalState(currentMember) || normalizeStatus(currentMember.joinState || (currentMember as any).rsvp_status);
       if (fs === 'JOINED') return 'going';
@@ -74,8 +96,9 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     }
 
     if (isAssignedMode) {
-      const group = (currentMember as any).assignedGroup || (currentMember as any).assigned_group;
-      return group === 'WAITLIST' ? 'waitlist' : 'going';
+      const groupRaw = (currentMember as any).assignedGroup || (currentMember as any).assigned_group;
+      const group = typeof groupRaw === 'string' ? groupRaw.toLowerCase() : '';
+      return (group === 'waitlisted' || group === 'waitlist') ? 'waitlist' : 'going';
     }
     const status = normalizeStatus(currentMember.joinState || (currentMember as any).rsvp_status);
     if (status === 'WAITLISTED') return 'waitlist';
@@ -85,27 +108,192 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
 
   const [activeTab, setActiveTab] = React.useState<InlineTab>(initialTab);
 
+  const targetPlanUuid = (plan as any).dbUuid || plan.id;
+
+  const [liveAssignedParticipants, setLiveAssignedParticipants] = React.useState<any[] | null>(null);
+
+  React.useEffect(() => {
+    if (!isAssignedMode || !targetPlanUuid || !isUuid(targetPlanUuid)) return;
+
+    const fetchParticipants = async (reason = 'INITIAL') => {
+      const { data, error } = await supabase
+        .from('plan_participants')
+        .select('user_id, assigned_group, waitlist_position, rsvp_status, skip_reason')
+        .eq('plan_id', targetPlanUuid);
+      
+      if (!error && data) {
+        setLiveAssignedParticipants(data as any[]);
+      }
+    };
+
+    fetchParticipants('INITIAL_MOUNT');
+
+    const channel = supabase.channel(`inline-participants-${targetPlanUuid}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'plan_participants', filter: `plan_id=eq.${targetPlanUuid}` },
+        () => {
+          fetchParticipants('REALTIME_EVENT');
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAssignedMode, targetPlanUuid]);
+
+  const planDbParticipants = useMemo(() => {
+    if (!dbPlanParticipants || dbPlanParticipants.length === 0) return [];
+    return dbPlanParticipants.filter((pp: any) =>
+      pp.plan_id === targetPlanUuid ||
+      pp.plan_id === plan.id ||
+      (plan as any).dbUuid === pp.plan_id
+    );
+  }, [dbPlanParticipants, targetPlanUuid, plan.id, (plan as any).dbUuid]);
+
   const groups = useMemo(() => {
-    const going: InlineMemberEntry[] = [];
-    const invited: InlineMemberEntry[] = [];
-    const waitlist: InlineMemberEntry[] = [];
-    const skipped: InlineMemberEntry[] = [];
+    const sortAlpha = (list: InlineMemberEntry[]) => [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
 
-    const isCompletedPlan = plan.status === 'COMPLETED';
+    const prioritizeUserAndSortGoing = (list: InlineMemberEntry[]) => {
+      return sortGoingParticipants(list, activeUserId);
+    };
 
-    for (const m of members) {
+    // ----------------------------------------------------------------------
+    // NEW CLEAN ASSIGNED MODE PIPELINE
+    // ----------------------------------------------------------------------
+    if (isAssignedMode) {
+      const going: InlineMemberEntry[] = [];
+      const waitlist: InlineMemberEntry[] = [];
+      const skipped: InlineMemberEntry[] = [];
+
+      const activeSource = (liveAssignedParticipants && liveAssignedParticipants.length > 0)
+        ? liveAssignedParticipants
+        : (planDbParticipants && planDbParticipants.length > 0)
+          ? planDbParticipants
+          : members;
+
+      // 1. Create lookup map for canonical user_id -> dbRow
+      const dbRowByUserId = new Map<string, any>();
+      for (const pp of activeSource) {
+        const uId = pp.user_id || pp.userUuid || pp.userId || pp.id || pp.dbUuid;
+        if (uId) {
+          dbRowByUserId.set(String(uId).toLowerCase(), pp);
+        }
+      }
+
+      // 2. Map existing members through activeSource or members
+      const sourceList = (activeSource && activeSource.length > 0 && ((activeSource[0] as any).user_id || (activeSource[0] as any).assigned_group || (activeSource[0] as any).assignedGroup))
+        ? activeSource
+        : members;
+
+      for (const item of sourceList) {
+        const rowUserId = (item as any).user_id || (item as any).userUuid || (item as any).userId || (item as any).id || (item as any).dbUuid;
+        if (!rowUserId) continue;
+
+        const m = members.find(member => {
+            const mId = member.userUuid || member.userId || (member as any).user_id || (member as any).id || (member as any).dbUuid;
+            return mId && String(mId).toLowerCase() === String(rowUserId).toLowerCase();
+        });
+
+        const isHostRole = m ? (m.role === 'HOST' || m.isHost === true) : ((item as any).role === 'HOST' || (item as any).isHost === true);
+        const isCurrentUser = Boolean(activeUserId && String(rowUserId).toLowerCase() === String(activeUserId).toLowerCase());
+
+        const rawStatus = m?.joinState || (m as any)?.rsvp_status || (item as any).rsvp_status || (item as any).rsvpStatus;
+        let effectiveStatus = normalizeStatus(rawStatus);
+
+        // 3. Read assigned_group directly from database row or item
+        const dbAssignedGroup = (item as any).assigned_group || (item as any).assignedGroup || (m as any)?.assigned_group || (m as any)?.assignedGroup;
+        const assignedGroup = typeof dbAssignedGroup === 'string' ? dbAssignedGroup.toLowerCase() : '';
+
+        if (isCompletedPlan) {
+          const finalState = m ? getMemberFinalState(m) : null;
+          const isAttended = finalState === 'JOINED' || (finalState === null && (effectiveStatus === 'JOINED' || assignedGroup === 'going'));
+          if (isAttended) {
+            effectiveStatus = 'JOINED';
+          } else {
+            effectiveStatus = 'SKIPPED';
+          }
+        }
+        const isAccepted = effectiveStatus !== 'INVITED' && effectiveStatus !== 'SKIPPED';
+
+        // 4. Read waitlist_position directly from database row or item or member
+        const waitlistPosition = (item as any).waitlist_position ?? (item as any).waitlistPosition ?? (m as any)?.waitlistPosition ?? (m as any)?.waitlist_position ?? null;
+
+        const entry: InlineMemberEntry = {
+          name: isCurrentUser ? 'You' : (m?.name || (item as any).name || 'Unknown'),
+          avatar: m?.avatar || (item as any).avatar || '',
+          userId: rowUserId,
+          isHost: Boolean(isHostRole),
+          isAccepted,
+          assignedGroup,
+          waitlistPosition,
+          joinedQueueAt: null, // Explicitly no fallback in assigned mode
+          skipReason: (item as any).skip_reason || (item as any).skipReason || (m as any)?.skipReason || (m as any)?.skip_reason || null,
+        };
+
+        // 5. Split into Going / Waitlisted / Skipped
+        if (isCompletedPlan) {
+          if (effectiveStatus === 'JOINED') {
+            going.push(entry);
+          } else {
+            skipped.push(entry);
+          }
+        } else if (effectiveStatus === 'SKIPPED') {
+          skipped.push(entry);
+        } else if (assignedGroup === 'waitlisted' || assignedGroup === 'waitlist') {
+          waitlist.push(entry);
+        } else if (assignedGroup === 'going') {
+          going.push(entry);
+        } else {
+          // If no assigned group is set in DB yet, put them in going for now
+          going.push(entry);
+        }
+      }
+
+      // 6. Validate & sort waitlisted strictly by waitlist_position ASC
+      waitlist.forEach((entry) => {
+        const isWaitlistGroup = entry.assignedGroup === 'waitlisted' || entry.assignedGroup === 'waitlist';
+        const hasNoPosition = entry.waitlistPosition === null || entry.waitlistPosition === undefined || typeof entry.waitlistPosition !== 'number';
+        if (isWaitlistGroup && hasNoPosition && entry.name) {
+          console.warn(`[INLINE_ASSIGNED] Missing waitlist_position`, {
+            plan_id: plan.id,
+            user_id: entry.userId,
+            name: entry.name
+          });
+        }
+      });
+
+      const waitlistSorted = [...waitlist].sort((a, b) => {
+        const posA = typeof a.waitlistPosition === 'number' ? a.waitlistPosition : Number.MAX_SAFE_INTEGER;
+        const posB = typeof b.waitlistPosition === 'number' ? b.waitlistPosition : Number.MAX_SAFE_INTEGER;
+        return posA - posB;
+      });
+
+      return {
+        going: prioritizeUserAndSortGoing(going),
+        invited: [], // No invited section in assigned mode
+        waitlist: isCompletedPlan ? [] : waitlistSorted,
+        skipped: prioritizeUserAndSortGoing(skipped)
+      };
+    }
+
+    // ----------------------------------------------------------------------
+    // AUTOMATIC MODE PIPELINE (Centralized via partitionAutomaticParticipants)
+    // ----------------------------------------------------------------------
+
+    const convertedEntries: InlineMemberEntry[] = members.map((m) => {
       const isHostRole = m.role === 'HOST' || m.isHost === true;
       const mId = m.userUuid || m.userId || (m as any).user_id || (m as any).id;
       const isCurrentUser = Boolean(activeUserId && mId === activeUserId);
-
       let effectiveStatus = normalizeStatus(m.joinState || (m as any).rsvp_status);
       if (isCompletedPlan) {
-        effectiveStatus = (getMemberFinalState(m) || effectiveStatus) as any;
+        const finalState = getMemberFinalState(m);
+        const isAttended = finalState === 'JOINED' || (finalState === null && effectiveStatus === 'JOINED');
+        effectiveStatus = isAttended ? 'JOINED' : 'SKIPPED';
       }
-
       const isAccepted = effectiveStatus !== 'INVITED' && effectiveStatus !== 'SKIPPED';
-
-      const entry: InlineMemberEntry = {
+      return {
         name: isCurrentUser ? 'You' : (m.name || 'Unknown'),
         avatar: m.avatar || '',
         userId: mId,
@@ -113,98 +301,66 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         isAccepted,
         waitlistPosition: (m as any).waitlistPosition ?? (m as any).waitlist_position ?? null,
         joinedQueueAt: (m as any).joinedQueueAt ?? (m as any).joined_queue_at ?? (m as any).createdAt ?? (m as any).created_at ?? null,
+        skipReason: (m as any).skipReason || (m as any).skip_reason || null,
       };
+    });
 
-      if (isCompletedPlan) {
-        if (effectiveStatus === 'JOINED') going.push(entry);
-        else if (effectiveStatus === 'WAITLISTED') waitlist.push(entry);
-        else if (effectiveStatus === 'INVITED') invited.push(entry);
-        else skipped.push(entry);
-      } else if (isAssignedMode) {
-        const group = (m as any).assignedGroup || (m as any).assigned_group;
-        if (group === 'WAITLIST' || (!group && effectiveStatus === 'WAITLISTED')) {
-          waitlist.push(entry);
-        } else if (effectiveStatus === 'SKIPPED') {
-          skipped.push(entry);
-        } else {
-          going.push(entry);
-        }
-      } else {
-        if (effectiveStatus === 'JOINED') going.push(entry);
-        else if (effectiveStatus === 'INVITED') invited.push(entry);
-        else if (effectiveStatus === 'WAITLISTED') waitlist.push(entry);
-        else if (effectiveStatus === 'SKIPPED') skipped.push(entry);
-      }
+    if (isCompletedPlan) {
+      const going = convertedEntries.filter(e => e.isAccepted);
+      const skipped = convertedEntries.filter(e => !e.isAccepted);
+      return {
+        goingJoinedCount: going.length,
+        going: prioritizeUserAndSortGoing(going),
+        invited: [],
+        waitlist: [],
+        skipped: prioritizeUserAndSortGoing(skipped),
+      };
     }
 
-    const sortAlpha = (list: InlineMemberEntry[]) => [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
-
-    const prioritizeUserAndSortGoing = (list: InlineMemberEntry[]) => {
-      const currentUser = list.find(item => item.name === 'You' || (activeUserId && item.userId === activeUserId));
-      const remaining = list.filter(item => item !== currentUser);
-      const remainingHosts = sortAlpha(remaining.filter(i => i.isHost));
-      const remainingNonHosts = sortAlpha(remaining.filter(i => !i.isHost));
-      return [
-        ...(currentUser ? [currentUser] : []),
-        ...remainingHosts,
-        ...remainingNonHosts,
-      ];
-    };
-
-    const sortByWaitlistOrder = (list: InlineMemberEntry[]) =>
-      [...list].sort((a, b) => {
-        if (waitlistOrderMode === 'CUSTOM') {
-          const posA = a.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
-          const posB = b.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
-          if (posA !== posB) return posA - posB;
-        }
-
-        const queueA = a.joinedQueueAt ? new Date(a.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
-        const queueB = b.joinedQueueAt ? new Date(b.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
-        if (queueA !== queueB) return queueA - queueB;
-        return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
-      });
+    const autoPartitioned = partitionAutomaticParticipants(convertedEntries, maxCapacity, activeUserId);
 
     return {
-      going: prioritizeUserAndSortGoing(going),
-      invited: prioritizeUserAndSortGoing(invited),
-      waitlist: sortByWaitlistOrder(waitlist),
-      skipped: prioritizeUserAndSortGoing(skipped)
+      goingJoinedCount: autoPartitioned.goingJoinedCount,
+      going: autoPartitioned.going,
+      invited: autoPartitioned.going,
+      waitlist: autoPartitioned.waitlist,
+      skipped: autoPartitioned.skipped,
     };
-  }, [members, activeUserId, isAssignedMode, waitlistOrderMode]);
+  }, [members, planDbParticipants, liveAssignedParticipants, activeUserId, isAssignedMode, waitlistOrderMode, plan.id, (plan as any).dbUuid, isCompletedPlan, maxCapacity]);
 
   const tabs = useMemo(() => {
     const t: { key: InlineTab; label: string; count: number }[] = [];
-    const isCompletedPlan = plan.status === 'COMPLETED';
 
     if (isCompletedPlan) {
-      if (groups.going.length > 0 || (groups.waitlist.length === 0 && groups.invited.length === 0 && groups.skipped.length === 0)) {
-        t.push({ key: 'going', label: 'Attended', count: groups.going.length });
-      }
-      if (groups.waitlist.length > 0) {
-        t.push({ key: 'waitlist', label: 'Waitlist', count: groups.waitlist.length });
-      }
-      if (groups.invited.length > 0) {
-        t.push({ key: 'invited', label: 'Invited', count: groups.invited.length });
-      }
+      t.push({ key: 'going', label: 'Attended', count: groups.going.length });
       if (groups.skipped.length > 0) {
         t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
       }
     } else if (isAssignedMode) {
-      if (groups.going.length > 0 || groups.waitlist.length === 0) {
-        t.push({ key: 'going', label: 'Joined', count: groups.going.length });
-      }
+      t.push({ key: 'going', label: 'Joined', count: groups.going.length });
       if (groups.waitlist.length > 0) {
         t.push({ key: 'waitlist', label: 'Waitlisted', count: groups.waitlist.length });
       }
+      if (groups.skipped.length > 0) {
+        t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
+      }
     } else {
-      if (groups.going.length > 0) t.push({ key: 'going', label: 'Joined', count: groups.going.length });
-      if (groups.waitlist.length > 0) t.push({ key: 'waitlist', label: 'Waitlisted', count: groups.waitlist.length });
-      if (groups.invited.length > 0) t.push({ key: 'invited', label: 'Invited', count: groups.invited.length });
-      if (groups.skipped.length > 0) t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
+      const actualJoinedCount = (groups as any).goingJoinedCount ?? groups.going.length;
+      const isFull = actualJoinedCount >= maxCapacity;
+
+      if (!isFull) {
+        t.push({ key: 'invited', label: 'Invited', count: groups.going.length });
+      } else {
+        t.push({ key: 'going', label: 'Joined', count: actualJoinedCount });
+        t.push({ key: 'waitlist', label: 'Waitlist', count: groups.waitlist.length });
+      }
+
+      if (groups.skipped.length > 0) {
+        t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
+      }
     }
     return t;
-  }, [groups, isAssignedMode, plan.status]);
+  }, [groups, isAssignedMode, isCompletedPlan, maxCapacity]);
 
   React.useEffect(() => {
     if (tabs.length > 0 && !tabs.find(t => t.key === activeTab)) {
@@ -213,14 +369,30 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
   }, [tabs, activeTab]);
 
   const activeList = groups[activeTab] || [];
-  const allForStrip = plan.status === 'COMPLETED' ? [...groups.going, ...groups.skipped] : [...groups.going, ...groups.invited, ...groups.waitlist];
+
+  const getWaitlistPositionDisplay = (person: InlineMemberEntry, idx: number): string | null => {
+    if (isAssignedMode) {
+      return `#${idx + 1}`;
+    }
+
+    // Automatic mode:
+    // Only display position number if participant's RSVP status is WAITLISTED.
+    // INVITED participants in Automatic waitlist receive NO number.
+    const status = (person as any).rsvpStatus || (person as any).rsvp_status;
+    const isWaitlistedRSVP = status === 'WAITLISTED' || (person.isAccepted && status !== 'SKIPPED' && status !== 'INVITED');
+
+    if (isWaitlistedRSVP) {
+      return `#${idx + 1}`;
+    }
+
+    return null;
+  };
+
+  const allForStrip = isCompletedPlan ? [...groups.going, ...groups.skipped] : [...groups.going, ...groups.invited, ...groups.waitlist];
   const maxAvatars = 4;
   const visibleAvatars = allForStrip.slice(0, maxAvatars);
   const overflowCount = allForStrip.length - maxAvatars;
 
-  const maxCapacity = plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
-
-  const isCompletedPlan = plan.status === 'COMPLETED';
   const isParticipantView = !isHostUser && !isCompletedPlan;
 
   const completedCount = (plan as any).attended_participants ?? (plan as any).attendedParticipants ?? groups.going.length;
@@ -258,37 +430,52 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     }
   };
 
-  // Render streamlined view for normal participants on live plans:
-  // Starts directly with status toggle, always expanded, no header row, no outer card box, max 4 visible participant rows with internal scroll.
-  if (isParticipantView) {
-    return (
-      <div className="w-full text-left space-y-2">
-        {tabs.length > 0 && (
-          <div className="w-full flex items-center justify-center bg-[#0A0A0C]/90 border border-white/15 rounded-full overflow-hidden backdrop-blur-md shadow-inner">
-            {tabs.map((tab) => {
-              const isActive = activeTab === tab.key;
-              const activeStyle = getLiveTabActiveStyle(tab.key);
+  // Render streamlined view for normal participants on live plans, or if variant is explicitly flat:
+  // Starts directly with status toggle, always expanded, no header row, no outer card box.
+  if (isParticipantView || variant === 'flat') {
+    const flatMaxHeight = isHostUser ? 'max-h-[calc(100dvh-480px)]' : 'max-h-[calc(100dvh-440px)]';
 
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveTab(tab.key)}
-                  style={isActive ? activeStyle.style : undefined}
-                  className={`flex-1 py-1.5 px-3 text-[11.5px] font-sans font-semibold tracking-wide transition-all duration-200 focus:outline-none flex items-center justify-center cursor-pointer select-none min-w-0 ${
-                    isActive
-                      ? `${activeStyle.className} rounded-full z-10 shadow-sm`
-                      : 'text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-white/[0.04]'
-                  }`}
-                >
-                  <span className="truncate">{tab.label} ({tab.count})</span>
-                </button>
-              );
-            })}
+    return (
+      <div className="w-full text-left space-y-2 flex flex-col min-h-0">
+        {tabs.length > 0 && (
+          <div className="w-full flex items-center justify-between gap-2 flex-shrink-0">
+            <div className="flex-1 flex items-center justify-center bg-[#0A0A0C]/90 border border-white/15 rounded-full overflow-hidden backdrop-blur-md shadow-inner">
+              {tabs.map((tab) => {
+                const isActive = activeTab === tab.key;
+                const activeStyle = getLiveTabActiveStyle(tab.key);
+
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    style={isActive ? activeStyle.style : undefined}
+                    className={`flex-1 py-1.5 px-3 text-[11.5px] font-sans font-semibold tracking-wide transition-all duration-200 focus:outline-none flex items-center justify-center cursor-pointer select-none min-w-0 ${
+                      isActive
+                        ? `${activeStyle.className} rounded-full z-10 shadow-sm`
+                        : 'text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <span className="truncate">{tab.label} ({tab.count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {onManageParticipants && (
+              <button
+                type="button"
+                onClick={onManageParticipants}
+                className="h-8 w-8 rounded-full bg-[#0A0A0C]/90 border border-white/15 text-white/80 hover:text-white transition flex items-center justify-center cursor-pointer shrink-0 shadow-inner"
+                title="Manage Participants"
+              >
+                <Users className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         )}
 
-        <div className="px-1 py-0.5 min-h-[90px] max-h-[calc(100dvh-340px)] overflow-y-auto scrollbar-none">
+        <div className={`px-1 py-0.5 min-h-[90px] overflow-y-auto scrollbar-none pb-2 ${variant === 'flat' ? flatMaxHeight : 'max-h-[calc(100dvh-340px)]'}`}>
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -304,13 +491,18 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                 activeList.map((person, idx) => (
                   <div
                     key={person.userId || idx}
-                    className={`flex items-center gap-3 py-1.5 px-1 rounded-xl ${
+                    onClick={() => {
+                      if (person.userId) {
+                        setSelectedProfileUserId(person.userId);
+                      }
+                    }}
+                    className={`flex items-center gap-3 py-1.5 px-2 rounded-xl cursor-pointer hover:bg-white/[0.06] active:scale-[0.98] transition-all duration-150 select-none ${
                       person.isAccepted ? 'opacity-100' : 'opacity-70'
                     }`}
                   >
                     {activeTab === 'waitlist' && (
-                      <span className="text-[11px] font-bold text-white/30 min-w-[18px] font-sans">
-                        #{idx + 1}
+                      <span className="text-[11px] font-bold text-white/50 w-6 min-w-[24px] inline-flex items-center shrink-0 font-sans">
+                        {getWaitlistPositionDisplay(person, idx) || ''}
                       </span>
                     )}
                     <div className="relative flex-shrink-0">
@@ -323,8 +515,13 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                     }`}>
                       {person.name}
                     </span>
+                    {activeTab === 'skipped' && person.skipReason && (
+                      <span className="text-[11px] font-medium text-white/50 truncate max-w-[100px] text-right font-sans">
+                        {formatSkipReason(person.skipReason)}
+                      </span>
+                    )}
                     {person.isHost && (
-                      <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0 uppercase">
+                      <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0">
                         Host
                       </span>
                     )}
@@ -334,6 +531,11 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
             </motion.div>
           </AnimatePresence>
         </div>
+
+        <FriendProfileViewerBottomSheet
+          friendUserId={selectedProfileUserId}
+          onClose={() => setSelectedProfileUserId(null)}
+        />
       </div>
     );
   }
@@ -418,7 +620,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
               </div>
 
               <span className="text-[13px] font-medium text-white/70 font-sans">
-                {groups.going.length} {groups.going.length === 1 ? 'participant' : 'participants'}
+                {allForStrip.length} {allForStrip.length === 1 ? 'participant' : 'participants'}
               </span>
             </div>
 
@@ -551,13 +753,18 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                     activeList.map((person, idx) => (
                       <div
                         key={person.userId || idx}
-                        className={`flex items-center gap-3 py-2 px-1 rounded-xl ${
+                        onClick={() => {
+                          if (person.userId) {
+                            setSelectedProfileUserId(person.userId);
+                          }
+                        }}
+                        className={`flex items-center gap-3 py-2 px-2 rounded-xl cursor-pointer hover:bg-white/[0.06] active:scale-[0.98] transition-all duration-150 select-none ${
                           person.isAccepted ? 'opacity-100' : 'opacity-70'
                         }`}
                       >
                         {activeTab === 'waitlist' && (
-                          <span className="text-[11px] font-bold text-white/30 min-w-[18px] font-sans">
-                            #{idx + 1}
+                          <span className="text-[11px] font-bold text-white/50 w-6 min-w-[24px] inline-flex items-center shrink-0 font-sans">
+                            {getWaitlistPositionDisplay(person, idx) || ''}
                           </span>
                         )}
                         <div className="relative flex-shrink-0">
@@ -570,8 +777,13 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                         }`}>
                           {person.name}
                         </span>
+                        {activeTab === 'skipped' && person.skipReason && (
+                          <span className="text-[11px] font-medium text-white/50 truncate max-w-[100px] text-right font-sans">
+                            {formatSkipReason(person.skipReason)}
+                          </span>
+                        )}
                         {person.isHost && (
-                          <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0 uppercase">
+                          <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0">
                             Host
                           </span>
                         )}
@@ -600,6 +812,11 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
           </motion.div>
         )}
       </AnimatePresence>
+
+      <FriendProfileViewerBottomSheet
+        friendUserId={selectedProfileUserId}
+        onClose={() => setSelectedProfileUserId(null)}
+      />
     </div>
   );
 }

@@ -13,6 +13,8 @@ import { ContinueButton } from '../../create/components/ContinueButton';
 import { DisplacedHostModal } from '../../plans/components/DisplacedHostModal';
 import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
 import { PendingDecisionsSection } from '../shared/PendingDecisionsSection';
+import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
+import { EditCapacityBottomSheet } from '../../plans/components/BottomSheets';
 
 interface AssignedParticipantScreenProps extends SharedParticipantScreenProps {
   isHostSelected?: boolean;
@@ -28,6 +30,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   title = 'Arrange Participants',
   subtitle,
   capacity,
+  isCapacityConfigured,
   maxCapacity,
   isHostSelected = false,
   userProfile,
@@ -62,49 +65,116 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onWaitlistModeChange,
   showWaitlistMode = true,
   canParticipantInvite = false,
+  currentPage,
   onBottomSheetStateChange,
   pendingLeaveRequests,
   onReplaceLeaveParticipant,
   onKeepPaymentLeaveParticipant,
+  onInviteSkipped,
+  isCompletedPlan,
+  initialOpenPlanSizeSheet,
+  onPlanSizeSheetDismissed,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
+  const [isCapacitySheetOpen, setIsCapacitySheetOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialOpenPlanSizeSheet) {
+      setIsCapacitySheetOpen(true);
+    }
+  }, [initialOpenPlanSizeSheet]);
+
   // ── Wizard mode internal state ──
-  const hostItem: Friend | null = isHostSelected
-    ? {
-        id: 'host',
-        dbUuid: userProfile?.dbUuid || 'host',
-        name: userProfile?.name || 'You',
-        avatar: userProfile?.avatar || userProfile?.profile_photo || '',
-        isHost: true,
-      }
-    : null;
+  const hostItem = useMemo<Friend | null>(() => {
+    if (!isHostSelected) return null;
+    return {
+      id: 'host',
+      dbUuid: userProfile?.dbUuid || 'host',
+      name: userProfile?.name || 'You',
+      avatar: userProfile?.avatar || userProfile?.profile_photo || '',
+      isHost: true,
+    };
+  }, [isHostSelected, userProfile?.dbUuid, userProfile?.name, userProfile?.avatar, userProfile?.profile_photo]);
 
   const [internalGoingList, setInternalGoingList] = useState<Friend[]>([]);
   const [internalWaitlist, setInternalWaitlist] = useState<Friend[]>([]);
 
+  const totalInvitedCount = (hostItem ? 1 : 0) + selectedFriends.length;
+  const isConfigured = Boolean(isCapacityConfigured && capacity !== undefined);
+  const hasWaitlist = isConfigured && capacity !== undefined && capacity < totalInvitedCount;
+
   useEffect(() => {
     if (mode !== 'wizard') return;
     const allList = [...(hostItem ? [hostItem] : []), ...selectedFriends];
-    setInternalGoingList(allList.slice(0, capacity));
-    setInternalWaitlist(allList.slice(capacity));
-  }, [selectedFriends, capacity, isHostSelected, mode]);
+    const effectiveCap = hasWaitlist && capacity !== undefined ? capacity : allList.length;
+    const newGoing = allList.slice(0, effectiveCap);
+    const newWait = allList.slice(effectiveCap);
+
+    setInternalGoingList((prev) => {
+      if (
+        prev.length === newGoing.length &&
+        prev.every((item, idx) => item.id === newGoing[idx]?.id)
+      ) {
+        return prev;
+      }
+      return newGoing;
+    });
+
+    setInternalWaitlist((prev) => {
+      if (
+        prev.length === newWait.length &&
+        prev.every((item, idx) => item.id === newWait[idx]?.id)
+      ) {
+        return prev;
+      }
+      return newWait;
+    });
+  }, [selectedFriends, capacity, isHostSelected, mode, isCapacityConfigured, hasWaitlist, hostItem]);
 
   const displayGoing = mode === 'editor' ? (externalGoingList ?? []) : internalGoingList;
   const displayWaitlist = mode === 'editor' ? (externalWaitlist ?? []) : internalWaitlist;
   const displaySkipped = mode === 'editor' ? (externalSkippedList || []) : [];
 
+  const actualJoinedCount = useMemo(() => {
+    if (isCompletedPlan) return displayGoing.length;
+    return displayGoing.filter(
+      (p) => p.rsvpStatus === 'JOINED' || (p.isAccepted && p.rsvpStatus !== 'INVITED' && p.rsvpStatus !== 'SKIPPED')
+    ).length;
+  }, [displayGoing, isCompletedPlan]);
+
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
+    if (isCompletedPlan) {
+      const t: ParticipantTab[] = ['going'];
+      if (displaySkipped.length > 0) t.push('skipped');
+      return t;
+    }
+    if (mode === 'wizard') {
+      if (!hasWaitlist) {
+        return ['invited'];
+      }
+      return ['going', 'waitlist'];
+    }
     const t: ParticipantTab[] = ['going'];
-    if (displayWaitlist.length > 0 || mode === 'wizard') t.push('waitlist');
+    if (displayWaitlist.length > 0) t.push('waitlist');
     if (displaySkipped.length > 0) t.push('skipped');
     return t;
-  }, [displayWaitlist, displaySkipped, mode]);
+  }, [displayWaitlist, displaySkipped, mode, isCompletedPlan, hasWaitlist]);
 
-  const [activeTab, setActiveTab] = useState<ParticipantTab>('going');
+  const [activeTab, setActiveTab] = useState<ParticipantTab>(
+    mode === 'wizard' ? (hasWaitlist ? 'going' : 'invited') : 'going'
+  );
   const initialMountRef = React.useRef(true);
 
   useEffect(() => {
+    if (mode === 'wizard') {
+      if (!hasWaitlist) {
+        setActiveTab((prev) => (prev !== 'invited' ? 'invited' : prev));
+      } else if (!visibleTabs.includes(activeTab)) {
+        setActiveTab(visibleTabs[0]);
+      }
+      return;
+    }
     if (initialMountRef.current && visibleTabs.length > 0) {
       let defaultTab: ParticipantTab = 'going';
       if (initialTab && visibleTabs.includes(initialTab) && initialTab !== 'invited') {
@@ -113,29 +183,18 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       setActiveTab(defaultTab);
       initialMountRef.current = false;
     }
-  }, [visibleTabs, initialTab]);
-
-  useEffect(() => {
-    if (visibleTabs.length > 0 && !visibleTabs.includes(activeTab)) {
-      setActiveTab('going');
-    }
-  }, [visibleTabs, activeTab]);
+  }, [visibleTabs, initialTab, hasWaitlist, mode, activeTab]);
 
   // Action sheet & capacity editing state
   const [selectedItem, setSelectedItem] = useState<Friend | null>(null);
   const [sheetType, setSheetType] = useState<ParticipantTab | null>(null);
   const [showConfirmRemove, setShowConfirmRemove] = useState(false);
+  const [viewProfileUserId, setViewProfileUserId] = useState<string | null>(null);
 
   // Displaced Host Modal state
   const [affectedHosts, setAffectedHosts] = useState<Friend[]>([]);
   const [affectedIndex, setAffectedIndex] = useState<number>(-1);
   const [pendingCapacity, setPendingCapacity] = useState<number | null>(null);
-
-  const handleApplyCapacityChange = (targetCap: number) => {
-    if (onAdjustCapacity) {
-      onAdjustCapacity(targetCap);
-    }
-  };
 
   const handleMoveToWaitlistConfirm = async () => {
     if (affectedIndex < 0 || !affectedHosts[affectedIndex]) return;
@@ -160,10 +219,11 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   const handleRemoveFromPlanConfirm = async () => {
     if (affectedIndex < 0 || !affectedHosts[affectedIndex]) return;
     const currentHost = affectedHosts[affectedIndex];
+    if (onDemoteHost) {
+      await onDemoteHost(currentHost);
+    }
     if (onRemoveParticipant) {
       await onRemoveParticipant(currentHost);
-    } else if (onDemoteHost) {
-      await onDemoteHost(currentHost);
     }
     const nextIndex = affectedIndex + 1;
     if (nextIndex < affectedHosts.length) {
@@ -179,21 +239,104 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     }
   };
 
-  const handleCancelConfirm = () => {
+  const handleCancelModal = () => {
     setAffectedIndex(-1);
     setAffectedHosts([]);
     setPendingCapacity(null);
   };
 
-  const [isPlanSizeEditing, setIsPlanSizeEditing] = useState(false);
+  const handleItemTap = (item: Friend, tab: ParticipantTab) => {
+    if (mode === 'wizard') return;
 
-  const effectiveIsHost = isHost !== undefined ? isHost : isHostUser;
-  const isInviteOnly = managementMode === 'invite_only' || (!effectiveIsHost && managementMode !== 'host');
+    if (!effectiveIsHost && !canParticipantInvite) {
+      if (item.dbUuid || item.id) {
+        setViewProfileUserId(item.dbUuid || item.id);
+      }
+      return;
+    }
+
+    if (canParticipantInvite && !effectiveIsHost) {
+      if (item.dbUuid || item.id) {
+        setViewProfileUserId(item.dbUuid || item.id);
+      }
+      return;
+    }
+
+    setSelectedItem(item);
+    setSheetType(tab);
+  };
+
+  const handleReorder = (newWaitlist: Friend[]) => {
+    if (onReorderWaitlist) {
+      onReorderWaitlist(newWaitlist);
+    }
+  };
+
+  const handleDragEnd = () => {
+    if (onReorderWaitlistComplete) {
+      onReorderWaitlistComplete(displayWaitlist);
+    }
+  };
+
+  const handleRemoveItem = (item: Friend) => {
+    if (mode === 'wizard') {
+      if (onRemoveParticipant) {
+        onRemoveParticipant(item);
+      }
+    } else {
+      setSelectedItem(item);
+      setShowConfirmRemove(true);
+    }
+  };
+
+  const handleConfirmRemoveAction = () => {
+    if (!selectedItem) return;
+    if (onRemoveParticipant) {
+      onRemoveParticipant(selectedItem);
+    }
+    setShowConfirmRemove(false);
+    setSelectedItem(null);
+  };
 
   const closeSheet = () => {
     setSelectedItem(null);
     setSheetType(null);
     setShowConfirmRemove(false);
+  };
+
+  const moveToGoingAction = async (item: Friend) => {
+    closeSheet();
+    if (mode === 'wizard') {
+      setInternalWaitlist((prev) => prev.filter((f) => f.id !== item.id));
+      setInternalGoingList((prev) => (prev.some((f) => f.id === item.id) ? prev : [...prev, item]));
+      return;
+    }
+    if (onMoveToGoing) {
+      await onMoveToGoing(item);
+    }
+  };
+
+  const moveToWaitlistAction = async (item: Friend) => {
+    closeSheet();
+    if (mode === 'wizard') {
+      setInternalGoingList((prev) => prev.filter((f) => f.id !== item.id));
+      setInternalWaitlist((prev) => (prev.some((f) => f.id === item.id) ? prev : [...prev, item]));
+      return;
+    }
+    if (onMoveToWaitlist) {
+      await onMoveToWaitlist(item);
+    }
+  };
+
+  const removeFromPlanAction = async (item: Friend) => {
+    closeSheet();
+    if (mode === 'wizard') {
+      setInternalGoingList((prev) => prev.filter((f) => f.id !== item.id));
+      setInternalWaitlist((prev) => prev.filter((f) => f.id !== item.id));
+    }
+    if (onRemoveParticipant) {
+      await onRemoveParticipant(item);
+    }
   };
 
   useEffect(() => {
@@ -202,51 +345,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     }
   }, [selectedItem, onBottomSheetStateChange]);
 
-  const handleItemTap = (item: Friend, type: ParticipantTab) => {
-    if (!effectiveIsHost || isInviteOnly || isPlanSizeEditing) return;
-    setSelectedItem(item);
-    setSheetType(type);
-    setShowConfirmRemove(false);
-  };
-
-  const moveToWaitlistAction = (item: Friend) => {
-    if (onMoveToWaitlist) {
-      onMoveToWaitlist(item);
-    } else {
-      setInternalGoingList((prev) => prev.filter((f) => f.id !== item.id));
-      setInternalWaitlist((prev) => [...prev.filter((f) => f.id !== item.id), item]);
-    }
-    closeSheet();
-  };
-
-  const moveToGoingAction = (item: Friend) => {
-    if (onMoveToGoing) {
-      onMoveToGoing(item);
-    } else {
-      let newGoing = [...internalGoingList.filter((f) => f.id !== item.id)];
-      let newWait = [...internalWaitlist.filter((f) => f.id !== item.id)];
-      if (newGoing.length >= capacity) {
-        const displaced = newGoing[newGoing.length - 1];
-        newGoing = newGoing.slice(0, newGoing.length - 1);
-        newWait = [displaced, ...newWait];
-      }
-      if (item.isHost) newGoing.unshift(item);
-      else newGoing.push(item);
-      setInternalGoingList(newGoing);
-      setInternalWaitlist(newWait);
-    }
-    closeSheet();
-  };
-
-  const removeFromPlanAction = (item: Friend) => {
-    if (onRemoveParticipant) {
-      onRemoveParticipant(item);
-    } else {
-      setInternalGoingList((prev) => prev.filter((f) => f.id !== item.id));
-      setInternalWaitlist((prev) => prev.filter((f) => f.id !== item.id));
-    }
-    closeSheet();
-  };
+  const effectiveIsHost = isHost !== undefined ? isHost : isHostUser;
 
   return (
     <div
@@ -262,94 +361,68 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           onOpenSettings={onOpenSettings}
           onOpenActivity={onOpenActivity}
           displayMode={displayMode}
+          mode={mode}
+          waitlistMode={waitlistMode}
+          onOpenPlanSize={mode === 'wizard' && effectiveIsHost && !isCompletedPlan ? () => setIsCapacitySheetOpen(true) : undefined}
         />
       )}
 
-      {effectiveIsHost && (
-        <>
-          <div className={displayMode === 'embedded' ? "pt-4" : ""}>
-            <PlanSizeCard
-              capacity={capacity}
-              maxCapacity={maxCapacity}
-              isHostUser={effectiveIsHost}
-              isInviteOnly={isInviteOnly}
-              onConfirmAdjustCapacity={handleApplyCapacityChange}
-              onEditingChange={(editing) => {
-                setIsPlanSizeEditing(editing);
-                if (onPlanSizeEditingChange) onPlanSizeEditingChange(editing);
-              }}
-            />
-          </div>
-          {showWaitlistMode && (
-            <WaitlistModeSelector
-              waitlistMode={waitlistMode}
-              onWaitlistModeChange={onWaitlistModeChange}
-              isHost={effectiveIsHost}
-            />
-          )}
-        </>
+      {!isCompletedPlan && effectiveIsHost && showWaitlistMode && (
+        <WaitlistModeSelector
+          waitlistMode={waitlistMode}
+          onWaitlistModeChange={onWaitlistModeChange}
+          isHost={effectiveIsHost}
+          variant={mode === 'wizard' ? 'plain' : 'card'}
+          capacity={capacity}
+          isCapacityConfigured={isCapacityConfigured}
+          invitedCount={
+            mode === 'wizard'
+              ? selectedFriends.length + (isHostSelected ? 1 : 0)
+              : externalGoingList.length + externalWaitlist.length + (externalSkippedList?.length || 0)
+          }
+        />
+      )}
+
+      {effectiveIsHost && pendingLeaveRequests && pendingLeaveRequests.length > 0 && (
+        <PendingDecisionsSection
+          pendingRequests={pendingLeaveRequests}
+          onReplaceParticipant={onReplaceLeaveParticipant}
+          onKeepPayment={onKeepPaymentLeaveParticipant}
+        />
       )}
 
       <AssignedParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
-        goingCount={displayGoing.length}
+        goingCount={mode === 'wizard' ? displayGoing.length : actualJoinedCount}
         capacity={capacity}
         waitlistCount={displayWaitlist.length}
+        invitedCount={mode === 'wizard' ? ((hostItem ? 1 : 0) + selectedFriends.length) : displayGoing.length}
+        skippedCount={displaySkipped.length}
+        isCompletedPlan={isCompletedPlan}
+        hideCapacityDenominator={mode === 'wizard'}
         onTabChange={setActiveTab}
+        onTapInvited={() => {
+          if (mode === 'wizard' && effectiveIsHost && !isCompletedPlan) {
+            setIsCapacitySheetOpen(true);
+          }
+        }}
       />
-
-      {/* Action Button Below Segmented Control — Assigned Mode */}
-      {(effectiveIsHost || canParticipantInvite) && onAddFriends && (
-        <div style={{ padding: '0 20px', margin: '4px 0 12px' }}>
-          <button
-            type="button"
-            onClick={() => onAddFriends(activeTab)}
-            style={{
-              width: '100%',
-              padding: '11px 16px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 14,
-              color: '#FFFFFF',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              fontFamily: 'Inter, sans-serif',
-              transition: 'background 0.15s, border-color 0.15s',
-            }}
-            className="hover:bg-white/[0.12] active:scale-[0.99]"
-          >
-            <UserPlus className="w-4 h-4 text-white" />
-            <span>
-              {canParticipantInvite && !effectiveIsHost
-                ? 'Add Participants'
-                : visibleTabs.includes('waitlist')
-                ? (activeTab === 'going' ? 'Add to Going' : 'Add to Waitlist')
-                : 'Add Participants'}
-            </span>
-          </button>
-        </div>
-      )}
 
       {/* List content — Assigned Mode */}
       <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 16, flex: 1, overflowY: 'auto' }}>
-        {activeTab === 'going' && (
+        {(activeTab === 'going' || activeTab === 'invited') && (
           <>
             {displayGoing.length > 0 ? (
               <GoingSection
                 goingList={displayGoing}
-                onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'going') : undefined}
+                onItemTap={(item) => handleItemTap(item, activeTab === 'invited' ? 'invited' : 'going')}
                 showIndex={false}
               />
             ) : (
               <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
                 <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', textAlign: 'center' }}>
-                  No participants in Going.
+                  {activeTab === 'invited' ? 'No invited participants.' : 'No participants in Joined.'}
                 </span>
               </div>
             )}
@@ -361,7 +434,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             {displayWaitlist.length > 0 ? (
               <WaitlistSection
                 waitlist={displayWaitlist}
-                onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'waitlist') : undefined}
+                onItemTap={(item) => handleItemTap(item, 'waitlist')}
                 onAddFriends={effectiveIsHost ? onAddFriends : undefined}
                 onReorder={mode === 'wizard' ? (newWait) => setInternalWaitlist(newWait) : (effectiveIsHost ? onReorderWaitlist : undefined)}
                 onReorderComplete={effectiveIsHost ? onReorderWaitlistComplete : undefined}
@@ -384,7 +457,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
               <StackingFriends
                 key={item.id}
                 item={item}
-                onClick={effectiveIsHost ? () => handleItemTap(item, 'skipped') : undefined}
+                onClick={() => handleItemTap(item, 'skipped')}
               />
             ))}
           </div>
@@ -393,13 +466,15 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
       {mode === 'wizard' && onContinue && (
         <ContinueButton
-          disabled={displayGoing.length < capacity}
+          disabled={hasWaitlist && capacity !== undefined ? displayGoing.length < capacity : displayGoing.length < 2}
           onClick={() => onContinue(displayGoing, displayWaitlist)}
           text={
             continueText ||
-            (displayGoing.length < capacity
-              ? `Continue (${displayGoing.length}/${capacity})`
-              : `Continue (${displayGoing.length} Going • ${displayWaitlist.length} Waitlisted)`)
+            (!hasWaitlist || capacity === undefined
+              ? 'Continue'
+              : (displayGoing.length < capacity
+                  ? `Continue (${displayGoing.length}/${capacity})`
+                  : `Continue (${displayGoing.length} Going • ${displayWaitlist.length} Waitlisted)`))
           }
         />
       )}
@@ -422,6 +497,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           onRemoveParticipant={removeFromPlanAction}
           onReplaceLeaveParticipant={onReplaceLeaveParticipant}
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
+          onInviteSkipped={onInviteSkipped}
+          onViewProfile={(item) => setViewProfileUserId(item.dbUuid || item.id)}
         />
       )}
 
@@ -430,8 +507,53 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         hostName={affectedHosts[affectedIndex]?.name || 'Host'}
         hostAvatar={affectedHosts[affectedIndex]?.avatar}
         onMoveToWaitlist={handleMoveToWaitlistConfirm}
-        onCancel={handleCancelConfirm}
+        onCancel={handleCancelModal}
       />
+
+      <FriendProfileViewerBottomSheet
+        friendUserId={viewProfileUserId}
+        onClose={() => setViewProfileUserId(null)}
+      />
+
+      {mode === 'wizard' && (
+        <EditCapacityBottomSheet
+          isOpen={isCapacitySheetOpen}
+          capacity={capacity}
+          invitedCount={(hostItem ? 1 : 0) + selectedFriends.length}
+          minCapacity={2}
+          maxCapacity={50}
+          onCapacityChange={(newCap) => {
+            if (onAdjustCapacity) {
+              onAdjustCapacity(newCap);
+            }
+          }}
+          onAddParticipants={() => {
+            setIsCapacitySheetOpen(false);
+            onPlanSizeSheetDismissed?.();
+            onAddFriends?.('invited');
+          }}
+          onClose={() => {
+            setIsCapacitySheetOpen(false);
+            onPlanSizeSheetDismissed?.();
+          }}
+        />
+      )}
+
+      {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
+      {!isCompletedPlan && mode !== 'wizard' && (currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
+        <button
+          type="button"
+          onClick={() => onAddFriends(activeTab)}
+          title={activeTab === 'going' ? 'Add to Joined' : 'Add to Waitlist'}
+          style={{
+            bottom: 'calc(2.25rem + env(safe-area-inset-bottom, 0px))',
+            right: 'calc(2rem + env(safe-area-inset-right, 0px))',
+          }}
+          className="fixed z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-200 cursor-pointer pointer-events-auto select-none"
+        >
+          <UserPlus className="w-5 h-5 text-white" />
+        </button>
+      )}
     </div>
   );
 };

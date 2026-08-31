@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Plus, Activity, ChevronLeft } from 'lucide-react';
+import { Settings, Plus, Activity, ChevronLeft, Users } from 'lucide-react';
 
 interface ParticipantHeaderProps {
   title: string;
@@ -8,7 +8,11 @@ interface ParticipantHeaderProps {
   onBack?: () => void;
   onOpenSettings?: () => void;
   onOpenActivity?: () => void;
+  onOpenPlanSize?: () => void;
   displayMode?: 'standalone' | 'embedded';
+  mode?: string;
+  waitlistMode?: 'automatic' | 'assigned' | string;
+  hideTitle?: boolean;
 }
 
 export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
@@ -18,9 +22,62 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
   onBack,
   onOpenSettings,
   onOpenActivity,
+  onOpenPlanSize,
   displayMode = 'standalone',
+  mode,
+  waitlistMode,
+  hideTitle = false,
 }) => {
   const isStandalone = displayMode === 'standalone';
+  const isWizard = mode === 'wizard' || hideTitle;
+
+  if (isWizard) {
+    const displayTitle = title || 'New Activity';
+    return (
+      <div
+        className="w-full shrink-0 px-5 flex items-center justify-between bg-[#000000] relative z-40 gap-3"
+        style={{ height: '56px', boxSizing: 'border-box' }}
+      >
+        <div className="flex items-center min-w-0 flex-1">
+          {isStandalone && onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="p-2 -ml-2 text-white hover:text-white/80 active:scale-95 transition cursor-pointer flex items-center justify-center mr-2 shrink-0"
+              title="Back"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+          )}
+          <h1
+            title={displayTitle}
+            className="truncate font-bold text-white tracking-[-0.02em] font-sans"
+            style={{
+              fontSize: 18,
+              margin: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {displayTitle}
+          </h1>
+        </div>
+
+        {onOpenPlanSize && (
+          <button
+            type="button"
+            id="header_plan_size_btn"
+            onClick={onOpenPlanSize}
+            title="Plan Size"
+            className="p-1.5 bg-transparent hover:opacity-100 active:scale-95 text-white/50 hover:text-white/80 transition cursor-pointer pointer-events-auto select-none shrink-0 flex items-center justify-center"
+          >
+            <Users className="w-5 h-5 stroke-[2]" />
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -63,14 +120,15 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
             </button>
           )}
 
-          {isHostUser && onOpenSettings && (
+          {isHostUser && onOpenPlanSize && (
             <button
+              id="header_plan_size_btn"
               type="button"
-              onClick={onOpenSettings}
+              onClick={onOpenPlanSize}
               className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-white active:scale-95 transition cursor-pointer"
-              title="Settings"
+              title="Plan Size"
             >
-              <Settings className="w-4 h-4 text-zinc-300" />
+              <Users className="w-4 h-4 text-zinc-300" />
             </button>
           )}
         </div>

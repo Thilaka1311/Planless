@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Crown, ArrowLeftRight } from 'lucide-react';
+import { X, Crown, ArrowLeftRight, Check } from 'lucide-react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 
 interface StepWhoProps {
@@ -90,9 +90,6 @@ export const StepWho: React.FC<StepWhoProps> = ({
 
     return friends
       .filter((u) => {
-        // In normal mode: exclude already-selected friends so they move to the top strip
-        // In replacement mode: keep selected friend in the list so they remain visible with radio state
-        if (!isReplacementMode && selectedIds.has(u.id)) return false;
         // Exclude the host entry from the scrollable list
         if (u.id === hostId) return false;
         // Apply search filter
@@ -112,39 +109,70 @@ export const StepWho: React.FC<StepWhoProps> = ({
         rawFriend: u,
       }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [friends, searchPeopleQuery, selectedIds, hostId]);
+  }, [friends, searchPeopleQuery, hostId]);
 
   const isItemDisabled = (item: ParticipantItem): boolean =>
     !!disabledUserIds?.has(item.id);
 
-  // Build the selected avatar strip (host first, then friends in selection order).
-  const hostItem = userProfile && isHostSelected
-    ? {
-        id: hostId,
-        type: 'friend',
-        displayName: userProfile.name || 'You',
-        avatar: userProfile.avatar,
-        isHost: true,
-      }
-    : null;
+  // Selected avatar strip displays host ("You") + selected friends
+  const displaySelectedItems = selectedFriends;
+  const hostAvatar =
+    userProfile?.avatar ||
+    userProfile?.profile_photo ||
+    userProfile?.profilePhoto ||
+    userProfile?.profile_photo_path ||
+    '';
+  const totalCountWithHost = (displaySelectedItems?.length || 0) + 1;
+  const selectedStripRef = React.useRef<HTMLDivElement>(null);
+  const prevCountRef = React.useRef(displaySelectedItems.length);
 
-  const displaySelectedItems = hostItem ? [hostItem, ...selectedFriends] : selectedFriends;
+  React.useEffect(() => {
+    if (displaySelectedItems.length > prevCountRef.current) {
+      if (selectedStripRef.current) {
+        selectedStripRef.current.scrollTo({
+          left: selectedStripRef.current.scrollWidth,
+          behavior: 'smooth',
+        });
+      }
+    }
+    prevCountRef.current = displaySelectedItems.length;
+  }, [displaySelectedItems.length]);
 
   return (
-    <div className="flex-1 flex flex-col px-5 pt-0 pb-6 animate-fade-in min-h-0 relative">
-      <div className="flex flex-col flex-1 min-h-0 space-y-4">
+    <div className="flex-1 flex flex-col px-4 pt-0 pb-0 animate-fade-in min-h-0 relative">
+      <div className="flex flex-col flex-1 min-h-0">
 
         {/* ── Selected avatar strip — single source of truth for selection ── */}
-        {!isReplacementMode && displaySelectedItems.length > 0 && (
-          <div className="bg-transparent border-b border-white/[0.08] pb-4 flex items-center justify-between gap-3 animate-fade-in select-none">
-            <div className="flex-1 flex items-center gap-4 overflow-x-auto scrollbar-none py-1">
+        {!isReplacementMode && (
+          <div className="bg-transparent pb-2 border-b border-white/[0.08] flex items-center justify-between animate-fade-in select-none w-full gap-3">
+            <div
+              ref={selectedStripRef}
+              className="flex-1 flex items-center gap-3.5 overflow-x-auto scrollbar-none py-1 min-w-0"
+            >
+              {/* Host / "You" — always first avatar, permanently selected, no X remove button */}
+              <div key="host-you" className="flex flex-col items-center shrink-0 relative w-13">
+                <div className="relative">
+                  <UserAvatar
+                    src={hostAvatar}
+                    alt="You"
+                    size="w-12 h-12"
+                    className="border border-white/10"
+                  />
+                </div>
+                <div className="flex flex-col items-center w-full mt-1.5 min-h-[20px]">
+                  <span className="text-[10px] font-semibold text-zinc-400 truncate w-full text-center">
+                    You
+                  </span>
+                </div>
+              </div>
+
+              {/* Selected friends */}
               {displaySelectedItems.map((item) => {
                 const photo = item.avatar || item.profilePhoto;
                 const name = item.name || item.displayName || 'Friend';
-                const isHostItem = (item as any).isHost;
 
                 return (
-                  <div key={item.id} className="flex flex-col items-center shrink-0 relative w-14">
+                  <div key={item.id} className="flex flex-col items-center shrink-0 relative w-13">
                     <div className="relative">
                       <UserAvatar
                         src={photo}
@@ -153,59 +181,43 @@ export const StepWho: React.FC<StepWhoProps> = ({
                         className="border border-white/10"
                       />
 
-                      {/* Host crown badge */}
-                      {isHostItem && (
-                        <div className="absolute -top-1 -right-1 bg-[#FFD700] text-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-black font-bold shadow-md">
-                          <Crown className="w-2.5 h-2.5 text-black" fill="currentColor" />
-                        </div>
-                      )}
-
                       {/* Remove button — restores friend to the available list */}
                       <button
                         type="button"
-                        onClick={() => {
-                          if (isHostItem && onToggleHostSelection) {
-                            onToggleHostSelection();
-                          } else {
-                            handleRemoveSelectedItem(item);
-                          }
-                        }}
+                        onClick={() => handleRemoveSelectedItem(item)}
                         className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-zinc-800 hover:bg-zinc-700 border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition shadow-md"
                       >
                         <X className="w-3 h-3 stroke-[2.5]" />
                       </button>
                     </div>
 
-                    <div className="flex flex-col items-center w-full mt-1.5 min-h-[24px]">
+                    <div className="flex flex-col items-center w-full mt-1.5 min-h-[20px]">
                       <span className="text-[10px] font-semibold text-zinc-400 truncate w-full text-center">
                         {(name || 'Friend').split(' ')[0]}
                       </span>
-                      {isHostItem && (
-                        <span className="text-[8px] font-medium text-zinc-500 uppercase tracking-wider text-center">
-                          You
-                        </span>
-                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Total count bubble */}
-            <div className="shrink-0 flex items-center justify-center bg-[#FFFFFF] text-[#000000] text-xs font-black rounded-full w-8 h-8">
-              {totalParticipantsCount}
+            {/* Selected Count Orange Circular Badge */}
+            <div className="shrink-0 flex items-center justify-center pr-1 pl-1">
+              <div className="w-6 h-6 rounded-full bg-[#FF6B2C] text-white font-bold text-[12px] flex items-center justify-center shadow-md select-none">
+                {totalCountWithHost}
+              </div>
             </div>
           </div>
         )}
 
-        {/* ── Available friends list — only unselected participants ── */}
-        <div className="flex-1 flex flex-col select-none space-y-1 overflow-y-auto scrollbar-none pr-1 min-h-0">
+        {/* ── Friends list — all participants with check indicators ── */}
+        <div className="flex-1 flex flex-col select-none overflow-y-auto scrollbar-none pr-0 min-h-0 pb-1">
           {availableItems.length === 0 ? (
             <div className="w-full py-8 text-center text-zinc-600 text-xs font-semibold select-none">
-              {searchPeopleQuery ? 'No friends matched your search' : 'All friends selected'}
+              {searchPeopleQuery ? 'No friends matched your search' : 'No friends found'}
             </div>
           ) : (
-            availableItems.map((item) => {
+            availableItems.map((item, index) => {
               const disabled = isItemDisabled(item);
               const isSelected = selectedIds.has(item.id);
 
@@ -217,40 +229,39 @@ export const StepWho: React.FC<StepWhoProps> = ({
                   onClick={() => toggleFriendSelection(item.rawFriend)}
                   style={{
                     width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: 12,
-                    border: isSelected ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid rgba(255, 255, 255, 0.04)',
-                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                    padding: '11px 2px',
+                    borderBottom: index === availableItems.length - 1 ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+                    background: 'transparent',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    transition: 'all 0.2s',
+                    transition: 'opacity 0.2s',
                     cursor: disabled ? 'not-allowed' : 'pointer',
                     opacity: disabled ? 0.4 : 1,
                     outline: 'none',
                   }}
                 >
-                  <div className="flex items-center gap-3 truncate">
+                  <div className="flex items-center gap-3.5 truncate">
                     <UserAvatar
                       src={item.profilePhoto}
                       alt="Avatar"
-                      size="w-8 h-8"
+                      size="w-11 h-11"
                       className="shrink-0"
                     />
                     <div className="truncate text-left">
-                      <span className="block truncate text-xs font-bold text-white">
+                      <span className="block truncate text-[15px] font-semibold text-white">
                         {item.displayName}
                       </span>
                     </div>
                   </div>
 
-                  {/* Selection radio indicator */}
+                  {/* Selection circular check indicator */}
                   {isSelected ? (
-                    <span className="w-4.5 h-4.5 rounded-full bg-white flex items-center justify-center shrink-0">
-                      <span className="w-2 h-2 rounded-full bg-black" />
+                    <span className="w-6 h-6 rounded-full bg-[#FF6B2C] flex items-center justify-center shrink-0 shadow-sm">
+                      <Check className="w-4 h-4 text-white stroke-[3]" />
                     </span>
                   ) : (
-                    <span className="w-4.5 h-4.5 rounded-full border border-white/20 shrink-0" />
+                    <span className="w-6 h-6 rounded-full border border-white/20 shrink-0" />
                   )}
                 </button>
               );
