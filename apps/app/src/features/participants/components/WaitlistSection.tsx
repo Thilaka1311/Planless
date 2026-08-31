@@ -83,7 +83,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
       ) : (
         waitlist.map((item, idx) => (
           <StackingFriends
-            key={item.id}
+            key={item.dbUuid || item.id}
             item={item}
             index={idx + indexOffset}
             showIndex={showIndex}

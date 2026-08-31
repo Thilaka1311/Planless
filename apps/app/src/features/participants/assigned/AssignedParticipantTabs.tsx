@@ -6,11 +6,14 @@ interface AssignedParticipantTabsProps {
   visibleTabs: ParticipantTab[];
   activeTab: ParticipantTab;
   goingCount: number;
-  capacity: number;
+  capacity?: number;
   waitlistCount: number;
+  invitedCount?: number;
   skippedCount?: number;
   isCompletedPlan?: boolean;
+  hideCapacityDenominator?: boolean;
   onTabChange: (tab: ParticipantTab) => void;
+  onTapInvited?: () => void;
 }
 
 export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = ({
@@ -19,19 +22,20 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
   goingCount,
   capacity,
   waitlistCount,
+  invitedCount,
   skippedCount,
   isCompletedPlan,
+  hideCapacityDenominator = false,
   onTabChange,
+  onTapInvited,
 }) => {
-  // Filter visible tabs to strictly exclude 'invited'
-  const filteredTabs = visibleTabs.filter((t): t is Exclude<ParticipantTab, 'invited'> => t !== 'invited');
-  const tabCount = filteredTabs.length;
+  const tabCount = visibleTabs.length;
 
   if (tabCount === 0) {
     return null;
   }
 
-  const activeTabIndex = Math.max(0, filteredTabs.indexOf(activeTab as any));
+  const activeTabIndex = Math.max(0, visibleTabs.indexOf(activeTab));
   const pillWidth = `calc(${100 / tabCount}% - 3px)`;
   const pillLeft =
     activeTabIndex === 0
@@ -62,21 +66,40 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
             bottom: 3,
             left: pillLeft,
             width: pillWidth,
-            background: activeTab === 'going' ? '#064E3B' : activeTab === 'waitlist' ? '#b45309' : activeTab === 'skipped' ? '#991b1b' : 'rgba(255, 255, 255, 0.15)',
+            background:
+              activeTab === 'going'
+                ? '#064E3B'
+                : activeTab === 'invited'
+                ? 'rgba(255, 255, 255, 0.14)'
+                : activeTab === 'waitlist'
+                ? '#b45309'
+                : activeTab === 'skipped'
+                ? '#991b1b'
+                : 'rgba(255, 255, 255, 0.15)',
             borderRadius: 17,
             transition: 'all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.4)',
-            border: activeTab === 'going' ? '1px solid #059669' : activeTab === 'waitlist' ? '1px solid #d97706' : activeTab === 'skipped' ? '1px solid #dc2626' : '1px solid rgba(255,255,255,0.1)',
+            border:
+              activeTab === 'going'
+                ? '1px solid #059669'
+                : activeTab === 'invited'
+                ? '1px solid rgba(255, 255, 255, 0.12)'
+                : activeTab === 'waitlist'
+                ? '1px solid #d97706'
+                : activeTab === 'skipped'
+                ? '1px solid #dc2626'
+                : '1px solid rgba(255,255,255,0.1)',
           }}
         />
 
-        {filteredTabs.map((key) => {
+        {visibleTabs.map((key) => {
           let label = '';
           if (isCompletedPlan) {
             if (key === 'going') label = `Attended (${goingCount})`;
             if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
           } else {
-            if (key === 'going') label = `Joined (${goingCount} / ${capacity})`;
+            if (key === 'invited') label = `Invited (${invitedCount ?? goingCount})`;
+            if (key === 'going') label = (capacity !== undefined && !hideCapacityDenominator) ? `Joined (${goingCount} / ${capacity})` : `Joined (${goingCount})`;
             if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
             if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
           }
@@ -84,7 +107,13 @@ export const AssignedParticipantTabs: React.FC<AssignedParticipantTabsProps> = (
           return (
             <button
               key={key}
-              onClick={() => onTabChange(key)}
+              type="button"
+              onClick={() => {
+                onTabChange(key);
+                if (key === 'invited' && onTapInvited) {
+                  onTapInvited();
+                }
+              }}
               style={{
                 flex: 1,
                 border: 'none',

@@ -529,15 +529,6 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
     const planName = plan?.title || "Plan";
     const currentUserId = userProfile?.dbUuid || (userProfile as any)?.id || (userProfile as any)?.user_id || activeUserId;
 
-    console.log("[ACTIVITY DEBUG] raw plan_activity rows count:", rawActivities.length);
-    const leaveReqRows = rawActivities.filter(a => a.activity_type === "participant_left" && (a.metadata as any)?.status === "PENDING");
-    if (leaveReqRows.length > 0) {
-      console.log("[ACTIVITY DEBUG] leave_requested rows:", leaveReqRows);
-      leaveReqRows.forEach(row => {
-        console.log("[ACTIVITY DEBUG] leave_requested metadata:", row.metadata, "currentUserId:", currentUserId);
-      });
-    }
-
     // Convert raw activities into uncollapsed items (newest to oldest)
     const uncollapsed: ActivityEvent[] = rawActivities.map((act) => {
       const actorDetails = act.actor_id ? resolveUserDetails(act.actor_id, false) : { name: "" };

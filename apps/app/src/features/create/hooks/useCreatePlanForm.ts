@@ -13,6 +13,7 @@ export function useCreatePlanForm() {
     const now = new Date();
     return new Date(now.getTime() + 60 * 60 * 1000);
   });
+  const [isDateManuallySet, setIsDateManuallySet] = useState(false);
   const [searchPeopleQuery, setSearchPeopleQuery] = useState('');
   const [individuallySelectedFriendIds, setIndividuallySelectedFriendIds] = useState<string[]>([]);
   const [selectedFriends, setSelectedFriends] = useState<any[]>([]);
@@ -24,6 +25,7 @@ export function useCreatePlanForm() {
     return new Date();
   });
   const [costAmount, setCostAmount] = useState(0);
+  const [isCostManuallySet, setIsCostManuallySet] = useState(false);
   const [quickNote, setQuickNote] = useState('');
   const [localTitle, setLocalTitle] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -98,6 +100,7 @@ export function useCreatePlanForm() {
     setLocalLocation('');
     const now = new Date();
     setEventDateTime(new Date(now.getTime() + 60 * 60 * 1000));
+    setIsDateManuallySet(false);
     setCustomDeadline(new Date(now.getTime()));
     setIndividuallySelectedFriendIds([]);
     setWaitlistEnabled(false);
@@ -105,6 +108,7 @@ export function useCreatePlanForm() {
     setIsCapacityManuallySet(false);
     setRsvpDeadline(null);
     setCostAmount(0);
+    setIsCostManuallySet(false);
     setQuickNote('');
     setCustomCoverImage(null);
     setIsHostSelected(true);
@@ -136,14 +140,17 @@ export function useCreatePlanForm() {
   return {
     localLocation, setLocalLocation,
     eventDateTime, setEventDateTime,
+    isDateManuallySet, setIsDateManuallySet,
     searchPeopleQuery, setSearchPeopleQuery,
     selectedFriends, setSelectedFriends,
     waitlistEnabled, setWaitlistEnabled,
     waitlistCapacity, setWaitlistCapacity: handleSetTotalCapacity,
     rsvpDeadline, setRsvpDeadline,
     totalCapacity, setTotalCapacity: handleSetTotalCapacity,
+    isCapacityManuallySet, setIsCapacityManuallySet,
     customDeadline, setCustomDeadline,
     costAmount, setCostAmount,
+    isCostManuallySet, setIsCostManuallySet,
     quickNote, setQuickNote,
     localTitle, setLocalTitle,
     isSubmitting, setIsSubmitting,

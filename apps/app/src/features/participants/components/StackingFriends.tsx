@@ -36,21 +36,15 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
 
   const indexLabel = (() => {
     if (!showIndex) return null;
+    if (index !== undefined) {
+      return `#${index}`;
+    }
     const rawPos = typeof item.waitlistPosition === 'number'
       ? item.waitlistPosition
       : (typeof (item as any).waitlist_position === 'number' ? (item as any).waitlist_position : null);
 
     if (rawPos !== null) {
       return `#${rawPos}`;
-    }
-
-    const rsvp = item.rsvpStatus || (item as any).rsvp_status;
-    if (rsvp === 'INVITED') {
-      return null;
-    }
-
-    if (index !== undefined && (rsvp === 'WAITLISTED' || item.isAccepted)) {
-      return `#${index}`;
     }
 
     return null;

@@ -30,7 +30,8 @@ export interface SharedParticipantScreenProps {
   category?: string;
   eventDate?: string;
   eventTime?: string;
-  capacity: number;
+  capacity?: number;
+  isCapacityConfigured?: boolean;
   maxCapacity?: number;
   userProfile?: any;
   mode?: 'wizard' | 'editor';
@@ -74,6 +75,8 @@ export interface SharedParticipantScreenProps {
   onKeepPaymentLeaveParticipant?: (participantId: string) => void;
   onInviteSkipped?: (friend: Friend, target?: 'GOING' | 'WAITLIST') => Promise<void> | void;
   isCompletedPlan?: boolean;
+  initialOpenPlanSizeSheet?: boolean;
+  onPlanSizeSheetDismissed?: () => void;
 }
 
 export type ParticipantManagementScreenProps = SharedParticipantScreenProps;

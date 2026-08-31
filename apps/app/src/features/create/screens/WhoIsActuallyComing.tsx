@@ -7,6 +7,8 @@ interface WhoIsActuallyComingProps {
   onContinue: () => void;
   onAddFriends?: () => void;
   selectedCategory?: string;
+  initialOpenPlanSizeSheet?: boolean;
+  onPlanSizeSheetDismissed?: () => void;
 }
 
 /**
@@ -26,6 +28,8 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
   onContinue,
   onAddFriends,
   selectedCategory = 'custom',
+  initialOpenPlanSizeSheet,
+  onPlanSizeSheetDismissed,
 }) => {
   const selectedFriends: Friend[] = React.useMemo(() => {
     const raw: Friend[] = (form.selectedFriends || []).filter((f: Friend) => !f.isHost);
@@ -46,7 +50,8 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
     );
   }, [form.selectedFriends, form.priorityGuestIds]);
 
-  const capacity: number = form.totalCapacity || 2;
+  const isCapacityConfigured = Boolean(form.isCapacityManuallySet || form.totalCapacity !== undefined);
+  const capacity: number | undefined = form.totalCapacity;
   const currentWaitlistMode: 'automatic' | 'assigned' = form.waitlistMode || 'automatic';
 
   const eventDateObj = form.eventDateTime ? new Date(form.eventDateTime) : new Date();
@@ -86,11 +91,12 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
 
   return (
     <ParticipantManagementScreen
-      title={form.localTitle || 'New Activity'}
+      title={form.localTitle || form.title || 'New Activity'}
       category={selectedCategory}
       eventDate={formattedDate}
       eventTime={formattedTime}
       capacity={capacity}
+      isCapacityConfigured={isCapacityConfigured}
       isHostSelected={form.isHostSelected}
       isHostUser={true}
       userProfile={form.userProfile}
@@ -103,6 +109,8 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
       waitlistMode={currentWaitlistMode}
       onWaitlistModeChange={form.setWaitlistMode}
       showWaitlistMode={true}
+      initialOpenPlanSizeSheet={initialOpenPlanSizeSheet}
+      onPlanSizeSheetDismissed={onPlanSizeSheetDismissed}
       // Only remove is surfaced externally; Going / Waitlist moves stay internal.
       onRemoveParticipant={handleRemoveParticipant}
     />

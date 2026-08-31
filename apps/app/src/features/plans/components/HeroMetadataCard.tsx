@@ -55,22 +55,19 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
           <div className="flex items-center gap-2 min-w-0">
             <Clock className="w-4 h-4 text-white/50 flex-shrink-0" />
             <span className="text-[11px] font-medium leading-none truncate">
-              {formatPlanDate(datetime || createdAt)}
+              {datetime ? formatPlanDate(datetime) : "Set a date"}
             </span>
           </div>
           {Boolean(maxParticipants) && (
-            <button
-              type="button"
-              disabled={!isHost}
-              onClick={() => onEditCapacity?.()}
-              className="flex items-center gap-1.5 text-white/90 text-[11px] font-medium leading-none shrink-0 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1 -m-1 rounded-lg cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+            <div
+              className="flex items-center gap-1.5 text-white/90 text-[11px] font-medium leading-none shrink-0 select-none pointer-events-none"
             >
               <Users className="w-3.5 h-3.5 text-white/50 flex-shrink-0" />
               <span>{maxParticipants}</span>
-            </button>
+            </div>
           )}
         </div>
-        {hasCost && costText && (
+        {hasCost && costText ? (
           <div className="relative">
             <button
               type="button"
@@ -89,6 +86,16 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
               position="above"
               align="left"
             />
+          </div>
+        ) : (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => onEditCost?.()}
+              className="text-[10px] text-white/50 font-medium pl-6 leading-none cursor-pointer hover:underline text-left"
+            >
+              Set a cost
+            </button>
           </div>
         )}
         <div className="flex flex-col gap-1" style={{ color: rsvp.color }}>
@@ -113,7 +120,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
       >
         <div className="flex items-center gap-2 text-white/90 max-w-[80%]">
           <MapPin className="w-4 h-4 text-white/50 flex-shrink-0" />
-          <span className="text-xs font-semibold truncate leading-none">{location}</span>
+          <span className="text-xs font-semibold truncate leading-none">{location || "Add a location"}</span>
         </div>
         <ChevronRight className="w-4 h-4 text-white/40 flex-shrink-0" />
       </button>

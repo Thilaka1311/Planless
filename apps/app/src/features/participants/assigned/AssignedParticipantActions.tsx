@@ -292,7 +292,9 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                   )}
                   {onMoveToWaitlist && effectiveState === 'GOING' && !selectedItem.isHost && canMoveToWaitlist && (
                     <button
-                      onClick={() => onMoveToWaitlist(selectedItem)}
+                      onClick={() => {
+                        executeActionWithImmediateDismiss(() => onMoveToWaitlist(selectedItem));
+                      }}
                       style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
                     >
                       Move to Waitlist
@@ -300,7 +302,9 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                   )}
                   {onMoveToGoing && (effectiveState === 'WAITLIST' || effectiveState === 'INVITED') && (
                     <button
-                      onClick={() => onMoveToGoing(selectedItem)}
+                      onClick={() => {
+                        executeActionWithImmediateDismiss(() => onMoveToGoing(selectedItem));
+                      }}
                       style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
                     >
                       Move to Joined

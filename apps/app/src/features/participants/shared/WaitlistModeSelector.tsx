@@ -7,12 +7,18 @@ interface WaitlistModeSelectorProps {
   onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;
   isHost?: boolean;
   variant?: 'card' | 'plain';
+  capacity?: number;
+  isCapacityConfigured?: boolean;
+  invitedCount?: number;
 }
 
 export const WaitlistModeSelector: React.FC<WaitlistModeSelectorProps> = ({
   waitlistMode = 'automatic',
   onWaitlistModeChange,
   isHost = true,
+  capacity,
+  isCapacityConfigured,
+  invitedCount,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -40,6 +46,49 @@ export const WaitlistModeSelector: React.FC<WaitlistModeSelectorProps> = ({
     setIsOpen(false);
   };
 
+  const isConfigured = isCapacityConfigured ?? (capacity !== undefined);
+  const totalInvited = invitedCount ?? 0;
+
+  const getAutomaticDescription = () => {
+    // 1. NO PLAN SIZE SET
+    if (!isConfigured || capacity === undefined) {
+      return 'All invited participants will join. Set a plan size for a waitlist.';
+    }
+
+    const planSize = Math.max(1, capacity);
+    const waitlistedCount = Math.max(0, totalInvited - planSize);
+
+    // 3. PLAN SIZE EQUALS INVITED COUNT
+    if (waitlistedCount === 0) {
+      return 'All invited participants will join.';
+    }
+
+    // 2. PLAN SIZE IS SET AND IS LESS THAN INVITED
+    const base = `The first ${planSize} people will join`;
+    if (waitlistedCount === 1) {
+      return `${base}, and the remaining 1 person will be waitlisted.`;
+    }
+    return `${base}, and the remaining ${waitlistedCount} people will be waitlisted.`;
+  };
+
+  const getAssignedDescription = () => {
+    // 1. NO PLAN SIZE SET
+    if (!isConfigured || capacity === undefined) {
+      return 'All invited participants will join. Set a plan size for a waitlist.';
+    }
+
+    const planSize = Math.max(1, capacity);
+    const waitlistedCount = Math.max(0, totalInvited - planSize);
+
+    // 3. PLAN SIZE EQUALS INVITED COUNT
+    if (waitlistedCount === 0) {
+      return 'All invited participants will join.';
+    }
+
+    // 2. PLAN SIZE IS SET AND IS LESS THAN INVITED
+    return 'You choose who joins and who is waitlisted.';
+  };
+
   return (
     <div style={{ padding: '0 20px', marginBottom: 12, marginTop: 4, position: 'relative', zIndex: 30 }}>
       <div
@@ -64,8 +113,8 @@ export const WaitlistModeSelector: React.FC<WaitlistModeSelectorProps> = ({
           }}
         >
           {currentMode === 'assigned'
-            ? 'You choose who joins.'
-            : 'First to access, first to join.'}
+            ? getAssignedDescription()
+            : getAutomaticDescription()}
         </span>
 
         {/* Right: Compact Dropdown Trigger */}

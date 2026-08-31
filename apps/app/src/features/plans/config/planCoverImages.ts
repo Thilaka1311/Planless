@@ -1,9 +1,11 @@
+import defaultPlanCover from "../../../assets/planimagedefault.png";
+
 export const PLAN_COVER_IMAGES = {
   football: "/assets/plan-covers/football.png",
   badminton: "/assets/plan-covers/badminton.png",
   movie: "/assets/plan-covers/movie.png",
   dining: "/assets/plan-covers/dining.png",
-  default: "/assets/plan-covers/default.png",
+  default: defaultPlanCover,
 };
 
 export function getPlanCover(activityType?: string, subcategory?: string | null): string {

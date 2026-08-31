@@ -812,26 +812,44 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const waitlistPositionMap = new Map<string, number>();
 
     if (isAssignedMode && selectedFriends.length > 0) {
-      const priorityIds: string[] = priorityGuestIds;
-      const capacity: number = newDbPlan?.max_participants || 2;
+      const hasConfiguredCapacity = newDbPlan?.max_participants != null;
       const hostOffset = isHostSelected ? 1 : 0;
-      const goingCapacityForFriends = Math.max(0, capacity - hostOffset);
+      const totalCount = selectedFriends.length + hostOffset;
+      const hasWaitlist = hasConfiguredCapacity && newDbPlan.max_participants < totalCount;
 
-      let currentWaitlistPos = 1;
+      if (!hasWaitlist) {
+        // No waitlist: all friends are GOING
+        selectedFriends.forEach((f: any) => {
+          const fUuid = f.dbUuid || f.id;
+          if (fUuid) friendAssignmentMap.set(fUuid, 'GOING');
+        });
+      } else {
+        const priorityIds: string[] = priorityGuestIds || [];
+        const goingCapacityForFriends = Math.max(0, newDbPlan.max_participants - hostOffset);
 
-      selectedFriends.forEach((f: any, index: number) => {
-        const fUuid = f.dbUuid || f.id;
-        if (!fUuid) return;
-        // Priority guest IDs or first N friends fit into GOING; overflow into WAITLIST
-        const isPriority = priorityIds.length > 0 ? priorityIds.includes(fUuid) : index < goingCapacityForFriends;
-        
-        if (isPriority) {
-          friendAssignmentMap.set(fUuid, 'GOING');
-        } else {
-          friendAssignmentMap.set(fUuid, 'WAITLIST');
-          waitlistPositionMap.set(fUuid, currentWaitlistPos++);
-        }
-      });
+        let currentWaitlistPos = 1;
+        let goingCount = 0;
+
+        selectedFriends.forEach((f: any, index: number) => {
+          const fUuid = f.dbUuid || f.id;
+          if (!fUuid) return;
+
+          let isGoing = false;
+          if (priorityIds.length > 0) {
+            isGoing = priorityIds.includes(fUuid) && goingCount < goingCapacityForFriends;
+          } else {
+            isGoing = index < goingCapacityForFriends;
+          }
+
+          if (isGoing) {
+            friendAssignmentMap.set(fUuid, 'GOING');
+            goingCount++;
+          } else {
+            friendAssignmentMap.set(fUuid, 'WAITLIST');
+            waitlistPositionMap.set(fUuid, currentWaitlistPos++);
+          }
+        });
+      }
     }
 
     const hostJoinedAt = new Date().toISOString();
@@ -895,6 +913,23 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       dbPartRow = partResultData?.[0];
     }
 
+    // Insert plan_created activity log
+    try {
+      await supabase.from("plan_activity").insert({
+        plan_id: insertedPlanUuid,
+        actor_id: userProfile.dbUuid || userProfile.id || userId,
+        target_user_id: userProfile.dbUuid || userProfile.id || userId,
+        activity_type: "plan_created",
+        metadata: {
+          title: newDbPlan?.title,
+          category: newDbPlan?.category,
+          scheduled_at: newDbPlan?.scheduled_at,
+          participant_filtering: newDbPlan?.participant_filtering
+        }
+      });
+    } catch (actErr) {
+      console.error("[createPlan] Failed to insert plan_activity:", actErr);
+    }
 
     if (userProfile.dbUuid) {
       await syncUserStats(userProfile.dbUuid, "create_plan");

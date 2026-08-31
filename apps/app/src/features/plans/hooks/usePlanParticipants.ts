@@ -880,6 +880,7 @@ export function usePlanParticipants({
     // Optimistic updates
     inviteeUuids.forEach((inviteeUuid) => {
       const waitlistPos = effectiveAssignedGroup === 'WAITLIST' ? ++maxWaitlistPos : null;
+      const foundUser = dbUsers.find(u => u.id === inviteeUuid || (u as any).dbUuid === inviteeUuid);
       applyParticipantOptimisticUpdate(planUuid, inviteeUuid, {
         plan_id: planUuid,
         user_id: inviteeUuid,
@@ -889,62 +890,74 @@ export function usePlanParticipants({
         waitlist_position: waitlistPos,
         responded_at: null,
         skip_reason: null,
+        user_profile: foundUser ? {
+          id: foundUser.id,
+          full_name: foundUser.full_name || (foundUser as any)?.name || "Participant",
+          profile_photo: foundUser.profile_photo || (foundUser as any)?.profile_url || (foundUser as any)?.avatar || null,
+          user_id: (foundUser as any)?.user_id || foundUser.id,
+        } : undefined,
       } as any);
     });
 
-    // 2. Persist via trusted SECURITY DEFINER RPC
-    await api.inviteParticipantsRPC(planUuid, inviteeUuids, effectiveAssignedGroup);
+    try {
+      // 2. Persist via trusted SECURITY DEFINER RPC
+      await api.inviteParticipantsRPC(planUuid, inviteeUuids, effectiveAssignedGroup);
 
-    // Insert plan_activity entries for each added participant
-    if (userId) {
-      const actorUser = dbUsers.find(u => u.id === userId);
-      const actorName = actorUser?.full_name || (actorUser as any)?.name || "Host";
+      // Insert plan_activity entries for each added participant
+      if (userId) {
+        const actorUser = dbUsers.find(u => u.id === userId);
+        const actorName = actorUser?.full_name || (actorUser as any)?.name || "Host";
 
-      for (const inviteeUuid of inviteeUuids) {
-        const inviteeUser = dbUsers.find(u => u.id === inviteeUuid);
-        const participantName = inviteeUser?.full_name || (inviteeUser as any)?.name || "Participant";
-        const participantAvatarUrl = (inviteeUser as any)?.avatar_url || (inviteeUser as any)?.profile_photo || null;
+        for (const inviteeUuid of inviteeUuids) {
+          const inviteeUser = dbUsers.find(u => u.id === inviteeUuid);
+          const participantName = inviteeUser?.full_name || (inviteeUser as any)?.name || "Participant";
+          const participantAvatarUrl = (inviteeUser as any)?.avatar_url || (inviteeUser as any)?.profile_photo || null;
 
-        const activityType = effectiveAssignedGroup === 'GOING'
-          ? 'participant_moved_to_joined'
-          : effectiveAssignedGroup === 'WAITLIST'
-            ? 'participant_moved_to_waitlist'
-            : 'participant_invites_toggled';
-        const groupValue = effectiveAssignedGroup === 'GOING' ? 'going' : effectiveAssignedGroup === 'WAITLIST' ? 'waitlist' : null;
+          const activityType = effectiveAssignedGroup === 'GOING'
+            ? 'participant_moved_to_joined'
+            : effectiveAssignedGroup === 'WAITLIST'
+              ? 'participant_moved_to_waitlist'
+              : 'participant_invites_toggled';
+          const groupValue = effectiveAssignedGroup === 'GOING' ? 'going' : effectiveAssignedGroup === 'WAITLIST' ? 'waitlist' : null;
 
-        (supabase as any)
-          .from("plan_activity")
-          .insert({
-            plan_id: planUuid,
-            actor_id: userId,
-            target_user_id: inviteeUuid,
-            activity_type: activityType,
-            metadata: {
-              participant_user_id: inviteeUuid,
-              participant_name: participantName,
-              participant_avatar_url: participantAvatarUrl,
-              assigned_group: groupValue,
-              rsvp_status: "invited",
-              performed_by: userId,
-              performed_by_name: actorName,
-            }
-          })
-          .then();
+          (supabase as any)
+            .from("plan_activity")
+            .insert({
+              plan_id: planUuid,
+              actor_id: userId,
+              target_user_id: inviteeUuid,
+              activity_type: activityType,
+              metadata: {
+                participant_user_id: inviteeUuid,
+                participant_name: participantName,
+                participant_avatar_url: participantAvatarUrl,
+                assigned_group: groupValue,
+                rsvp_status: "invited",
+                performed_by: userId,
+                performed_by_name: actorName,
+              }
+            })
+            .then();
+        }
       }
+
+      // 3. Ensure contiguous renumbering 1..N
+      await renumberWaitlistPositions(planUuid);
+
+      // Recalculate wallet splits when a participant is added directly to Going
+      if (effectiveAssignedGroup === 'GOING') {
+        recalculateWalletExpenses(planUuid).catch(err =>
+          console.error("[addParticipantsToPlan] recalculateWalletExpenses failed:", err)
+        );
+      }
+
+      await refreshPlans(["plan_participants", "plans"]);
+    } catch (err: any) {
+      console.error("[addParticipantsToPlan] Failed to persist invites, rolling back optimistic state:", err);
+      setDbPlanParticipants(prev => prev.filter(pp => !(pp.plan_id === planUuid && inviteeUuids.includes(pp.user_id))));
+      throw err;
     }
-
-    // 3. Ensure contiguous renumbering 1..N
-    await renumberWaitlistPositions(planUuid);
-
-    // Recalculate wallet splits when a participant is added directly to Going
-    if (effectiveAssignedGroup === 'GOING') {
-      recalculateWalletExpenses(planUuid).catch(err =>
-        console.error("[addParticipantsToPlan] recalculateWalletExpenses failed:", err)
-      );
-    }
-
-    await refreshPlans();
-  }, [plans, dbPlans, dbPlanParticipants, refreshPlans, applyParticipantOptimisticUpdate]);
+  }, [plans, dbPlans, dbPlanParticipants, dbUsers, refreshPlans, applyParticipantOptimisticUpdate, setDbPlanParticipants, renumberWaitlistPositions, recalculateWalletExpenses, userId]);
 
   const promoteWaitlistParticipant = useCallback(async (planId: string, participantUserUuid: string) => {
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);

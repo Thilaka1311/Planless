@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, Trash2, Minus, Plus, Users } from "lucide-react";
+import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { HostInfo } from "./HeroHeader";
 
@@ -763,12 +763,10 @@ interface EditDateTimeBottomSheetProps {
   isOpen: boolean;
   tempDate: string;
   tempTime: string;
-  tempRSVPDate: string;
-  tempRSVPTime: string;
+  tempRSVPOption: string | null;
   onTempDateChange: (val: string) => void;
   onTempTimeChange: (val: string) => void;
-  onTempRSVPDateChange: (val: string) => void;
-  onTempRSVPTimeChange: (val: string) => void;
+  onTempRSVPOptionChange: (val: string | null) => void;
   onSave: () => void;
   onClose: () => void;
 }
@@ -777,15 +775,21 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
   isOpen,
   tempDate,
   tempTime,
-  tempRSVPDate,
-  tempRSVPTime,
+  tempRSVPOption,
   onTempDateChange,
   onTempTimeChange,
-  onTempRSVPDateChange,
-  onTempRSVPTimeChange,
+  onTempRSVPOptionChange,
   onSave,
   onClose,
 }) => {
+  const [isRSVPExpanded, setIsRSVPExpanded] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsRSVPExpanded(false);
+    }
+  }, [isOpen]);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -872,36 +876,124 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                 <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255, 255, 255, 0.3)", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "left", paddingLeft: 4 }}>
                   RSVP Deadline
                 </span>
-                <div style={{ background: "rgba(255, 255, 255, 0.05)", borderRadius: 12, overflow: "hidden" }}>
-                  <div style={{ position: "relative", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-                    <input
-                      type="date"
-                      value={tempRSVPDate}
-                      onChange={(e) => onTempRSVPDateChange(e.target.value)}
-                      style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 10 }}
-                    />
-                    <span style={{ fontSize: 14, fontWeight: 500, color: "#FFFFFF" }}>Deadline Date</span>
+                <div
+                  style={{
+                    background: "rgba(255, 255, 255, 0.05)",
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    height: isRSVPExpanded ? 220 : 48,
+                    transition: "height 0.28s cubic-bezier(0.4, 0, 0.2, 1)",
+                    willChange: "height",
+                    transform: "translate3d(0, 0, 0)",
+                    backfaceVisibility: "hidden",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setIsRSVPExpanded((prev) => !prev)}
+                    style={{
+                      width: "100%",
+                      height: 48,
+                      padding: "0 16px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    <span style={{ fontSize: 14, fontWeight: 500, color: "#FFFFFF", fontFamily: "Inter, sans-serif" }}>
+                      Respond by:
+                    </span>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 14, color: "rgba(255, 255, 255, 0.45)", fontWeight: 500 }}>
-                        {formatDateFriendly(tempRSVPDate) || "Select RSVP Date"}
+                        {tempRSVPOption ? tempRSVPOption.replace('<', '').trim() : "Plan Start"}
                       </span>
-                      <ChevronRight className="w-4 h-4 text-white/20" />
+                      <ChevronRight
+                        className={`w-4 h-4 text-white/20 transition-transform duration-200 ${isRSVPExpanded ? "rotate-90" : ""}`}
+                      />
                     </div>
-                  </div>
-                  <div style={{ borderTop: "1px solid rgba(255, 255, 255, 0.04)", marginLeft: 16 }} />
-                  <div style={{ position: "relative", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-                    <input
-                      type="time"
-                      value={tempRSVPTime}
-                      onChange={(e) => onTempRSVPTimeChange(e.target.value)}
-                      style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 10 }}
-                    />
-                    <span style={{ fontSize: 14, fontWeight: 500, color: "#FFFFFF" }}>Deadline Time</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 14, color: "rgba(255, 255, 255, 0.45)", fontWeight: 500 }}>
-                        {formatTimeFriendly(tempRSVPTime) || "Select RSVP Time"}
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-white/20" />
+                  </button>
+
+                  {/* Inline RSVP Options Panel */}
+                  <div
+                    style={{
+                      minHeight: 0,
+                      opacity: isRSVPExpanded ? 1 : 0,
+                      transition: "opacity 0.2s ease-in-out, visibility 0.2s ease-in-out",
+                      visibility: isRSVPExpanded ? "visible" : "hidden",
+                      padding: "0 12px 10px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                    }}
+                  >
+                    <div style={{ borderTop: "1px solid rgba(255, 255, 255, 0.04)", marginBottom: 6 }} />
+                    {['< 1 Hour', '< 12 Hours', '< 24 Hours'].map((opt) => {
+                      const isSelected = tempRSVPOption === opt;
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => onTempRSVPOptionChange(isSelected ? null : opt)}
+                          style={{
+                            width: "100%",
+                            height: 38,
+                            borderRadius: 8,
+                            border: "none",
+                            background: isSelected ? "rgba(255, 255, 255, 0.08)" : "transparent",
+                            color: isSelected ? "#FFFFFF" : "#A1A1AA",
+                            fontSize: 13,
+                            fontFamily: "Inter, sans-serif",
+                            fontWeight: 500,
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "0 10px",
+                            gap: 12,
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 14,
+                              height: 14,
+                              borderRadius: "50%",
+                              border: isSelected ? "2px solid #FFFFFF" : "2px solid #71717A",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: "transparent",
+                              transition: "all 0.15s ease",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {isSelected && (
+                              <div
+                                style={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: "50%",
+                                  background: "#FFFFFF",
+                                }}
+                              />
+                            )}
+                          </div>
+                          <span>{opt}</span>
+                        </button>
+                      );
+                    })}
+
+                    <div style={{ paddingTop: 8, marginTop: 4, borderTop: "1px solid rgba(255, 255, 255, 0.04)", textAlign: "center" }}>
+                      <p style={{ margin: 0, fontSize: 10.5, color: "rgba(255, 255, 255, 0.4)", fontFamily: "Inter, sans-serif", lineHeight: 1.2 }}>
+                        {(() => {
+                          if (!tempRSVPOption) return "Friends can respond until the plan starts.";
+                          const clean = tempRSVPOption.replace('<', '').trim().toLowerCase();
+                          return `Friends can respond until ${clean} before the plan starts.`;
+                        })()}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1318,27 +1410,21 @@ export const PlanIsFullBottomSheet: React.FC<PlanIsFullBottomSheetProps> = ({
             onClick={onIncreaseCapacity}
             style={{
               width: '100%',
-              padding: '14px 16px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 14,
+              height: 48,
+              padding: '0 14px',
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: 'none',
+              borderRadius: 12,
               color: '#FFFFFF',
               textAlign: 'left',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: 14,
+              gap: 12,
             }}
           >
-            <div className="w-10 h-10 rounded-xl bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] flex-shrink-0">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Increase Plan Size</span>
-              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 1 }}>
-                Expand the plan and add them to Going.
-              </span>
-            </div>
+            <TrendingUp className="w-5 h-5 text-[#FF6B2C] flex-shrink-0" />
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Increase Plan Size</span>
           </button>
 
           {/* Option 2: Add to Waitlist */}
@@ -1347,27 +1433,21 @@ export const PlanIsFullBottomSheet: React.FC<PlanIsFullBottomSheetProps> = ({
             onClick={onInviteToWaitlist}
             style={{
               width: '100%',
-              padding: '14px 16px',
-              background: 'rgba(255, 255, 255, 0.04)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: 14,
+              height: 48,
+              padding: '0 14px',
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: 'none',
+              borderRadius: 12,
               color: '#FFFFFF',
               textAlign: 'left',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: 14,
+              gap: 12,
             }}
           >
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">
-              <Hourglass className="w-5 h-5" />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Add to Waitlist</span>
-              <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', marginTop: 1 }}>
-                Keep the limit and add them to the Waitlist.
-              </span>
-            </div>
+            <Hourglass className="w-5 h-5 text-amber-400 flex-shrink-0" />
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Add to Waitlist</span>
           </button>
 
           {/* Cancel Button */}
@@ -1473,24 +1553,21 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
             onClick={onIncreaseCapacity}
             style={{
               width: '100%',
-              padding: '14px 16px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 14,
+              height: 48,
+              padding: '0 14px',
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: 'none',
+              borderRadius: 12,
               color: '#FFFFFF',
               textAlign: 'left',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: 14,
+              gap: 12,
             }}
           >
-            <div className="w-10 h-10 rounded-xl bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] flex-shrink-0">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Increase Plan Size</span>
-            </div>
+            <TrendingUp className="w-5 h-5 text-[#FF6B2C] flex-shrink-0" />
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Increase Plan Size</span>
           </button>
 
           {/* Action 2: Swap Participant */}
@@ -1500,24 +1577,21 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
               onClick={onSwapParticipant}
               style={{
                 width: '100%',
-                padding: '14px 16px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: 14,
+                height: 48,
+                padding: '0 14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
                 color: '#FFFFFF',
                 textAlign: 'left',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 14,
+                gap: 12,
               }}
             >
-              <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 flex-shrink-0">
-                <ArrowLeftRight className="w-5 h-5" />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Swap Participant from Going</span>
-              </div>
+              <ArrowLeftRight className="w-5 h-5 text-blue-400 flex-shrink-0" />
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Swap Participant</span>
             </button>
           )}
 
@@ -1527,9 +1601,10 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
             onClick={onClose}
             style={{
               width: '100%',
-              padding: '12px',
+              padding: '14px',
               background: 'none',
               border: 'none',
+              borderRadius: 12,
               color: 'rgba(255, 255, 255, 0.4)',
               fontSize: 14,
               fontWeight: 500,
@@ -1634,24 +1709,21 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
               onClick={onDecreaseCapacity}
               style={{
                 width: '100%',
-                padding: '14px 16px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: 14,
+                height: 48,
+                padding: '0 14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
                 color: '#FFFFFF',
                 textAlign: 'left',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 14,
+                gap: 12,
               }}
             >
-              <div className="w-10 h-10 rounded-xl bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] flex-shrink-0">
-                <TrendingDown className="w-5 h-5" />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
-              </div>
+              <TrendingDown className="w-5 h-5 text-[#FF6B2C] flex-shrink-0" />
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
             </button>
           )}
 
@@ -1662,24 +1734,21 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
               onClick={onSwapParticipant}
               style={{
                 width: '100%',
-                padding: '14px 16px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: 14,
+                height: 48,
+                padding: '0 14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
                 color: '#FFFFFF',
                 textAlign: 'left',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 14,
+                gap: 12,
               }}
             >
-              <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400 flex-shrink-0">
-                <ArrowLeftRight className="w-5 h-5" />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Swap with Participant from Waitlist</span>
-              </div>
+              <ArrowLeftRight className="w-5 h-5 text-blue-400 flex-shrink-0" />
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Swap with Participant</span>
             </button>
           )}
 
@@ -1690,7 +1759,8 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
               onClick={onCancelPlan}
               style={{
                 width: '100%',
-                padding: '14px',
+                height: 48,
+                padding: '0 14px',
                 background: 'rgba(239, 68, 68, 0.08)',
                 border: 'none',
                 borderRadius: 12,
@@ -1699,6 +1769,8 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
                 fontWeight: 600,
                 cursor: 'pointer',
                 textAlign: 'left',
+                display: 'flex',
+                alignItems: 'center',
               }}
             >
               Cancel Plan
@@ -1711,9 +1783,10 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
             onClick={onClose}
             style={{
               width: '100%',
-              padding: '12px',
+              padding: '14px',
               background: 'none',
               border: 'none',
+              borderRadius: 12,
               color: 'rgba(255, 255, 255, 0.4)',
               fontSize: 14,
               fontWeight: 500,
@@ -2395,186 +2468,15 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
 // ----------------------------------------------------------------------
 // 15. EDIT PLAN SIZE / CAPACITY BOTTOM SHEET
 // ----------------------------------------------------------------------
-export interface EditCapacityBottomSheetProps {
-  isOpen: boolean;
-  capacity: number;
-  invitedCount?: number;
-  minCapacity?: number;
-  maxCapacity?: number;
-  onCapacityChange: (newCapacity: number) => void;
-  onSave?: () => void;
-  onClose: () => void;
-}
+export {
+  PlanSizeBottomsheet,
+  PlanSizeBottomSheet,
+  EditCapacityBottomSheet,
+} from "../../create/components/PlanSizeBottomsheet";
+export type {
+  PlanSizeBottomsheetProps,
+  EditCapacityBottomSheetProps,
+} from "../../create/components/PlanSizeBottomsheet";
 
-export const EditCapacityBottomSheet: React.FC<EditCapacityBottomSheetProps> = ({
-  isOpen,
-  capacity,
-  invitedCount,
-  minCapacity = 2,
-  maxCapacity = 50,
-  onCapacityChange,
-  onSave,
-  onClose,
-}) => {
-  const effectiveMaxCapacity = invitedCount !== undefined ? Math.min(maxCapacity, invitedCount) : maxCapacity;
-  const currentCapacity = Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity || minCapacity));
-  const [showInviteHint, setShowInviteHint] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setShowInviteHint(false);
-    }
-  }, [isOpen]);
-
-  const handleDecrement = () => {
-    setShowInviteHint(false);
-    if (currentCapacity > minCapacity) {
-      onCapacityChange(currentCapacity - 1);
-    }
-  };
-
-  const handleIncrement = () => {
-    if (currentCapacity < effectiveMaxCapacity) {
-      setShowInviteHint(false);
-      onCapacityChange(currentCapacity + 1);
-    } else {
-      setShowInviteHint(true);
-    }
-  };
-
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/60 z-60 pointer-events-auto"
-          />
-          <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 260 }}
-            style={{
-              position: "fixed",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              maxHeight: "85vh",
-              background: "#1C1C1E",
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              zIndex: 65,
-              padding: "16px 20px calc(32px + env(safe-area-inset-bottom, 0px))",
-              color: "#FFFFFF",
-              boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.3)",
-              display: "flex",
-              flexDirection: "column",
-              pointerEvents: "auto",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
-              <div style={{ width: 36, height: 5, borderRadius: 2.5, background: "rgba(255, 255, 255, 0.15)" }} />
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", marginBottom: 18, textAlign: "left" }}>
-              <span style={{ fontSize: 18, fontWeight: 700, color: "#FFFFFF", fontFamily: "Inter, sans-serif" }}>
-                Plan Size
-              </span>
-              <span style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.45)", marginTop: 4, fontFamily: "Inter, sans-serif" }}>
-                Set the total number of participants (including you)
-              </span>
-              {Boolean(invitedCount) && (
-                <div className="mt-3 flex items-center gap-1.5">
-                  <span className="text-[13px] font-semibold text-white/70">
-                    Invited: <span className="text-white font-bold">{invitedCount}</span>
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Stepper Card */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                background: "rgba(255, 255, 255, 0.05)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                borderRadius: 16,
-                padding: "16px 20px",
-                marginBottom: showInviteHint ? 14 : 24,
-              }}
-            >
-              <button
-                type="button"
-                id="capacity_decrement_btn"
-                disabled={currentCapacity <= minCapacity}
-                onClick={handleDecrement}
-                className="w-12 h-12 rounded-full bg-white/[0.08] hover:bg-white/[0.14] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center justify-center text-white text-xl font-bold cursor-pointer"
-              >
-                <Minus className="w-5 h-5" />
-              </button>
-
-              <div className="flex flex-col items-center gap-1">
-                <div className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-[#FF6B2C]" />
-                  <span className="text-[28px] font-bold text-white leading-none tracking-tight">
-                    {currentCapacity}
-                  </span>
-                </div>
-                <span className="text-[12px] text-white/40 font-medium">
-                  {currentCapacity === 1 ? "person" : "people"}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                id="capacity_increment_btn"
-                onClick={handleIncrement}
-                className={`w-12 h-12 rounded-full bg-white/[0.08] hover:bg-white/[0.14] active:scale-95 transition flex items-center justify-center text-white text-xl font-bold cursor-pointer ${
-                  currentCapacity >= effectiveMaxCapacity ? "opacity-60" : ""
-                }`}
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Error / Hint Message */}
-            <AnimatePresence>
-              {showInviteHint && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  className="mb-4 text-center"
-                >
-                  <span className="text-[13px] font-medium text-amber-400">
-                    Invite more people to increase the plan capacity.
-                  </span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <button
-              type="button"
-              id="capacity_done_btn"
-              onClick={() => {
-                onSave?.();
-                onClose();
-              }}
-              className="w-full py-4 rounded-2xl bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] transition-all text-white font-semibold text-[15px] cursor-pointer shadow-lg"
-            >
-              Done
-            </button>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  );
-};
 
 

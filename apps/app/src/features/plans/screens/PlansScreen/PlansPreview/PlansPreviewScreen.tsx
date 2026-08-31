@@ -20,7 +20,8 @@ import {
   Check,
   MessageCircle,
   Receipt,
-  Users
+  Users,
+  AlertCircle
 } from "lucide-react";
 import { UserProfile, Plan } from "../../../../../core/types";
 import { usePlansStore } from "../../../state/PlansContext";
@@ -335,7 +336,7 @@ function InlineLocationEditor({
       {/* ── Saving / Loader Mode ── */}
       {isSaving && (
         <div className="flex w-full items-center gap-3 p-1.5 -m-1.5 rounded-xl">
-          <MapPin className="w-4.5 h-4.5 text-zinc-500 flex-shrink-0 animate-pulse" />
+          <MapPin className="w-4 h-4 text-zinc-500 flex-shrink-0 animate-pulse" />
           <div className="h-3.5 w-36 bg-white/[0.08] rounded animate-pulse" />
         </div>
       )}
@@ -346,10 +347,10 @@ function InlineLocationEditor({
           type="button"
           disabled={!isHost}
           onClick={onStartEditing}
-          className="flex w-full items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+          className="flex w-full items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
         >
-          <MapPin className={`w-4.5 h-4.5 flex-shrink-0 ${currentLocation ? "text-red-500" : "text-zinc-500 opacity-60"}`} />
-          <span className={`text-[13px] font-semibold leading-none truncate ${currentLocation ? "text-white/95" : "text-white/40"}`}>
+          <MapPin className={`w-4 h-4 flex-shrink-0 ${currentLocation ? "text-red-500" : "text-zinc-500 opacity-60"}`} />
+          <span className={`text-[13px] font-sans tracking-wide truncate ${currentLocation ? "text-white font-semibold" : "text-white/40 font-medium"}`}>
             {currentLocation || "Add a location"}
           </span>
         </button>
@@ -357,8 +358,8 @@ function InlineLocationEditor({
 
       {/* ── Edit Row (input mode) ── */}
       {isEditing && (
-        <div className="flex items-center gap-2 p-1.5 -m-1.5">
-          <MapPin className="w-4.5 h-4.5 text-red-500 flex-shrink-0" />
+        <div className="flex items-center gap-3 p-1.5 -m-1.5">
+          <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -371,7 +372,7 @@ function InlineLocationEditor({
               }
             }}
             placeholder={currentLocation || "Search for a place…"}
-            className="flex-1 bg-transparent text-[13px] font-semibold text-white/95 leading-none placeholder:text-white/30 focus:outline-none min-w-0"
+            className="flex-1 bg-transparent text-[13px] font-sans font-semibold text-white/95 leading-none placeholder:text-white/30 focus:outline-none min-w-0"
           />
           {currentLocation ? (
             <button
@@ -405,7 +406,7 @@ function InlineLocationEditor({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="absolute left-0 right-0 top-full mt-2 z-50 bg-[#111114]/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden max-h-52 overflow-y-auto"
+            className="absolute left-0 right-0 top-full mt-2 z-[100] bg-[#161618] border border-white/15 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden max-h-56 overflow-y-auto pointer-events-auto"
           >
             {suggestions.length > 0 ? (
               suggestions.map((s, idx) => (
@@ -413,17 +414,23 @@ function InlineLocationEditor({
                   key={s.place_id}
                   type="button"
                   onPointerDown={(e) => {
-                    // Use onPointerDown so it fires before the input loses focus
+                    // Use onPointerDown so it fires before input blur or backdrop capture
                     e.preventDefault();
+                    e.stopPropagation();
                     handleSuggestionSelect(s);
                   }}
-                  className={`w-full text-left px-4 py-3 flex flex-col gap-0.5 hover:bg-white/[0.06] active:bg-white/[0.1] transition cursor-pointer ${idx < suggestions.length - 1 ? "border-b border-white/[0.04]" : ""}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSuggestionSelect(s);
+                  }}
+                  className={`w-full text-left px-4 py-3 flex flex-col gap-0.5 hover:bg-white/[0.08] active:bg-white/[0.14] transition cursor-pointer select-none pointer-events-auto ${idx < suggestions.length - 1 ? "border-b border-white/[0.06]" : ""}`}
                 >
                   <span className="text-[13px] font-semibold text-white/95 leading-tight truncate">
                     {s.structured_formatting.main_text}
                   </span>
                   {s.structured_formatting.secondary_text && (
-                    <span className="text-[11px] text-zinc-500 leading-tight truncate">
+                    <span className="text-[11px] text-zinc-400 leading-tight truncate">
                       {s.structured_formatting.secondary_text}
                     </span>
                   )}
@@ -461,6 +468,11 @@ export interface PlansDetailsScreenProps {
   onOpenChat?: (planId: string) => void;
   onOpenExpenses?: (planId: string) => void;
   onEditParticipants?: () => void;
+  onAddParticipants?: () => void;
+  onEditTitle?: (newTitle: string) => void;
+  onAdjustDate?: (eventDateTime: Date, rsvpDateTime?: Date) => void;
+  onAdjustCost?: (newCost: number) => void;
+  onAdjustLocation?: (locationData: { place_id?: string | null; place_name?: string | null; place_address?: string | null; latitude?: number | null; longitude?: number | null; }) => void;
   onAdjustCapacity?: (newCapacity: number) => void;
   onSubmit?: () => void;
   isSubmitting?: boolean;
@@ -483,6 +495,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   onOpenChat,
   onOpenExpenses,
   onEditParticipants,
+  onAddParticipants,
+  onEditTitle,
+  onAdjustDate,
+  onAdjustCost,
+  onAdjustLocation,
   onAdjustCapacity,
   onSubmit,
   isSubmitting = false,
@@ -537,14 +554,29 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [isEditingDateTimeSheetOpen, setIsEditingDateTimeSheetOpen] = useState(false);
   const [tempDate, setTempDate] = useState("");
   const [tempTime, setTempTime] = useState("");
-  const [tempRSVPDate, setTempRSVPDate] = useState("");
-  const [tempRSVPTime, setTempRSVPTime] = useState("");
+  const [tempRSVPOption, setTempRSVPOption] = useState<string | null>(null);
+
+  const resolveInitialRsvpOption = (planDate: Date, rsvpDate: Date | null): string | null => {
+    if (!rsvpDate) return null;
+    const diffHours = (planDate.getTime() - rsvpDate.getTime()) / (1000 * 60 * 60);
+    if (diffHours <= 0) return null;
+    if (diffHours <= 2) return "< 1 Hour";
+    if (diffHours <= 18) return "< 12 Hours";
+    return "< 24 Hours";
+  };
 
   const [isEditingCostSheetOpen, setIsEditingCostSheetOpen] = useState(false);
   const [isCostPopoverOpen, setIsCostPopoverOpen] = useState(false);
   const [editTotalCostInput, setEditTotalCostInput] = useState<string>("");
 
   const [isEditingCapacitySheetOpen, setIsEditingCapacitySheetOpen] = useState(false);
+  const [createValidationError, setCreateValidationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if ((selectedPlan as any)?.isDateConfigured && (selectedPlan as any)?.isCostConfigured) {
+      setCreateValidationError(null);
+    }
+  }, [(selectedPlan as any)?.isDateConfigured, (selectedPlan as any)?.isCostConfigured]);
 
   const [isEditingDetailsSheetOpen, setIsEditingDetailsSheetOpen] = useState(false);
   const [tempTitle, setTempTitle] = useState("");
@@ -558,16 +590,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [locationQuery, setLocationQuery] = useState("");
   const locationInputRef = useRef<HTMLInputElement>(null);
 
-  const getLocalDateString = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+  const getLocalDateString = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
 
-  const getLocalTimeString = (date: Date) => {
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
+  const getLocalTimeString = (d: Date) => {
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
     return `${hours}:${minutes}`;
   };
 
@@ -590,12 +622,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   };
 
   const handleSaveDateTime = async () => {
-    if (!tempDate || !tempTime || !tempRSVPDate || !tempRSVPTime) {
-      showToast("Please fill in all date and time fields.");
+    if (!tempDate || !tempTime) {
+      showToast("Please select a date and time.");
       return;
     }
     const eventDateTime = new Date(`${tempDate}T${tempTime}`);
-    const rsvpDateTime = new Date(`${tempRSVPDate}T${tempRSVPTime}`);
     const now = new Date();
 
     if (eventDateTime < now) {
@@ -603,8 +634,24 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       return;
     }
 
-    if (rsvpDateTime > eventDateTime) {
-      showToast("RSVP Deadline cannot be after the event start time.");
+    let rsvpDateTime: Date;
+    if (tempRSVPOption === '< 1 Hour') {
+      rsvpDateTime = new Date(eventDateTime.getTime() - 1 * 60 * 60 * 1000);
+    } else if (tempRSVPOption === '< 12 Hours') {
+      rsvpDateTime = new Date(eventDateTime.getTime() - 12 * 60 * 60 * 1000);
+    } else if (tempRSVPOption === '< 24 Hours') {
+      rsvpDateTime = new Date(eventDateTime.getTime() - 24 * 60 * 60 * 1000);
+    } else {
+      // Plan Start default
+      rsvpDateTime = new Date(eventDateTime.getTime());
+    }
+
+    if (createMode) {
+      if (onAdjustDate) {
+        onAdjustDate(eventDateTime, rsvpDateTime);
+      }
+      showToast("✓ Date & RSVP updated");
+      setIsEditingDateTimeSheetOpen(false);
       return;
     }
 
@@ -695,6 +742,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     setIsEditingLocationInline(false);
     setLocationQuery("");
     setIsSavingLocation(true);
+    if (createMode) {
+      if (onAdjustLocation) {
+        onAdjustLocation({ place_name: null, place_address: null, place_id: null, latitude: null, longitude: null });
+      }
+      showToast("✓ Location removed");
+      setIsSavingLocation(false);
+      return;
+    }
+
     try {
       const updates = {
         place_id: null,
@@ -719,6 +775,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     setLocationQuery("");
     if (locationInputRef.current) locationInputRef.current.blur();
     setIsSavingLocation(true);
+
+    if (createMode) {
+      if (onAdjustLocation) {
+        onAdjustLocation(place);
+      }
+      showToast("✓ Location updated");
+      setIsSavingLocation(false);
+      return;
+    }
 
     try {
       // Only write real DB columns — no synthetic 'location' column
@@ -1230,7 +1295,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left"
     >
       <div id="immersive-plan-scroll-container" className={`flex-1 ${isFixedViewportView ? 'overflow-hidden flex flex-col h-full pb-20' : 'overflow-y-auto scrollbar-none pb-28'}`}>
-        <div id="immersive-plan-hero-wrapper" className="w-full flex-shrink-0">
+        <div id="immersive-plan-hero-wrapper" className={`w-full flex-shrink-0 relative ${isEditingLocationInline ? 'z-50' : 'z-10'}`}>
           <div
             id="immersive-plan-hero-container"
             className="relative w-full h-[280px] flex flex-col justify-end overflow-visible flex-shrink-0 rounded-b-[2.5rem] border-b border-white/10"
@@ -1255,6 +1320,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               viewerId={resolvedUserUuid}
               onClose={onClose}
               isHost={isHost && !isCancelled && !isCompleted}
+              onEditTitle={createMode ? onEditTitle : undefined}
               onOpenChat={
                 createMode
                   ? undefined
@@ -1286,8 +1352,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
             {isEditingLocationInline && (
               <div
-                className="fixed inset-0 z-40 bg-transparent"
-                onClick={() => {
+                className="fixed inset-0 z-40 bg-transparent pointer-events-auto"
+                onPointerDown={(e) => {
+                  e.preventDefault();
                   setIsEditingLocationInline(false);
                   setLocationQuery("");
                   if (locationInputRef.current) locationInputRef.current.blur();
@@ -1296,7 +1363,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             )}
 
             {/* Dynamic Integrated Info Card */}
-            <div className="absolute left-6 right-6 bottom-0 translate-y-1/2 z-20">
+            <div className={`absolute left-6 right-6 bottom-0 translate-y-1/2 ${isEditingLocationInline ? 'z-50' : 'z-20'}`}>
               <div className="w-full bg-black/15 backdrop-blur-3xl border border-white/[0.06] shadow-lg rounded-2xl relative">
                 <div className="p-4 space-y-2.5">
                   {/* 1. Date & Time Row (Row 1) */}
@@ -1306,37 +1373,51 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                       disabled={!isHost || isCancelled || isCompleted}
                       onClick={() => {
                         if (isCancelled || isCompleted) return;
-                        const planDate = new Date(selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt);
-                        const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : new Date(planDate.getTime() - 12 * 60 * 60 * 1000);
+                        const hasConfiguredDate = Boolean((selectedPlan as any).isDateConfigured || (!createMode && (selectedPlan.datetime || selectedPlan.time || (selectedPlan as any).scheduled_at)));
+                        const planDate = hasConfiguredDate
+                          ? new Date((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)
+                          : new Date(Date.now() + 2 * 60 * 60 * 1000);
+                        const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : null;
                         setTempDate(getLocalDateString(planDate));
                         setTempTime(getLocalTimeString(planDate));
-                        setTempRSVPDate(getLocalDateString(planRSVP));
-                        setTempRSVPTime(getLocalTimeString(planRSVP));
+                        setTempRSVPOption(resolveInitialRsvpOption(planDate, planRSVP));
                         setIsEditingDateTimeSheetOpen(true);
                       }}
                       className="flex-1 min-w-0 flex items-center gap-3 text-left hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
                     >
-                      <CalendarDays className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      <span className="text-[13px] font-sans font-semibold text-white tracking-wide truncate">
-                        {formatPlanDate((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)}
+                      <CalendarDays className={`w-4 h-4 flex-shrink-0 ${createMode && !(selectedPlan as any).isDateConfigured ? "text-zinc-500 opacity-60" : "text-emerald-400"}`} />
+                      <span className={`text-[13px] font-sans tracking-wide truncate ${createMode && !(selectedPlan as any).isDateConfigured ? "text-white/40 font-medium" : "text-white font-semibold"}`}>
+                        {createMode && !(selectedPlan as any).isDateConfigured
+                          ? "Set a date"
+                          : formatPlanDate((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)}
                       </span>
                     </button>
 
                     {/* Plan Size Indicator (Right side of Date & Time row / above Free) */}
                     {Boolean(selectedPlan.capacity || (selectedPlan as any).max_participants || selectedPlan.maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants) && (
-                      <button
-                        type="button"
-                        id="hero_plan_size_btn"
-                        disabled={!isHost || isCancelled || isCompleted}
-                        onClick={() => {
-                          if (isCancelled || isCompleted) return;
-                          setIsEditingCapacitySheetOpen(true);
-                        }}
-                        className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
-                      >
-                        <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
-                        <span>{selectedPlan.capacity || (selectedPlan as any).max_participants || selectedPlan.maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants}</span>
-                      </button>
+                      createMode ? (
+                        <button
+                          type="button"
+                          id="hero_plan_size_btn"
+                          disabled={!isHost || isCancelled || isCompleted}
+                          onClick={() => {
+                            if (isCancelled || isCompleted) return;
+                            setIsEditingCapacitySheetOpen(true);
+                          }}
+                          className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+                        >
+                          <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
+                          <span>{selectedPlan.capacity || (selectedPlan as any).max_participants || selectedPlan.maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants}</span>
+                        </button>
+                      ) : (
+                        <div
+                          id="hero_plan_size_indicator"
+                          className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 select-none pointer-events-none"
+                        >
+                          <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
+                          <span>{selectedPlan.capacity || (selectedPlan as any).max_participants || selectedPlan.maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants}</span>
+                        </div>
+                      )
                     )}
                   </div>
 
@@ -1374,24 +1455,26 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   />
 
                   {/* 3. Cost Row (Row 3) */}
-                  <div className={`flex items-center text-white/50 text-[11px] font-medium leading-none pt-1 ${isCompleted ? "justify-start" : "justify-between"}`}>
+                  <div className={`w-full flex items-center text-white/50 text-[11px] font-medium leading-none ${isCompleted ? "justify-start" : "justify-between"}`}>
                     {!isCompleted && (
                       <button
                         type="button"
                         disabled={!isHost || isCancelled}
                         onClick={() => {
                           if (isCancelled) return;
-                          const planDate = new Date(selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt);
-                          const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : new Date(planDate.getTime() - 12 * 60 * 60 * 1000);
+                          const hasConfiguredDate = Boolean((selectedPlan as any).isDateConfigured || (!createMode && (selectedPlan.datetime || selectedPlan.time || (selectedPlan as any).scheduled_at)));
+                          const planDate = hasConfiguredDate
+                            ? new Date((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)
+                            : new Date(Date.now() + 2 * 60 * 60 * 1000);
+                          const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : null;
                           setTempDate(getLocalDateString(planDate));
                           setTempTime(getLocalTimeString(planDate));
-                          setTempRSVPDate(getLocalDateString(planRSVP));
-                          setTempRSVPTime(getLocalTimeString(planRSVP));
+                          setTempRSVPOption(resolveInitialRsvpOption(planDate, planRSVP));
                           setIsEditingDateTimeSheetOpen(true);
                         }}
-                        className="flex items-center gap-2 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
+                        className="flex items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
                       >
-                        <Hourglass className="w-3.5 h-3.5 flex-shrink-0" style={{ color: urgencyColor }} />
+                        <Hourglass className="w-4 h-4 flex-shrink-0" style={{ color: urgencyColor }} />
                         <span style={{ color: urgencyColor }}>
                           {rsvp.text}
                         </span>
@@ -1401,7 +1484,14 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     <div className="relative">
                       <button
                         type="button"
-                        onClick={() => setIsCostPopoverOpen((prev) => !prev)}
+                        onClick={() => {
+                          if (createMode && !(selectedPlan as any).isCostConfigured) {
+                            setEditTotalCostInput("");
+                            setIsEditingCostSheetOpen(true);
+                          } else {
+                            setIsCostPopoverOpen((prev) => !prev);
+                          }
+                        }}
                         className={`flex items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer ${isCompleted ? "text-left" : "text-right font-semibold"}`}
                       >
                         {isCompleted ? (
@@ -1415,15 +1505,17 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                             </div>
                           </>
                         ) : (
-                          <span className="text-white/90 font-semibold font-sans tracking-tight text-[13.5px]">
-                            {hasCost && costText ? costText : "Free"}
+                          <span className={`font-sans tracking-tight text-[13.5px] ${createMode && !(selectedPlan as any).isCostConfigured ? "text-white/40 font-medium" : "text-white/90 font-semibold"}`}>
+                            {createMode && !(selectedPlan as any).isCostConfigured
+                              ? "Set a cost"
+                              : (hasCost && costText ? costText : "Free")}
                           </span>
                         )}
                       </button>
 
                       <CostBreakdownPopover
-                        totalCost={rawDbPlan?.total_cost}
-                        maxParticipants={rawDbPlan?.max_participants}
+                        totalCost={createMode ? (selectedPlan as any).total_cost : rawDbPlan?.total_cost}
+                        maxParticipants={createMode ? (selectedPlan.capacity || (selectedPlan as any).max_participants) : rawDbPlan?.max_participants}
                         attendedParticipants={rawDbPlan?.attended_participants ?? selectedPlan?.attended_participants}
                         isCompleted={isCompleted}
                         isOpen={isCostPopoverOpen}
@@ -1431,7 +1523,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                         isHost={isHost && !isCancelled && !isCompleted}
                         onEditCost={() => {
                           if (isCancelled || isCompleted) return;
-                          const currentCost = rawDbPlan?.total_cost;
+                          const currentCost = createMode ? (selectedPlan as any).total_cost : rawDbPlan?.total_cost;
                           setEditTotalCostInput(currentCost && Number(currentCost) > 0 ? String(currentCost) : "");
                           setIsEditingCostSheetOpen(true);
                         }}
@@ -1458,7 +1550,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
           {/* Fixed Manage Participants action for host — floating icon + text only, tightly anchored above LiveActionButton / Create Plan button */}
           {isHost && !isCancelled && (
-            <div className="fixed bottom-[58px] left-6 right-6 z-40 flex items-center justify-center pointer-events-auto">
+            <div className={`fixed ${createMode ? 'bottom-[54px]' : 'bottom-[58px]'} left-6 right-6 z-40 flex items-center justify-center pointer-events-auto`}>
               <button
                 type="button"
                 id="host_manage_participants_btn"
@@ -1479,19 +1571,76 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             </div>
           )}
 
-          {createMode ? (
-            <div className="fixed bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black via-black/90 to-transparent z-40">
-              <button
-                type="button"
-                id="create-plan-submit-btn"
-                disabled={isSubmitting}
-                onClick={onSubmit}
-                className="w-full py-4 bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white font-sans font-bold text-[15px] rounded-full transition-all cursor-pointer shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+          {createMode ? (() => {
+            const isDateSet = Boolean((selectedPlan as any)?.isDateConfigured);
+            const isCostSet = Boolean((selectedPlan as any)?.isCostConfigured);
+            const isCreateDisabled = !isDateSet || !isCostSet;
+
+            const handleCreatePlanClick = () => {
+              if (isSubmitting) return;
+
+              if (!isDateSet && !isCostSet) {
+                const msg = "Set a date and cost to create your plan.";
+                setCreateValidationError(msg);
+                showToast(msg);
+                return;
+              }
+              if (!isDateSet) {
+                const msg = "Set a date to create your plan.";
+                setCreateValidationError(msg);
+                showToast(msg);
+                return;
+              }
+              if (!isCostSet) {
+                const msg = "Set a cost to create your plan.";
+                setCreateValidationError(msg);
+                showToast(msg);
+                return;
+              }
+
+              setCreateValidationError(null);
+              onSubmit?.();
+            };
+
+            return (
+              <div
+                style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
+                className="fixed bottom-0 left-0 right-0 px-6 pt-2 pb-4 bg-gradient-to-t from-black via-black/90 to-transparent z-40"
               >
-                {isSubmitting ? "Creating Plan…" : "Create Plan"}
-              </button>
-            </div>
-          ) : (
+                <AnimatePresence>
+                  {createValidationError && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                      transition={{ duration: 0.18, ease: "easeOut" }}
+                      className="mb-2.5 w-full flex items-center justify-center pointer-events-none"
+                    >
+                      <div className="bg-[#18181D]/95 border border-[#FF6B2C]/40 text-[#FF854C] px-4 py-2 rounded-2xl text-[12.5px] font-sans font-semibold shadow-2xl backdrop-blur-xl flex items-center gap-2 text-center">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 text-[#FF6B2C]" />
+                        <span>{createValidationError}</span>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <button
+                  type="button"
+                  id="create-plan-submit-btn"
+                  disabled={isSubmitting}
+                  onClick={handleCreatePlanClick}
+                  style={{ borderRadius: 9999 }}
+                  className={`w-full py-3 font-sans font-bold text-[14.5px] rounded-full transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    isCreateDisabled || isSubmitting
+                      ? "bg-[#FF6B2C]/40 text-white/40 shadow-none active:scale-[0.98]"
+                      : "bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white shadow-lg"
+                  }`}
+                >
+                  {isSubmitting ? "Creating Plan…" : "Create Plan"}
+                </button>
+              </div>
+            );
+          })() : (
             <LiveActionButton
               myParticipantRecord={myParticipantRecord}
               isCancelled={isCancelled}
@@ -1866,12 +2015,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         isOpen={isEditingDateTimeSheetOpen}
         tempDate={tempDate}
         tempTime={tempTime}
-        tempRSVPDate={tempRSVPDate}
-        tempRSVPTime={tempRSVPTime}
+        tempRSVPOption={tempRSVPOption}
         onTempDateChange={setTempDate}
         onTempTimeChange={setTempTime}
-        onTempRSVPDateChange={setTempRSVPDate}
-        onTempRSVPTimeChange={setTempRSVPTime}
+        onTempRSVPOptionChange={setTempRSVPOption}
         onSave={handleSaveDateTime}
         onClose={() => setIsEditingDateTimeSheetOpen(false)}
       />
@@ -1891,6 +2038,13 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onSave={async () => {
           setIsEditingCostSheetOpen(false);
           const parsedCost = editTotalCostInput.trim() === "" ? 0 : Math.max(0, parseFloat(editTotalCostInput) || 0);
+          if (createMode) {
+            if (onAdjustCost) {
+              onAdjustCost(parsedCost);
+            }
+            showToast(parsedCost > 0 ? "✓ Cost updated" : "✓ Plan updated to Free");
+            return;
+          }
           try {
             await updatePlanDetails(selectedPlan.id, { total_cost: parsedCost });
             showToast(parsedCost > 0 ? "✓ Cost updated" : "✓ Plan updated to Free");
@@ -1936,6 +2090,18 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         minCapacity={2}
         maxCapacity={50}
         onCapacityChange={handleCapacityChange}
+        onAddParticipants={() => {
+          setIsEditingCapacitySheetOpen(false);
+          if (createMode) {
+            if (onAddParticipants) {
+              onAddParticipants();
+            } else if (onEditParticipants) {
+              onEditParticipants();
+            }
+          } else {
+            setShowParticipantManagement(true);
+          }
+        }}
         onClose={() => setIsEditingCapacitySheetOpen(false)}
       />
 

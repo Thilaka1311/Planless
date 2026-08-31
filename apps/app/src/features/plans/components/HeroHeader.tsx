@@ -99,8 +99,13 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   const handleSaveTitle = async () => {
     setIsEditingTitle(false);
     const trimmed = tempTitle.trim();
-    if (!trimmed || trimmed === title) {
-      setTempTitle(title);
+    if (!trimmed || trimmed === "Set a title" || trimmed === "Enter Title") {
+      if (onEditTitle) {
+        try {
+          await onEditTitle("");
+        } catch {}
+      }
+      setTempTitle("");
       return;
     }
     if (trimmed.length > 50) return;
@@ -421,7 +426,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
 
         {/* Circular Plan Avatar & Centered Title */}
         <div
-          onClick={onHeaderPress}
+          onClick={!isEditingTitle && onHeaderPress ? onHeaderPress : undefined}
           className={`flex flex-col items-center max-w-full ${onHeaderPress ? "cursor-pointer pointer-events-auto" : "pointer-events-none"}`}
         >
           {coverImage && (
@@ -434,17 +439,48 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
             </div>
           )}
 
-          <h1
-            className="text-[17px] font-bold text-white tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full line-clamp-2 break-words"
-            style={{
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
-          >
-            {title}
-          </h1>
+          {isEditingTitle ? (
+            <div className="pointer-events-auto px-4 w-full max-w-[320px]">
+              <input
+                ref={titleInputRef}
+                type="text"
+                value={tempTitle === "Set a title" || tempTitle === "Enter Title" ? "" : tempTitle}
+                onChange={(e) => setTempTitle(e.target.value)}
+                onBlur={handleSaveTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveTitle();
+                  if (e.key === "Escape") {
+                    setIsEditingTitle(false);
+                    setTempTitle(title);
+                  }
+                }}
+                placeholder="Set a title"
+                className="w-full bg-transparent border-none outline-none text-center text-[17px] font-bold text-white tracking-[0.08em] leading-tight placeholder:text-white/60 placeholder:font-semibold focus:outline-none focus:ring-0 p-0 m-0 shadow-none"
+                maxLength={50}
+              />
+            </div>
+          ) : (
+            <h1
+              onClick={(e) => {
+                if (isHost && onEditTitle) {
+                  e.stopPropagation();
+                  setTempTitle(title === "Set a title" || title === "Enter Title" ? "" : title);
+                  setIsEditingTitle(true);
+                }
+              }}
+              className={`text-[17px] font-bold tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full line-clamp-2 break-words ${
+                isHost && onEditTitle ? "cursor-pointer pointer-events-auto hover:opacity-90 active:opacity-75" : ""
+              } ${!title || title === "Set a title" || title === "Enter Title" ? "text-white/60 font-semibold" : "text-white"}`}
+              style={{
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {title && title !== "Enter Title" ? title : "Set a title"}
+            </h1>
+          )}
         </div>
 
         {/* Centered Hosted By with Overlapping Avatars (Plan Details Mode) */}

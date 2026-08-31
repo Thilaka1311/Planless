@@ -1,3 +1,5 @@
+import defaultPlanCover from "../../../assets/planimagedefault.png";
+
 export const CATEGORY_EMOJI: Record<string, string> = {
   sports: "⚽",
   movies: "🎬",
@@ -15,7 +17,7 @@ export const getCategoryImage = (cat: string, sub: string | null): string => {
   }
   if (cat === 'movies') return "/assets/plan-covers/movie.png";
   if (cat === 'dining') return "/assets/plan-covers/dining.png";
-  return "/assets/plan-covers/default.png";
+  return defaultPlanCover;
 };
 
 export const RECENT_PLACES = [

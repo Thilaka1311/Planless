@@ -21,6 +21,7 @@ import { WhoIsActuallyComing } from "./WhoIsActuallyComing";
 
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
+import defaultPlanCover from "../../../assets/planimagedefault.png";
 
 function dataURLtoBlob(dataurl: string): Blob {
   const arr = dataurl.split(",");
@@ -60,6 +61,7 @@ export const CreatePlanScreen = ({
   const [isCopied, setIsCopied] = useState(false);
   const [isWhenStepValid, setIsWhenStepValid] = useState(true);
   const [returnToWhoActually, setReturnToWhoActually] = useState(false);
+  const [returnToPlanSizeSheet, setReturnToPlanSizeSheet] = useState(false);
 
   const handleCopyInviteLink = async () => {
     if (!postedPlanUuid || isCopying) return;
@@ -88,6 +90,7 @@ export const CreatePlanScreen = ({
     setCustomizerStep(0);
     setCameFromReview(false);
     setPostedPlanUuid(null);
+    setReturnToPlanSizeSheet(false);
     setCreatePhase('category');
   };
 
@@ -237,40 +240,52 @@ export const CreatePlanScreen = ({
     if (form.isSubmitting) return;
     form.setIsSubmitting(true);
 
-    if (!form.userProfile) {
+    const hostUuid = form.userProfile?.dbUuid || form.userProfile?.user_id || form.activeUserId;
+    if (!hostUuid) {
       showToast("User profile session is not active. Onboard first.");
       form.setIsSubmitting(false);
       return;
     }
 
-    const now = new Date();
-    if (form.eventDateTime < now) {
-      showToast("Event time cannot be in the past.");
+    const titleToUse = form.localTitle ? form.localTitle.trim() : "";
+    if (!titleToUse || titleToUse === "Set a title" || titleToUse === "Enter Title") {
+      showToast("Please set a title for your plan");
       form.setIsSubmitting(false);
       return;
     }
 
-    if (!form.localTitle.trim()) {
-      showToast("Plan title is required");
+    const isDateSet = Boolean(form.isDateManuallySet && form.eventDateTime);
+    const isCostSet = Boolean(form.isCostManuallySet && form.costAmount !== undefined && form.costAmount !== null);
+
+    if (!isDateSet && !isCostSet) {
+      showToast("Set a date and cost to create your plan.");
       form.setIsSubmitting(false);
       return;
     }
-    const titleToUse = form.localTitle.trim();
-    const locationToUse = form.localLocation ? form.localLocation.trim() : null;
+    if (!isDateSet) {
+      showToast("Set a date to create your plan.");
+      form.setIsSubmitting(false);
+      return;
+    }
+    if (!isCostSet) {
+      showToast("Set a cost to create your plan.");
+      form.setIsSubmitting(false);
+      return;
+    }
+
+    const now = new Date();
+    let planEventDate = form.eventDateTime ? new Date(form.eventDateTime) : new Date(Date.now() + 2 * 60 * 60 * 1000);
+    if (planEventDate.getTime() < now.getTime() - 60000) {
+      planEventDate = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    }
 
     // Formatting Standard: Saturday, Jun 27 • 7:30 PM
-    const timeToUse = formatDateTimeStandard(form.eventDateTime);
-
+    const timeToUse = formatDateTimeStandard(planEventDate);
     const planId = `p_${Date.now()}`;
     const hasCustomImage = form.customCoverImage && form.customCoverImage.startsWith("data:");
     const coverUrl = hasCustomImage
       ? getCategoryImage(selectedCategory, selectedSubcategory)
       : (form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory));
-
-    const matchedCircleObj = null;
-    const circleUuid = null;
-
-    const parsedIsoDateTime = form.eventDateTime.toISOString();
 
     let hoursOffset = 0;
     let isPlanStart = false;
@@ -289,155 +304,75 @@ export const CreatePlanScreen = ({
       hoursOffset = 24;
     }
 
-    const deadlineDate = new Date(form.eventDateTime);
+    let deadlineDate = new Date(planEventDate);
     if (form.rsvpDeadline === 'Custom' && form.customDeadline) {
-      deadlineDate.setTime(form.customDeadline.getTime());
+      deadlineDate = new Date(form.customDeadline);
     } else if (!isPlanStart) {
       deadlineDate.setHours(deadlineDate.getHours() - hoursOffset);
     }
 
-    if (deadlineDate < new Date(Date.now() - 10000)) {
-      showToast("The RSVP deadline must be before the Plan time and cannot be in the past.");
-      form.setIsSubmitting(false);
-      return;
-    }
-
-    if (isPlanStart) {
-      // Allowed to be equal to plan start time
-    } else if (deadlineDate >= form.eventDateTime) {
-      showToast("The RSVP deadline must be before the Plan time and cannot be in the past.");
-      form.setIsSubmitting(false);
-      return;
+    if (deadlineDate.getTime() <= now.getTime() - 60000 || deadlineDate.getTime() > planEventDate.getTime()) {
+      deadlineDate = new Date(planEventDate);
     }
 
     const responseDeadlineAt = deadlineDate.toISOString();
+    const parsedIsoDateTime = planEventDate.toISOString();
 
-    // max_participants in the DB includes the host slot.
-    // waitlistCapacity = non-host spots configured by the host.
-    // So DB value = waitlistCapacity + 1 (or totalInvitedCount + 1 when no waitlist).
-    const divisor = form.totalCapacity;
-    const perPerson = form.costAmount > 0 && divisor > 0 ? Math.ceil(form.costAmount / divisor) : 0;
+    const locationToUse = form.localLocation ? form.localLocation.trim() : "";
+    const placeAddressToUse = form.placeAddress ? form.placeAddress.trim() : (locationToUse || "");
 
-    const created: Plan = {
-      id: planId,
-      title: titleToUse,
-      category: selectedCategory === "dining" ? "restaurants" : selectedCategory,
-      date: "TODAY",
-      time: timeToUse,
-      location: locationToUse || null,
-      cost: perPerson,
-      confirmedCount: 1,
-      coverImage: coverUrl,
-      creatorId: form.activeUserId,
-      creatorName: form.userProfile.name,
-      creatorAvatar: form.userProfile.avatar,
-      members: [
-        {
-          userId: form.activeUserId,
-          name: form.userProfile.name,
-          avatar: form.userProfile.avatar,
-          joinState: "JOINED",
-          reminderState: "none",
-          joinedAt: new Date().toISOString(),
-          checkedIn: true,
-        },
-        ...form.selectedFriends.map((f: any) => ({
-          userId: f.id || f.dbUuid,
-          name: f.name,
-          avatar: f.avatar || "",
-          joinState: "INVITED" as const,
-          reminderState: "none" as const,
-          joinedAt: "",
-          checkedIn: false,
-        })),
-      ],
-      joinedUsers: [
-        {
-          userId: form.activeUserId,
-          name: form.userProfile.name,
-          avatar: form.userProfile.avatar,
-          joinState: "JOINED",
-          reminderState: "none",
-          joinedAt: new Date().toISOString(),
-          checkedIn: true,
-        },
-        ...form.selectedFriends.map((f: any) => ({
-          userId: f.id || f.dbUuid,
-          name: f.name,
-          avatar: f.avatar || "",
-          joinState: "INVITED" as const,
-          reminderState: "none" as const,
-          joinedAt: "",
-          checkedIn: false,
-        })),
-      ],
-      timeline: "today",
-      description: form.quickNote.trim() || `Spontaneous coordination thread for ${titleToUse}`,
-      circleId: null,
-      hostId: form.activeUserId,
-      groupId: null,
-      paymentAmount: perPerson,
-      status: "LIVE",
-      createdAt: new Date().toISOString(),
-      waitlistEnabled: form.waitlistEnabled,
-      // joinLimit = non-host capacity; totalCapacity = joinLimit + 1 (host)
-      joinLimit: form.waitlistEnabled ? form.waitlistCapacity : form.totalInvitedCount || undefined,
-      capacity: form.waitlistEnabled ? form.waitlistCapacity + 1 : form.totalCapacity,
-      waitlistUsers: [],
-      interestedUsers: [],
-      response_cutoff_hours: hoursOffset,
-      response_deadline_at: responseDeadlineAt,
-    };
+    const divisor = form.totalCapacity || (form.selectedFriends.length + (form.isHostSelected ? 1 : 0));
+    const costToUse = Math.max(0, Number(form.costAmount) || 0);
+    const perPerson = costToUse > 0 && divisor > 0 ? Math.ceil(costToUse / divisor) : 0;
 
-    let dbCategory: any = "CUSTOM";
-    let dbSubcategory: any = null;
+    let dbCategory: string = "CUSTOM";
+    let dbSubcategory: string = "OTHER";
 
-    if (selectedCategory !== "custom") {
+    if (selectedCategory && selectedCategory !== "custom") {
       dbCategory = selectedCategory.toUpperCase();
-      dbSubcategory = selectedSubcategory ? selectedSubcategory.toUpperCase() : null;
+      dbSubcategory = selectedSubcategory ? selectedSubcategory.toUpperCase() : (selectedCategory === "sports" ? "FOOTBALL" : "OTHER");
     }
+
+    const isAssigned = form.waitlistMode === "assigned";
+    const capacityToUse = form.totalCapacity !== undefined ? Number(form.totalCapacity) : null;
 
     const newDbPlan = {
       public_id: planId,
-      host_id: form.userProfile.dbUuid,
-      discovery_item_id: form.discoveryItemId,
+      host_id: hostUuid,
+      discovery_item_id: form.discoveryItemId || null,
       category: dbCategory,
       subcategory: dbSubcategory,
-      title: created.title,
-      description: form.quickNote.trim() || `Coordination thread: ${created.title}`,
+      title: titleToUse,
+      description: form.quickNote?.trim() || `Coordination thread: ${titleToUse}`,
       place_id: form.placeId || null,
       place_name: locationToUse,
-      place_address: form.placeAddress || locationToUse,
-      latitude: form.latitude,
-      longitude: form.longitude,
+      place_address: placeAddressToUse,
+      latitude: form.latitude || null,
+      longitude: form.longitude || null,
       scheduled_at: parsedIsoDateTime,
       rsvp_deadline: responseDeadlineAt,
-      max_participants: form.waitlistEnabled
-        ? form.totalCapacity
-        : form.totalInvitedCount > 0 ? form.totalCapacity : null,
-      total_cost: form.costAmount,
+      max_participants: capacityToUse,
+      total_cost: costToUse,
       cover_image: coverUrl,
       status: "LIVE" as const,
-      participant_filtering: (form.waitlistMode === "assigned" ? "ASSIGNED" : "AUTOMATIC") as 'AUTOMATIC' | 'ASSIGNED',
+      participant_filtering: (isAssigned ? "ASSIGNED" : "AUTOMATIC") as 'AUTOMATIC' | 'ASSIGNED',
+      waitlist_order_mode: (isAssigned ? "CUSTOM" : "AUTO") as 'AUTO' | 'CUSTOM',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
-
-    const matchedCircleId = null;
-
     try {
-      const { dbPlanRow, dbPartRow, inviteeUuids, hostJoinedAt } = await createPlan(
+      const { dbPlanRow } = await createPlan(
         newDbPlan,
         [],
-        form.selectedFriends,
+        form.selectedFriends || [],
         form.userProfile,
         titleToUse,
         form.isHostSelected,
         form.priorityGuestIds || []
       );
 
-      if (hasCustomImage && form.customCoverImage) {
+      if (hasCustomImage && form.customCoverImage && dbPlanRow?.id) {
         try {
           const blob = dataURLtoBlob(form.customCoverImage);
           const fileName = `${dbPlanRow.id}.jpeg`;
@@ -447,32 +382,23 @@ export const CreatePlanScreen = ({
 
           if (uploadError) throw uploadError;
 
-          const { error: updateError } = await supabase
+          await supabase
             .from("plans")
             .update({ cover_image: fileName })
             .eq("id", dbPlanRow.id);
-
-          if (updateError) throw updateError;
         } catch (uploadErr) {
           console.error("[CreatePlanFlow] Failed to upload/update plan cover image:", uploadErr);
         }
       }
 
-      // refreshPlans() inside createPlan already syncs dbPlans and dbPlanParticipants from the DB.
-      // No optimistic DB state updates needed here — they would race against and overwrite the fresh state.
-
-      const matchedCircleId = null;
-
-
-
-      setPostedPlanUuid(dbPlanRow.id);
+      setPostedPlanUuid(dbPlanRow?.id || null);
       setCreatePhase("confirmation");
       form.setIsSubmitting(false);
-      showToast("✨ Plan posted successfully!");
+      showToast("✨ Plan created successfully!");
     } catch (err: any) {
-      console.error("[CreatePlanFlow] Error:", err);
+      console.error("[CreatePlanFlow] Error creating plan:", err);
       form.setIsSubmitting(false);
-      showToast(`Failed to post plan: ${err.message || "Unknown error"}`);
+      showToast(`Failed to create plan: ${err.message || "Unknown error"}`);
     }
   };
 
@@ -519,9 +445,10 @@ export const CreatePlanScreen = ({
             setReturnToWhoActually(false);
             setCreatePhase('who-actually');
           } else if (cameFromReview) {
+            setCameFromReview(false);
             setCreatePhase('review');
           } else {
-            setCreatePhase('when');
+            setCreatePhase('category');
           }
         }}
         onContinue={() => {
@@ -554,8 +481,11 @@ export const CreatePlanScreen = ({
         }}
         onAddFriends={() => {
           setReturnToWhoActually(true);
+          setReturnToPlanSizeSheet(true);
           setCreatePhase('who');
         }}
+        initialOpenPlanSizeSheet={returnToPlanSizeSheet}
+        onPlanSizeSheetDismissed={() => setReturnToPlanSizeSheet(false)}
       />
     );
   }
@@ -578,6 +508,11 @@ export const CreatePlanScreen = ({
           onEditParticipants={() => {
             setCameFromReview(true);
             setCreatePhase('who-actually');
+          }}
+          onAddParticipants={() => {
+            setReturnToWhoActually(true);
+            setReturnToPlanSizeSheet(true);
+            setCreatePhase('who');
           }}
           onSubmit={handleHostPlanSubmit}
           isSubmitting={form.isSubmitting}
@@ -796,7 +731,7 @@ export const CreatePlanScreen = ({
         // 3. Pre-fill essential metadata only
         form.setLocalTitle(item.title);
         form.setLocalLocation(item.location || "");
-        form.setCustomCoverImage(item.cover_image_url || "/assets/plan-covers/default.png");
+        form.setCustomCoverImage(item.cover_image_url || defaultPlanCover);
 
         // Pre-populate coordinate mapping metadata from discovery selection
         if (form.setPlaceId) form.setPlaceId((item as any).place_id || null);
@@ -806,24 +741,27 @@ export const CreatePlanScreen = ({
 
         // Notes, Cost, RSVP Deadline, and Participants are intentionally left empty/default
         form.setCostAmount(0);
+        form.setIsCostManuallySet(false);
         form.setTotalCapacity(undefined);
+        form.setIsDateManuallySet(false);
         form.setQuickNote("");
 
-        // 4. Default event time (2 hours from now)
-        const defaultTime = new Date(Date.now() + 2 * 60 * 60 * 1000);
-        form.setEventDateTime(defaultTime);
-
-        // 5. Entry into WhenIsPlanScreen first
-        setCreatePhase('when');
+        // 4. Entry into WhoIsComingScreen first
+        setCreatePhase('who');
       }}
       onSelectCustomPlan={() => {
         // Reset and launch manual create wizard for custom plans
         setSelectedCategory('custom');
         setSelectedSubcategory(null);
         form.resetForm();
-        form.setLocalTitle("Enter Title");
+        form.setLocalTitle("");
+        form.setLocalLocation("");
+        form.setCustomCoverImage(defaultPlanCover);
+        form.setCostAmount(0);
+        form.setIsCostManuallySet(false);
+        form.setIsDateManuallySet(false);
         form.setTotalCapacity(undefined);
-        setCreatePhase('when');
+        setCreatePhase('who');
         setCustomizerStep(0);
       }}
     />

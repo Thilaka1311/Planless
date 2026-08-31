@@ -8,6 +8,8 @@ import { usePlansStore } from '../state/PlansContext';
 import { supabase } from '../../../../lib/supabaseClient';
 import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
 
+import { isUuid } from '../utils/planUtils';
+
 type InlineTab = 'going' | 'invited' | 'waitlist' | 'skipped';
 
 interface InlineParticipantViewProps {
@@ -111,7 +113,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
   const [liveAssignedParticipants, setLiveAssignedParticipants] = React.useState<any[] | null>(null);
 
   React.useEffect(() => {
-    if (!isAssignedMode || !targetPlanUuid) return;
+    if (!isAssignedMode || !targetPlanUuid || !isUuid(targetPlanUuid)) return;
 
     const fetchParticipants = async (reason = 'INITIAL') => {
       const { data, error } = await supabase
@@ -369,10 +371,8 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
   const activeList = groups[activeTab] || [];
 
   const getWaitlistPositionDisplay = (person: InlineMemberEntry, idx: number): string | null => {
-    const rawPos = person.waitlistPosition ?? (person as any).waitlist_position;
     if (isAssignedMode) {
-      const posNum = typeof rawPos === 'number' ? rawPos : (idx + 1);
-      return `#${posNum}`;
+      return `#${idx + 1}`;
     }
 
     // Automatic mode:
@@ -382,8 +382,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     const isWaitlistedRSVP = status === 'WAITLISTED' || (person.isAccepted && status !== 'SKIPPED' && status !== 'INVITED');
 
     if (isWaitlistedRSVP) {
-      const posNum = typeof rawPos === 'number' ? rawPos : (idx + 1);
-      return `#${posNum}`;
+      return `#${idx + 1}`;
     }
 
     return null;
