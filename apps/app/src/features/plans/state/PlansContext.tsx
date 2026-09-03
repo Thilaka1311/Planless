@@ -56,17 +56,20 @@ interface PlansContextType {
   refreshPlans: (targetTables?: string[]) => Promise<void>;
   skipPlan: (planId: string, userId: string) => Promise<void>;
   requestPaidPlanLeave: (planId: string) => Promise<void>;
+  requestHostLeaveWithReplacement: (planId: string, replacementUserId: string) => Promise<any>;
+  stopHostingWithReplacement: (planId: string, replacementUserId: string) => Promise<any>;
   cancelPaidPlanLeaveRequest: (planId: string) => Promise<void>;
   resolvePaidPlanLeaveRequest: (planId: string, targetUserId: string, resolution: 'REPLACED' | 'KEEP_PAYMENT', replacementUserId?: string) => Promise<void>;
   replaceParticipant: (planId: string, targetUserId: string, replacementUserId: string) => Promise<any>;
   moveParticipantToWaitlistAndDecreaseCapacity: (planId: string, targetUserId: string) => Promise<any>;
   rejoinPlan: (planId: string, userProfile: any) => Promise<void>;
+  resolveRejoinedParticipant: (planId: string, targetUserId: string, decision: 'JOINED' | 'WAITLIST' | 'WAITLISTED' | 'REMOVE') => Promise<void>;
   // New acceptance / payment / booking actions
   acceptPlan: (planId: string, userProfile: any) => Promise<void>;
   declinePlan: (planId: string, userProfile: any) => Promise<void>;
   changePlanHost: (planId: string, newHostUuid: string, oldHostUuid: string) => Promise<void>;
   cancelPlan: (planId: string) => Promise<void>;
-  updatePlanDetails: (planId: string, updates: Partial<DbPlan>) => Promise<any>;
+  updatePlanDetails: (planId: string, updates: Partial<DbPlan> & { skipDbWrite?: boolean }) => Promise<any>;
   completePlan: (planId: string, attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>, opts?: { isEarly?: boolean; expenseMode?: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE' }) => Promise<void>;
   manageCompletedPlanParticipants: (planId: string, usersToAdd: string[], usersToRemove: string[], expenseMode?: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE') => Promise<any>;
   submitReview: (memoryId: string, category: 'movie' | 'dining', rating: number, review: string | null, userUuid: string, existingId?: string) => Promise<void>;
@@ -497,11 +500,14 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     leavePlan,
     skipPlan,
     requestPaidPlanLeave,
+    requestHostLeaveWithReplacement,
+    stopHostingWithReplacement,
     cancelPaidPlanLeaveRequest,
     resolvePaidPlanLeaveRequest,
     replaceParticipant,
     moveParticipantToWaitlistAndDecreaseCapacity,
     rejoinPlan,
+    resolveRejoinedParticipant,
     removeParticipant,
     promoteWaitlistIfSpotsAvailable,
     handleParticipantStatusChange,
@@ -673,10 +679,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const planParticipants = freshParticipants.filter(
       (pp: any) => pp.plan_id === planUuid
     );
-    const dbPlanObj = dbPlans.find(dp => dp.id === planUuid || dp.plan_id === planId);
-    const hostUuid = matchedPlan?.hostId || dbPlanObj?.host_id;
     const nonHostParticipants = planParticipants.filter(
-      (pp: any) => pp.user_id !== hostUuid
+      (pp: any) => pp.role !== "HOST"
     );
     const allAccepted =
       nonHostParticipants.length > 0 &&
@@ -795,10 +799,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
-    const circleUuid = newDbPlan?.circle_id || null;
-
     const getParticipantCircleId = (inviteeUuid: string) => {
-      if (circleUuid) return circleUuid;
       const matchedMember = dbCircleMembersRef.current.find(
         (m: any) => m.user_id === inviteeUuid
       );
@@ -955,14 +956,11 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       pp => pp.plan_id === planUuid || (pp as any).id === planUuid
     );
 
-    const plan = dbPlans.find(p => p.id === planUuid || p.plan_id === planUuid);
-    const hostUuid = plan?.host_id;
-
     const breakdown = calculateParticipantBreakdown(rows);
     const { waitlisted, invited, skipped, passed, pending, total } = breakdown;
 
-    const host = rows.some(r => r.user_id === hostUuid && normalizeStatus(r.rsvp_status) === "JOINED") ? 1 : 0;
-    const going = rows.filter(r => normalizeStatus(r.rsvp_status) === "JOINED" && r.user_id !== hostUuid).length;
+    const host = rows.filter(r => r.role === "HOST" && normalizeStatus(r.rsvp_status) === "JOINED").length;
+    const going = rows.filter(r => normalizeStatus(r.rsvp_status) === "JOINED" && r.role !== "HOST").length;
 
     return { host, going, waitlist: waitlisted, delivered: invited, skipped, passed, pending, total };
   };
@@ -1029,7 +1027,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const updateLocalPlan = useCallback((planId: string, updates: Partial<DbPlan>) => {
     setDbPlans((prev) =>
       prev.map((plan) =>
-        plan.id === planId || plan.public_id === planId
+        plan.id === planId || plan.public_id === planId || (plan as any).dbUuid === planId
           ? {
             ...plan,
             ...updates,
@@ -1057,10 +1055,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const changePlanHost = useCallback(async (planId: string, newHostUuid: string, oldHostUuid: string) => {
     await lifecycle.changePlanHost(planId, newHostUuid, oldHostUuid);
-    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
-    const planUuid = matchedPlan?.dbUuid || planId;
-    updateLocalPlan(planUuid, { host_id: newHostUuid });
-  }, [lifecycle, plans, updateLocalPlan]);
+  }, [lifecycle]);
 
   const cancelPlan = useCallback(async (planId: string) => {
     await lifecycle.cancelPlan(planId);
@@ -1245,11 +1240,14 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     refreshPlans,
     skipPlan,
     requestPaidPlanLeave,
+    requestHostLeaveWithReplacement,
+    stopHostingWithReplacement,
     cancelPaidPlanLeaveRequest,
     resolvePaidPlanLeaveRequest,
     replaceParticipant,
     moveParticipantToWaitlistAndDecreaseCapacity,
     rejoinPlan,
+    resolveRejoinedParticipant,
     acceptPlan: memoizedAcceptPlan,
     declinePlan: memoizedDeclinePlan,
     createPlan: memoizedCreatePlan,
@@ -1279,7 +1277,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     plans, dbPlans, dbPlanParticipants,
     dbPlanOutcomes, dbMemories, dbMemoryResults, dbPlanTeamAssignments,
     getTeamAssignments, assignTeam, unassignTeam,
-    joinPlan, leavePlan, skipPlan, rejoinPlan, removeParticipant,
+    joinPlan, leavePlan, skipPlan, rejoinPlan, resolveRejoinedParticipant, removeParticipant,
     memoizedPassPlan, memoizedWaitlistPlan,
     memoizedSendReminder, memoizedIgnoreReminder, memoizedGetHomeFeedPlans,
     memoizedGetHubPlans, memoizedGetParticipantCounts, refreshPlans,

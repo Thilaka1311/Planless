@@ -14,10 +14,15 @@ interface AutomaticWaitlistActionsProps {
   onPromoteHost?: (item: Friend) => void;
   onDemoteHost?: (item: Friend) => void;
   onRemoveParticipant: (item: Friend) => void;
+  onLeavePlan?: () => void;
   onReplaceLeaveParticipant?: (participantId: string) => void;
   onKeepPaymentLeaveParticipant?: (participantId: string) => void;
   onInviteSkipped?: (item: Friend) => Promise<void> | void;
   onViewProfile?: (item: Friend) => void;
+  onAddToJoined?: (item: Friend) => void;
+  onAddToWaitlist?: (item: Friend) => void;
+  onRemoveFromPlan?: (item: Friend) => void;
+  onMoveToGoing?: (item: Friend) => void;
 }
 
 export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> = ({
@@ -31,10 +36,15 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
   onPromoteHost,
   onDemoteHost,
   onRemoveParticipant,
+  onLeavePlan,
   onReplaceLeaveParticipant,
   onKeepPaymentLeaveParticipant,
   onInviteSkipped,
   onViewProfile,
+  onAddToJoined,
+  onAddToWaitlist,
+  onRemoveFromPlan,
+  onMoveToGoing,
 }) => {
   const isActionProcessingRef = useRef(false);
 
@@ -64,6 +74,7 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
     selectedItem.name === 'You'
   );
 
+  const isRejoined = selectedItem.rsvpStatus === 'REJOINED' || (selectedItem as any).rsvp_status === 'REJOINED';
   const isLeaveRequested = selectedItem.leave_requested === true;
   const effectiveState = getEffectiveParticipantState(selectedItem, sheetType);
   const isSkipped = effectiveState === 'SKIPPED';
@@ -108,8 +119,10 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
           <UserAvatar src={selectedItem.avatar} alt={selectedItem.name} size="w-10 h-10" />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 16, fontWeight: 600 }}>{selectedItem.name}</span>
-            <span style={{ fontSize: 12, color: isLeaveRequested ? '#FFFFFF' : 'rgba(255, 255, 255, 0.4)', fontWeight: 400 }}>
-              {isLeaveRequested
+            <span style={{ fontSize: 12, color: (isLeaveRequested || isRejoined) ? '#FFFFFF' : 'rgba(255, 255, 255, 0.4)', fontWeight: 400 }}>
+              {isRejoined
+                ? 'Wants to rejoin this plan'
+                : isLeaveRequested
                 ? 'Wants to leave this plan'
                 : isSkipped
                 ? skipLabel
@@ -122,8 +135,96 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
           </div>
         </div>
 
-        {/* ── SKIPPED PARTICIPANT FLOW ── */}
-        {isSkipped ? (
+        {/* ── REJOINED PARTICIPANT FLOW ── */}
+        {isRejoined ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* 1. Add to Joined */}
+            <button
+              onClick={() => {
+                executeActionWithImmediateDismiss(() => {
+                  if (onAddToJoined) {
+                    onAddToJoined(selectedItem);
+                  } else if (onMoveToGoing) {
+                    onMoveToGoing(selectedItem);
+                  }
+                });
+              }}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
+                color: '#FFFFFF',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              Add to Joined
+            </button>
+
+            {/* 2. Add to Waitlist */}
+            <button
+              onClick={() => {
+                executeActionWithImmediateDismiss(() => {
+                  if (onAddToWaitlist) {
+                    onAddToWaitlist(selectedItem);
+                  }
+                });
+              }}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
+                color: '#FFFFFF',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              Add to Waitlist
+            </button>
+
+            {/* 3. Remove from plan */}
+            <button
+              onClick={() => {
+                executeActionWithImmediateDismiss(() => {
+                  if (onRemoveFromPlan) {
+                    onRemoveFromPlan(selectedItem);
+                  } else if (onRemoveParticipant) {
+                    onRemoveParticipant(selectedItem);
+                  }
+                });
+              }}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: 'none',
+                borderRadius: 12,
+                color: '#EF4444',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              Remove from plan
+            </button>
+
+            <button
+              onClick={handleClose}
+              style={{ width: '100%', padding: '14px', background: 'none', border: 'none', borderRadius: 12, color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: 500, cursor: 'pointer', textAlign: 'center', marginTop: 4 }}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : isSkipped ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {onInviteSkipped && (
               <button
@@ -161,51 +262,29 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {isLeaveRequested ? (
                 <>
-                  <button
-                    onClick={() => {
-                      executeActionWithImmediateDismiss(() => {
-                        const targetId = selectedItem.dbUuid || selectedItem.id;
-                        if (onKeepPaymentLeaveParticipant) onKeepPaymentLeaveParticipant(targetId);
-                      });
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '14px',
-                      background: 'rgba(255, 255, 255, 0.06)',
-                      border: 'none',
-                      borderRadius: 12,
-                      color: '#FFFFFF',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                  >
-                    Keep payment
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      executeActionWithImmediateDismiss(() => {
-                        const targetId = selectedItem.dbUuid || selectedItem.id;
-                        if (onReplaceLeaveParticipant) onReplaceLeaveParticipant(targetId);
-                      });
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '14px',
-                      background: 'rgba(245, 158, 11, 0.1)',
-                      border: 'none',
-                      borderRadius: 12,
-                      color: '#F59E0B',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                  >
-                    Replace participant
-                  </button>
+                  {onRemoveParticipant && (
+                    <button
+                      onClick={() => {
+                        executeActionWithImmediateDismiss(() => {
+                          onRemoveParticipant(selectedItem);
+                        });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        border: 'none',
+                        borderRadius: 12,
+                        color: '#EF4444',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      Remove Participant
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
@@ -242,19 +321,34 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
                     </button>
                   )}
 
-                  {isHostUser && (!selectedItem.isHost || onDemoteHost) && (
+                  {isSelf ? (
                     <button
                       onClick={() => {
-                        if (sheetType === 'going' && !isSelf) {
-                          executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                        if (onLeavePlan) {
+                          executeActionWithImmediateDismiss(() => onLeavePlan());
                         } else {
-                          onShowConfirmRemove(true);
+                          executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
                         }
                       }}
                       style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
                     >
-                      {isSelf ? 'Leave Plan' : 'Remove from Plan'}
+                      Leave Plan
                     </button>
+                  ) : (
+                    isHostUser && (!selectedItem.isHost || onDemoteHost) && (
+                      <button
+                        onClick={() => {
+                          if (sheetType === 'going') {
+                            executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                          } else {
+                            onShowConfirmRemove(true);
+                          }
+                        }}
+                        style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                      >
+                        Remove from Plan
+                      </button>
+                    )
                   )}
                 </>
               )}
@@ -280,7 +374,11 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
                 </button>
                 <button
                   onClick={() => {
-                    executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                    if (isSelf && onLeavePlan) {
+                      executeActionWithImmediateDismiss(() => onLeavePlan());
+                    } else {
+                      executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                    }
                   }}
                   style={{ flex: 1, padding: '14px', background: '#EF4444', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
                 >

@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { useToast } from "./shared/contexts/ToastContext";
 import { supabase } from "../lib/supabaseClient";
 import {
-  Bell, Users, Plus, Home, Calendar, Wallet, X
+  Bell, Users, Plus, Home, Calendar, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { UserProfile, Plan, Circle, Transaction, DbCircle, DbCircleMember, DbPlan, DbPlanParticipant, DbTransaction, DbPlanOutcome, NotificationItem } from "./core/types";
@@ -19,6 +19,7 @@ import { WalletScreen } from "./features/wallet/screens/WalletScreen";
 import { HomeScreen } from "./features/home/screens/HomeScreen";
 import { PlansScreen } from "./features/plans/screens/PlansScreen/PlansScreen";
 import { CreatePlanScreen } from "./features/create/screens/Create";
+import { CreateMVP } from "./features/create/screens/CreateMVP";
 import { ProfileScreen } from "./features/profile/screens/ProfileScreen";
 import DetailedPlanModal from "./components/common screens/DetailedPlanModal";
 import { getPlanCover } from "./features/plans/config/planCoverImages";
@@ -51,7 +52,8 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
 
   // --- Core Navigation Tab state ---
   const [activeTab, setActiveTab] = useState<any>(() => {
-    return (localStorage.getItem("planless_active_tab") as any) || "home";
+    const saved = localStorage.getItem("planless_active_tab");
+    return saved === "wallet" ? "home" : (saved as any) || "home";
   });
   const [childrenWantBottomNavHidden, setChildrenWantBottomNavHidden] = useState(false);
 
@@ -82,7 +84,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const [showWaitlistSuccessId, setShowWaitlistSuccessId] = useState<string | null>(null);
   const [showLeftSuccessId, setShowLeftSuccessId] = useState<string | null>(null);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
-  const [plansFilter, setPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted' | string>('JOINED');
+  const [plansFilter, setPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted'>('JOINED');
   const [showHostedPlansScreen, setShowHostedPlansScreen] = useState(false);
   const [showPastPlansScreen, setShowPastPlansScreen] = useState(false);
   const [plansScrollY, setPlansScrollY] = useState(0);
@@ -394,7 +396,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
     !childrenWantBottomNavHidden;
 
   return (
-    <div className="w-full h-full bg-[#0C0C0E] flex flex-col justify-between relative overflow-hidden select-none">
+    <div className="w-full h-full bg-[#050505] flex flex-col justify-between relative overflow-hidden select-none">
 
       {/* ---------------- FIGMA ALIGNED HEADER ---------------- */}
       {activeTab === "home" && (
@@ -466,7 +468,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
 
         {/* TAB 3: SPONTANEOUS CREATOR - INSTANT PRODUCTIVITY AESTHETICS */}
         {activeTab === "create" && (
-          <CreatePlanScreen
+          <CreateMVP
             setActiveTab={setActiveTab}
             onToggleBottomNav={setChildrenWantBottomNavHidden}
             setPlansFilter={setPlansFilter}

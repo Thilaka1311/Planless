@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronLeft, Edit, MoreVertical, Settings, Users, Activity, CreditCard, MessageSquare } from "lucide-react";
+import { ChevronLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
@@ -24,6 +24,7 @@ interface HeroHeaderProps {
   hosts?: HostInfo[];
   viewerId?: string;
   onClose: () => void;
+  isCloseIcon?: boolean;
   /** @deprecated — no longer used, kept for back-compat */
   isInfoOpen?: boolean;
   /** @deprecated — no longer used, kept for back-compat */
@@ -39,6 +40,7 @@ interface HeroHeaderProps {
   /** Optional plan cover image for chat header */
   coverImage?: string;
   category?: string;
+  onEditCoverImage?: () => void;
   /** Hide "Hosted by..." attribution row (e.g. for chat header) */
   hideHostAttribution?: boolean;
   /** Called when the user taps the tappable region of the chat header (avatar + title) */
@@ -61,6 +63,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   hosts,
   viewerId,
   onClose,
+  isCloseIcon = false,
   isHost = false,
   onEdit,
   onEditTitle,
@@ -69,6 +72,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   overflowMenuItems = [],
   coverImage,
   category,
+  onEditCoverImage,
   hideHostAttribution = false,
   onHeaderPress,
   onOpenParticipants,
@@ -154,6 +158,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           id="immersive-plan-chat-hero-image"
           src={coverImage}
           category={category}
+          screen="Chat Hero"
           alt={title}
           className="absolute inset-0 w-full h-full object-cover filter brightness-[0.75]"
         />
@@ -190,6 +195,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                 <DiscoveryImages
                   src={coverImage}
                   category={category}
+                  screen="Chat Bar Avatar"
                   alt={title}
                   className="w-full h-full object-cover"
                 />
@@ -286,22 +292,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                 onClick={(e) => e.stopPropagation()}
                 className="absolute top-[calc(3.25rem+env(safe-area-inset-top,0px))] right-4 min-w-[170px] bg-[#121216]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-1.5 z-10 flex flex-col space-y-0.5 text-left select-none"
               >
-                {/* 1. Expenses */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onOpenExpenses?.();
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
-                >
-                  <CreditCard className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
-                  <span className="text-xs font-semibold text-white tracking-tight">
-                    Expenses
-                  </span>
-                </button>
-
-                {/* 2. Settings */}
+                {/* Settings */}
                 <button
                   type="button"
                   onClick={() => {
@@ -329,19 +320,19 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
       className="absolute top-0 left-0 right-0 z-30 bg-black/30 backdrop-blur-xl border-b border-white/10 shadow-lg pb-3 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] rounded-b-2xl"
     >
       <div className="w-full flex flex-col items-center relative px-4">
-        {/* Back button — top-left */}
+        {/* Back / Close button — top-left */}
         <button
           id="immersive-plan-back-btn"
           type="button"
           onClick={onClose}
           className="absolute left-4 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-white active:scale-95 transition-transform cursor-pointer pointer-events-auto"
         >
-          <ChevronLeft className="w-5 h-5" />
+          {isCloseIcon ? <X className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
         </button>
 
         {/* Right action buttons — Contextual Popup Menu */}
         <div ref={menuRef} className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto">
-          {(onOpenChat || onOpenExpenses || onOpenSettings || showOverflow) && (
+          {(onOpenChat || onOpenSettings || showOverflow) && (
             <div className="relative">
               <button
                 id="immersive-plan-overflow-btn"
@@ -384,24 +375,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                       </button>
                     )}
 
-                    {/* 2. Expenses */}
-                    {onOpenExpenses && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          onOpenExpenses();
-                        }}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
-                      >
-                        <CreditCard className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
-                        <span className="text-xs font-semibold text-white tracking-tight">
-                          Expenses
-                        </span>
-                      </button>
-                    )}
-
-                    {/* 3. Settings */}
+                    {/* 2. Settings */}
                     {onOpenSettings && (
                       <button
                         type="button"
@@ -430,9 +404,16 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           className={`flex flex-col items-center max-w-full ${onHeaderPress ? "cursor-pointer pointer-events-auto" : "pointer-events-none"}`}
         >
           {coverImage && (
-            <div className="w-9 h-9 rounded-full overflow-hidden border border-white/15 bg-zinc-800 flex-shrink-0 mb-1">
-              <img
+            <div
+              onClick={onEditCoverImage ? (e) => { e.stopPropagation(); onEditCoverImage(); } : undefined}
+              className={`w-9 h-9 rounded-full overflow-hidden border border-white/15 bg-zinc-800 flex-shrink-0 mb-1 ${
+                onEditCoverImage ? "cursor-pointer pointer-events-auto hover:opacity-90 active:scale-95 transition-all shadow-md" : ""
+              }`}
+            >
+              <DiscoveryImages
                 src={coverImage}
+                category={category}
+                screen="Header Center Avatar"
                 alt={title}
                 className="w-full h-full object-cover"
               />

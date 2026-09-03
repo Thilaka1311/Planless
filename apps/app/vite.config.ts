@@ -40,6 +40,7 @@ export default defineConfig(() => {
           ]
         },
         workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           // Precache static assets like CSS, JS, HTML and common images
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           // Exclude Supabase to ensure Realtime, Auth, and DB endpoints remain network-live

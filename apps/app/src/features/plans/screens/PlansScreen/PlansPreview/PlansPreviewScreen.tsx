@@ -16,12 +16,14 @@ import {
   Compass,
   Film,
   CalendarDays,
+  CalendarClock,
   ChevronDown,
   Check,
   MessageCircle,
   Receipt,
   Users,
-  AlertCircle
+  AlertCircle,
+  Camera
 } from "lucide-react";
 import { UserProfile, Plan } from "../../../../../core/types";
 import { usePlansStore } from "../../../state/PlansContext";
@@ -48,9 +50,12 @@ import { PlanDetailsScreen } from "../../../../wallet/screens/PlanBalances";
 import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGooglePlacesAutocomplete";
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";
+import { uploadPlanImage } from "../../../../../shared/utils/imageUtils";
+import { cleanPlanId } from "../../../utils/planUtils";
 import { LiveActionButton } from "../../../components/LiveActionButton";
 import {
   LeavePlanBottomSheet,
+  MakeAnotherParticipantHostBottomSheet,
   PaidPlanLeaveConfirmationDialog,
   CancelLeaveRequestBottomSheet,
   CancelPlanBottomSheet,
@@ -58,12 +63,12 @@ import {
   EarlyCompletePlanConfirmationBottomSheet,
   RestorePlanBottomSheet,
   EditDateTimeBottomSheet,
-  EditCostBottomSheet,
   EditDetailsBottomSheet,
   JoinPlanConfirmationBottomSheet,
   SkipPlanConfirmationDialog,
   EditCapacityBottomSheet,
 } from "../../../components/BottomSheets";
+import { SetCostScreen } from "../../../components/SetCost";
 import { HostAttendanceScreen } from "../../../../completion/docs/Screens/HostAttendanceScreen";
 
 // ==========================================
@@ -84,12 +89,12 @@ const getPlanDescription = (plan: Plan) => {
   if (category === 'dining') {
     return 'Secret speakeasy crawl or dining hangout with a live modern jazz quartet. Strict classy dress code. Good spirits, great company.';
   }
-  return plan.description || 'A spontaneous, tightly coordinated hangout with friends and family. Quick response required for booking slots.';
+  return 'A spontaneous, tightly coordinated hangout with friends and family. Quick response required for booking slots.';
 };
 
 export function hasUserEnteredDescription(plan: any): boolean {
   if (!plan) return false;
-  const desc = (plan.description || "").trim();
+  const desc = "";
   if (desc.length === 0) return false;
   if (
     desc.startsWith("Spontaneous coordination thread for") ||
@@ -470,6 +475,7 @@ export interface PlansDetailsScreenProps {
   onEditParticipants?: () => void;
   onAddParticipants?: () => void;
   onEditTitle?: (newTitle: string) => void;
+  onEditCoverImage?: () => void;
   onAdjustDate?: (eventDateTime: Date, rsvpDateTime?: Date) => void;
   onAdjustCost?: (newCost: number) => void;
   onAdjustLocation?: (locationData: { place_id?: string | null; place_name?: string | null; place_address?: string | null; latitude?: number | null; longitude?: number | null; }) => void;
@@ -497,6 +503,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   onEditParticipants,
   onAddParticipants,
   onEditTitle,
+  onEditCoverImage,
   onAdjustDate,
   onAdjustCost,
   onAdjustLocation,
@@ -512,6 +519,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     dbPlanParticipants,
     skipPlan,
     requestPaidPlanLeave,
+    requestHostLeaveWithReplacement,
     cancelPaidPlanLeaveRequest,
     leavePlan,
     rejoinPlan,
@@ -555,6 +563,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [tempDate, setTempDate] = useState("");
   const [tempTime, setTempTime] = useState("");
   const [tempRSVPOption, setTempRSVPOption] = useState<string | null>(null);
+  const initialDateTimeRef = useRef<{ date: string; time: string; rsvpOption: string | null }>({ date: "", time: "", rsvpOption: null });
 
   const resolveInitialRsvpOption = (planDate: Date, rsvpDate: Date | null): string | null => {
     if (!rsvpDate) return null;
@@ -578,9 +587,32 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     }
   }, [(selectedPlan as any)?.isDateConfigured, (selectedPlan as any)?.isCostConfigured]);
 
+  // Auto-dismiss bottom validation message after 3 seconds or on tapping anywhere
+  useEffect(() => {
+    if (!createValidationError) return;
+
+    const timer = setTimeout(() => {
+      setCreateValidationError(null);
+    }, 3000);
+
+    const handleTapAnywhere = (e: PointerEvent | MouseEvent | TouchEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest("#create-plan-submit-btn")) {
+        return;
+      }
+      setCreateValidationError(null);
+    };
+
+    window.addEventListener("pointerdown", handleTapAnywhere, { capture: true });
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("pointerdown", handleTapAnywhere, { capture: true });
+    };
+  }, [createValidationError]);
+
   const [isEditingDetailsSheetOpen, setIsEditingDetailsSheetOpen] = useState(false);
   const [tempTitle, setTempTitle] = useState("");
-  const [tempDescription, setTempDescription] = useState("");
   const [tempCapacity, setTempCapacity] = useState<number | "">("");
   const [tempCoverImage, setTempCoverImage] = useState<string | null>(null);
   const [isSavingDetails, setIsSavingDetails] = useState(false);
@@ -615,22 +647,49 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     const [hours, minutes] = timeStr.split(':');
     const h = Number(hours);
     const m = Number(minutes);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    const displayHour = h % 12 || 12;
-    const displayMin = String(m).padStart(2, '0');
-    return `${displayHour}:${displayMin} ${ampm}`;
+    if (isNaN(h)) return timeStr;
+    const displayHour = String(h).padStart(2, '0');
+    const displayMin = isNaN(m) ? '00' : String(m).padStart(2, '0');
+    return `${displayHour}:${displayMin}`;
   };
 
-  const handleSaveDateTime = async () => {
-    if (!tempDate || !tempTime) {
-      showToast("Please select a date and time.");
+  const openDateTimeSheet = () => {
+    if (isCancelled || isCompleted) return;
+    const hasConfiguredDate = Boolean((selectedPlan as any).isDateConfigured || (!createMode && (selectedPlan.datetime || selectedPlan.time || (selectedPlan as any).scheduled_at)));
+    let d = "";
+    let t = "";
+    let r: string | null = null;
+    if (hasConfiguredDate) {
+      const rawDateVal = (selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt;
+      const planDate = new Date(rawDateVal);
+      const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : null;
+      if (!isNaN(planDate.getTime())) {
+        d = getLocalDateString(planDate);
+        t = getLocalTimeString(planDate);
+        r = resolveInitialRsvpOption(planDate, planRSVP);
+      }
+    }
+    setTempDate(d);
+    setTempTime(t);
+    setTempRSVPOption(r);
+    initialDateTimeRef.current = { date: d, time: t, rsvpOption: r };
+    setIsEditingDateTimeSheetOpen(true);
+  };
+
+  const handleCloseDateTimeSheet = async () => {
+    setIsEditingDateTimeSheetOpen(false);
+    const initial = initialDateTimeRef.current;
+    const hasChanged = tempDate !== initial.date || tempTime !== initial.time || tempRSVPOption !== initial.rsvpOption;
+    if (!hasChanged) {
       return;
     }
-    const eventDateTime = new Date(`${tempDate}T${tempTime}`);
-    const now = new Date();
 
-    if (eventDateTime < now) {
-      showToast("Event time cannot be in the past.");
+    if (!tempDate || !tempTime) {
+      return;
+    }
+
+    const eventDateTime = new Date(`${tempDate}T${tempTime}`);
+    if (isNaN(eventDateTime.getTime())) {
       return;
     }
 
@@ -642,7 +701,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     } else if (tempRSVPOption === '< 24 Hours') {
       rsvpDateTime = new Date(eventDateTime.getTime() - 24 * 60 * 60 * 1000);
     } else {
-      // Plan Start default
       rsvpDateTime = new Date(eventDateTime.getTime());
     }
 
@@ -651,7 +709,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onAdjustDate(eventDateTime, rsvpDateTime);
       }
       showToast("✓ Date & RSVP updated");
-      setIsEditingDateTimeSheetOpen(false);
       return;
     }
 
@@ -662,7 +719,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       };
       await updatePlanDetails(selectedPlan.id, updates);
       showToast("✓ Date & RSVP updated");
-      setIsEditingDateTimeSheetOpen(false);
     } catch (err: any) {
       console.error("Failed to update date & time:", err);
       showToast("Unable to update. Please try again.");
@@ -695,24 +751,19 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
     setIsSavingDetails(true);
     try {
-      let uploadedFileName: string | undefined = undefined;
+      let uploadedCoverPath: string | undefined = undefined;
       if (tempCoverImage && tempCoverImage.startsWith("data:")) {
         const blob = dataURLtoBlob(tempCoverImage);
-        const fileName = `${selectedPlan.id}.jpeg`;
-        const { error: uploadError } = await supabase.storage
-          .from("plan-images")
-          .upload(fileName, blob, { contentType: blob.type, upsert: true });
-        if (uploadError) throw uploadError;
-        uploadedFileName = fileName;
+        const { path } = await uploadPlanImage(cleanPlanId(selectedPlan.id), blob);
+        uploadedCoverPath = path;
       }
 
       const updates: any = {
         title: tempTitle.trim(),
-        description: tempDescription.trim(),
         max_participants: cap,
       };
-      if (uploadedFileName) {
-        updates.cover_image = uploadedFileName;
+      if (uploadedCoverPath) {
+        updates.cover_image = uploadedCoverPath;
       }
 
       await updatePlanDetails(selectedPlan.id, updates);
@@ -830,6 +881,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [showCompletionFlow, setShowCompletionFlow] = useState(false);
   const [showInfoPopup, setShowInfoPopup] = useState(false);
   const [showLeavePlanConfirm, setShowLeavePlanConfirm] = useState(false);
+  const [showHostLeaveReplacementSheet, setShowHostLeaveReplacementSheet] = useState(false);
+  const [isSubmittingHostReplacement, setIsSubmittingHostReplacement] = useState(false);
   const [showCancelPlanConfirm, setShowCancelPlanConfirm] = useState(false);
   const [showAttendanceSheet, setShowAttendanceSheet] = useState(false);
   const [planExpense, setPlanExpense] = useState<{ total_amount: number; title?: string } | null>(null);
@@ -931,6 +984,33 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     ];
   }, [selectedPlan, resolvedUserUuid]);
 
+  const isSoleHost = isHost && allHosts.length <= 1;
+
+  const eligibleHostReplacementParticipants = useMemo(() => {
+    if (!selectedPlan?.members) return [];
+    return selectedPlan.members
+      .filter((m) => {
+        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
+        const isCurrent = Boolean(resolvedUserUuid && mId === resolvedUserUuid);
+        if (isCurrent) return false;
+
+        const isHostRole = (m as any).role === "HOST" || m.isHost === true;
+        if (isHostRole) return false;
+
+        const status = normalizeStatus(m.joinState || (m as any).rsvp_status);
+        return status === "JOINED";
+      })
+      .map((m) => {
+        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
+        return {
+          id: mId,
+          name: m.name || (m as any).full_name || "Participant",
+          avatar: m.avatar || (m as any).profile_photo_path,
+          username: m.username
+        };
+      });
+  }, [selectedPlan?.members, resolvedUserUuid]);
+
   const participantManagementMode = isHost
     ? "host"
     : selectedPlan?.allowParticipantInvites
@@ -1009,19 +1089,40 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     return dbPlans.find(p => p.id === planUuid);
   }, [dbPlans, planUuid, createMode, plan]);
 
-  const hasCost = rawDbPlan ? (rawDbPlan.total_cost !== undefined && rawDbPlan.total_cost !== null && Number(rawDbPlan.total_cost) > 0) : false;
-  const costText = useMemo(() => {
-    if (!rawDbPlan || !hasCost) return "Free";
-    const totalCostVal = Number(rawDbPlan.total_cost || 0);
-    const isCompleted = rawDbPlan.status === 'COMPLETED';
-    const divisor = isCompleted
-      ? Number(rawDbPlan.attended_participants ?? selectedPlan?.attended_participants ?? 0)
-      : Number(rawDbPlan.max_participants || 0);
+  const currentTotalCost = Number(
+    (createMode
+      ? (selectedPlan as any)?.total_cost ?? (selectedPlan as any)?.cost ?? rawDbPlan?.total_cost
+      : rawDbPlan?.total_cost ?? (selectedPlan as any)?.total_cost) || 0
+  );
 
-    if (totalCostVal <= 0 || divisor <= 0) return "Free";
-    const perPerson = Math.round((totalCostVal / divisor) * 100) / 100;
-    return `₹${perPerson} / person`;
-  }, [rawDbPlan, hasCost, selectedPlan]);
+  const hasCost = currentTotalCost > 0;
+
+  const costText = useMemo(() => {
+    if (!hasCost || currentTotalCost <= 0) return "Free";
+
+    const isCompleted = rawDbPlan?.status === 'COMPLETED';
+    const planCapacity = Number(
+      rawDbPlan?.max_participants ||
+      selectedPlan?.capacity ||
+      (selectedPlan as any)?.max_participants ||
+      selectedPlan?.joinLimit ||
+      selectedPlan?.maxSpots ||
+      (selectedPlan as any)?.maxParticipants ||
+      0
+    );
+
+    const totalParticipantsCount = isCompleted
+      ? Number(rawDbPlan?.attended_participants ?? selectedPlan?.attended_participants ?? 0)
+      : (planCapacity > 0 ? planCapacity : Number(selectedPlan?.members?.length || 1));
+
+    const divisor = totalParticipantsCount > 0 ? totalParticipantsCount : 1;
+    const perPerson = Math.round((currentTotalCost / divisor) * 100) / 100;
+    const perPersonFormatted = perPerson % 1 === 0
+      ? perPerson.toLocaleString("en-IN")
+      : perPerson.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    return `₹${perPersonFormatted} / person`;
+  }, [hasCost, currentTotalCost, rawDbPlan, selectedPlan]);
 
   const isManagementExpired = useMemo(() => {
     if (!selectedPlan) return false;
@@ -1105,6 +1206,36 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     });
   }, [selectedPlan, activeUserId, isSkipping, onLeavePlan, onClose, skipPlan, setShowLeftSuccess, showToast]);
 
+  const handleConfirmHostLeaveReplacement = useCallback(async (selectedReplacementId: string) => {
+    if (!selectedPlan || isSubmittingHostReplacement) return;
+    setIsSubmittingHostReplacement(true);
+    try {
+      const planUuid = (selectedPlan as any).dbUuid || selectedPlan.id;
+      const res = await requestHostLeaveWithReplacement(planUuid, selectedReplacementId);
+      setShowHostLeaveReplacementSheet(false);
+      
+      const replacementUser = eligibleHostReplacementParticipants.find(p => p.id === selectedReplacementId);
+      const replacementName = replacementUser?.name || "participant";
+
+      if (res?.leave_requested) {
+        showToast(`✓ Promoted ${replacementName} to host & sent leave request`);
+      } else {
+        showToast(`✓ Promoted ${replacementName} to host & left the plan`);
+      }
+      
+      if (onLeavePlan) {
+        onLeavePlan();
+      } else {
+        onClose();
+      }
+    } catch (err: any) {
+      console.error("[PlansPreviewScreen] Host replacement leave failed:", err);
+      showToast(`Failed to leave plan: ${err.message || "Unknown error"}`);
+    } finally {
+      setIsSubmittingHostReplacement(false);
+    }
+  }, [selectedPlan, isSubmittingHostReplacement, requestHostLeaveWithReplacement, eligibleHostReplacementParticipants, onLeavePlan, onClose, showToast]);
+
   const handleSkip = useCallback(async () => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
     if (myParticipantRecord?.leave_requested) {
@@ -1115,11 +1246,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     const isActuallyJoined = currentStatus === "JOINED";
 
     if (isActuallyJoined) {
-      setShowLeavePlanConfirm(true);
+      if (isSoleHost) {
+        setShowHostLeaveReplacementSheet(true);
+      } else {
+        setShowLeavePlanConfirm(true);
+      }
     } else {
       setShowSkipConfirmation(true);
     }
-  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, currentStatus]);
+  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, currentStatus, isSoleHost]);
 
   const handleRejoin = useCallback(() => {
     if (!selectedPlan || !activeUserId || isRejoining) return;
@@ -1273,8 +1408,12 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onEditTitle={async (newTitle) => {
           await updatePlanDetails(selectedPlan.id, { title: newTitle });
         }}
-        onEditCoverImage={async (newCoverUrl) => {
-          await updatePlanDetails(selectedPlan.id, { cover_image: newCoverUrl });
+        onEditCoverImage={async (newCoverUrl, blob) => {
+          const targetPlanId = cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
+          if (blob) {
+            await uploadPlanImage(targetPlanId, blob);
+          }
+          await updatePlanDetails(targetPlanId, { cover_image: `${targetPlanId}.webp`, skipDbWrite: true });
         }}
         onLeavePlan={handleSkip}
         onCancelPlan={handleDitchConfirm}
@@ -1301,15 +1440,26 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             className="relative w-full h-[280px] flex flex-col justify-end overflow-visible flex-shrink-0 rounded-b-[2.5rem] border-b border-white/10"
           >
             {/* Cover Image */}
-            <DiscoveryImages
-              id="immersive-plan-hero-image"
-              src={selectedPlan.coverImage || getPlanCover(selectedPlan.category, (selectedPlan as any).subcategory || (selectedPlan as any).sports_type)}
-              category={selectedPlan.category}
-              alt={selectedPlan.title}
-              className="absolute inset-0 w-full h-full object-cover filter brightness-[0.75]"
-            />
+            <div
+              onClick={createMode && onEditCoverImage ? onEditCoverImage : undefined}
+              className={`absolute inset-0 w-full h-full ${createMode && onEditCoverImage ? 'cursor-pointer' : ''}`}
+            >
+              <DiscoveryImages
+                id="immersive-plan-hero-image"
+                src={selectedPlan.coverImage}
+                planId={selectedPlan.dbUuid || selectedPlan.id}
+                category={selectedPlan.category}
+                subcategory={(selectedPlan as any).subcategory || (selectedPlan as any).sports_type}
+                screen="Plan Preview"
+                alt={selectedPlan.title}
+                className="absolute inset-0 w-full h-full object-cover filter brightness-[0.75]"
+              />
+            </div>
             {/* Immersive gradient overlay for bottom readability */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 pointer-events-none z-10" />
+            <div
+              onClick={createMode && onEditCoverImage ? onEditCoverImage : undefined}
+              className={`absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 ${createMode && onEditCoverImage ? 'cursor-pointer pointer-events-auto' : 'pointer-events-none'} z-10`}
+            />
 
             {/* Hero Header component */}
             <HeroHeader
@@ -1319,29 +1469,31 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               hosts={allHosts}
               viewerId={resolvedUserUuid}
               onClose={onClose}
+              isCloseIcon={createMode}
               isHost={isHost && !isCancelled && !isCompleted}
               onEditTitle={createMode ? onEditTitle : undefined}
+              onEditCoverImage={createMode ? onEditCoverImage : undefined}
               onOpenChat={
                 createMode
                   ? undefined
                   : () => {
-                      if (onOpenChat) {
-                        onOpenChat(selectedPlan.id);
-                      } else {
-                        setSelectedChatPlanId(selectedPlan.id);
-                      }
+                    if (onOpenChat) {
+                      onOpenChat(selectedPlan.id);
+                    } else {
+                      setSelectedChatPlanId(selectedPlan.id);
                     }
+                  }
               }
               onOpenExpenses={
                 createMode
                   ? undefined
                   : () => {
-                      if (onOpenExpenses) {
-                        onOpenExpenses(selectedPlan.id);
-                      } else {
-                        setShowPlanBalancesScreen(true);
-                      }
+                    if (onOpenExpenses) {
+                      onOpenExpenses(selectedPlan.id);
+                    } else {
+                      setShowPlanBalancesScreen(true);
                     }
+                  }
               }
               onOpenSettings={
                 createMode || !isHost || isCancelled || isCompleted
@@ -1371,21 +1523,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     <button
                       type="button"
                       disabled={!isHost || isCancelled || isCompleted}
-                      onClick={() => {
-                        if (isCancelled || isCompleted) return;
-                        const hasConfiguredDate = Boolean((selectedPlan as any).isDateConfigured || (!createMode && (selectedPlan.datetime || selectedPlan.time || (selectedPlan as any).scheduled_at)));
-                        const planDate = hasConfiguredDate
-                          ? new Date((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)
-                          : new Date(Date.now() + 2 * 60 * 60 * 1000);
-                        const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : null;
-                        setTempDate(getLocalDateString(planDate));
-                        setTempTime(getLocalTimeString(planDate));
-                        setTempRSVPOption(resolveInitialRsvpOption(planDate, planRSVP));
-                        setIsEditingDateTimeSheetOpen(true);
-                      }}
+                      onClick={openDateTimeSheet}
                       className="flex-1 min-w-0 flex items-center gap-3 text-left hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
                     >
-                      <CalendarDays className={`w-4 h-4 flex-shrink-0 ${createMode && !(selectedPlan as any).isDateConfigured ? "text-zinc-500 opacity-60" : "text-emerald-400"}`} />
+                      <CalendarClock className={`w-4 h-4 flex-shrink-0 ${createMode && !(selectedPlan as any).isDateConfigured ? "text-zinc-500 opacity-60" : "text-emerald-400"}`} />
                       <span className={`text-[13px] font-sans tracking-wide truncate ${createMode && !(selectedPlan as any).isDateConfigured ? "text-white/40 font-medium" : "text-white font-semibold"}`}>
                         {createMode && !(selectedPlan as any).isDateConfigured
                           ? "Set a date"
@@ -1460,18 +1601,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                       <button
                         type="button"
                         disabled={!isHost || isCancelled}
-                        onClick={() => {
-                          if (isCancelled) return;
-                          const hasConfiguredDate = Boolean((selectedPlan as any).isDateConfigured || (!createMode && (selectedPlan.datetime || selectedPlan.time || (selectedPlan as any).scheduled_at)));
-                          const planDate = hasConfiguredDate
-                            ? new Date((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)
-                            : new Date(Date.now() + 2 * 60 * 60 * 1000);
-                          const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : null;
-                          setTempDate(getLocalDateString(planDate));
-                          setTempTime(getLocalTimeString(planDate));
-                          setTempRSVPOption(resolveInitialRsvpOption(planDate, planRSVP));
-                          setIsEditingDateTimeSheetOpen(true);
-                        }}
+                        onClick={openDateTimeSheet}
                         className="flex items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
                       >
                         <Hourglass className="w-4 h-4 flex-shrink-0" style={{ color: urgencyColor }} />
@@ -1485,8 +1615,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          if (createMode && !(selectedPlan as any).isCostConfigured) {
-                            setEditTotalCostInput("");
+                          if (createMode) {
+                            setEditTotalCostInput(hasCost && currentTotalCost > 0 ? String(currentTotalCost) : "");
                             setIsEditingCostSheetOpen(true);
                           } else {
                             setIsCostPopoverOpen((prev) => !prev);
@@ -1505,11 +1635,26 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                             </div>
                           </>
                         ) : (
-                          <span className={`font-sans tracking-tight text-[13.5px] ${createMode && !(selectedPlan as any).isCostConfigured ? "text-white/40 font-medium" : "text-white/90 font-semibold"}`}>
-                            {createMode && !(selectedPlan as any).isCostConfigured
-                              ? "Set a cost"
-                              : (hasCost && costText ? costText : "Free")}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <IndianRupee
+                              className={`w-4 h-4 flex-shrink-0 ${
+                                hasCost && costText && costText !== "Free"
+                                  ? "text-emerald-400"
+                                  : "text-zinc-500 opacity-60"
+                              }`}
+                            />
+                            <span
+                              className={`font-sans tracking-tight text-[13.5px] ${
+                                createMode && !(selectedPlan as any).isCostConfigured && !hasCost
+                                  ? "text-white/40 font-medium"
+                                  : "text-white/90 font-semibold"
+                              }`}
+                            >
+                              {createMode && !(selectedPlan as any).isCostConfigured && !hasCost
+                                ? "Set a cost"
+                                : (hasCost && costText && costText !== "Free" ? costText.replace(/^₹\s*/, '') : "Free")}
+                            </span>
+                          </div>
                         )}
                       </button>
 
@@ -1582,19 +1727,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               if (!isDateSet && !isCostSet) {
                 const msg = "Set a date and cost to create your plan.";
                 setCreateValidationError(msg);
-                showToast(msg);
                 return;
               }
               if (!isDateSet) {
                 const msg = "Set a date to create your plan.";
                 setCreateValidationError(msg);
-                showToast(msg);
                 return;
               }
               if (!isCostSet) {
                 const msg = "Set a cost to create your plan.";
                 setCreateValidationError(msg);
-                showToast(msg);
                 return;
               }
 
@@ -1630,11 +1772,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   disabled={isSubmitting}
                   onClick={handleCreatePlanClick}
                   style={{ borderRadius: 9999 }}
-                  className={`w-full py-3 font-sans font-bold text-[14.5px] rounded-full transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                    isCreateDisabled || isSubmitting
+                  className={`w-full py-3 font-sans font-bold text-[14.5px] rounded-full transition-all flex items-center justify-center gap-2 cursor-pointer ${isCreateDisabled || isSubmitting
                       ? "bg-[#FF6B2C]/40 text-white/40 shadow-none active:scale-[0.98]"
                       : "bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white shadow-lg"
-                  }`}
+                    }`}
                 >
                   {isSubmitting ? "Creating Plan…" : "Create Plan"}
                 </button>
@@ -1656,15 +1797,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     ? undefined
                     : isHost && isCancelled
                       ? () => setShowRestorePlanConfirm(true)
-                    : isHost
-                      ? () => setShowCancelPlanConfirm(true)
-                      : myParticipantRecord?.rsvp_status === "JOINED" && myParticipantRecord?.leave_requested
-                        ? () => setShowCancelLeaveRequestConfirmation(true)
-                        : currentStatus === "JOINED" && !alreadySkipped
-                          ? () => setShowLeavePlanConfirm(true)
-                          : currentStatus === "WAITLISTED" && !alreadySkipped
-                            ? () => setShowSkipConfirmation(true)
-                            : undefined
+                      : isHost
+                        ? () => setShowCancelPlanConfirm(true)
+                        : myParticipantRecord?.rsvp_status === "JOINED" && myParticipantRecord?.leave_requested
+                          ? () => setShowCancelLeaveRequestConfirmation(true)
+                          : currentStatus === "JOINED" && !alreadySkipped
+                            ? () => setShowLeavePlanConfirm(true)
+                            : currentStatus === "WAITLISTED" && !alreadySkipped
+                              ? () => setShowSkipConfirmation(true)
+                              : undefined
               }
             />
           )}
@@ -1683,7 +1824,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           {hasUserEnteredDescription(selectedPlan) && (
             <div id="immersive-description-block" className="space-y-2 text-left bg-zinc-900/20 p-5 rounded-3xl border border-white/[0.02] select-text">
               <span className="text-[10px] font-sans font-bold tracking-[0.14em] text-zinc-500 uppercase">About</span>
-              <p className="text-[13.5px] text-zinc-300 font-sans leading-[1.72]">{selectedPlan.description || getPlanDescription(selectedPlan)}</p>
+              <p className="text-[13.5px] text-zinc-300 font-sans leading-[1.72]">{getPlanDescription(selectedPlan)}</p>
             </div>
           )}
         </div>
@@ -1760,6 +1901,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 setShowParticipantManagement(false);
                 setShowPlanSettingsScreen(true);
               }}
+              onLeavePlan={handleSkip}
             />
           </motion.div>
         )}
@@ -1886,6 +2028,14 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           handleConfirmSkip();
         }}
         onClose={() => setShowLeavePlanConfirm(false)}
+      />
+
+      <MakeAnotherParticipantHostBottomSheet
+        isOpen={showHostLeaveReplacementSheet}
+        eligibleParticipants={eligibleHostReplacementParticipants}
+        isSubmitting={isSubmittingHostReplacement}
+        onConfirm={handleConfirmHostLeaveReplacement}
+        onClose={() => setShowHostLeaveReplacementSheet(false)}
       />
 
       {/* ---------------- 🚫 PLAN ACTIONS SHEET (CANCEL / MARK AS COMPLETE) ---------------- */}
@@ -2019,53 +2169,48 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onTempDateChange={setTempDate}
         onTempTimeChange={setTempTime}
         onTempRSVPOptionChange={setTempRSVPOption}
-        onSave={handleSaveDateTime}
-        onClose={() => setIsEditingDateTimeSheetOpen(false)}
+        onClose={handleCloseDateTimeSheet}
       />
 
-      {/* ---------------- 💰 EDIT COST BOTTOM SHEET ---------------- */}
-      <EditCostBottomSheet
-        isOpen={isEditingCostSheetOpen}
-        costInput={editTotalCostInput}
-        capacity={Number(
-          rawDbPlan?.max_participants ||
-          selectedPlan?.joinLimit ||
-          selectedPlan?.capacity ||
-          selectedPlan?.maxSpots ||
-          0
+      {/* ---------------- 💰 SET COST FULL SCREEN ---------------- */}
+      <AnimatePresence>
+        {isEditingCostSheetOpen && (
+          <SetCostScreen
+            planTitle={selectedPlan?.title || (selectedPlan as any)?.name || "Plan"}
+            planCoverImage={selectedPlan?.coverImage || (selectedPlan as any)?.cover_image || (selectedPlan as any)?.cover_photo || getPlanCover(selectedPlan?.category, (selectedPlan as any)?.subcategory)}
+            initialCost={editTotalCostInput}
+            participants={selectedPlan?.members || []}
+            planSize={selectedPlan.capacity || (selectedPlan as any).max_participants || (selectedPlan as any).maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants}
+            onSave={async (parsedCost: number) => {
+              setIsEditingCostSheetOpen(false);
+              if (createMode) {
+                if (onAdjustCost) {
+                  onAdjustCost(parsedCost);
+                }
+                showToast(parsedCost > 0 ? "✓ Cost updated" : "✓ Plan updated to Free");
+                return;
+              }
+              try {
+                await updatePlanDetails(selectedPlan.id, { total_cost: parsedCost });
+                showToast(parsedCost > 0 ? "✓ Cost updated" : "✓ Plan updated to Free");
+              } catch {
+                showToast("Failed to update cost");
+              }
+            }}
+            onClose={() => setIsEditingCostSheetOpen(false)}
+          />
         )}
-        onCostInputChange={setEditTotalCostInput}
-        onSave={async () => {
-          setIsEditingCostSheetOpen(false);
-          const parsedCost = editTotalCostInput.trim() === "" ? 0 : Math.max(0, parseFloat(editTotalCostInput) || 0);
-          if (createMode) {
-            if (onAdjustCost) {
-              onAdjustCost(parsedCost);
-            }
-            showToast(parsedCost > 0 ? "✓ Cost updated" : "✓ Plan updated to Free");
-            return;
-          }
-          try {
-            await updatePlanDetails(selectedPlan.id, { total_cost: parsedCost });
-            showToast(parsedCost > 0 ? "✓ Cost updated" : "✓ Plan updated to Free");
-          } catch {
-            showToast("Failed to update cost");
-          }
-        }}
-        onClose={() => setIsEditingCostSheetOpen(false)}
-      />
+      </AnimatePresence>
 
       {/* ---------------- 📝 EDIT DETAILS BOTTOM SHEET ---------------- */}
       <EditDetailsBottomSheet
         isOpen={isEditingDetailsSheetOpen}
         isSaving={isSavingDetails}
         tempTitle={tempTitle}
-        tempDescription={tempDescription}
         tempCapacity={tempCapacity}
         tempCoverImage={tempCoverImage}
         fileInputRef={detailsFileInputRef}
         onTitleChange={setTempTitle}
-        onDescriptionChange={setTempDescription}
         onCapacityChange={setTempCapacity}
         onCoverImageChange={setTempCoverImage}
         onSave={handleSaveDetails}

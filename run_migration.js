@@ -16,14 +16,10 @@ envContent.split('\n').forEach(line => {
 const dbUrl = envVars.DATABASE_URL || envVars.SUPABASE_DB_URL || envVars.DIRECT_URL;
 console.log("Connecting using DB URL:", dbUrl ? dbUrl.replace(/:[^:@]+@/, ':****@') : 'undefined');
 
-// Parse database URL or construct direct connection string to Supabase
-// Supabase host is db.[project-ref].supabase.co or aws direct port 5432 / 6543
 const projectRef = envVars.SUPABASE_URL ? envVars.SUPABASE_URL.replace('https://', '').split('.')[0] : 'wecmpncixopetvunkkyd';
-
-// Construct direct connection string using DB password if available, or postgres password
 const connectionString = dbUrl || `postgres://postgres:${encodeURIComponent('Supabase2026!')}@db.${projectRef}.supabase.co:5432/postgres`;
 
-const sql = fs.readFileSync('supabase/migrations/20260825161500_fix_attended_participants_invariant.sql', 'utf8');
+const sql = fs.readFileSync('supabase/migrations/20260902111100_drop_deprecated_plan_columns.sql', 'utf8');
 
 const client = new Client({ connectionString, ssl: { rejectUnauthorized: false } });
 

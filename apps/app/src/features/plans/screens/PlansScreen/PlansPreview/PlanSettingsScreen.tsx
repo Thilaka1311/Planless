@@ -1,11 +1,16 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { ChevronLeft, Crown, Users, Plus, Check, Pencil, LogOut, Trash2 } from "lucide-react";
+import { ChevronLeft, Crown, Users, Plus, Check, LogOut, Trash2 } from "lucide-react";
 import { Plan, UserProfile } from "../../../../../core/types";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
 import { useToast } from "../../../../../shared/contexts/ToastContext";
 import { normalizeStatus } from "../../../../../../lib/participantStatus";
 import { DiscoveryImages } from "../../../../../IMGfromDB/PlanImages";
 import { getPlanCover } from "../../../config/planCoverImages";
+import { usePlansStore } from "../../../state/PlansContext";
+import { MakeAnotherParticipantHostBottomSheet } from "../../../components/BottomSheets";
+import { EditPlanImageScreen } from "./EditPlanImageScreen";
+import { cleanPlanId } from "../../../utils/planUtils";
+import { supabase } from "../../../../../../lib/supabaseClient";
 
 interface PlanSettingsScreenProps {
   plan: Plan;
@@ -23,7 +28,7 @@ interface PlanSettingsScreenProps {
   onSelectHost?: (hostItem: { id: string; dbUuid: string; name: string; avatar: string; isHost: boolean }) => void;
   onPromoteToHost?: (userId: string) => Promise<void> | void;
   onEditTitle?: (newTitle: string) => Promise<void> | void;
-  onEditCoverImage?: (newCoverUrl: string) => Promise<void> | void;
+  onEditCoverImage?: (newCoverUrl: string, blob?: Blob) => Promise<void> | void;
   onLeavePlan?: () => Promise<void> | void;
   onCancelPlan?: () => Promise<void> | void;
 }
@@ -54,28 +59,26 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   const [isCancelling, setIsCancelling] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
 
+  // Edit Image Screen navigation & state
+  const [showEditImageScreen, setShowEditImageScreen] = useState(false);
+  const [currentCoverImage, setCurrentCoverImage] = useState<string | null | undefined>(plan.coverImage);
+
+  useEffect(() => {
+    setCurrentCoverImage(plan.coverImage);
+  }, [plan.coverImage]);
+
   const [allowInvites, setAllowInvites] = useState<boolean>(
     plan.allowParticipantInvites ?? false
   );
 
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [newTitleInput, setNewTitleInput] = useState(plan.title || "");
   const [isSavingTitle, setIsSavingTitle] = useState(false);
-  const imageInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isEditingTitle && titleInputRef.current) {
-      titleInputRef.current.focus();
-      titleInputRef.current.select();
-    }
-  }, [isEditingTitle]);
 
   const handleSaveTitle = async () => {
     const trimmed = newTitleInput.trim();
     if (!trimmed || trimmed === plan.title) {
       setNewTitleInput(plan.title || "");
-      setIsEditingTitle(false);
       return;
     }
     if (isSavingTitle) return;
@@ -85,28 +88,11 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         await onEditTitle(trimmed);
         showToast("✓ Plan title updated");
       }
-      setIsEditingTitle(false);
     } catch {
       showToast("Failed to update plan title");
       setNewTitleInput(plan.title || "");
-      setIsEditingTitle(false);
     } finally {
       setIsSavingTitle(false);
-    }
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const imageUrl = URL.createObjectURL(file);
-      if (onEditCoverImage) {
-        await onEditCoverImage(imageUrl);
-        showToast("✓ Plan image updated");
-      }
-    } catch {
-      showToast("Failed to update plan image");
     }
   };
 
@@ -210,6 +196,10 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       });
   }, [members, activeUserUuid]);
 
+  const { requestHostLeaveWithReplacement, stopHostingWithReplacement } = usePlansStore();
+  const [isPromotingToLeave, setIsPromotingToLeave] = useState(false);
+  const [hostReplacementMode, setHostReplacementMode] = useState<'leave' | 'stop_hosting'>('leave');
+
   const hostIds = useMemo(() => new Set(allHosts.map((h) => h.id)), [allHosts]);
 
   const eligibleGoingParticipants = useMemo(() => {
@@ -217,17 +207,18 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       .filter((m) => {
         const uId = m.userId || m.userUuid || (m as any).user_id || m.id || "";
         if (hostIds.has(uId)) return false;
+        if (activeUserUuid && (uId === activeUserUuid || m.userUuid === activeUserUuid || m.userId === activeUserUuid)) return false;
         const status = normalizeStatus(m.joinState || m.rsvp_status);
         return status === "JOINED";
       })
       .map((m) => {
         const uId = m.userId || m.userUuid || (m as any).user_id || m.id || "";
-        const isSelf = Boolean(activeUserUuid && uId === activeUserUuid);
         return {
           id: uId,
           dbUuid: m.userUuid || uId,
-          name: isSelf ? "You" : (m.name || m.displayName || "Unknown"),
+          name: m.name || m.displayName || "Participant",
           avatar: m.avatar || m.profile_photo || "",
+          username: m.username
         };
       })
       .sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
@@ -268,19 +259,32 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     }
   };
 
-  const handlePromoteAndLeave = async (participantId: string) => {
-    setPromotingToLeaveUserId(participantId);
+  const handleConfirmHostReplacement = async (selectedReplacementId: string) => {
+    setIsPromotingToLeave(true);
     try {
-      if (onPromoteToHost) {
-        await onPromoteToHost(participantId);
-        showToast("✓ Promoted to host");
+      const planUuid = (plan as any).dbUuid || plan.id;
+      const replacementUser = eligibleGoingParticipants.find(p => p.id === selectedReplacementId);
+      const replacementName = replacementUser?.name || "participant";
+
+      if (hostReplacementMode === 'stop_hosting') {
+        await stopHostingWithReplacement(planUuid, selectedReplacementId);
+        setShowPromoteHostToLeaveModal(false);
+        showToast(`✓ Promoted ${replacementName} to host. You are no longer hosting.`);
+      } else {
+        const res = await requestHostLeaveWithReplacement(planUuid, selectedReplacementId);
+        setShowPromoteHostToLeaveModal(false);
+        if (res?.leave_requested) {
+          showToast(`✓ Promoted ${replacementName} to host & sent leave request`);
+        } else {
+          showToast(`✓ Promoted ${replacementName} to host & left the plan`);
+        }
+        onBack();
       }
-      setShowPromoteHostToLeaveModal(false);
-      await executeLeavePlanFlow();
-    } catch (err) {
-      showToast("Failed to promote participant");
+    } catch (err: any) {
+      console.error("[PlanSettingsScreen] Host replacement failed:", err);
+      showToast(`Failed to update host: ${err.message || "Unknown error"}`);
     } finally {
-      setPromotingToLeaveUserId(null);
+      setIsPromotingToLeave(false);
     }
   };
 
@@ -298,13 +302,28 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     }
   };
 
-  const handleDemoteHost = async (userId: string) => {
+  const handleDemoteHost = async (userIdToDemote: string) => {
+    const isSelfHost = Boolean(
+      activeUserUuid &&
+      (userIdToDemote === activeUserUuid ||
+        selectedHost?.isSelf ||
+        selectedHost?.dbUuid === activeUserUuid ||
+        selectedHost?.id === activeUserUuid)
+    );
+
+    if (isSelfHost && isSoleHost) {
+      setHostReplacementMode('stop_hosting');
+      setShowPromoteHostToLeaveModal(true);
+      return;
+    }
+
     if (!onDemoteHost) return;
     try {
-      await onDemoteHost(userId);
+      await onDemoteHost(userIdToDemote);
       showToast("✓ Host removed");
-    } catch (err) {
-      showToast("Failed to remove host. Please try again.");
+    } catch (err: any) {
+      console.error("[PlanSettingsScreen handleDemoteHost] error:", err);
+      showToast(err?.message || "Failed to remove host. Please try again.");
     }
   };
 
@@ -359,14 +378,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
   return (
     <div className="fixed inset-0 z-[70] bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none">
-      <input
-        type="file"
-        ref={imageInputRef}
-        onChange={handleFileChange}
-        accept="image/*"
-        className="hidden"
-      />
-
       {/* Top Header Bar with Left-Aligned Back Arrow and Title */}
       <div className="px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-2 flex items-center gap-2 flex-shrink-0 relative z-30 min-h-[48px]">
         <button
@@ -384,53 +395,45 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
       <div className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-6 pb-12">
         <div className="flex flex-col items-center justify-center pt-2 pb-6 text-center border-b border-white/10">
-          <div className="w-[110px] h-[110px] rounded-full overflow-hidden border-2 border-white/20 shadow-2xl relative bg-zinc-900 mb-4 flex-shrink-0">
+          <div
+            onClick={isHostMode ? () => setShowEditImageScreen(true) : undefined}
+            className={`w-[110px] h-[110px] rounded-full overflow-hidden border-2 border-white/20 shadow-2xl relative bg-zinc-900 mb-4 flex-shrink-0 ${
+              isHostMode ? "cursor-pointer hover:border-white/40 active:scale-95 transition-all" : ""
+            }`}
+            title={isHostMode ? "Edit Image" : undefined}
+          >
             <DiscoveryImages
-              src={plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory)}
-              category={plan.category}
+              src={currentCoverImage}
+              planId={plan.dbUuid || plan.id}
+              category="CUSTOM"
+              subcategory={null}
+              screen="Plan Settings"
               alt={plan.title}
               className="w-full h-full object-cover"
             />
           </div>
 
           <div className="w-full max-w-sm px-4 flex items-center justify-center min-h-[36px]">
-            {isHostMode && isEditingTitle ? (
-              <div className="w-full relative flex items-center justify-center animate-in fade-in zoom-in-95 duration-150">
-                <input
-                  ref={titleInputRef}
-                  type="text"
-                  value={newTitleInput}
-                  onChange={(e) => setNewTitleInput(e.target.value.slice(0, 50))}
-                  onBlur={handleSaveTitle}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      titleInputRef.current?.blur();
-                    } else if (e.key === "Escape") {
-                      setNewTitleInput(plan.title || "");
-                      setIsEditingTitle(false);
-                    }
-                  }}
-                  maxLength={50}
-                  placeholder="Plan title"
-                  className="w-full bg-zinc-900 border-b-2 border-[#FF6B2C] text-2xl font-bold text-white text-center focus:outline-none py-1 transition select-text"
-                />
-              </div>
-            ) : isHostMode ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setNewTitleInput(plan.title || "");
-                  setIsEditingTitle(true);
+            {isHostMode ? (
+              <input
+                ref={titleInputRef}
+                type="text"
+                value={newTitleInput}
+                onChange={(e) => setNewTitleInput(e.target.value.slice(0, 50))}
+                onBlur={handleSaveTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    titleInputRef.current?.blur();
+                  } else if (e.key === "Escape") {
+                    setNewTitleInput(plan.title || "");
+                    titleInputRef.current?.blur();
+                  }
                 }}
-                className="group flex items-center justify-center gap-2 max-w-full hover:opacity-90 active:scale-[0.99] transition cursor-pointer"
-                title="Edit Plan Name"
-              >
-                <h1 className="text-2xl font-bold text-white tracking-tight truncate max-w-full">
-                  {plan.title}
-                </h1>
-                <Pencil className="w-4.5 h-4.5 text-zinc-400 group-hover:text-white transition-colors flex-shrink-0" />
-              </button>
+                maxLength={50}
+                placeholder="Plan title"
+                className="w-full max-w-full bg-transparent text-2xl font-bold text-white tracking-tight text-center focus:outline-none border-none outline-none shadow-none appearance-none cursor-text caret-white"
+              />
             ) : (
               <h1 className="text-2xl font-bold text-white tracking-tight truncate max-w-full">
                 {plan.title}
@@ -550,6 +553,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
             disabled={isLeaving}
             onClick={() => {
               if (isSoleHost) {
+                setHostReplacementMode('leave');
                 setShowPromoteHostToLeaveModal(true);
               } else {
                 executeLeavePlanFlow();
@@ -882,140 +886,29 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         </div>
       )}
 
-      {/* Promote a New Host Before Leaving Modal (Sole Host Guard) */}
-      {showPromoteHostToLeaveModal && (
-        <div
-          onClick={() => setShowPromoteHostToLeaveModal(false)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.75)',
-            backdropFilter: 'blur(8px)',
-            zIndex: 110,
-            display: 'flex',
-            alignItems: 'flex-end',
-            animation: 'fadeIn 0.2s ease-out',
+      {/* Promote a New Host Before Leaving / Stopping Hosting Modal (Sole Host Guard) */}
+      <MakeAnotherParticipantHostBottomSheet
+        isOpen={showPromoteHostToLeaveModal}
+        eligibleParticipants={eligibleGoingParticipants}
+        isSubmitting={isPromotingToLeave}
+        onConfirm={handleConfirmHostReplacement}
+        onClose={() => setShowPromoteHostToLeaveModal(false)}
+      />
+
+      {/* ── Edit Image Screen ── */}
+      {showEditImageScreen && (
+        <EditPlanImageScreen
+          planId={cleanPlanId(plan.dbUuid || (plan as any).public_id || plan.id)}
+          currentCoverImage={currentCoverImage}
+          category={plan.category}
+          subcategory={(plan as any).subcategory}
+          title={plan.title}
+          onBack={() => setShowEditImageScreen(false)}
+          onImageUpdated={(newImage) => {
+            setCurrentCoverImage(newImage);
           }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%',
-              background: '#1C1C1E',
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              padding: '16px 0 32px',
-              color: '#FFFFFF',
-              boxShadow: '0 -8px 32px rgba(0,0,0,0.5)',
-              animation: 'slideUp 0.28s cubic-bezier(0.25,1,0.5,1)',
-              maxHeight: '75vh',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            {/* Drag handle */}
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '0 0 16px' }}>
-              <div style={{ width: 36, height: 5, borderRadius: 2.5, background: 'rgba(255,255,255,0.15)' }} />
-            </div>
-
-            {/* Header */}
-            <div style={{ padding: '0 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF', marginBottom: 6, fontFamily: 'Inter, sans-serif', letterSpacing: '-0.02em' }}>
-                Promote a New Host
-              </h3>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: '1.45', fontFamily: 'Inter, sans-serif' }}>
-                You're the only host. Promote another participant before leaving the plan.
-              </p>
-            </div>
-
-            {/* Content: List or Disabled Notice */}
-            {eligibleGoingParticipants.length > 0 ? (
-              <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {eligibleGoingParticipants.map((p) => {
-                    const isCurrentPromoting = promotingToLeaveUserId === p.id;
-                    return (
-                      <div
-                        key={p.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 12,
-                          padding: '10px 12px',
-                          background: 'rgba(255,255,255,0.04)',
-                          borderRadius: 14,
-                          border: '1px solid rgba(255,255,255,0.06)',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
-                          <UserAvatar src={p.avatar} alt={p.name} size="w-10 h-10" className="flex-shrink-0" />
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <span className="truncate" style={{ fontSize: 15, fontWeight: 600, color: '#FFFFFF', display: 'block', fontFamily: 'Inter, sans-serif' }}>
-                              {p.name}
-                            </span>
-                            <span style={{ fontSize: 12, color: '#22C55E', fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>
-                              Joined
-                            </span>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={Boolean(promotingToLeaveUserId)}
-                          onClick={() => handlePromoteAndLeave(p.id)}
-                          style={{
-                            padding: '8px 16px',
-                            background: '#FF6B2C',
-                            border: 'none',
-                            borderRadius: 10,
-                            color: '#FFFFFF',
-                            fontSize: 13,
-                            fontWeight: 600,
-                            cursor: promotingToLeaveUserId ? 'not-allowed' : 'pointer',
-                            opacity: promotingToLeaveUserId && !isCurrentPromoting ? 0.4 : 1,
-                            transition: 'all 0.15s',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {isCurrentPromoting ? "Promoting..." : "Promote"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div style={{ padding: '28px 20px 16px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.85)', margin: 0, fontFamily: 'Inter, sans-serif' }}>
-                  No one to promote yet.
-                </p>
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', margin: 0, fontFamily: 'Inter, sans-serif' }}>
-                  Wait for someone to join.
-                </p>
-                <div style={{ marginTop: 20, width: '100%' }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowPromoteHostToLeaveModal(false)}
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      background: 'rgba(255,255,255,0.08)',
-                      border: 'none',
-                      borderRadius: 12,
-                      color: '#FFFFFF',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+          onUpdatePlanDetails={onUpdatePlanDetails}
+        />
       )}
 
       <style>{`

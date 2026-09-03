@@ -30,9 +30,10 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
   isItemDragged = false,
   className = '',
 }) => {
-  const isSkipped = item.rsvpStatus === 'SKIPPED' || (item as any).rsvp_status === 'SKIPPED' || Boolean(item.skipReason || (item as any).skip_reason);
-  const isDulled = item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED' || isSkipped;
-  const skipReasonText = formatSkipReason(item.skipReason || (item as any).skip_reason || (isSkipped ? 'SKIPPED' : null));
+  const isRejoined = item.rsvpStatus === 'REJOINED' || (item as any).rsvp_status === 'REJOINED';
+  const isSkipped = !isRejoined && (item.rsvpStatus === 'SKIPPED' || (item as any).rsvp_status === 'SKIPPED' || Boolean(item.skipReason || (item as any).skip_reason));
+  const isDulled = item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED' || isSkipped || isRejoined;
+  const skipReasonText = isRejoined ? '' : formatSkipReason(item.skipReason || (item as any).skip_reason || (isSkipped ? 'SKIPPED' : null));
 
   const indexLabel = (() => {
     if (!showIndex) return null;
@@ -124,9 +125,9 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
           {skipReasonText}
         </span>
       )}
-      {(item.leave_requested || (item as any).leaveRequested) && (
+      {Boolean(item.leave_requested === true || (item as any).leaveRequested === true || isRejoined) && (
         <span
-          title="Requested to leave"
+          title={isRejoined ? "Requested to rejoin" : "Requested to leave"}
           style={{
             fontSize: 15,
             fontWeight: 700,

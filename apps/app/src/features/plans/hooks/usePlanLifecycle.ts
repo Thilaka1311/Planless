@@ -78,10 +78,6 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       throw new Error("Invalid host UUID");
     }
 
-    const planUpdate = {
-      host_id: resolvedNewHostUuid
-    };
-
     const newHostPp = dbPlanParticipants.find(pp => pp.plan_id === planUuid && pp.user_id === resolvedNewHostUuid);
     const oldHostPp = dbPlanParticipants.find(pp => pp.plan_id === planUuid && pp.user_id === resolvedOldHostUuid);
 
@@ -160,15 +156,6 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       }
     }
 
-    // Update plans.host_id to the new host
-    const { error: planError } = await (supabase as any)
-      .from("plans")
-      .update(planUpdate)
-      .eq("id", planUuid);
-    if (planError) {
-      throw new Error("Failed to update plan host_id in database: " + planError.message);
-    }
-
     const newHostUser = dbUsers.find((u: any) => u.id === resolvedNewHostUuid || u.user_id === resolvedNewHostUuid || u.dbUuid === resolvedNewHostUuid);
     const newHostName = (newHostUser as any)?.name || newHostUser?.full_name || "Someone";
     await insertSystemMessage(planUuid, `Host transferred to ${newHostName}`, resolvedNewHostUuid);
@@ -216,7 +203,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
 
   // ─── updatePlanDetails ──────────────────────────────────────────────────────
 
-  const updatePlanDetails = useCallback(async (rawPlanId: string, updates: Partial<DbPlan>) => {
+  const updatePlanDetails = useCallback(async (rawPlanId: string, updates: Partial<DbPlan> & { skipDbWrite?: boolean }) => {
     const planId = cleanPlanId(rawPlanId);
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
@@ -238,7 +225,6 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     // Persist updates to the plans table
     const VALID_PLAN_KEYS = [
       "title",
-      "description",
       "place_id",
       "place_name",
       "place_address",
@@ -248,11 +234,9 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       "total_cost",
       "status",
       "cover_image",
-      "circle_id",
       "latitude",
       "longitude",
       "updated_at",
-      "host_id",
       "participant_filtering",
     ];
 
@@ -283,14 +267,56 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       delete planUpdate.max_participants;
     }
 
+    const updatedCoverImage = updates.cover_image;
     if (Object.keys(planUpdate).length > 0) {
-      const { error: planError } = await (supabase as any)
-        .from("plans")
-        .update(planUpdate)
-        .eq("id", planUuid);
-      if (planError) {
-        throw new Error("Failed to update plan details in database: " + planError.message);
+      // If skipDbWrite is specified, skip updating cover_image in the database
+      // because persistence is already handled by replacePlanImage or deleteCustomPlanImage
+      if ((updates as any).skipDbWrite) {
+        delete planUpdate.cover_image;
       }
+
+      if (planUpdate.cover_image !== undefined) {
+        const currentPlan = (plans || []).find(p => p.id === planUuid || p.dbUuid === planUuid);
+        console.log(`[PLAN COVER IMAGE WRITE]
+source = updatePlanDetails (usePlanLifecycle.ts)
+planId = ${planUuid}
+old = ${currentPlan?.coverImage || "none"}
+new = ${planUpdate.cover_image}`);
+      }
+
+      if (Object.keys(planUpdate).length > 0) {
+        const { error: planError } = await (supabase as any)
+          .from("plans")
+          .update(planUpdate)
+          .eq("id", planUuid);
+        if (planError) {
+          throw new Error("Failed to update plan details in database: " + planError.message);
+        }
+        if (setDbPlans) {
+          setDbPlans(prev => prev.map(p => {
+            if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+              return {
+                ...p,
+                ...planUpdate,
+              };
+            }
+            return p;
+          }));
+        }
+      }
+    }
+
+    // Always keep setDbPlans updated in memory with cover_image
+    if (setDbPlans && updatedCoverImage !== undefined) {
+      setDbPlans(prev => prev.map(p => {
+        if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId) {
+          return {
+            ...p,
+            cover_image: updatedCoverImage,
+          };
+        }
+        return p;
+      }));
     }
 
     // Fetch fresh participants to avoid stale state
@@ -335,11 +361,10 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     }
 
     // Host validation
-    const dbPlanObj = dbPlans.find(p => p.id === planUuid || p.id === matchedPlan?.id);
-    const hostUuid = resolveUserUuid(matchedPlan?.hostId || matchedPlan?.creatorId || dbPlanObj?.host_id || "");
+    const hostUuid = resolveUserUuid(matchedPlan?.hostId || matchedPlan?.creatorId || "");
     const activeUserUuidResolved = resolveUserUuid(userId || "");
 
-    const isHost = hostUuid === activeUserUuidResolved;
+    const isHost = hostUuid === activeUserUuidResolved || matchedPlan?.isOwner;
     if (!isHost) {
       console.error("[PLAN_COMPLETE_ERROR] Unauthorized user attempting completion:", userId);
       throw new Error("Only the plan host can complete the plan.");
@@ -381,10 +406,11 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
 
     // Host validation
     const dbPlanObj = dbPlans.find(p => p.id === planUuid || p.id === matchedPlan?.id);
-    const hostUuid = resolveUserUuid(matchedPlan?.hostId || matchedPlan?.creatorId || dbPlanObj?.host_id || "");
+    const hostUuid = resolveUserUuid(matchedPlan?.hostId || matchedPlan?.creatorId || "");
     const activeUserUuidResolved = resolveUserUuid(userId || "");
 
-    if (hostUuid !== activeUserUuidResolved) {
+    const isHost = hostUuid === activeUserUuidResolved || matchedPlan?.isOwner;
+    if (!isHost) {
       throw new Error("Only the plan host can manage participants of a completed plan.");
     }
 

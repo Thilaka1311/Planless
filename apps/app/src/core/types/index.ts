@@ -58,7 +58,6 @@ export interface DbPlan {
   id: string;
   plan_id?: string;
   public_id: string;
-  host_id: string;
   discovery_item_id?: string | null;
   discovery_items?: { category: string; subcategory: string | null } | null;
   category?: string;
@@ -92,7 +91,7 @@ export interface DbPlanParticipant {
   plan_id: string;
   user_id: string;
   role: 'HOST' | 'PARTICIPANT';
-  rsvp_status: 'INVITED' | 'JOINED' | 'SKIPPED' | 'WAITLISTED';
+  rsvp_status: 'INVITED' | 'JOINED' | 'SKIPPED' | 'WAITLISTED' | 'REJOINED';
   delivery_status?: 'DELIVERED';
   skip_reason?: 'LEFT' | 'REMOVED' | 'REPLACED' | 'PAYMENT_KEPT' | null;
   responded_at: string | null;
@@ -245,7 +244,7 @@ export interface DbPlanTeamAssignment {
 // COMPATIBLE FRONTEND INTERACTIVES VIEW MODELS
 // ---------------------------------------------
 
-export type PlanState = "JOINED" | "WAITLISTED" | "SKIPPED" | "INVITED" | "passed" | "unanswered";
+export type PlanState = "JOINED" | "WAITLISTED" | "SKIPPED" | "INVITED" | "REJOINED" | "passed" | "unanswered";
 
 export interface PlanMember {
   id?: string;
@@ -253,6 +252,7 @@ export interface PlanMember {
   userUuid?: string;
   name: string;
   displayName?: string;
+  username?: string;
   avatar: string;
   profile_photo?: string;
   role?: 'HOST' | 'PARTICIPANT';
@@ -296,6 +296,8 @@ export interface Plan {
   time: string;
   location: string;
   paymentAmount: number;
+  totalCost?: number;
+  total_cost?: number;
   status: "LIVE" | "COMPLETED" | "CANCELLED" | "PENDING" | "BOOKING_READY" | "CONFIRMED" | "SLOT_UNAVAILABLE";
   datetime?: string;
   scheduled_at?: string;

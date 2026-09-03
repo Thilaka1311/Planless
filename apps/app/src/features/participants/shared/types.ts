@@ -49,6 +49,7 @@ export interface SharedParticipantScreenProps {
   onMoveToWaitlist?: (friend: Friend) => Promise<void> | void;
   onMoveToInvited?: (friend: Friend) => Promise<void> | void;
   onRemoveParticipant?: (friend: Friend) => Promise<void> | void;
+  onLeavePlan?: () => void;
   onPromoteHost?: (friend: Friend) => Promise<void> | void;
   onDemoteHost?: (friend: Friend) => Promise<void> | void;
   onOpenSettings?: () => void;
@@ -74,6 +75,8 @@ export interface SharedParticipantScreenProps {
   onReplaceLeaveParticipant?: (participantId: string) => void;
   onKeepPaymentLeaveParticipant?: (participantId: string) => void;
   onInviteSkipped?: (friend: Friend, target?: 'GOING' | 'WAITLIST') => Promise<void> | void;
+  onRejoinAddToWaitlist?: (friend: Friend) => Promise<void> | void;
+  onRejoinRemoveFromPlan?: (friend: Friend) => Promise<void> | void;
   isCompletedPlan?: boolean;
   initialOpenPlanSizeSheet?: boolean;
   onPlanSizeSheetDismissed?: () => void;

@@ -41,7 +41,7 @@ export const PlansDivider: React.FC<PlansDividerProps> = ({
   ];
 
   return (
-    <div className="flex w-[calc(100%+3rem)] -mx-6 bg-[#0A0A0C] border border-[#1A1A1A] rounded-[24px] p-0 overflow-hidden mb-5">
+    <div className="flex w-full bg-[#0A0A0C] border border-[#1A1A1A] rounded-[24px] p-0 overflow-hidden">
       {tabs.map((tab) => {
         const isActive = selected === tab.id;
         return (

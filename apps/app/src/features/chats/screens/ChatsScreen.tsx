@@ -9,7 +9,6 @@ import { useProfileStore } from "../../profile/state/ProfileContext";
 import { EmptyState } from "../../home/components/EmptyState";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
-import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { supabase } from "../../../../lib/supabaseClient";
 
 interface ChatsScreenProps {
@@ -291,8 +290,11 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
           <div className="w-[50px] h-[50px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
             <div className="absolute inset-0 bg-black/20 z-10" />
             <DiscoveryImages
-              src={plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory)}
+              src={plan.coverImage}
+              planId={plan.dbUuid || plan.id}
               category={plan.category}
+              subcategory={(plan as any).subcategory}
+              screen="Chats Screen"
               alt={plan.title}
               className="w-full h-full object-cover relative z-0 scale-100 group-hover:scale-105 transition-transform duration-200"
             />
@@ -317,25 +319,10 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
       {/* TOP HEADER: Matching Home & Plans layout */}
       <header
         id="chats_screen_header"
-        className="h-16 shrink-0 bg-[#09090b]/99 backdrop-blur-md flex items-center justify-between px-4 z-30 select-none relative border-b border-white/5"
+        className="h-14 shrink-0 bg-[#050505] flex items-center justify-between px-4 z-30 select-none relative"
       >
-        {/* Left Column: Avatar */}
-        <div className="flex-1 flex items-center justify-start z-10">
-          {userProfile && (
-            <button
-              onClick={() => setActiveTab?.("profile")}
-              className="relative group shrink-0 block focus:outline-none cursor-pointer"
-              aria-label="View Profile Settings"
-            >
-              <UserAvatar
-                src={userProfile.avatar}
-                alt={userProfile.name}
-                size="w-10 h-10"
-                className="border-2 border-zinc-800 hover:border-[#ff8b66] transition-colors"
-              />
-            </button>
-          )}
-        </div>
+        {/* Left Column: Layout Balance Spacer */}
+        <div className="flex-1 flex items-center justify-start z-10" />
 
         {/* Center Column: Perfectly Centered Title */}
         <div className="flex-shrink-0 flex items-center justify-center z-10">
@@ -348,35 +335,60 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
         <div className="flex-1 flex items-center justify-end z-10" />
       </header>
 
-      {/* SEARCH BAR CONTAINER below header divider */}
-      <div className="px-4 pt-4 pb-0 shrink-0 select-none z-20">
-        <div className="relative flex items-center w-full">
-          <Search className="absolute left-3.5 w-4 h-4 text-zinc-550 pointer-events-none" />
+      {/* STICKY SEARCH BAR CONTAINER */}
+      <div
+        className="shrink-0 bg-[#050505] px-4 pt-0.5 pb-2.5 z-20 select-none"
+        style={{ boxSizing: 'border-box' }}
+      >
+        {/* UNIFIED ELLIPTICAL / PILL-SHAPED SEARCH BOX */}
+        <div
+          className="w-full flex items-center rounded-full bg-[#18181B] border border-white/[0.08] px-3.5 transition-all focus-within:border-white/20 focus-within:bg-[#202024]"
+          style={{ height: '46px' }}
+        >
+          {/* SEARCH ICON */}
+          <Search className="w-5 h-5 text-white/50 stroke-[2] mr-2.5 shrink-0" />
+
+          {/* SEARCH INPUT */}
           <input
+            id="search-chats-input"
+            name="searchChatsInput"
             type="text"
             placeholder="Search chats..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 bg-zinc-900 border border-zinc-800 rounded-xl pl-10 pr-9 text-sm text-white placeholder-zinc-550 focus:outline-none focus:border-zinc-700 transition select-text"
+            style={{
+              width: '100%',
+              background: 'transparent',
+              fontSize: 15,
+              fontWeight: 500,
+              color: '#FFFFFF',
+              border: 'none',
+              outline: 'none',
+              fontFamily: 'Inter, sans-serif'
+            }}
+            className="placeholder-zinc-500 min-w-0 select-text"
           />
+
+          {/* CLEAR SEARCH BUTTON */}
           {searchQuery && (
             <button
+              type="button"
               onClick={() => setSearchQuery("")}
-              className="absolute right-3 w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition cursor-pointer z-10"
+              className="p-1 text-zinc-400 hover:text-white transition shrink-0 mr-1.5 cursor-pointer"
             >
-              <X className="w-3 h-3" />
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
       </div>
 
-      {/* SCROLLABLE CHATS LIST / EMPTY STATE */}
+      {/* SCROLLABLE CHATS LIST (Begins below sticky search bar) */}
       <div
         onScroll={(e) => onScroll?.(e.currentTarget.scrollTop)}
-        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-3 pt-3 pb-6"
+        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-3 pt-0.5 pb-28"
       >
         {userPlanChats.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center pt-12">
             <EmptyState
               icon={<MessageSquare className="w-8 h-8 text-zinc-500 stroke-[1.5]" />}
               title="No chats yet"
@@ -385,7 +397,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
             />
           </div>
         ) : filteredChats.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center pt-12">
             <EmptyState
               icon={<Inbox className="w-8 h-8 text-zinc-600 stroke-[1.5]" />}
               title="No chats found"

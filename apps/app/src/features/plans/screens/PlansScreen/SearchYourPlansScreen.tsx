@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { ArrowLeft, Search, X, ChevronRight, Inbox, Crown, CalendarCheck, Hourglass, Coffee, UserPlus } from "lucide-react";
 import { motion } from "motion/react";
 import { Plan } from "../../../../core/types";
@@ -10,6 +10,7 @@ import { useCirclesStore } from "../../../circles/state/CirclesContext";
 import { EmptyState } from "../../../home/components/EmptyState";
 import { getPlanCover } from "../../config/planCoverImages";
 import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
+import { getPendingHostActionPlanIds } from "../../utils/planHostActions";
 
 interface SearchYourPlansScreenProps {
   onBack: () => void;
@@ -25,6 +26,15 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
   const { circles } = useCirclesStore();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const isInputFocused = useRef(false);
+
+  const handleInputPointerDown = (e: React.PointerEvent<HTMLInputElement>) => {
+    if (isInputFocused.current) {
+      e.preventDefault();
+      inputRef.current?.blur();
+    }
+  };
 
   // Derive allMyUserIds for participant lookup
   const allMyUserIds = useMemo(() => {
@@ -34,6 +44,11 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
     if (userProfile?.user_id) ids.add(userProfile.user_id);
     return ids;
   }, [userProfile]);
+
+  // Derive Set of plan IDs where the current user is an active HOST and there is a pending action (e.g. leave request)
+  const pendingActionPlanIds = useMemo(() => {
+    return getPendingHostActionPlanIds(dbPlanParticipants, allMyUserIds);
+  }, [dbPlanParticipants, allMyUserIds]);
 
   // Build participantMap for current user
   const participantMap = useMemo(() => {
@@ -46,6 +61,13 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
     return map;
   }, [dbPlanParticipants, allMyUserIds]);
 
+  type PlanRelationship = "CANCELLED" | "HOST" | "GOING" | "WAITLIST" | "SKIPPED" | "INVITED";
+
+  interface PlanWithRelationship {
+    plan: Plan;
+    relationship: PlanRelationship;
+  }
+
   // Get all relevant user plans across all collections using Priority Order:
   // 1. Cancelled
   // 2. Host
@@ -53,10 +75,10 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
   // 4. Waitlist
   // 5. Skipped
   // 6. Invited
-  const allUserPlansWithCollection = useMemo(() => {
+  const allUserPlansWithCollection = useMemo<PlanWithRelationship[]>(() => {
     const userUuid = userProfile?.dbUuid || (userProfile as any)?.id || "";
 
-    return plans.flatMap((p) => {
+    return plans.flatMap((p): PlanWithRelationship[] => {
       const isCancelled = (p.status || "").toUpperCase() === "CANCELLED";
 
       const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
@@ -70,7 +92,7 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
         if (!isHost) return []; // Cancelled plans only accessible to host
         return [{
           plan: p,
-          relationship: "CANCELLED" as const,
+          relationship: "CANCELLED",
         }];
       }
 
@@ -78,7 +100,7 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
       if (isHost) {
         return [{
           plan: p,
-          relationship: "HOST" as const,
+          relationship: "HOST",
         }];
       }
 
@@ -86,7 +108,7 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
       if (rsvpStatus === "JOINED" || (isMember && !myParticipant)) {
         return [{
           plan: p,
-          relationship: "GOING" as const,
+          relationship: "GOING",
         }];
       }
 
@@ -94,15 +116,15 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
       if (rsvpStatus === "WAITLISTED") {
         return [{
           plan: p,
-          relationship: "WAITLIST" as const,
+          relationship: "WAITLIST",
         }];
       }
 
       // Priority 5: Skipped
-      if (rsvpStatus === "SKIPPED") {
+      if (rsvpStatus === "SKIPPED" || rsvpStatus === "REJOINED") {
         return [{
           plan: p,
-          relationship: "SKIPPED" as const,
+          relationship: "SKIPPED",
         }];
       }
 
@@ -111,7 +133,7 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
       if (rsvpStatus === "INVITED" || rawRsvp === "PENDING" || (myParticipant && !rsvpStatus)) {
         return [{
           plan: p,
-          relationship: "INVITED" as const,
+          relationship: "INVITED",
         }];
       }
 
@@ -207,15 +229,18 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
           onClick={() => setSelectedPlanId(plan.id)}
-          className="w-full bg-white/[0.02] hover:bg-white/[0.04] active:bg-white/[0.06] border border-white/5 rounded-2xl py-2.5 px-4 transition-all duration-150 cursor-pointer flex items-center justify-between group active:scale-[0.99] select-none text-left"
+          className="w-full py-2.5 px-1 transition-all duration-150 cursor-pointer flex items-center justify-between group active:scale-[0.99] select-none text-left"
         >
           <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
             {/* Thumbnail circle avatar matching CancelledPlans.tsx */}
             <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-[#DC2626]/30 shadow-md flex-shrink-0 relative bg-zinc-955">
               <div className="absolute inset-0 bg-black/40 z-10" />
               <DiscoveryImages
-                src={plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory)}
+                src={plan.coverImage}
+                planId={plan.dbUuid || plan.id}
                 category={plan.category}
+                subcategory={(plan as any).subcategory}
+                screen="Search Cancelled Plans"
                 alt={plan.title}
                 className="w-full h-full object-cover relative z-0 scale-100 group-hover:scale-105 transition-transform duration-200 grayscale opacity-80"
               />
@@ -242,6 +267,8 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
       );
     }
 
+    const hasPendingAction = pendingActionPlanIds.has(plan.id) || Boolean(plan.dbUuid && pendingActionPlanIds.has(plan.dbUuid));
+
     return (
       <motion.div
         key={plan.id}
@@ -250,17 +277,19 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         onClick={() => setSelectedPlanId(plan.id)}
-        className="w-full bg-white/[0.02] hover:bg-white/[0.04] active:bg-white/[0.06] border border-white/5 rounded-2xl py-2.5 px-4 transition-all duration-150 cursor-pointer flex items-center justify-between group active:scale-[0.99] select-none text-left"
+        className="w-full py-2.5 px-1 transition-all duration-150 cursor-pointer flex items-center justify-between group active:scale-[0.99] select-none text-left"
       >
-        <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
           {/* Thumbnail circle avatar */}
           <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.06] shadow-md flex-shrink-0 relative bg-zinc-955">
-            <div className="absolute inset-0 bg-black/40 z-10" />
             <DiscoveryImages
-              src={plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory)}
+              src={plan.coverImage}
+              planId={plan.dbUuid || plan.id}
               category={plan.category}
+              subcategory={(plan as any).subcategory}
+              screen="Search Active Plans"
               alt={plan.title}
-              className="w-full h-full object-cover relative z-0 scale-100 group-hover:scale-105 transition-transform duration-200"
+              className="w-full h-full object-cover scale-100 group-hover:scale-105 transition-transform duration-200"
             />
           </div>
 
@@ -275,34 +304,23 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
           </div>
         </div>
 
-        {/* Right-aligned Status Badge */}
-        <div className="flex items-center flex-shrink-0">
-          {relationship === "HOST" && (
-            <span className="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md bg-white/[0.05] border border-white/[0.18] text-white text-[11px] font-medium leading-none shrink-0">
-              <Crown className="w-3 h-3 text-white" /> Host
-            </span>
-          )}
-          {relationship === "GOING" && (
-            <span className="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md bg-[#10B981]/[0.08] border border-[#10B981]/20 text-[#10B981] text-[11px] font-medium leading-none shrink-0">
-              <CalendarCheck className="w-3 h-3 text-[#10B981]" /> Going
-            </span>
-          )}
-          {relationship === "WAITLIST" && (
-            <span className="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md bg-[#F59E0B]/[0.08] border border-[#F59E0B]/20 text-[#F59E0B] text-[11px] font-medium leading-none shrink-0">
-              <Hourglass className="w-3 h-3 text-[#F59E0B]" /> Waitlist
-            </span>
-          )}
-          {relationship === "SKIPPED" && (
-            <span className="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md bg-[#EF4444]/[0.08] border border-[#EF4444]/20 text-[#EF4444] text-[11px] font-medium leading-none shrink-0">
-              <Coffee className="w-3 h-3 text-[#EF4444]" /> Skipped
-            </span>
-          )}
-          {relationship === "INVITED" && (
-            <span className="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md bg-[#9CA3AF]/[0.08] border border-[#9CA3AF]/20 text-[#9CA3AF] text-[11px] font-medium leading-none shrink-0">
-              <UserPlus className="w-3 h-3 text-[#9CA3AF]" /> Invited
-            </span>
-          )}
-        </div>
+        {/* Plan-level pending host action indicator */}
+        {hasPendingAction && (
+          <span
+            title="Action required"
+            style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: '#F59E0B',
+              marginRight: 8,
+              lineHeight: 1,
+              flexShrink: 0,
+              fontFamily: 'Inter, sans-serif',
+            }}
+          >
+            !
+          </span>
+        )}
       </motion.div>
     );
   };
@@ -315,36 +333,81 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
       className="absolute inset-0 bg-[#000000] flex flex-col z-50 select-none"
     >
-      {/* HEADER WITH INTEGRATED SEARCH BAR */}
-      <header className="px-5 pt-4 pb-1.5 flex items-center z-10 shrink-0 bg-[#000000]">
-        <div className="relative flex-1 flex items-center">
+      {/* ── Standardized Header Top Bar with Unified Pill Search ── */}
+      <div
+        className="w-full shrink-0 px-2 flex items-center bg-[#000000] relative z-40 pt-2 pb-1"
+        style={{ boxSizing: 'border-box' }}
+      >
+        {/* UNIFIED ELLIPTICAL / PILL-SHAPED SEARCH BOX */}
+        <div
+          className="w-full flex items-center rounded-full bg-[#18181B] border border-white/[0.08] px-3.5 transition-all focus-within:border-white/20 focus-within:bg-[#202024]"
+          style={{ height: '46px' }}
+        >
+          {/* BACK BUTTON INSIDE PILL */}
           <button
+            type="button"
             onClick={handleBackClick}
-            className="absolute left-1 w-9 h-9 rounded-full hover:bg-white/5 flex items-center justify-center text-white transition active:scale-95 cursor-pointer z-10"
+            className="flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer mr-2.5 shrink-0 p-1"
+            title="Go back"
           >
-            <ArrowLeft className="w-4.5 h-4.5" />
+            <ArrowLeft className="w-5 h-5 stroke-[2.2]" />
           </button>
+
+          {/* SEARCH INPUT */}
           <input
+            ref={inputRef}
+            id="search-plans-input"
+            name="searchPlansInput"
             type="text"
             placeholder="Search your plans"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            autoFocus
-            className="w-full h-11 bg-zinc-900 border border-zinc-800 rounded-xl pl-11 pr-10 text-sm text-white placeholder-zinc-550 focus:outline-none focus:border-zinc-700 transition select-text"
+            onFocus={() => {
+              isInputFocused.current = true;
+            }}
+            onBlur={() => {
+              isInputFocused.current = false;
+            }}
+            onPointerDown={handleInputPointerDown}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              fontSize: 15,
+              fontWeight: 500,
+              color: '#FFFFFF',
+              border: 'none',
+              outline: 'none',
+              fontFamily: 'Inter, sans-serif'
+            }}
+            className="placeholder-zinc-500 min-w-0 select-text"
           />
+
+          {/* CLEAR SEARCH BUTTON */}
           {searchQuery && (
             <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3.5 w-6 h-6 rounded-full bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition cursor-pointer z-10"
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                inputRef.current?.blur();
+              }}
+              className="p-1 text-zinc-400 hover:text-white transition shrink-0 mr-1.5 cursor-pointer"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
-      </header>
+      </div>
 
       {/* RESULTS LIST */}
-      <div className="flex-1 overflow-y-auto px-5 pb-8 pt-0">
+      <div
+        onPointerDown={(e) => {
+          if (e.target !== inputRef.current) {
+            inputRef.current?.blur();
+          }
+        }}
+        onScroll={() => inputRef.current?.blur()}
+        className="flex-1 overflow-y-auto px-5 pb-8 pt-0"
+      >
         {filteredPlans.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-4 pt-16">
             <EmptyState

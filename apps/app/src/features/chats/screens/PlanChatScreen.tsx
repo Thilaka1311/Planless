@@ -11,6 +11,8 @@ import { normalizeStatus } from "../../../../lib/participantStatus";
 import { SystemMessageType } from "../../../core/types";
 import { HeroHeader } from "../../plans/components/HeroHeader";
 import { PlanSettingsScreen } from "../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
+import { uploadPlanImage } from "../../../shared/utils/imageUtils";
+import { cleanPlanId } from "../../plans/utils/planUtils";
 import { PlanParticipantManagementWrapper } from "../../plans/screens/PlansScreen/PlansPreview/PlanParticipantManagementWrapper";
 import { PlanDetailsScreen } from "../../wallet/screens/PlanBalances";
 import { ActivityTimelineScreen } from "./ActivityTimelineScreen";
@@ -37,7 +39,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, switchToAutomaticWaitlistMode, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, replaceParticipant, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
+  const { plans, dbPlanParticipants, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, replaceParticipant, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
   const { userProfile, activeUserId, activeUserUuid, dbUsers } = useProfileStore();
 
   const senderUuid =
@@ -507,7 +509,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             viewerId={currentUserId}
             onClose={onBack}
             isHost={isHost && !isCancelled}
-            coverImage={plan.coverImage || (plan as any).customCoverUrl || getPlanCover(plan.category, (plan as any).subcategory || (plan as any).sports_type)}
+            coverImage={plan.coverImage}
             category={plan.category}
             hideHostAttribution={true}
             onHeaderPress={isBottomSheetOpen ? undefined : onOpenPlanDetails}
@@ -578,11 +580,9 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   return removeAndReplaceWithWaitlist(pId, removeId, promoteId);
                 }}
                 onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
-                onSwitchToAutomaticMode={(pId, userIds) => switchToAutomaticWaitlistMode(pId, userIds)}
                 onOpenActivity={() => { if (!isBottomSheetOpen) goToPage(2); }}
                 onPlanSizeEditingChange={setIsEditingPlanSize}
                 onBottomSheetStateChange={setIsBottomSheetOpen}
-                showWaitlistMode={false}
                 replaceTargetUserId={replaceTargetUserId}
                 onCancelReplacement={() => setReplaceTargetUserId(null)}
                 onConfirmReplacement={(pId, targetId, replacementId) => replaceParticipant(pId, targetId, replacementId)}
@@ -1053,12 +1053,12 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               console.error("Failed to edit plan title:", err);
             }
           }}
-          onEditCoverImage={async (newCoverUrl) => {
-            try {
-              await updatePlanDetails(plan.id, { cover_image: newCoverUrl });
-            } catch (err) {
-              console.error("Failed to edit plan cover image:", err);
+          onEditCoverImage={async (newCoverUrl, blob) => {
+            const targetPlanId = cleanPlanId(plan.dbUuid || plan.id);
+            if (blob) {
+              await uploadPlanImage(targetPlanId, blob);
             }
+            await updatePlanDetails(targetPlanId, { cover_image: `${targetPlanId}.webp`, skipDbWrite: true });
           }}
           onRemoveParticipant={async (uId) => {
             try {

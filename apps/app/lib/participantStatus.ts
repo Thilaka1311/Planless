@@ -20,6 +20,7 @@ export function normalizeStatus(rsvpStatus: string | undefined): PlanState {
   if (upper === "SKIPPED") return "SKIPPED";
   if (upper === "WAITLISTED") return "WAITLISTED";
   if (upper === "INVITED") return "INVITED";
+  if (upper === "REJOINED") return "REJOINED";
 
   // Treat any unrecognised value as INVITED (pending/unresponded)
   return "INVITED";
@@ -91,7 +92,7 @@ export function getEffectiveParticipantState(
     return 'SKIPPED';
   }
 
-  if (rawAssignedGroup === 'WAITLIST' || rawRsvpStatus === 'WAITLISTED') {
+  if (rawAssignedGroup === 'WAITLIST' || rawRsvpStatus === 'WAITLISTED' || rawRsvpStatus === 'REJOINED') {
     return 'WAITLIST';
   }
 
@@ -123,7 +124,7 @@ export function calculateParticipantBreakdown(rows: DbPlanParticipant[]): Partic
   const joined = normalized.filter(r => r.status === "JOINED").length;
   const waitlisted = normalized.filter(r => r.status === "WAITLISTED").length;
   const invited = normalized.filter(r => r.status === "INVITED").length;
-  const skipped = normalized.filter(r => r.status === "SKIPPED").length;
+  const skipped = normalized.filter(r => r.status === "SKIPPED" || r.status === "REJOINED").length;
   const passed = skipped;
   const pending = invited;
   const total = normalized.filter(r => ["JOINED", "WAITLISTED", "INVITED"].includes(r.status)).length;
@@ -299,6 +300,7 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   const joinedMembers: T[] = [];
   const waitlistedMembers: T[] = [];
   const unacceptedMembers: T[] = [];
+  const rejoinedMembers: T[] = [];
 
   for (const m of members) {
     const status = normalizeStatus(m.rsvp_status || m.joinState || m.rsvpStatus);
@@ -308,6 +310,8 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
       joinedMembers.push(m);
     } else if (status === 'WAITLISTED') {
       waitlistedMembers.push(m);
+    } else if (status === 'REJOINED') {
+      rejoinedMembers.push(m);
     } else {
       unacceptedMembers.push(m);
     }
@@ -337,6 +341,7 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   const sortedJoined = sortByTimestamp(joinedMembers);
   const sortedWaitlist = sortByTimestamp(waitlistedMembers);
   const sortedUnaccepted = sortAlpha(unacceptedMembers);
+  const sortedRejoined = sortByTimestamp(rejoinedMembers);
 
   const isFull = cap > 0 && sortedJoined.length >= cap;
 
@@ -344,13 +349,14 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   let finalWaitlistRaw: T[] = [];
 
   if (!isFull) {
-    // Capacity NOT reached: All non-skipped participants are in Going/Invited.
+    // Capacity NOT reached: All non-skipped participants are in Going/Invited; REJOINED participants are in Waitlist (dimmed/subdued).
     finalGoingRaw = [...sortedJoined, ...sortedWaitlist, ...sortedUnaccepted];
-    finalWaitlistRaw = [];
+    finalWaitlistRaw = [...sortedRejoined];
   } else {
-    // Capacity REACHED: Joined participants fill Going. Overflow participants (Waitlisted + Invited) go to Waitlist.
+    // Capacity REACHED: Joined participants fill Going. Overflow participants (Waitlisted + Invited + Rejoined) go to Waitlist.
+    // REJOINED participants placed after accepted waitlisted members and before unaccepted invited members.
     finalGoingRaw = [...sortedJoined];
-    finalWaitlistRaw = [...sortedWaitlist, ...sortedUnaccepted];
+    finalWaitlistRaw = [...sortedWaitlist, ...sortedRejoined, ...sortedUnaccepted];
   }
 
   return {

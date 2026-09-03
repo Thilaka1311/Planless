@@ -7,7 +7,7 @@ import {
   DbCircle, DbCircleMember, DbPlan, DbPlanParticipant, DbTransaction
 } from "../src/core/types";
 import { normalizeStatus } from "./participantStatus";
-import { getPlanCover } from "../src/features/plans/config/planCoverImages";
+import { getPlanCover, PLAN_COVER_IMAGES } from "../src/features/plans/config/planCoverImages";
 import defaultAvatar from "../src/assets/default_avatar.png";
 
 // ── avatar helper ───────────────────────────────────────────────────────────
@@ -77,13 +77,17 @@ export const mapPlansToLegacyPlans = (
     // Resolve circle name - circle_id is legacy in V2 schema
     const circleIdVal = null;
     const circleNameVal = "Custom Plan";
-    const isCircleHydrating = false;
+    const itemParticipants = participants.filter(pp => pp.plan_id === p.id);
 
-    const hostIdVal = p.host_id || "unknown_host";
-    if (!p.host_id) {
-      console.warn(`[mapPlansToLegacyPlans Warning] Plan ${p.id} is missing host_id, falling back to unknown_host.`);
-    }
-    const isOwner = hostIdVal === activeUserId || hostIdVal === activeUuid || hostIdVal === activeShortId;
+    const hostParticipant = itemParticipants.find(pp => pp.role === "HOST" && pp.rsvp_status === "JOINED") 
+      || itemParticipants.find(pp => pp.role === "HOST");
+
+    const hostIdVal = hostParticipant?.user_id || (p as any).host_id || "unknown_host";
+    const isOwner = itemParticipants.some(
+      pp => pp.role === "HOST" && (
+        pp.user_id === activeUserId || pp.user_id === activeUuid || pp.user_id === activeShortId
+      )
+    ) || (hostIdVal === activeUserId || hostIdVal === activeUuid || hostIdVal === activeShortId);
 
     let creator = findUserInList(hostIdVal);
     let hostNameVal = isUsersHydrating ? "Loading..." : "Anonymous Host";
@@ -106,11 +110,6 @@ export const mapPlansToLegacyPlans = (
       wallet_balance: 0,
       active_status: true
     };
-
-    // Filter participants for this plan
-    const itemParticipants = participants.filter(pp => {
-      return pp.plan_id === p.id;
-    });
 
     // Sort by updated_at descending so the latest state update is processed first
     const sortedItemParticipants = [...itemParticipants].sort((a, b) => {
@@ -242,7 +241,10 @@ export const mapPlansToLegacyPlans = (
 
     const maxSpotsVal = p.max_participants || (members.length > 0 ? members.length : 10);
     const costVal = p.total_cost !== undefined ? Number(p.total_cost) : 0;
-    const coverImageVal = p.cover_image || dbItem?.cover_image_url || getPlanCover(categoryVal, subcategoryVal);
+    const rawCover = p.cover_image || dbItem?.cover_image_url;
+    const coverImageVal = (rawCover && rawCover !== "planimagedefault.png" && rawCover !== "default")
+      ? rawCover
+      : PLAN_COVER_IMAGES.default;
 
     // Dynamic split fallback for paymentAmount: find active participant cost_per_participant
     const myParticipant = participants.find(

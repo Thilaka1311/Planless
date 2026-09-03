@@ -12,7 +12,6 @@ import { WaitlistSection } from '../components/WaitlistSection';
 import { StackingFriends } from '../components/StackingFriends';
 import { ContinueButton } from '../../create/components/ContinueButton';
 import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
-import { PendingDecisionsSection } from '../shared/PendingDecisionsSection';
 import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
 import { EditCapacityBottomSheet } from '../../plans/components/BottomSheets';
 
@@ -48,6 +47,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   onMoveToWaitlist,
   onMoveToInvited,
   onRemoveParticipant,
+  onLeavePlan,
   onPromoteHost,
   onDemoteHost,
   onOpenSettings,
@@ -63,6 +63,8 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   pendingLeaveRequests,
   currentPage,
   onInviteSkipped,
+  onRejoinAddToWaitlist,
+  onRejoinRemoveFromPlan,
   isCompletedPlan,
   initialOpenPlanSizeSheet,
   onPlanSizeSheetDismissed,
@@ -260,14 +262,6 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         />
       )}
 
-      {effectiveIsHost && pendingLeaveRequests && pendingLeaveRequests.length > 0 && (
-        <PendingDecisionsSection
-          pendingRequests={pendingLeaveRequests}
-          onReplaceParticipant={onReplaceLeaveParticipant}
-          onKeepPayment={onKeepPaymentLeaveParticipant}
-        />
-      )}
-
       <AutomaticParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
@@ -342,10 +336,15 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           onPromoteHost={onPromoteHost}
           onDemoteHost={onDemoteHost}
           onRemoveParticipant={onRemoveParticipant || (() => {})}
+          onLeavePlan={onLeavePlan}
           onReplaceLeaveParticipant={onReplaceLeaveParticipant}
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
           onInviteSkipped={onInviteSkipped ? (item) => onInviteSkipped(item) : undefined}
           onViewProfile={(item) => setViewProfileUserId(item.dbUuid || item.id)}
+          onAddToJoined={onMoveToGoing}
+          onAddToWaitlist={onRejoinAddToWaitlist}
+          onRemoveFromPlan={onRejoinRemoveFromPlan || onRemoveParticipant}
+          onMoveToGoing={onMoveToGoing}
         />
       )}
 

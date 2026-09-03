@@ -30,6 +30,17 @@ export function useCreatePlanForm() {
   const [localTitle, setLocalTitle] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [customCoverImage, setCustomCoverImage] = useState<string | null>(null);
+  const [customCoverBlob, setCustomCoverBlob] = useState<Blob | null>(null);
+
+  const handleSetCustomCover = useCallback((previewUrl: string | null, blob?: Blob | null) => {
+    setCustomCoverImage((prev) => {
+      if (prev && prev.startsWith("blob:") && prev !== previewUrl) {
+        URL.revokeObjectURL(prev);
+      }
+      return previewUrl;
+    });
+    setCustomCoverBlob(blob || null);
+  }, []);
   const [isHostSelected, setIsHostSelected] = useState(true);
   const [priorityGuestIds, setPriorityGuestIds] = useState<string[]>([]);
   const [discoveryItemId, setDiscoveryItemId] = useState<string | null>(null);
@@ -110,7 +121,7 @@ export function useCreatePlanForm() {
     setCostAmount(0);
     setIsCostManuallySet(false);
     setQuickNote('');
-    setCustomCoverImage(null);
+    handleSetCustomCover(null, null);
     setIsHostSelected(true);
     setPriorityGuestIds([]);
     setPlaceId(null);
@@ -119,7 +130,7 @@ export function useCreatePlanForm() {
     setPlaceAddress(null);
     setDiscoveryItemId(null);
     setWaitlistMode('automatic');
-  }, []);
+  }, [handleSetCustomCover]);
 
   // Keep plan time one valid slot ahead continuously
   useEffect(() => {
@@ -154,7 +165,8 @@ export function useCreatePlanForm() {
     quickNote, setQuickNote,
     localTitle, setLocalTitle,
     isSubmitting, setIsSubmitting,
-    customCoverImage, setCustomCoverImage,
+    customCoverImage, setCustomCoverImage: handleSetCustomCover,
+    customCoverBlob,
     isHostSelected, setIsHostSelected,
     priorityGuestIds, setPriorityGuestIds,
     placeId, setPlaceId,

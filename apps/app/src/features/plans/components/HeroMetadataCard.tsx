@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Clock, Hourglass, MapPin, ChevronRight, Users } from "lucide-react";
+import { CalendarClock, Hourglass, MapPin, ChevronRight, Users, IndianRupee } from "lucide-react";
 import { formatPlanDate } from "../../../../lib/mappers";
 import { formatDeadlineFull } from "../../home/components/PlanCard";
 import { useRSVPDeadline } from "../utils/rsvpFormatter";
@@ -53,7 +53,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
       <div className="p-4 space-y-3.5 font-sans relative z-10">
         <div className="flex items-center justify-between gap-2 text-white/95">
           <div className="flex items-center gap-2 min-w-0">
-            <Clock className="w-4 h-4 text-white/50 flex-shrink-0" />
+            <CalendarClock className="w-4 h-4 text-white/50 flex-shrink-0" />
             <span className="text-[11px] font-medium leading-none truncate">
               {datetime ? formatPlanDate(datetime) : "Set a date"}
             </span>
@@ -67,14 +67,15 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
             </div>
           )}
         </div>
-        {hasCost && costText ? (
+        {hasCost && costText && costText !== "Free" ? (
           <div className="relative">
             <button
               type="button"
               onClick={() => setIsCostPopoverOpen((prev) => !prev)}
-              className="text-[10px] text-emerald-400 font-semibold pl-6 leading-none cursor-pointer hover:underline text-left"
+              className="flex items-center gap-1.5 text-[11px] text-white font-semibold pl-6 leading-none cursor-pointer hover:underline text-left"
             >
-              {costText}
+              <IndianRupee className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+              <span>{costText.replace(/^₹\s*/, '')}</span>
             </button>
             <CostBreakdownPopover
               totalCost={totalCost}
@@ -92,9 +93,10 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
             <button
               type="button"
               onClick={() => onEditCost?.()}
-              className="text-[10px] text-white/50 font-medium pl-6 leading-none cursor-pointer hover:underline text-left"
+              className="flex items-center gap-1.5 text-[11px] text-white/50 font-medium pl-6 leading-none cursor-pointer hover:underline text-left"
             >
-              Set a cost
+              <IndianRupee className="w-3.5 h-3.5 text-zinc-500 opacity-60 flex-shrink-0" />
+              <span>Set a cost</span>
             </button>
           </div>
         )}

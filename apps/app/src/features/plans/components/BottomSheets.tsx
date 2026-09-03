@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users } from "lucide-react";
+import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { HostInfo } from "./HeroHeader";
 
@@ -16,11 +16,88 @@ function formatTimeFriendly(timeStr: string): string {
   if (!timeStr) return "";
   const [hours, minutes] = timeStr.split(":");
   const h = parseInt(hours, 10);
+  const m = parseInt(minutes, 10);
   if (isNaN(h)) return timeStr;
-  const ampm = h >= 12 ? "PM" : "AM";
-  const formattedHours = h % 12 || 12;
-  return `${formattedHours}:${minutes} ${ampm}`;
+  const formattedHours = String(h).padStart(2, "0");
+  const formattedMinutes = isNaN(m) ? "00" : String(m).padStart(2, "0");
+  return `${formattedHours}:${formattedMinutes}`;
 }
+
+// ----------------------------------------------------------------------
+// 0. DISCARD / EXIT PLAN BOTTOM SHEET
+// ----------------------------------------------------------------------
+interface DiscardPlanBottomSheetProps {
+  isOpen: boolean;
+  onDiscard: () => void;
+  onClose: () => void;
+}
+
+export const DiscardPlanBottomSheet: React.FC<DiscardPlanBottomSheetProps> = ({
+  isOpen,
+  onDiscard,
+  onClose,
+}) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
+
+            <div className="px-5 pb-2 text-left">
+              <h2 className="text-[18px] font-bold text-white mb-2">Do you really want to exit the plan?</h2>
+              <p className="text-[14px] text-white/55 leading-[1.55]">
+                Your changes will not be saved.
+              </p>
+            </div>
+
+            <div className="px-5 pt-4 flex flex-col gap-2.5">
+              <button
+                id="discard_plan_confirm_btn"
+                type="button"
+                onClick={onDiscard}
+                className="w-full py-3.5 rounded-xl text-[14px] font-semibold text-red-400 active:scale-[0.98] transition-transform cursor-pointer flex items-center justify-center text-center"
+                style={{ background: "rgba(255,59,48,0.12)", border: "1px solid rgba(255,59,48,0.2)" }}
+              >
+                Discard
+              </button>
+
+              <button
+                id="discard_plan_cancel_btn"
+                type="button"
+                onClick={onClose}
+                className="w-full py-3 bg-transparent border-none text-[14px] font-medium text-white/40 hover:text-white/60 active:opacity-70 transition cursor-pointer text-center"
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
 
 // ----------------------------------------------------------------------
 // 1. LEAVE PLAN BOTTOM SHEET
@@ -95,6 +172,188 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
                 Cancel
               </button>
             </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 1A. MAKE ANOTHER PARTICIPANT HOST BOTTOM SHEET (SOLE HOST LEAVE)
+// ----------------------------------------------------------------------
+export interface EligibleHostReplacementParticipant {
+  id: string;
+  name: string;
+  avatar?: string;
+  username?: string;
+}
+
+interface MakeAnotherParticipantHostBottomSheetProps {
+  isOpen: boolean;
+  eligibleParticipants: EligibleHostReplacementParticipant[];
+  isSubmitting?: boolean;
+  onConfirm: (selectedParticipantId: string) => Promise<void> | void;
+  onClose: () => void;
+}
+
+export const MakeAnotherParticipantHostBottomSheet: React.FC<MakeAnotherParticipantHostBottomSheetProps> = ({
+  isOpen,
+  eligibleParticipants,
+  isSubmitting = false,
+  onConfirm,
+  onClose,
+}) => {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedId(null);
+    } else if (eligibleParticipants.length === 1) {
+      setSelectedId(eligibleParticipants[0].id);
+    }
+  }, [isOpen, eligibleParticipants]);
+
+  const hasEligible = eligibleParticipants.length > 0;
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/75 z-[70] pointer-events-auto backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[75] pointer-events-auto max-h-[82vh] flex flex-col"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              paddingBottom: "calc(20px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            {/* Drag Handle */}
+            <div className="flex justify-center pt-3 pb-3">
+              <div className="w-10 h-1.5 rounded-full bg-white/20" />
+            </div>
+
+            {/* Header */}
+            <div className="px-5 pb-3 text-left">
+              <h2 className="text-[18px] font-bold text-white mb-1 tracking-tight">
+                You're the only host
+              </h2>
+              <p className="text-[13px] text-white/55 leading-relaxed">
+                Choose someone else to host this plan before you leave
+              </p>
+            </div>
+
+            {/* Content Area */}
+            {hasEligible ? (
+              <>
+                <div className="px-4 py-1 overflow-y-auto flex-1 max-h-[44vh] flex flex-col gap-1">
+                  {eligibleParticipants.map((p) => {
+                    const isSelected = selectedId === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSelectedId(p.id)}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors text-left cursor-pointer ${
+                          isSelected
+                            ? "bg-white/[0.08]"
+                            : "bg-transparent hover:bg-white/[0.04]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <UserAvatar
+                            src={p.avatar}
+                            alt={p.name}
+                            size="w-10 h-10"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[15px] font-medium text-white truncate">
+                              {p.name}
+                            </div>
+                            {p.username && (
+                              <div className="text-[12px] text-white/45 truncate">
+                                @{p.username.replace(/^@/, '')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div
+                          className={`w-5.5 h-5.5 rounded-full flex items-center justify-center transition-all ${
+                            isSelected
+                              ? "bg-[#FF6B2C] text-white"
+                              : "border border-white/20 bg-transparent"
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Actions */}
+                <div className="px-5 pt-3 flex flex-col gap-2">
+                  <button
+                    id="host_leave_replacement_confirm_btn"
+                    type="button"
+                    disabled={!selectedId || isSubmitting}
+                    onClick={() => {
+                      if (selectedId) {
+                        onConfirm(selectedId);
+                      }
+                    }}
+                    className="w-full py-3.5 rounded-xl text-[15px] font-semibold text-white bg-[#FF6B2C] active:scale-[0.98] transition-transform disabled:opacity-40 disabled:cursor-not-allowed shadow-md flex items-center justify-center cursor-pointer"
+                  >
+                    {isSubmitting ? "Transferring & Leaving…" : "Confirm & Leave"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="w-full py-2.5 text-[14px] font-medium text-white/60 hover:text-white active:opacity-70 transition cursor-pointer text-center"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* Empty State: No joined participants */
+              <div className="px-5 py-6 flex flex-col items-center text-center">
+                <div className="w-12 h-12 rounded-full bg-white/[0.06] flex items-center justify-center text-white/70 mb-3">
+                  <Users className="w-5 h-5 text-white/70" />
+                </div>
+
+                <h3 className="text-[16px] font-bold text-white mb-1.5">
+                  Wait for someone to join the plan
+                </h3>
+
+                <p className="text-[13px] text-white/50 leading-relaxed max-w-[280px] mb-6">
+                  There are currently no other joined participants. Once a participant joins, you can assign them as host and leave.
+                </p>
+
+                <button
+                  id="host_leave_no_participants_close_btn"
+                  type="button"
+                  onClick={onClose}
+                  className="w-full py-3.5 rounded-xl text-[14px] font-semibold text-white bg-white/[0.08] active:scale-[0.98] transition-transform cursor-pointer"
+                >
+                  Got it
+                </button>
+              </div>
+            )}
           </motion.div>
         </>
       )}
@@ -767,7 +1026,6 @@ interface EditDateTimeBottomSheetProps {
   onTempDateChange: (val: string) => void;
   onTempTimeChange: (val: string) => void;
   onTempRSVPOptionChange: (val: string | null) => void;
-  onSave: () => void;
   onClose: () => void;
 }
 
@@ -779,7 +1037,6 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
   onTempDateChange,
   onTempTimeChange,
   onTempRSVPOptionChange,
-  onSave,
   onClose,
 }) => {
   const [isRSVPExpanded, setIsRSVPExpanded] = useState(false);
@@ -828,52 +1085,48 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
               <div style={{ width: 36, height: 5, borderRadius: 2.5, background: "rgba(255, 255, 255, 0.15)" }} />
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", marginBottom: 20, textAlign: "left" }}>
-              <span style={{ fontSize: 16, fontWeight: 600 }}>Edit Date & Time</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, textAlign: "left" }}>
+              <CalendarClock className="w-5 h-5 text-white flex-shrink-0" />
+              <span style={{ fontSize: 16, fontWeight: 600 }}>Date and Time</span>
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255, 255, 255, 0.3)", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "left", paddingLeft: 4 }}>
-                  Event Timing
-                </span>
-                <div style={{ background: "rgba(255, 255, 255, 0.05)", borderRadius: 12, overflow: "hidden" }}>
-                  <div style={{ position: "relative", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-                    <input
-                      type="date"
-                      value={tempDate}
-                      onChange={(e) => onTempDateChange(e.target.value)}
-                      style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 10 }}
-                    />
-                    <span style={{ fontSize: 14, fontWeight: 500, color: "#FFFFFF" }}>Date</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 14, color: "rgba(255, 255, 255, 0.45)", fontWeight: 500 }}>
-                        {formatDateFriendly(tempDate) || "Select Date"}
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-white/20" />
-                    </div>
+              <div style={{ background: "rgba(255, 255, 255, 0.05)", borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ position: "relative", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="date"
+                    value={tempDate}
+                    onChange={(e) => onTempDateChange(e.target.value)}
+                    style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 10 }}
+                  />
+                  <span style={{ fontSize: 14, fontWeight: 500, color: "#FFFFFF" }}>Date</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 14, color: "rgba(255, 255, 255, 0.45)", fontWeight: 500 }}>
+                      {formatDateFriendly(tempDate) || "Not set"}
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-white/20" />
                   </div>
-                  <div style={{ borderTop: "1px solid rgba(255, 255, 255, 0.04)", marginLeft: 16 }} />
-                  <div style={{ position: "relative", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-                    <input
-                      type="time"
-                      value={tempTime}
-                      onChange={(e) => onTempTimeChange(e.target.value)}
-                      style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 10 }}
-                    />
-                    <span style={{ fontSize: 14, fontWeight: 500, color: "#FFFFFF" }}>Time</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 14, color: "rgba(255, 255, 255, 0.45)", fontWeight: 500 }}>
-                        {formatTimeFriendly(tempTime) || "Select Time"}
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-white/20" />
-                    </div>
+                </div>
+                <div style={{ borderTop: "1px solid rgba(255, 255, 255, 0.04)", marginLeft: 16 }} />
+                <div style={{ position: "relative", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="time"
+                    value={tempTime}
+                    onChange={(e) => onTempTimeChange(e.target.value)}
+                    style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 10 }}
+                  />
+                  <span style={{ fontSize: 14, fontWeight: 500, color: "#FFFFFF" }}>Time</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 14, color: "rgba(255, 255, 255, 0.45)", fontWeight: 500 }}>
+                      {formatTimeFriendly(tempTime) || "Not set"}
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-white/20" />
                   </div>
                 </div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255, 255, 255, 0.3)", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "left", paddingLeft: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255, 255, 255, 0.3)", letterSpacing: "0.05em", textAlign: "left", paddingLeft: 4 }}>
                   RSVP Deadline
                 </span>
                 <div
@@ -1000,20 +1253,22 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
               <button
                 type="button"
                 onClick={onClose}
-                style={{ flex: 1, padding: "14px", background: "rgba(255, 255, 255, 0.06)", border: "none", borderRadius: 12, color: "#FFFFFF", fontSize: 14, fontWeight: 600, cursor: "pointer", textAlign: "center" }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: "10px 16px",
+                  color: "#FFFFFF",
+                  fontSize: 15,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  textAlign: "center",
+                }}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                onClick={onSave}
-                style={{ flex: 1, padding: "14px", background: "#FF5E3A", border: "none", borderRadius: 12, color: "#FFFFFF", fontSize: 14, fontWeight: 600, cursor: "pointer", textAlign: "center" }}
-              >
-                Save
               </button>
             </div>
           </motion.div>
@@ -1043,6 +1298,21 @@ export const EditCostBottomSheet: React.FC<EditCostBottomSheetProps> = ({
   onSave,
   onClose,
 }) => {
+  const parsedInput = parseFloat(costInput);
+  const isCostSet = costInput.trim() !== "" && !isNaN(parsedInput) && parsedInput > 0;
+  const peopleLabel = capacity === 1 ? "1 person" : `${capacity} people`;
+
+  let secondaryText = `Free · ${peopleLabel}`;
+  if (isCostSet) {
+    if (capacity > 0) {
+      const perPersonVal = Math.round((parsedInput / capacity) * 100) / 100;
+      const formattedVal = perPersonVal.toLocaleString("en-IN");
+      secondaryText = `₹${formattedVal} per person · ${peopleLabel}`;
+    } else {
+      secondaryText = `₹${parsedInput.toLocaleString("en-IN")} total`;
+    }
+  }
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -1052,102 +1322,122 @@ export const EditCostBottomSheet: React.FC<EditCostBottomSheetProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
+            className="fixed inset-0 bg-black/60 z-60 pointer-events-auto"
           />
           <motion.div
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 260 }}
-            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto select-none"
+            transition={{ type: "spring", damping: 25, stiffness: 220 }}
             style={{
+              position: "fixed",
+              bottom: 0,
+              left: 0,
+              right: 0,
               background: "#1C1C1E",
               borderTopLeftRadius: 20,
               borderTopRightRadius: 20,
-              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+              zIndex: 65,
+              padding: "16px 20px calc(24px + env(safe-area-inset-bottom, 0px))",
+              color: "#FFFFFF",
+              boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.3)",
+              display: "flex",
+              flexDirection: "column",
+              pointerEvents: "auto",
             }}
           >
-            <div className="flex justify-center pt-3 pb-4">
-              <div className="w-9 h-1 rounded-full bg-white/20" />
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+              <div style={{ width: 36, height: 5, borderRadius: 2.5, background: "rgba(255, 255, 255, 0.15)" }} />
             </div>
 
-            <div className="px-5 pb-2 text-left">
-              <h2 className="text-[18px] font-bold text-white mb-1">Edit Cost</h2>
+            <div style={{ display: "flex", flexDirection: "column", marginBottom: 14, textAlign: "left" }}>
+              <span style={{ fontSize: 16, fontWeight: 600, color: "#FFFFFF" }}>Edit Cost</span>
             </div>
 
-            <div className="px-5 pt-3 pb-4 flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5 text-left">
-                <label className="text-[12px] font-semibold text-white/60">
-                  Total Plan Cost
-                </label>
-                <div className="flex items-center bg-[#2C2C2E] border border-white/10 rounded-2xl px-4 py-3.5 focus-within:border-amber-500/50 transition">
-                  <span className="text-white/40 text-base font-semibold mr-2">₹</span>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={costInput}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === "" || Number(val) >= 0) {
-                        onCostInputChange(val);
-                      }
-                    }}
-                    placeholder="0 (Free)"
-                    className="bg-transparent border-none text-white text-base font-semibold focus:outline-none w-full"
-                  />
-                </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div
+                style={{
+                  background: "rgba(255, 255, 255, 0.05)",
+                  borderRadius: 12,
+                  padding: "14px 16px",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                <span style={{ fontSize: 16, fontWeight: 500, color: "rgba(255, 255, 255, 0.5)", marginRight: 8, userSelect: "none" }}>
+                  ₹
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={costInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "" || Number(val) >= 0) {
+                      onCostInputChange(val);
+                    }
+                  }}
+                  placeholder="0"
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    color: "#FFFFFF",
+                    fontSize: 16,
+                    fontWeight: 500,
+                    width: "100%",
+                    padding: 0,
+                    margin: 0,
+                  }}
+                  className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
               </div>
 
-              {(() => {
-                const parsedInput = parseFloat(costInput);
-                const isCostSet = costInput.trim() !== "" && !isNaN(parsedInput) && parsedInput > 0;
-
-                let mainDisplay = "Free";
-                let subDisplay = "No cost has been set.";
-
-                if (isCostSet) {
-                  if (capacity > 0) {
-                    const perPersonVal = Math.round((parsedInput / capacity) * 100) / 100;
-                    const formattedVal = perPersonVal.toLocaleString("en-IN");
-                    mainDisplay = `₹${formattedVal} each`;
-                    subDisplay = `${capacity} ${capacity === 1 ? "participant" : "participants"}`;
-                  } else {
-                    mainDisplay = "Unable to calculate";
-                    subDisplay = "Invalid participant capacity";
-                  }
-                }
-
-                return (
-                  <div className="flex flex-col gap-0.5 text-left py-0.5">
-                    <span className="text-[22px] font-bold text-white tracking-tight">
-                      {mainDisplay}
-                    </span>
-                    <span className="text-[13px] text-white/40 font-medium">
-                      {subDisplay}
-                    </span>
-                  </div>
-                );
-              })()}
-
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 py-3.5 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform cursor-pointer"
-                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={onSave}
-                  className="flex-1 py-3.5 rounded-2xl text-[15px] font-semibold text-white active:scale-[0.98] transition-transform cursor-pointer"
-                  style={{ background: "#FF5E3A" }}
-                >
-                  Save
-                </button>
+              <div style={{ paddingLeft: 4, textAlign: "left" }}>
+                <span style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.45)", fontWeight: 400 }}>
+                  {secondaryText}
+                </span>
               </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  flex: 1,
+                  padding: "14px",
+                  background: "rgba(255, 255, 255, 0.06)",
+                  border: "none",
+                  borderRadius: 12,
+                  color: "#FFFFFF",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  textAlign: "center",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onSave}
+                style={{
+                  flex: 1,
+                  padding: "14px",
+                  background: "#FF5E3A",
+                  border: "none",
+                  borderRadius: 12,
+                  color: "#FFFFFF",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  textAlign: "center",
+                }}
+              >
+                Save
+              </button>
             </div>
           </motion.div>
         </>
@@ -1163,12 +1453,10 @@ interface EditDetailsBottomSheetProps {
   isOpen: boolean;
   isSaving: boolean;
   tempTitle: string;
-  tempDescription: string;
   tempCapacity: number | "";
   tempCoverImage: string | null;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onTitleChange: (val: string) => void;
-  onDescriptionChange: (val: string) => void;
   onCapacityChange: (val: number | "") => void;
   onCoverImageChange: (val: string | null) => void;
   onSave: () => void;
@@ -1179,12 +1467,10 @@ export const EditDetailsBottomSheet: React.FC<EditDetailsBottomSheetProps> = ({
   isOpen,
   isSaving,
   tempTitle,
-  tempDescription,
   tempCapacity,
   tempCoverImage,
   fileInputRef,
   onTitleChange,
-  onDescriptionChange,
   onCapacityChange,
   onCoverImageChange,
   onSave,
@@ -1221,16 +1507,6 @@ export const EditDetailsBottomSheet: React.FC<EditDetailsBottomSheetProps> = ({
                   onChange={(e) => onTitleChange(e.target.value.slice(0, 50))}
                   className="w-full bg-zinc-900/30 border border-white/[0.04] rounded-2xl px-4 py-3 text-white text-sm font-semibold focus:outline-none focus:border-white/10"
                   placeholder="Enter plan title"
-                />
-              </div>
-
-              <div className="space-y-2 text-left">
-                <label className="text-[10px] font-sans font-bold tracking-[0.1em] text-zinc-500 uppercase">Description</label>
-                <textarea
-                  value={tempDescription}
-                  onChange={(e) => onDescriptionChange(e.target.value)}
-                  className="w-full bg-zinc-900/30 border border-white/[0.04] rounded-2xl px-4 py-3 text-white text-sm font-semibold focus:outline-none focus:border-white/10 min-h-[80px] resize-none"
-                  placeholder="Add a description..."
                 />
               </div>
 

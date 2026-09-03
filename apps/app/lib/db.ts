@@ -18,11 +18,9 @@ export interface DbUser {
 export interface DbPlan {
   id: string;
   public_id: string;
-  host_id: string;
   category: 'SPORTS' | 'MOVIES' | 'DINING' | 'ENTERTAINMENT' | 'TRAVEL' | 'FITNESS' | 'STUDY' | 'OTHER';
   subcategory: 'FOOTBALL' | 'BADMINTON' | 'CRICKET' | 'BASKETBALL' | 'VOLLEYBALL' | 'TENNIS' | 'PICKLEBALL' | 'BOWLING' | 'GO_KARTING' | 'MOVIE' | 'RESTAURANT' | 'CAFE' | 'ROAD_TRIP' | 'GYM' | 'STUDY_SESSION' | 'OTHER';
   title: string;
-  description: string;
   place_id: string;
   place_name: string;
   place_address: string;
@@ -34,7 +32,6 @@ export interface DbPlan {
   cover_image?: string | null;
   created_at: string;
   updated_at: string;
-  circle_id?: string | null;
   latitude?: number | null;
   longitude?: number | null;
 }

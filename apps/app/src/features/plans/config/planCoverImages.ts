@@ -1,10 +1,14 @@
 import defaultPlanCover from "../../../assets/planimagedefault.png";
+import sportsCover from "../../../assets/sports.png";
+import movieCover from "../../../assets/Movies.png";
+import diningCover from "../../../assets/dining.png";
 
 export const PLAN_COVER_IMAGES = {
-  football: "/assets/plan-covers/football.png",
-  badminton: "/assets/plan-covers/badminton.png",
-  movie: "/assets/plan-covers/movie.png",
-  dining: "/assets/plan-covers/dining.png",
+  sports: sportsCover,
+  football: sportsCover,
+  badminton: sportsCover,
+  movie: movieCover,
+  dining: diningCover,
   default: defaultPlanCover,
 };
 
@@ -12,35 +16,29 @@ export function getPlanCover(activityType?: string, subcategory?: string | null)
   const normActivity = (activityType || "").toLowerCase().trim();
   const normSub = (subcategory || "").toLowerCase().trim();
 
-  // 1. Check Custom category
-  if (normActivity === "custom" || normSub === "custom") {
+  // 1. Check Custom category or explicit default request
+  if (!activityType || normActivity === "custom" || normSub === "custom") {
     return PLAN_COVER_IMAGES.default;
   }
 
   // 2. Resolve known categories
-  // Sports -> Football / Soccer
+  // Sports -> sports.png
   if (
-    normActivity === "football" || 
-    normActivity === "soccer" || 
-    ((normActivity === "sports" || normActivity === "sport") && (normSub === "football" || normSub === "soccer"))
+    normActivity === "sports" ||
+    normActivity === "sport" ||
+    normActivity === "football" ||
+    normActivity === "soccer" ||
+    normActivity === "badminton"
   ) {
-    return PLAN_COVER_IMAGES.football;
+    return PLAN_COVER_IMAGES.sports;
   }
 
-  // Sports -> Badminton
-  if (
-    normActivity === "badminton" || 
-    ((normActivity === "sports" || normActivity === "sport") && normSub === "badminton")
-  ) {
-    return PLAN_COVER_IMAGES.badminton;
-  }
-
-  // Movies
+  // Movies -> Movies.png
   if (normActivity === "movies" || normActivity === "movie" || normActivity === "cinema") {
     return PLAN_COVER_IMAGES.movie;
   }
 
-  // Dining
+  // Dining -> dining.png
   if (
     normActivity === "dining" ||
     normActivity === "restaurants" ||
@@ -52,7 +50,7 @@ export function getPlanCover(activityType?: string, subcategory?: string | null)
     return PLAN_COVER_IMAGES.dining;
   }
 
-  // 3. Unresolved non-custom activity mapping -> Log development warning and fallback to default
-  console.warn(`Missing cover image mapping for activity:\n${activityType}`);
+  // 3. Fallback to default
   return PLAN_COVER_IMAGES.default;
 }
+

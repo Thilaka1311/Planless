@@ -19,8 +19,10 @@ import { useHoldToAccept } from "../../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "../../components/HoldToAccept";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
 import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
-import { JoinPlanConfirmationBottomSheet, SkipPlanConfirmationDialog, PaidPlanLeaveConfirmationDialog, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet } from "../../../plans/components/BottomSheets";
+import { JoinPlanConfirmationBottomSheet, SkipPlanConfirmationDialog, PaidPlanLeaveConfirmationDialog, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet } from "../../../plans/components/BottomSheets";
 import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
+import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
+import { cleanPlanId } from "../../../plans/utils/planUtils";
 import { PlanChatScreen } from "../../../chats/screens/PlanChatScreen";
 import { PlanDetailsScreen as PlanBalancesScreen } from "../../../wallet/screens/PlanBalances";
 
@@ -61,8 +63,10 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     joinPlan,
     skipPlan,
     requestPaidPlanLeave,
+    requestHostLeaveWithReplacement,
     cancelPaidPlanLeaveRequest,
     rejoinPlan,
+    updatePlanDetails,
     updatePlanSettings,
     demoteHostToParticipant,
     leavePlan,
@@ -72,6 +76,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const [isJoiningDirect, setIsJoiningDirect] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
   const [showLeavePlanConfirm, setShowLeavePlanConfirm] = useState(false);
+  const [showHostLeaveReplacementSheet, setShowHostLeaveReplacementSheet] = useState(false);
+  const [isSubmittingHostReplacement, setIsSubmittingHostReplacement] = useState(false);
   const [isCostPopoverOpen, setIsCostPopoverOpen] = useState(false);
   const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(false);
   const [showCompletionFlow, setShowCompletionFlow] = useState(false);
@@ -80,7 +86,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const [showPlanBalancesScreen, setShowPlanBalancesScreen] = useState(false);
 
   const resolvedUserUuid = userProfile.dbUuid || activeUserId || "";
-  const isHost = selectedPlan ? selectedPlan.hostId === resolvedUserUuid : false;
 
   const rawDbPlan = useMemo(() => {
     if (!selectedPlan) return null;
@@ -108,7 +113,47 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     ];
   }, [selectedPlan]);
 
-  const isCreatorHost = selectedPlan ? selectedPlan.hostId === resolvedUserUuid : false;
+  const isHost = selectedPlan?.members
+    ? selectedPlan.members.some(m => (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid) && m.isHost)
+    : false;
+
+  const activeHostMembers = useMemo(() => {
+    if (!selectedPlan?.members) return [];
+    return selectedPlan.members.filter((m) => {
+      const isHostRole = (m as any).role === "HOST" || m.isHost === true;
+      const status = normalizeStatus(m.joinState || (m as any).rsvp_status);
+      return isHostRole && status === "JOINED";
+    });
+  }, [selectedPlan?.members]);
+
+  const isSoleHost = isHost && activeHostMembers.length <= 1;
+
+  const eligibleHostReplacementParticipants = useMemo(() => {
+    if (!selectedPlan?.members) return [];
+    return selectedPlan.members
+      .filter((m) => {
+        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
+        const isCurrent = Boolean(resolvedUserUuid && mId === resolvedUserUuid);
+        if (isCurrent) return false;
+
+        const isHostRole = (m as any).role === "HOST" || m.isHost === true;
+        if (isHostRole) return false;
+
+        const status = normalizeStatus(m.joinState || (m as any).rsvp_status);
+        return status === "JOINED";
+      })
+      .map((m) => {
+        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
+        return {
+          id: mId,
+          name: m.name || (m as any).full_name || "Participant",
+          avatar: m.avatar || (m as any).profile_photo_path,
+          username: m.username
+        };
+      });
+  }, [selectedPlan?.members, resolvedUserUuid]);
+
+  const isCreatorHost = isHost;
 
   const countdown = useLiveCountdown(selectedPlan?.response_deadline_at);
   const urgencyColor = useMemo(() => {
@@ -310,6 +355,36 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     });
   }, [selectedPlan, activeUserId, isSkipping, skipPlan, setShowLeftSuccess, onClose, showToast]);
 
+  const handleConfirmHostLeaveReplacement = useCallback(async (selectedReplacementId: string) => {
+    if (!selectedPlan || isSubmittingHostReplacement) return;
+    setIsSubmittingHostReplacement(true);
+    try {
+      const planUuid = (selectedPlan as any).dbUuid || selectedPlan.id;
+      const res = await requestHostLeaveWithReplacement(planUuid, selectedReplacementId);
+      setShowHostLeaveReplacementSheet(false);
+      
+      const replacementUser = eligibleHostReplacementParticipants.find(p => p.id === selectedReplacementId);
+      const replacementName = replacementUser?.name || "participant";
+
+      if (res?.leave_requested) {
+        showToast(`✓ Promoted ${replacementName} to host & sent leave request`);
+      } else {
+        showToast(`✓ Promoted ${replacementName} to host & left the plan`);
+      }
+      
+      if (onLeavePlan) {
+        onLeavePlan();
+      } else {
+        onClose();
+      }
+    } catch (err: any) {
+      console.error("[HomePlansPreviewScreen] Host replacement leave failed:", err);
+      showToast(`Failed to leave plan: ${err.message || "Unknown error"}`);
+    } finally {
+      setIsSubmittingHostReplacement(false);
+    }
+  }, [selectedPlan, isSubmittingHostReplacement, requestHostLeaveWithReplacement, eligibleHostReplacementParticipants, onLeavePlan, onClose, showToast]);
+
   const handleSkip = useCallback(async () => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
     if (myParticipantRecord?.leave_requested) {
@@ -320,11 +395,15 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     const isActuallyJoined = myParticipantRecord?.rsvp_status === "JOINED";
     
     if (isActuallyJoined) {
-      setShowLeavePlanConfirm(true);
+      if (isSoleHost) {
+        setShowHostLeaveReplacementSheet(true);
+      } else {
+        setShowLeavePlanConfirm(true);
+      }
     } else {
       setShowSkipConfirmation(true);
     }
-  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord]);
+  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, isSoleHost]);
 
   if (!selectedPlan) return null;
 
@@ -340,6 +419,16 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         }}
         onDemoteHost={async (userId) => {
           await demoteHostToParticipant(selectedPlan.id, userId);
+        }}
+        onEditTitle={async (newTitle) => {
+          await updatePlanDetails(selectedPlan.id, { title: newTitle });
+        }}
+        onEditCoverImage={async (newCoverUrl, blob) => {
+          const targetPlanId = cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
+          if (blob) {
+            await uploadPlanImage(targetPlanId, blob);
+          }
+          await updatePlanDetails(targetPlanId, { cover_image: `${targetPlanId}.webp`, skipDbWrite: true });
         }}
         onLeavePlan={async () => {
           try {
@@ -381,8 +470,11 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
             {/* Poster Cover Image */}
             <DiscoveryImages
               id="immersive-plan-hero-image"
-              src={selectedPlan.coverImage || getPlanCover(selectedPlan.category, (selectedPlan as any).subcategory || (selectedPlan as any).sports_type)}
+              src={selectedPlan.coverImage}
+              planId={selectedPlan.dbUuid || selectedPlan.id}
               category={selectedPlan.category}
+              subcategory={(selectedPlan as any).subcategory || (selectedPlan as any).sports_type}
+              screen="Home Plans Preview"
               alt={selectedPlan.title}
               className="absolute inset-0 w-full h-full object-cover filter brightness-[0.75]"
             />
@@ -639,6 +731,14 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
           handleConfirmSkip();
         }}
         onClose={() => setShowLeavePlanConfirm(false)}
+      />
+
+      <MakeAnotherParticipantHostBottomSheet
+        isOpen={showHostLeaveReplacementSheet}
+        eligibleParticipants={eligibleHostReplacementParticipants}
+        isSubmitting={isSubmittingHostReplacement}
+        onConfirm={handleConfirmHostLeaveReplacement}
+        onClose={() => setShowHostLeaveReplacementSheet(false)}
       />
 
       <PaidPlanLeaveConfirmationDialog

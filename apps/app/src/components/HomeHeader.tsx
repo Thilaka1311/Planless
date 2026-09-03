@@ -2,8 +2,6 @@ import React from "react";
 import { Bell, Search, Crown, History, X } from "lucide-react";
 import { UserProfile, NotificationItem } from "../core/types";
 
-import { UserAvatar } from "../IMGfromDB/UserAvatar";
-
 interface HomeHeaderProps {
   userProfile: UserProfile;
   setActiveTab: (tab: any) => void;
@@ -19,6 +17,7 @@ interface HomeHeaderProps {
   title?: string;
   scrollY?: number;
   hideNotificationsIcon?: boolean;
+  className?: string;
 }
 
 export const HomeHeader: React.FC<HomeHeaderProps> = ({
@@ -36,6 +35,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
   title = "Planless",
   scrollY = 0,
   hideNotificationsIcon = false,
+  className = "",
 }) => {
   const actionButtonClass = (isActive: boolean) =>
     `w-9.5 h-9.5 rounded-full flex items-center justify-center relative cursor-pointer transition-all active:scale-95 ${
@@ -47,25 +47,10 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
   return (
     <header
       id="figma_coordinate_header"
-      className="h-16 shrink-0 bg-[#09090b]/99 backdrop-blur-md flex items-center justify-between px-4 z-30 select-none relative"
+      className={`h-14 shrink-0 bg-[#050505] flex items-center justify-between px-6 z-30 select-none relative ${className}`}
     >
-      {/* Left Column: Avatar */}
-      <div className="flex-1 flex items-center justify-start z-10">
-        <button
-          onClick={() => {
-            setActiveTab("profile");
-          }}
-          className="relative group shrink-0 block focus:outline-none cursor-pointer"
-          aria-label="View Profile Settings"
-        >
-          <UserAvatar
-            src={userProfile.avatar}
-            alt={userProfile.name}
-            size="w-[42px] h-[42px]"
-            className="border-2 border-zinc-800 hover:border-[#ff8b66] transition-colors"
-          />
-        </button>
-      </div>
+      {/* Left Column: Layout Balance Spacer */}
+      <div className="flex-1 flex items-center justify-start z-10" />
 
       {/* Center Column: Title */}
       <div className="flex-shrink-0 flex items-center justify-center z-10">
