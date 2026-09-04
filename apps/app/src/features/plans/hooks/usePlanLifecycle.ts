@@ -208,19 +208,16 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
 
-    const oldCapacity = matchedPlan?.joinLimit || matchedPlan?.capacity || matchedPlan?.maxSpots || 0;
-    const newCapacity = updates.max_participants !== undefined ? Math.max(1, updates.max_participants) : undefined;
+    const oldCapacity = matchedPlan?.plan_size || matchedPlan?.joinLimit || matchedPlan?.capacity || matchedPlan?.maxSpots || 0;
+    const newCapacity = updates.plan_size !== undefined ? Math.max(1, updates.plan_size) : (updates.max_participants !== undefined ? Math.max(1, updates.max_participants) : undefined);
 
-    // Validate and clamp capacity to at least 1
+    // Validate and clamp plan_size / max_participants to at least 1
+    if (updates.plan_size !== undefined) {
+      updates.plan_size = Math.max(1, updates.plan_size);
+    }
     if (updates.max_participants !== undefined) {
       updates.max_participants = Math.max(1, updates.max_participants);
     }
-
-
-
-
-
-
 
     // Persist updates to the plans table
     const VALID_PLAN_KEYS = [
@@ -230,6 +227,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       "place_address",
       "scheduled_at",
       "rsvp_deadline",
+      "plan_size",
       "max_participants",
       "total_cost",
       "status",
@@ -247,6 +245,54 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       }
     }
 
+    if (planUpdate.plan_size !== undefined) {
+      const currentPlan = (plans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid)
+        || (dbPlans || []).find(p => p.id === planUuid);
+      const maxAllowed = planUpdate.max_participants ?? currentPlan?.max_participants ?? (currentPlan as any)?.maxParticipants;
+
+      if (maxAllowed !== undefined && maxAllowed !== null && planUpdate.plan_size > maxAllowed) {
+        throw new Error(`Plan size (${planUpdate.plan_size}) cannot exceed invitation capacity (${maxAllowed})`);
+      }
+
+      const boundedPlanSize = Math.max(1, maxAllowed ? Math.min(planUpdate.plan_size, maxAllowed) : planUpdate.plan_size);
+
+      const previousDbPlans = dbPlans;
+      if (setDbPlans) {
+        setDbPlans(prev => prev.map(p => {
+          if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+            return {
+              ...p,
+              plan_size: boundedPlanSize,
+              planSize: boundedPlanSize,
+              capacity: boundedPlanSize,
+              joinLimit: boundedPlanSize,
+              maxSpots: boundedPlanSize,
+              ...(planUpdate.total_cost !== undefined ? { total_cost: planUpdate.total_cost, totalCost: planUpdate.total_cost } : {}),
+            };
+          }
+          return p;
+        }));
+      }
+
+      try {
+        await api.updatePlanCapacityRPC(planUuid, boundedPlanSize);
+      } catch (err: any) {
+        console.error("[usePlanLifecycle.updatePlanDetails] updatePlanCapacityRPC failed:", {
+          message: err?.message || String(err),
+          code: err?.code,
+          details: err?.details,
+          hint: err?.hint,
+          planUuid,
+          attemptedPlanSize: boundedPlanSize,
+          maxParticipants: maxAllowed,
+          rawError: err,
+        });
+        if (setDbPlans) setDbPlans(previousDbPlans);
+        throw err;
+      }
+      delete planUpdate.plan_size;
+    }
+
     if (planUpdate.max_participants !== undefined) {
       const newMax = planUpdate.max_participants;
       if (setDbPlans) {
@@ -255,16 +301,13 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
             return {
               ...p,
               max_participants: newMax,
-              joinLimit: newMax,
-              capacity: newMax,
+              maxParticipants: newMax,
               ...(planUpdate.total_cost !== undefined ? { total_cost: planUpdate.total_cost, totalCost: planUpdate.total_cost } : {}),
             };
           }
           return p;
         }));
       }
-      await api.updatePlanCapacityRPC(planUuid, planUpdate.max_participants);
-      delete planUpdate.max_participants;
     }
 
     const updatedCoverImage = updates.cover_image;
@@ -322,14 +365,17 @@ new = ${planUpdate.cover_image}`);
     // Fetch fresh participants to avoid stale state
     const { data: freshParticipantsData } = await (supabase as any)
       .from("plan_participants")
-      .select("*");
+      .select("*")
+      .eq("plan_id", planUuid);
     const freshParticipants = freshParticipantsData || dbPlanParticipants;
 
     // REBALANCE PARTICIPANTS IF CAPACITY CHANGED (AUTOMATIC Mode Only)
     let rebalanceResult = { promotedCount: 0, demotedCount: 0 };
     const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
-    if (newCapacity !== undefined && rebalanceCapacity && filteringMode !== 'ASSIGNED') {
-      rebalanceResult = await rebalanceCapacity(planUuid, newCapacity);
+    if (newCapacity !== undefined && filteringMode !== 'ASSIGNED') {
+      if (rebalanceCapacity) {
+        rebalanceResult = await rebalanceCapacity(planUuid, newCapacity);
+      }
     }
 
 

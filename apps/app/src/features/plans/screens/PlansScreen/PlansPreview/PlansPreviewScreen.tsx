@@ -22,6 +22,7 @@ import {
   MessageCircle,
   Receipt,
   Users,
+  UserPlus,
   AlertCircle,
   Camera
 } from "lucide-react";
@@ -53,6 +54,8 @@ import { PlanSettingsScreen } from "./PlanSettingsScreen";
 import { uploadPlanImage } from "../../../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../../utils/planUtils";
 import { LiveActionButton } from "../../../components/LiveActionButton";
+import { WhoIsComingScreen } from "../../../../create/screens/WhoIsComingScreen";
+import { getCompleteCurrentUserFriends } from "../../../../friendships/api/friendships";
 import {
   LeavePlanBottomSheet,
   MakeAnotherParticipantHostBottomSheet,
@@ -760,7 +763,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
       const updates: any = {
         title: tempTitle.trim(),
-        max_participants: cap,
+        plan_size: cap,
       };
       if (uploadedCoverPath) {
         updates.cover_image = uploadedCoverPath;
@@ -778,13 +781,32 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   };
 
   const handleCapacityChange = async (newCapacity: number) => {
+    if (newCapacity > currentMaxParticipants) {
+      console.warn(`[handleCapacityChange] Attempted capacity ${newCapacity} exceeds max_participants ${currentMaxParticipants}. Ignoring.`);
+      return;
+    }
+    if (newCapacity < 2) {
+      console.warn(`[handleCapacityChange] Attempted capacity ${newCapacity} below minimum 2. Ignoring.`);
+      return;
+    }
     if (createMode) {
       onAdjustCapacity?.(newCapacity);
     } else if (selectedPlan?.id) {
       try {
-        await updatePlanDetails(selectedPlan.id, { max_participants: newCapacity });
-      } catch (err) {
-        console.error("Failed to update plan capacity:", err);
+        await updatePlanDetails(selectedPlan.id, { plan_size: newCapacity });
+      } catch (err: any) {
+        console.error("Failed to update plan capacity:", {
+          message: err?.message || String(err),
+          code: err?.code,
+          details: err?.details,
+          hint: err?.hint,
+          planId: selectedPlan?.id,
+          attemptedPlanSize: newCapacity,
+          maxParticipants: currentMaxParticipants,
+          rawError: err,
+        });
+        showToast(err?.message || "Failed to update plan size");
+        throw err;
       }
     }
   };
@@ -1089,6 +1111,21 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     return dbPlans.find(p => p.id === planUuid);
   }, [dbPlans, planUuid, createMode, plan]);
 
+  const currentPlanSize = Number(
+    rawDbPlan?.plan_size ??
+    selectedPlan?.plan_size ??
+    (selectedPlan as any)?.planSize ??
+    selectedPlan?.capacity ??
+    2
+  );
+
+  const currentMaxParticipants = Number(
+    rawDbPlan?.max_participants ??
+    selectedPlan?.max_participants ??
+    (selectedPlan as any)?.maxParticipants ??
+    50
+  );
+
   const currentTotalCost = Number(
     (createMode
       ? (selectedPlan as any)?.total_cost ?? (selectedPlan as any)?.cost ?? rawDbPlan?.total_cost
@@ -1101,15 +1138,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     if (!hasCost || currentTotalCost <= 0) return "Free";
 
     const isCompleted = rawDbPlan?.status === 'COMPLETED';
-    const planCapacity = Number(
-      rawDbPlan?.max_participants ||
-      selectedPlan?.capacity ||
-      (selectedPlan as any)?.max_participants ||
-      selectedPlan?.joinLimit ||
-      selectedPlan?.maxSpots ||
-      (selectedPlan as any)?.maxParticipants ||
-      0
-    );
+    const planCapacity = currentPlanSize;
 
     const totalParticipantsCount = isCompleted
       ? Number(rawDbPlan?.attended_participants ?? selectedPlan?.attended_participants ?? 0)
@@ -1132,6 +1161,219 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     if (isNaN(endTimeMs)) return false;
     return Date.now() >= endTimeMs + 24 * 60 * 60 * 1000;
   }, [selectedPlan, rawDbPlan]);
+
+  const allowParticipantInvites = useMemo(() => {
+    return Boolean(
+      selectedPlan?.allowParticipantInvites === true ||
+      (selectedPlan as any)?.allow_participant_invites === true ||
+      (rawDbPlan as any)?.allow_participant_invites === true
+    );
+  }, [selectedPlan, rawDbPlan]);
+
+  const isParticipantUser = useMemo(() => {
+    if (isHost) return false;
+    if (!myParticipantRecord) {
+      const member = selectedPlan?.members?.find(
+        m => (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid)
+      );
+      if (!member) return false;
+      const status = normalizeStatus(member.joinState || (member as any).rsvp_status);
+      return status !== "SKIPPED";
+    }
+    const status = normalizeStatus(myParticipantRecord.rsvp_status);
+    return status !== "SKIPPED";
+  }, [isHost, myParticipantRecord, selectedPlan?.members, resolvedUserUuid]);
+
+  const [showParticipantAddPicker, setShowParticipantAddPicker] = useState(false);
+  const [participantAddSearchQuery, setParticipantAddSearchQuery] = useState("");
+  const [participantAddSelectedFriendIds, setParticipantAddSelectedFriendIds] = useState<string[]>([]);
+  const [participantAddFetchedFriends, setParticipantAddFetchedFriends] = useState<any[]>([]);
+  const [allDbUsers, setAllDbUsers] = useState<any[]>([]);
+  const [isSubmittingParticipantInvites, setIsSubmittingParticipantInvites] = useState(false);
+
+  useEffect(() => {
+    if (!showParticipantAddPicker || !resolvedUserUuid) return;
+
+    let isMounted = true;
+    (async () => {
+      try {
+        const [friendsList, usersRes] = await Promise.all([
+          getCompleteCurrentUserFriends(resolvedUserUuid),
+          supabase.from("users").select("id, public_id, full_name, profile_photo_path, bio")
+        ]);
+
+        if (isMounted) {
+          if (friendsList) setParticipantAddFetchedFriends(friendsList);
+          if (usersRes?.data) setAllDbUsers(usersRes.data);
+        }
+      } catch (err) {
+        console.error("[PlansPreviewScreen] Error fetching friends for participant invite:", err);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [showParticipantAddPicker, resolvedUserUuid]);
+
+  const participantAddDisabledUserIds = useMemo(() => {
+    const set = new Set<string>();
+    if (resolvedUserUuid) set.add(resolvedUserUuid);
+    if (userProfile?.dbUuid) set.add(userProfile.dbUuid);
+    if (userProfile?.user_id) set.add(userProfile.user_id);
+    if ((userProfile as any)?.id) set.add((userProfile as any).id);
+
+    const planMembers = selectedPlan?.members || [];
+    planMembers.forEach((m: any) => {
+      const status = normalizeStatus(m.joinState || m.rsvp_status);
+      if (status === 'JOINED' || status === 'WAITLISTED' || status === 'INVITED') {
+        const mId = m.userId || m.userUuid || m.user_id || m.id || m.dbUuid;
+        if (mId) set.add(mId);
+      }
+    });
+
+    (dbPlanParticipants || []).forEach((pp: any) => {
+      if (pp.plan_id === planUuid || pp.plan_id === selectedPlan?.id) {
+        const status = normalizeStatus(pp.rsvp_status);
+        if (status === 'JOINED' || status === 'WAITLISTED' || status === 'INVITED') {
+          if (pp.user_id) set.add(pp.user_id);
+        }
+      }
+    });
+
+    return set;
+  }, [resolvedUserUuid, userProfile, selectedPlan?.members, dbPlanParticipants, planUuid, selectedPlan?.id]);
+
+  const candidateUsersForParticipant = useMemo(() => {
+    const list: any[] = [];
+    const seen = new Set<string>();
+
+    (participantAddFetchedFriends || []).forEach((f: any) => {
+      const fId = f.id || f.dbUuid || f.user_id;
+      if (fId && !seen.has(fId)) {
+        seen.add(fId);
+        list.push({
+          id: fId,
+          dbUuid: fId,
+          name: f.full_name || f.name || "",
+          username: f.username || "",
+          avatar: f.profile_photo || f.avatar || "",
+        });
+      }
+    });
+
+    (allDbUsers || []).forEach((u: any) => {
+      const uId = u.id || u.public_id;
+      if (uId && !seen.has(uId)) {
+        seen.add(uId);
+        list.push({
+          id: u.id,
+          dbUuid: u.id,
+          name: u.full_name || u.name || "",
+          username: (u.full_name || "").toLowerCase().replace(/\s+/g, ""),
+          avatar: u.profile_photo_path || u.profile_photo || "",
+        });
+      }
+    });
+
+    return list;
+  }, [participantAddFetchedFriends, allDbUsers]);
+
+  const availableFriendsForParticipant = useMemo(() => {
+    const seenIds = new Set<string>();
+    return candidateUsersForParticipant
+      .filter((u) => u.id && !participantAddDisabledUserIds.has(u.id))
+      .filter((u) => {
+        if (!u.id || seenIds.has(u.id)) return false;
+        seenIds.add(u.id);
+        return true;
+      });
+  }, [candidateUsersForParticipant, participantAddDisabledUserIds]);
+
+  const participantAddSelectedFriends = useMemo(() => {
+    return participantAddSelectedFriendIds
+      .map(id => {
+        const u = candidateUsersForParticipant.find(x => x.id === id);
+        if (u) {
+          return {
+            id: u.id,
+            name: u.name,
+            avatar: u.avatar,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [participantAddSelectedFriendIds, candidateUsersForParticipant]);
+
+  const participantAddForm = useMemo(() => {
+    return {
+      searchPeopleQuery: participantAddSearchQuery,
+      setSearchPeopleQuery: setParticipantAddSearchQuery,
+      selectedFriends: participantAddSelectedFriends,
+      toggleFriendSelection: (friend: any) => {
+        setParticipantAddSelectedFriendIds((prev) =>
+          prev.includes(friend.id) ? prev.filter((id) => id !== friend.id) : [...prev, friend.id]
+        );
+      },
+      waitlistEnabled: false,
+      setWaitlistEnabled: () => {},
+      totalCapacity: 0,
+      setTotalCapacity: () => {},
+      totalInvitedCount: participantAddSelectedFriends.length,
+      handleRemoveSelectedItem: (item: any) => {
+        setParticipantAddSelectedFriendIds((prev) =>
+          prev.filter((id) => id !== item.id && id !== (item as any)?.dbUuid)
+        );
+      },
+      AVAILABLE_FRIENDS: availableFriendsForParticipant,
+      userProfile: {
+        dbUuid: userProfile.dbUuid || "",
+        name: userProfile.name || "You",
+        avatar: userProfile.avatar || "",
+      },
+      activeUserId: resolvedUserUuid,
+      isHostSelected: false,
+      setIsHostSelected: () => {},
+      localTitle: selectedPlan?.title || "",
+      localLocation: selectedPlan?.location || "",
+      eventDateTime: selectedPlan?.datetime ? new Date(selectedPlan.datetime) : new Date(),
+      customCoverImage: selectedPlan?.coverImage,
+    };
+  }, [
+    participantAddSearchQuery,
+    participantAddSelectedFriends,
+    availableFriendsForParticipant,
+    userProfile,
+    resolvedUserUuid,
+    selectedPlan,
+  ]);
+
+  const handleParticipantAddConfirm = async () => {
+    if (isSubmittingParticipantInvites) return;
+    const friendIds = participantAddSelectedFriendIds.filter(id => !participantAddDisabledUserIds.has(id));
+    if (friendIds.length === 0) return;
+
+    setIsSubmittingParticipantInvites(true);
+    setShowParticipantAddPicker(false);
+    setParticipantAddSearchQuery("");
+    setParticipantAddSelectedFriendIds([]);
+    showToast("✓ Invitations sent");
+
+    try {
+      await addParticipantsToPlan({
+        planId: selectedPlan.id,
+        inviteeUuids: friendIds,
+        userProfile,
+        planTitle: selectedPlan?.title || '',
+      });
+    } catch (err: any) {
+      console.error("[handleParticipantAddConfirm] Error adding participants:", err);
+      showToast(err?.message || "Failed to add participants");
+    } finally {
+      setIsSubmittingParticipantInvites(false);
+    }
+  };
 
   const currentStatus = normalizeStatus(myParticipantRecord?.rsvp_status);
   const showJoinDirect = ["INVITED", "WAITLISTED", "new"].includes(currentStatus);
@@ -1421,7 +1663,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     );
   }
 
-  const isFixedViewportView = (isHost || isCompleted) && !isCancelled;
+  const isFixedViewportView = !isCancelled;
   const isLiveHostView = isHost && !isCancelled && !isCompleted;
 
   return (
@@ -1535,30 +1777,21 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     </button>
 
                     {/* Plan Size Indicator (Right side of Date & Time row / above Free) */}
-                    {Boolean(selectedPlan.capacity || (selectedPlan as any).max_participants || selectedPlan.maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants) && (
-                      createMode ? (
-                        <button
-                          type="button"
-                          id="hero_plan_size_btn"
-                          disabled={!isHost || isCancelled || isCompleted}
-                          onClick={() => {
-                            if (isCancelled || isCompleted) return;
-                            setIsEditingCapacitySheetOpen(true);
-                          }}
-                          className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
-                        >
-                          <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
-                          <span>{selectedPlan.capacity || (selectedPlan as any).max_participants || selectedPlan.maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants}</span>
-                        </button>
-                      ) : (
-                        <div
-                          id="hero_plan_size_indicator"
-                          className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 select-none pointer-events-none"
-                        >
-                          <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
-                          <span>{selectedPlan.capacity || (selectedPlan as any).max_participants || selectedPlan.maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants}</span>
-                        </div>
-                      )
+                    {Boolean(currentPlanSize) && (
+                      <button
+                        type="button"
+                        id="hero_plan_size_btn"
+                        data-testid="hero_plan_size_indicator"
+                        disabled={isCancelled || isCompleted}
+                        onClick={() => {
+                          if (isCancelled || isCompleted) return;
+                          setIsEditingCapacitySheetOpen(true);
+                        }}
+                        className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+                      >
+                        <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
+                        <span>{currentPlanSize}</span>
+                      </button>
                     )}
                   </div>
 
@@ -1660,7 +1893,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
                       <CostBreakdownPopover
                         totalCost={createMode ? (selectedPlan as any).total_cost : rawDbPlan?.total_cost}
-                        maxParticipants={createMode ? (selectedPlan.capacity || (selectedPlan as any).max_participants) : rawDbPlan?.max_participants}
+                        maxParticipants={currentPlanSize}
                         attendedParticipants={rawDbPlan?.attended_participants ?? selectedPlan?.attended_participants}
                         isCompleted={isCompleted}
                         isOpen={isCostPopoverOpen}
@@ -1712,6 +1945,21 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               >
                 <Users className="w-4 h-4 text-white/70" />
                 <span>Manage Participants</span>
+              </button>
+            </div>
+          )}
+
+          {/* Fixed Add Participants action for participant when allow_participant_invites is true */}
+          {!isHost && !isCancelled && !isCompleted && !createMode && isParticipantUser && allowParticipantInvites && (
+            <div className="fixed bottom-[58px] left-6 right-6 z-40 flex items-center justify-center pointer-events-auto">
+              <button
+                type="button"
+                id="participant_add_participants_btn"
+                onClick={() => setShowParticipantAddPicker(true)}
+                className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
+              >
+                <UserPlus className="w-4 h-4 text-white/70" />
+                <span>Add Participants</span>
               </button>
             </div>
           )}
@@ -1882,7 +2130,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               onDemoteFromHost={(planId, userId) => demoteHostToParticipant(planId, userId)}
               onUpdatePlanCapacity={(planId, capacity, opts) =>
                 updatePlanDetails(planId, {
-                  max_participants: capacity,
+                  plan_size: capacity,
                   ...(opts?.totalCost !== undefined ? { total_cost: opts.totalCost } : {}),
                 })
               }
@@ -1902,6 +2150,37 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 setShowPlanSettingsScreen(true);
               }}
               onLeavePlan={handleSkip}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ---------------- 👥 PARTICIPANT ADD PARTICIPANTS PICKER ---------------- */}
+      <AnimatePresence>
+        {showParticipantAddPicker && (
+          <motion.div
+            key="participant-add-friends-picker"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="fixed inset-0 z-[60] bg-[#000000] flex flex-col"
+          >
+            <WhoIsComingScreen
+              form={participantAddForm}
+              onBack={() => {
+                setShowParticipantAddPicker(false);
+                setParticipantAddSearchQuery("");
+                setParticipantAddSelectedFriendIds([]);
+              }}
+              onContinue={handleParticipantAddConfirm}
+              selectedCategory={selectedPlan?.category || "custom"}
+              selectedSubcategory={selectedPlan?.subcategory || null}
+              confirmLabel="Send invites"
+              headerTitle="Select friends"
+              hideExitDialog={true}
+              hideOverviewToggle={true}
+              isAddParticipantMode={true}
             />
           </motion.div>
         )}
@@ -2180,7 +2459,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             planCoverImage={selectedPlan?.coverImage || (selectedPlan as any)?.cover_image || (selectedPlan as any)?.cover_photo || getPlanCover(selectedPlan?.category, (selectedPlan as any)?.subcategory)}
             initialCost={editTotalCostInput}
             participants={selectedPlan?.members || []}
-            planSize={selectedPlan.capacity || (selectedPlan as any).max_participants || (selectedPlan as any).maxParticipants || selectedPlan.joinLimit || rawDbPlan?.max_participants}
+            planSize={currentPlanSize}
             onSave={async (parsedCost: number) => {
               setIsEditingCostSheetOpen(false);
               if (createMode) {
@@ -2220,20 +2499,31 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       {/* ---------------- 👥 EDIT CAPACITY / PLAN SIZE BOTTOM SHEET ---------------- */}
       <EditCapacityBottomSheet
         isOpen={isEditingCapacitySheetOpen}
-        capacity={Number(
-          selectedPlan?.capacity ||
-          (selectedPlan as any)?.max_participants ||
-          selectedPlan?.maxParticipants ||
-          selectedPlan?.joinLimit ||
-          rawDbPlan?.max_participants ||
-          2
-        )}
+        capacity={currentPlanSize}
         invitedCount={
-          selectedPlan?.members?.length ||
-          (createMode && plan?.members ? plan.members.length : undefined)
+          createMode && plan?.members
+            ? plan.members.length
+            : (selectedPlan?.members?.filter(m => normalizeStatus(m.joinState || (m as any).rsvp_status) !== 'SKIPPED')?.length ||
+               dbPlanParticipants?.filter(p => p.plan_id === (selectedPlan?.id || planUuid) && p.rsvp_status !== 'SKIPPED')?.length ||
+               selectedPlan?.members?.length ||
+               undefined)
+        }
+        joinedCount={
+          createMode
+            ? undefined
+            : (selectedPlan?.members?.filter(m => {
+                const s = normalizeStatus(m.joinState || (m as any).rsvp_status);
+                return (m.role === 'HOST' || m.isHost === true || s === 'JOINED' || s === 'WAITLISTED' || s === 'REJOINED') && s !== 'SKIPPED';
+              })?.length ||
+              dbPlanParticipants?.filter(p => {
+                if (p.plan_id !== (selectedPlan?.id || planUuid)) return false;
+                const s = normalizeStatus(p.rsvp_status);
+                return (p.role === 'HOST' || s === 'JOINED' || s === 'WAITLISTED' || s === 'REJOINED') && s !== 'SKIPPED';
+              })?.length ||
+              1)
         }
         minCapacity={2}
-        maxCapacity={50}
+        maxCapacity={currentMaxParticipants}
         onCapacityChange={handleCapacityChange}
         onAddParticipants={() => {
           setIsEditingCapacitySheetOpen(false);
@@ -2243,8 +2533,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             } else if (onEditParticipants) {
               onEditParticipants();
             }
-          } else {
+          } else if (isHost) {
             setShowParticipantManagement(true);
+          } else if (allowParticipantInvites) {
+            setShowParticipantAddPicker(true);
           }
         }}
         onClose={() => setIsEditingCapacitySheetOpen(false)}

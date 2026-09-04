@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useMemo, useEffect, useRef } from 'react';
 import { ParticipantManagementScreen, Friend } from '../../../../participants/screens/ParticipantManagementScreen';
 import { Plan, UserProfile } from '../../../../../core/types';
-import { normalizeStatus, sortGoingParticipants } from '../../../../../../lib/participantStatus';
+import { normalizeStatus, sortGoingParticipants, partitionAutomaticParticipants } from '../../../../../../lib/participantStatus';
 import { useToast } from '../../../../../shared/contexts/ToastContext';
 import { WhoIsComingScreen } from '../../../../create/screens/WhoIsComingScreen';
 import { useCirclesStore } from '../../../../circles/state/CirclesContext';
@@ -312,8 +312,15 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const [selectedPlanFeeOption, setSelectedPlanFeeOption] = useState<"split_current_cost" | "keep_cost_per_person" | null>(null);
   const [isSubmittingPlanFeeUpdate, setIsSubmittingPlanFeeUpdate] = useState(false);
 
+  // Local capacity override for instantaneous responsive updates on participant removal
+  const [localCapacity, setLocalCapacity] = useState<number | null>(null);
+
+  useEffect(() => {
+    setLocalCapacity(null);
+  }, [plan.plan_size, (plan as any).planSize, plan.capacity, plan.joinLimit, (plan as any).max_participants]);
+
   // Determine capacity bounds
-  const storedCapacity = plan.joinLimit || plan.capacity || 2;
+  const storedCapacity = localCapacity !== null ? localCapacity : (plan.plan_size || (plan as any).planSize || plan.joinLimit || plan.capacity || 2);
   const capacity = Math.max(2, storedCapacity);
 
   const planFeeCurrentTotal = currentTotalCost;
@@ -1056,7 +1063,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
   const isCompletedPlan = (plan.status || '').toUpperCase() === 'COMPLETED';
 
-  const maxCapacity = Math.max(storedCapacity, Math.max(2, allPlanMembers.length));
+  const maxCapacity = Math.max(storedCapacity, plan.max_participants || (plan as any).maxParticipants || Math.max(2, allPlanMembers.length));
 
   const goingMembers = useMemo(() => {
     const currentPlanId = plan.id || plan.dbUuid;
@@ -1418,21 +1425,35 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         return;
       }
 
-      // ONLY for removing ANOTHER participant:
+      // ONLY for removing ANOTHER participant in ASSIGNED mode:
       const isGoing = goingList.some(g => (g.dbUuid || g.id) === friendId);
-      if (isGoing) {
+      if (waitlistMode === 'assigned' && isGoing) {
         setPendingRemoveGoing(friend);
         return;
+      }
+
+      // In AUTOMATIC mode: decrement local capacity immediately if no waitlist exists and planSize === invitedCount
+      if (waitlistMode === 'automatic') {
+        const allActive = (plan.members || []).filter(
+          (m: any) => normalizeStatus(m.joinState || m.rsvp_status) !== 'SKIPPED'
+        );
+        const partition = partitionAutomaticParticipants(allActive, capacity, resolvedUserUuid || userProfile?.user_id);
+        const hasWaitlist = partition.waitlist.length > 0;
+        const invitedCount = allActive.length;
+        if (!hasWaitlist && capacity === invitedCount && capacity > 2) {
+          setLocalCapacity(Math.max(2, capacity - 1));
+        }
       }
 
       try {
         await onRemoveParticipant(plan.id, friendId);
         showToast(`✓ Removed ${friend.name}`);
       } catch {
+        setLocalCapacity(null);
         showToast('Failed to remove participant');
       }
     },
-    [plan.id, waitlistMode, goingList, onRemoveParticipant, showToast, resolvedUserUuid, userProfile?.user_id, handleLeavePlan],
+    [plan.id, plan.members, waitlistMode, goingList, capacity, onRemoveParticipant, showToast, resolvedUserUuid, userProfile?.user_id, handleLeavePlan],
   );
 
   const handleMoveToInvited = useCallback(

@@ -297,15 +297,20 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   const cap = Math.max(0, capacity || 0);
 
   const skippedMembers: T[] = [];
+  const hostMembers: T[] = [];
   const joinedMembers: T[] = [];
   const waitlistedMembers: T[] = [];
   const unacceptedMembers: T[] = [];
   const rejoinedMembers: T[] = [];
 
   for (const m of members) {
+    const isHostRole = m.isHost === true || m.role === 'HOST';
     const status = normalizeStatus(m.rsvp_status || m.joinState || m.rsvpStatus);
+
     if (status === 'SKIPPED') {
       skippedMembers.push(m);
+    } else if (isHostRole) {
+      hostMembers.push(m);
     } else if (status === 'JOINED') {
       joinedMembers.push(m);
     } else if (status === 'WAITLISTED') {
@@ -317,53 +322,182 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
     }
   }
 
-  const sortByTimestamp = (items: T[]) => {
+  // Helper to get parsed timestamp from join_queue_at without inventing timestamps
+  const getQueueTimestamp = (m: T): number | null => {
+    const raw = m.join_queue_at || m.joinQueueAt || m.joined_queue_at || m.joinedQueueAt;
+    if (!raw) return null;
+    const t = new Date(raw).getTime();
+    return isNaN(t) ? null : t;
+  };
+
+  // Helper to put "You" / active user at index 0 of an array, if present
+  const prioritizeYou = <U extends Record<string, any>>(items: U[]): U[] => {
+    const currentUser = items.find((item) => {
+      const isYou = item.name === 'You';
+      const itemUserId = String(item.userId || item.dbUuid || item.id || (item as any).user_id || '').toLowerCase();
+      const activeId = activeUserId ? String(activeUserId).toLowerCase() : '';
+      return isYou || (Boolean(activeId) && itemUserId === activeId);
+    });
+    if (!currentUser) return items;
+    const remaining = items.filter((item) => item !== currentUser);
+    return [{ ...currentUser, name: 'You' }, ...remaining];
+  };
+
+  // First-Come, First-Served (FCFS) priority comparator for determining who gets the available slots:
+  // 1. Host(s) always take highest priority in Going
+  // 2. Earlier join_queue_at = higher priority
+  // 3. Fallback: Alphabetical name ordering
+  const sortFCFS = (items: T[]) => {
     return [...items].sort((a, b) => {
-      const qA = a.joined_queue_at || a.joinedQueueAt || a.created_at || a.createdAt;
-      const qB = b.joined_queue_at || b.joinedQueueAt || b.created_at || b.createdAt;
-      const timeA = qA ? new Date(qA).getTime() : Number.MAX_SAFE_INTEGER;
-      const timeB = qB ? new Date(qB).getTime() : Number.MAX_SAFE_INTEGER;
-      if (timeA !== timeB) return timeA - timeB;
-      const nameA = a.name || a.full_name || '';
-      const nameB = b.name || b.full_name || '';
+      const aIsHost = a.isHost === true || a.role === 'HOST';
+      const bIsHost = b.isHost === true || b.role === 'HOST';
+      if (aIsHost && !bIsHost) return -1;
+      if (!aIsHost && bIsHost) return 1;
+
+      const timeA = getQueueTimestamp(a);
+      const timeB = getQueueTimestamp(b);
+
+      if (timeA !== null && timeB !== null && timeA !== timeB) {
+        return timeA - timeB;
+      }
+      if (timeA !== null && timeB === null) return -1;
+      if (timeA === null && timeB !== null) return 1;
+
+      const nameA = a.name || a.full_name || a.username || '';
+      const nameB = b.name || b.full_name || b.username || '';
       return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
     });
   };
 
   const sortAlpha = (items: T[]) => {
     return [...items].sort((a, b) => {
-      const nameA = a.name || a.full_name || '';
-      const nameB = b.name || b.full_name || '';
+      const nameA = a.name || a.full_name || a.username || '';
+      const nameB = b.name || b.full_name || b.username || '';
       return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
     });
   };
 
-  const sortedJoined = sortByTimestamp(joinedMembers);
-  const sortedWaitlist = sortByTimestamp(waitlistedMembers);
-  const sortedUnaccepted = sortAlpha(unacceptedMembers);
-  const sortedRejoined = sortByTimestamp(rejoinedMembers);
+  // Participants who have actively joined / accepted:
+  const allJoinedMembers = [
+    ...hostMembers,
+    ...joinedMembers,
+    ...waitlistedMembers,
+    ...rejoinedMembers,
+  ];
 
-  const isFull = cap > 0 && sortedJoined.length >= cap;
+  const joinedCount = allJoinedMembers.length;
 
-  let finalGoingRaw: T[] = [];
-  let finalWaitlistRaw: T[] = [];
+  // RULE 4: WHEN PLAN SIZE HAS NOT BEEN REACHED (cap <= 0 || joinedCount < cap)
+  // - Do NOT create a separate Waitlist section.
+  // - Everyone who has joined should appear in the Joined section.
+  // - Everyone who is still invited should appear below the Joined participants.
+  // - Joined participants are alphabetical, with "You" always first.
+  // - Invited participants are alphabetical.
+  // - NO numbers should be displayed anywhere.
+  if (cap <= 0 || joinedCount < cap) {
+    const alphaJoined = sortAlpha(allJoinedMembers).map((item) => ({
+      ...item,
+      joinedQueueNumber: null,
+      waitlistPosition: null,
+      isAccepted: true,
+    }));
 
-  if (!isFull) {
-    // Capacity NOT reached: All non-skipped participants are in Going/Invited; REJOINED participants are in Waitlist (dimmed/subdued).
-    finalGoingRaw = [...sortedJoined, ...sortedWaitlist, ...sortedUnaccepted];
-    finalWaitlistRaw = [...sortedRejoined];
-  } else {
-    // Capacity REACHED: Joined participants fill Going. Overflow participants (Waitlisted + Invited + Rejoined) go to Waitlist.
-    // REJOINED participants placed after accepted waitlisted members and before unaccepted invited members.
-    finalGoingRaw = [...sortedJoined];
-    finalWaitlistRaw = [...sortedWaitlist, ...sortedRejoined, ...sortedUnaccepted];
+    const alphaUnaccepted = sortAlpha(unacceptedMembers).map((item) => ({
+      ...item,
+      joinedQueueNumber: null,
+      waitlistPosition: null,
+      isAccepted: false,
+    }));
+
+    const going = [...prioritizeYou(alphaJoined), ...prioritizeYou(alphaUnaccepted)];
+
+    return {
+      going,
+      waitlist: [],
+      skipped: sortAlpha(skippedMembers),
+      goingJoinedCount: joinedCount,
+      capacity: cap,
+    };
   }
 
+  // RULE 1, 2, 3, 5: WHEN PLAN SIZE IS REACHED (joinedCount >= cap):
+  // Automatic waitlist separation becomes active.
+  //
+  // 1. Determine who gets the available slots:
+  //    - First `capacity` people by join_queue_at (FCFS) → Joined.
+  //    - Earlier join_queue_at = higher priority.
+  const sortedJoined = sortFCFS(allJoinedMembers);
+  const goingSelected = sortedJoined.slice(0, cap);
+
+  // 2. JOINED SECTION:
+  //    - The Joined section must NEVER show queue numbers.
+  //    - Do not show #1, #2, #3, etc. next to joined participants.
+  //    - Always arrange everyone in the Joined section alphabetically by participant name.
+  //    - EXCEPT: current user ("You") must always appear at the very top.
+  //    - After "You", sort all other joined participants alphabetically.
+  const goingAlphabetical = sortAlpha(goingSelected).map((item) => ({
+    ...item,
+    joinedQueueNumber: null,
+    waitlistPosition: null,
+    isAccepted: true,
+  }));
+  const finalGoing = prioritizeYou(goingAlphabetical);
+
+  // 3. WAITLIST SECTION:
+  //    - The Waitlist section is where queue numbers MUST be displayed.
+  //    - Split into two logical groups:
+  //      A. Participants who have actually joined/responded and therefore have a join_queue_at value:
+  //         - Sort them by join_queue_at ascending (earliest join = first).
+  //         - Display queue numbers #1, #2, #3, etc. based on that order.
+  //         - These numbers represent their position in the waitlist.
+  //      B. Participants who are still Invited and have NOT joined/responded (or have no valid join_queue_at):
+  //         - They have no join_queue_at.
+  //         - Do NOT assign them queue numbers.
+  //         - Put them BELOW the numbered waitlisted participants.
+  //         - Sort these invited people alphabetically.
+  const overflowJoined = sortedJoined.slice(cap);
+
+  const validJoinedWaitlist = overflowJoined.filter((item) => getQueueTimestamp(item) !== null);
+  const invalidJoinedWaitlist = overflowJoined.filter((item) => getQueueTimestamp(item) === null);
+
+  // Group A: Sort by join_queue_at ASC
+  const sortedValidWaitlist = [...validJoinedWaitlist].sort((a, b) => {
+    const tA = getQueueTimestamp(a)!;
+    const tB = getQueueTimestamp(b)!;
+    if (tA !== tB) return tA - tB;
+    const nameA = a.name || a.full_name || a.username || '';
+    const nameB = b.name || b.full_name || b.username || '';
+    return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+  });
+
+  // Assign waitlist numbers #1, #2, #3... to Group A
+  const numberedWaitlist = sortedValidWaitlist.map((item, idx) => ({
+    ...item,
+    waitlistPosition: idx + 1,
+    joinedQueueNumber: null,
+    isAccepted: true,
+  }));
+
+  // Group B: Still-invited participants & any joiner without valid join_queue_at
+  const unnumberedInvited = sortAlpha([...invalidJoinedWaitlist, ...unacceptedMembers]).map((item) => ({
+    ...item,
+    waitlistPosition: null,
+    joinedQueueNumber: null,
+    isAccepted: false,
+  }));
+
+  const finalWaitlist = [
+    ...numberedWaitlist,
+    ...unnumberedInvited,
+  ];
+
+  const goingJoinedCount = goingSelected.length;
+
   return {
-    going: sortGoingParticipants(finalGoingRaw, activeUserId),
-    waitlist: finalWaitlistRaw,
-    skipped: sortGoingParticipants(skippedMembers, activeUserId),
-    goingJoinedCount: sortedJoined.length,
+    going: finalGoing,
+    waitlist: finalWaitlist,
+    skipped: sortAlpha(skippedMembers),
+    goingJoinedCount,
     capacity: cap,
   };
 }

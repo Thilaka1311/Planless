@@ -246,7 +246,17 @@ export async function updatePlanCapacityRPC(
     p_max_participants: maxParticipants
   });
 
-  if (error) throw error;
+  if (error) {
+    console.error("[updatePlanCapacityRPC] Supabase RPC error:", {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      planId,
+      maxParticipants,
+    });
+    throw error;
+  }
   return data;
 }
 

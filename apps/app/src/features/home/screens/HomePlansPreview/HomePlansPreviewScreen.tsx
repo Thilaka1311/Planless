@@ -257,7 +257,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     const isCompleted = rawDbPlan.status === 'COMPLETED';
     const divisor = isCompleted
       ? Number(rawDbPlan.attended_participants ?? selectedPlan?.attended_participants ?? 0)
-      : (rawDbPlan.max_participants ? Number(rawDbPlan.max_participants) : maxSpots);
+      : (rawDbPlan.plan_size ? Number(rawDbPlan.plan_size) : (rawDbPlan.max_participants ? Number(rawDbPlan.max_participants) : maxSpots));
 
     if (total <= 0 || !divisor || divisor <= 0) return null;
     const perPerson = Math.round((total / divisor) * 100) / 100;
@@ -461,97 +461,96 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       onPointerCancel={cancelHolding}
       className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left select-none"
     >
-      <div id="immersive-plan-scroll-container" className="flex-1 overflow-y-auto scrollbar-none pb-28">
-        <div id="immersive-plan-hero-wrapper" className="w-full">
-          <div
-            id="immersive-plan-hero-container"
-            className="relative w-full h-[280px] flex flex-col justify-end overflow-visible flex-shrink-0 rounded-b-[2.5rem] border-b border-white/10"
-          >
-            {/* Poster Cover Image */}
-            <DiscoveryImages
-              id="immersive-plan-hero-image"
-              src={selectedPlan.coverImage}
-              planId={selectedPlan.dbUuid || selectedPlan.id}
-              category={selectedPlan.category}
-              subcategory={(selectedPlan as any).subcategory || (selectedPlan as any).sports_type}
-              screen="Home Plans Preview"
-              alt={selectedPlan.title}
-              className="absolute inset-0 w-full h-full object-cover filter brightness-[0.75]"
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 pointer-events-none z-10" />
+      {/* 1. FIXED TOP CONTENT */}
+      <div id="immersive-plan-hero-wrapper" className="w-full flex-shrink-0 relative z-20 pb-[78px]">
+        <div
+          id="immersive-plan-hero-container"
+          className="relative w-full h-[280px] flex flex-col justify-end overflow-visible flex-shrink-0 rounded-b-[2.5rem] border-b border-white/10"
+        >
+          {/* Poster Cover Image */}
+          <DiscoveryImages
+            id="immersive-plan-hero-image"
+            src={selectedPlan.coverImage}
+            planId={selectedPlan.dbUuid || selectedPlan.id}
+            category={selectedPlan.category}
+            subcategory={(selectedPlan as any).subcategory || (selectedPlan as any).sports_type}
+            screen="Home Plans Preview"
+            alt={selectedPlan.title}
+            className="absolute inset-0 w-full h-full object-cover filter brightness-[0.75]"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 pointer-events-none z-10" />
 
-            {/* Shared Hero Header - Participant Role Strictly Enforced */}
-            <HeroHeader
-              title={selectedPlan.title}
-              creatorName={selectedPlan.creatorName}
-              creatorAvatar={selectedPlan.creatorAvatar}
-              hosts={allHosts}
-              viewerId={resolvedUserUuid}
-              onClose={onClose}
-              isHost={false}
-            />
+          {/* Shared Hero Header - Participant Role Strictly Enforced */}
+          <HeroHeader
+            title={selectedPlan.title}
+            creatorName={selectedPlan.creatorName}
+            creatorAvatar={selectedPlan.creatorAvatar}
+            hosts={allHosts}
+            viewerId={resolvedUserUuid}
+            onClose={onClose}
+            isHost={false}
+          />
 
-            {/* Integrated Glass Details Card Repositioned */}
-            <div className="absolute left-6 right-6 bottom-0 translate-y-1/2 z-20">
-              <div className="w-full bg-black/15 backdrop-blur-3xl border border-white/[0.06] shadow-lg rounded-2xl relative">
-                <div className="flex flex-col p-4.5 gap-y-3.5 text-left">
-                  {/* 1. Date & Time */}
+          {/* Integrated Glass Details Card Repositioned */}
+          <div className="absolute left-6 right-6 bottom-0 translate-y-1/2 z-20">
+            <div className="w-full bg-black/15 backdrop-blur-3xl border border-white/[0.06] shadow-lg rounded-2xl relative">
+              <div className="flex flex-col p-4.5 gap-y-3.5 text-left">
+                {/* 1. Date & Time */}
+                <div className="flex items-center gap-3 p-1.5 -m-1.5 rounded-xl">
+                  <CalendarDays className="w-4.5 h-4.5 text-white/70 flex-shrink-0" />
+                  <span className="text-[13px] font-semibold text-white/95 leading-none">
+                    {formatPlanDate(selectedPlan.datetime || selectedPlan.createdAt)}
+                  </span>
+                </div>
+
+                {/* 2. Location (Row 2) if location present */}
+                {selectedPlan.location && (
                   <div className="flex items-center gap-3 p-1.5 -m-1.5 rounded-xl">
-                    <CalendarDays className="w-4.5 h-4.5 text-white/70 flex-shrink-0" />
-                    <span className="text-[13px] font-semibold text-white/95 leading-none">
-                      {formatPlanDate(selectedPlan.datetime || selectedPlan.createdAt)}
+                    <MapPin className="w-4.5 h-4.5 text-[#FF5A1F] flex-shrink-0" />
+                    <span className="text-[13px] font-semibold text-white/95 leading-none truncate">
+                      {selectedPlan.location}
                     </span>
                   </div>
+                )}
 
-                  {/* 2. Location (Row 2) if location present */}
-                  {selectedPlan.location && (
-                    <div className="flex items-center gap-3 p-1.5 -m-1.5 rounded-xl">
-                      <MapPin className="w-4.5 h-4.5 text-[#FF5A1F] flex-shrink-0" />
-                      <span className="text-[13px] font-semibold text-white/95 leading-none truncate">
-                        {selectedPlan.location}
-                      </span>
-                    </div>
-                  )}
+                {/* 3. RSVP & Cost Row (Row 3) */}
+                <div className="flex items-center justify-between text-white/50 text-[11px] font-medium leading-none pt-1">
+                  <div className="flex items-center gap-2 text-left">
+                    <Hourglass className="w-3.5 h-3.5 flex-shrink-0" style={{ color: urgencyColor }} />
+                    <span style={{ color: urgencyColor }}>{rsvp.text}</span>
+                  </div>
 
-                  {/* 3. RSVP & Cost Row (Row 3) */}
-                  <div className="flex items-center justify-between text-white/50 text-[11px] font-medium leading-none pt-1">
-                    <div className="flex items-center gap-2 text-left">
-                      <Hourglass className="w-3.5 h-3.5 flex-shrink-0" style={{ color: urgencyColor }} />
-                      <span style={{ color: urgencyColor }}>{rsvp.text}</span>
-                    </div>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsCostPopoverOpen((prev) => !prev)}
+                      className="flex items-center gap-2 hover:bg-white/[0.06] active:bg-white/10 transition p-1.5 -m-1.5 rounded-xl cursor-pointer text-right text-white/90 font-semibold"
+                    >
+                      <span>{hasCost && costText ? costText : "Free"}</span>
+                    </button>
 
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setIsCostPopoverOpen((prev) => !prev)}
-                        className="flex items-center gap-2 hover:bg-white/[0.06] active:bg-white/10 transition p-1.5 -m-1.5 rounded-xl cursor-pointer text-right text-white/90 font-semibold"
-                      >
-                        <span>{hasCost && costText ? costText : "Free"}</span>
-                      </button>
-
-                      <CostBreakdownPopover
-                        totalCost={rawDbPlan?.total_cost}
-                        maxParticipants={rawDbPlan?.max_participants}
-                        isOpen={isCostPopoverOpen}
-                        onClose={() => setIsCostPopoverOpen(false)}
-                        isHost={false}
-                        position="above"
-                        align="right"
-                      />
-                    </div>
+                    <CostBreakdownPopover
+                      totalCost={rawDbPlan?.total_cost}
+                      maxParticipants={rawDbPlan?.max_participants}
+                      isOpen={isCostPopoverOpen}
+                      onClose={() => setIsCostPopoverOpen(false)}
+                      isHost={false}
+                      position="above"
+                      align="right"
+                    />
                   </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Scroll Content: Inline Participant View exclusively */}
-        <div id="immersive-plan-scroll-content" className="px-6 pt-[78px] space-y-5">
-          {selectedPlan && (
-            <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} />
-          )}
-        </div>
+      {/* 2. SCROLLABLE PARTICIPANT SECTION ONLY */}
+      <div id="immersive-plan-scroll-content" className="no-hold px-6 flex-1 min-h-0 flex flex-col overflow-hidden">
+        {selectedPlan && (
+          <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} variant="flat" />
+        )}
       </div>
 
 

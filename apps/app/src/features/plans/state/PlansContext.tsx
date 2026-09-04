@@ -525,6 +525,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     userId,
     dbUsers: dbUsers,
     dbPlans,
+    setDbPlans,
     plans,
     dbPlanParticipants,
     setDbPlanParticipants,
@@ -813,10 +814,11 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const waitlistPositionMap = new Map<string, number>();
 
     if (isAssignedMode && selectedFriends.length > 0) {
-      const hasConfiguredCapacity = newDbPlan?.max_participants != null;
+      const planCapacity = newDbPlan?.plan_size ?? newDbPlan?.max_participants;
+      const hasConfiguredCapacity = planCapacity != null;
       const hostOffset = isHostSelected ? 1 : 0;
       const totalCount = selectedFriends.length + hostOffset;
-      const hasWaitlist = hasConfiguredCapacity && newDbPlan.max_participants < totalCount;
+      const hasWaitlist = hasConfiguredCapacity && planCapacity < totalCount;
 
       if (!hasWaitlist) {
         // No waitlist: all friends are GOING
@@ -826,7 +828,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
       } else {
         const priorityIds: string[] = priorityGuestIds || [];
-        const goingCapacityForFriends = Math.max(0, newDbPlan.max_participants - hostOffset);
+        const goingCapacityForFriends = Math.max(0, planCapacity - hostOffset);
 
         let currentWaitlistPos = 1;
         let goingCount = 0;
@@ -1068,17 +1070,39 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId || (p as any).public_id === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
 
+    const previousPlanState = matchedPlan ? {
+      plan_size: matchedPlan.plan_size,
+      max_participants: matchedPlan.max_participants,
+      capacity: matchedPlan.capacity,
+      joinLimit: matchedPlan.joinLimit,
+    } : null;
+
     // Synchronously update local React state first so capacity bounds expand immediately
     updateLocalPlan(planUuid, updates);
     if (updates.max_participants !== undefined) {
       updateLocalPlan(planUuid, {
         max_participants: updates.max_participants,
-        joinLimit: updates.max_participants,
-        capacity: updates.max_participants,
+        maxParticipants: updates.max_participants,
+      } as any);
+    }
+    if (updates.plan_size !== undefined) {
+      updateLocalPlan(planUuid, {
+        plan_size: updates.plan_size,
+        planSize: updates.plan_size,
+        capacity: updates.plan_size,
+        joinLimit: updates.plan_size,
+        maxSpots: updates.plan_size,
       } as any);
     }
 
-    await lifecycle.updatePlanDetails(planId, updates);
+    try {
+      await lifecycle.updatePlanDetails(planId, updates);
+    } catch (err) {
+      if (previousPlanState) {
+        updateLocalPlan(planUuid, previousPlanState as any);
+      }
+      throw err;
+    }
   }, [lifecycle, plans, updateLocalPlan]);
 
   const completePlan = useCallback(async (

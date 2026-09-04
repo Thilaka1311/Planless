@@ -5,6 +5,7 @@ export interface Friend {
   avatar: string;
   isHost?: boolean;
   joinedQueueAt?: string;
+  joinedQueueNumber?: number | null;
   isAccepted?: boolean;
   rsvpStatus?: string;
   assignedGroup?: 'GOING' | 'WAITLIST' | null;

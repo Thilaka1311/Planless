@@ -29,8 +29,8 @@ export const GoingSection: React.FC<GoingSectionProps> = ({
         <StackingFriends
           key={item.dbUuid || item.id}
           item={item}
-          index={idx + 1}
-          showIndex={showIndex}
+          index={undefined}
+          showIndex={false}
           onClick={onItemTap ? () => onItemTap(item) : undefined}
         />
       ))}

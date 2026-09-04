@@ -11,6 +11,7 @@ interface HeroMetadataCardProps {
   hasCost: boolean;
   costText?: string;
   totalCost?: number | null;
+  planSize?: number | null;
   maxParticipants?: number | null;
   isHost?: boolean;
   onEditCost?: () => void;
@@ -26,6 +27,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
   hasCost,
   costText,
   totalCost,
+  planSize,
   maxParticipants,
   isHost,
   onEditCost,
@@ -43,6 +45,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
   };
 
   const rsvp = useRSVPDeadline(responseDeadlineAt);
+  const displayPlanSize = planSize || maxParticipants;
 
   return (
     <div className="bg-black/45 backdrop-blur-[6px] rounded-2xl border border-white/10 shadow-xl w-[260px] flex-shrink-0 text-left overflow-visible relative">
@@ -58,12 +61,12 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
               {datetime ? formatPlanDate(datetime) : "Set a date"}
             </span>
           </div>
-          {Boolean(maxParticipants) && (
+          {Boolean(displayPlanSize) && (
             <div
               className="flex items-center gap-1.5 text-white/90 text-[11px] font-medium leading-none shrink-0 select-none pointer-events-none"
             >
               <Users className="w-3.5 h-3.5 text-white/50 flex-shrink-0" />
-              <span>{maxParticipants}</span>
+              <span>{displayPlanSize}</span>
             </div>
           )}
         </div>

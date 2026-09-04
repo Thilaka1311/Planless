@@ -99,7 +99,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   const members = plan.members || [];
   const activeUserUuid = userProfile.dbUuid || userProfile.user_id || "";
 
-  const planCapacity = plan.maxParticipants ?? (plan as any).max_participants ?? (plan as any).joinLimit ?? (plan as any).capacity ?? 0;
+  const planCapacity = plan.plan_size ?? (plan as any).planSize ?? plan.maxParticipants ?? (plan as any).max_participants ?? (plan as any).joinLimit ?? (plan as any).capacity ?? 0;
   const waitlistCount = useMemo(() => {
     return members.filter((m) => {
       const status = normalizeStatus(m.joinState || m.rsvp_status || (m as any).status);

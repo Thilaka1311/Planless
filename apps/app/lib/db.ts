@@ -27,6 +27,7 @@ export interface DbPlan {
   scheduled_at: string;
   rsvp_deadline: string;
   max_participants: number | null;
+  plan_size?: number | null;
   total_cost: number;
   status: 'LIVE' | 'COMPLETED' | 'CANCELLED';
   cover_image?: string | null;

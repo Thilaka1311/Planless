@@ -239,7 +239,8 @@ export const mapPlansToLegacyPlans = (
       timeVal = p.scheduled_at ? String(p.scheduled_at).split(" • ")[1] || String(p.scheduled_at) : "";
     }
 
-    const maxSpotsVal = p.max_participants || (members.length > 0 ? members.length : 10);
+    const planSizeVal = (p as any).plan_size ?? p.max_participants ?? (members.length > 0 ? members.length : 10);
+    const maxParticipantsVal = p.max_participants ?? planSizeVal;
     const costVal = p.total_cost !== undefined ? Number(p.total_cost) : 0;
     const rawCover = p.cover_image || dbItem?.cover_image_url;
     const coverImageVal = (rawCover && rawCover !== "planimagedefault.png" && rawCover !== "default")
@@ -252,10 +253,10 @@ export const mapPlansToLegacyPlans = (
     );
     const activeShareVal = myParticipant && myParticipant.cost_per_participant !== undefined && myParticipant.cost_per_participant !== null
       ? Number(myParticipant.cost_per_participant)
-      : (costVal > 0 ? Math.ceil(costVal / (maxSpotsVal > 0 ? maxSpotsVal : 1)) : 0);
+      : (costVal > 0 ? Math.ceil(costVal / (planSizeVal > 0 ? planSizeVal : 1)) : 0);
 
     const goingCount = members.filter(m => m.joinState === "JOINED").length;
-    const seatsLeftVal = Math.max(0, maxSpotsVal - goingCount);
+    const seatsLeftVal = Math.max(0, planSizeVal - goingCount);
 
     const userRatingVal = undefined;
     const userReactionVal = undefined;
@@ -269,7 +270,11 @@ export const mapPlansToLegacyPlans = (
       groupId: circleIdVal,
       hostId: hostIdVal,
       members: members,
-      capacity: maxSpotsVal,
+      capacity: planSizeVal,
+      planSize: planSizeVal,
+      plan_size: planSizeVal,
+      maxParticipants: maxParticipantsVal,
+      max_participants: maxParticipantsVal,
       date: dateVal,
       time: timeVal,
       location: p.place_name,
@@ -278,7 +283,7 @@ export const mapPlansToLegacyPlans = (
       datetime: p.scheduled_at,
       createdAt: p.created_at,
       waitlistEnabled: false,
-      joinLimit: maxSpotsVal,
+      joinLimit: planSizeVal,
       response_cutoff_hours: undefined,
       response_deadline_at: p.rsvp_deadline,
       allowParticipantInvites: p.allow_participant_invites ?? false,
@@ -291,7 +296,7 @@ export const mapPlansToLegacyPlans = (
       category: (categoryVal === "sports" ? "sports" : categoryVal === "dining" ? "restaurants" : categoryVal) as any,
       cost: costVal,
       confirmedCount: goingCount,
-      maxSpots: maxSpotsVal,
+      maxSpots: planSizeVal,
       coverImage: coverImageVal,
       creatorId: hostIdVal,
       creatorName: (members.find(m => m.isHost)?.name) || creatorFallback.full_name,
