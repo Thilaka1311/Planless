@@ -1,0 +1,9 @@
+-- Migration to add Circle permissions and Member preferences
+ALTER TABLE public.circles 
+ADD COLUMN IF NOT EXISTS allow_member_edit BOOLEAN NOT NULL DEFAULT FALSE,
+ADD COLUMN IF NOT EXISTS allow_member_host BOOLEAN NOT NULL DEFAULT FALSE,
+ADD COLUMN IF NOT EXISTS allow_member_invite BOOLEAN NOT NULL DEFAULT FALSE,
+ADD COLUMN IF NOT EXISTS allow_auto_join BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE public.circle_members
+ADD COLUMN IF NOT EXISTS auto_join_enabled BOOLEAN NOT NULL DEFAULT FALSE;

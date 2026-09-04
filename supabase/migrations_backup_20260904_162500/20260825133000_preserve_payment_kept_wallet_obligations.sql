@@ -1,0 +1,348 @@
+-- Migration: Preserve PAYMENT_KEPT Wallet Obligations During Recalculation and Completion
+-- Description: Updates recalculate_wallet_expenses and complete_plan RPCs to ensure participants with rsvp_status = 'SKIPPED' and skip_reason = 'PAYMENT_KEPT' retain their wallet_expense_participants obligations intact.
+
+-- 1. Update recalculate_wallet_expenses RPC
+CREATE OR REPLACE FUNCTION public.recalculate_wallet_expenses(p_plan_id UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_total_cost       NUMERIC;
+  v_host_id          UUID;
+  v_max_participants INTEGER;
+  v_share            NUMERIC;
+  v_expense_id       UUID;
+  v_plan_title       TEXT;
+BEGIN
+  SELECT total_cost, host_id, max_participants, title
+  INTO v_total_cost, v_host_id, v_max_participants, v_plan_title
+  FROM public.plans WHERE id = p_plan_id;
+
+  IF v_host_id IS NULL THEN RETURN; END IF;
+
+  -- Clear legacy cost_per_participant
+  UPDATE public.plan_participants SET cost_per_participant = NULL WHERE plan_id = p_plan_id;
+
+  IF v_total_cost IS NULL OR v_total_cost <= 0 THEN
+    DELETE FROM public.wallet_expenses 
+    WHERE plan_id = p_plan_id AND (expense_type = 'PLAN_EXPENSE' OR (message_id IS NULL AND title = 'Plan Fee'));
+    RETURN;
+  END IF;
+
+  -- Determine share amount
+  IF v_max_participants IS NOT NULL AND v_max_participants > 0 THEN
+    v_share := ROUND((v_total_cost / v_max_participants)::NUMERIC, 2);
+  ELSE
+    SELECT COUNT(*) INTO v_max_participants
+    FROM public.plan_participants
+    WHERE plan_id = p_plan_id 
+      AND rsvp_status = 'JOINED' 
+      AND user_id != v_host_id;
+    v_share := CASE WHEN v_max_participants > 0
+                    THEN ROUND((v_total_cost / v_max_participants)::NUMERIC, 2)
+                    ELSE v_total_cost END;
+  END IF;
+
+  -- Update legacy cost_per_participant for JOINED participants only
+  UPDATE public.plan_participants
+  SET cost_per_participant = v_share
+  WHERE plan_id = p_plan_id 
+    AND rsvp_status = 'JOINED';
+
+  -- Upsert single plan-level PLAN_EXPENSE wallet_expense
+  SELECT id INTO v_expense_id FROM public.wallet_expenses
+  WHERE plan_id = p_plan_id AND (expense_type = 'PLAN_EXPENSE' OR (message_id IS NULL AND title = 'Plan Fee')) LIMIT 1;
+
+  IF v_expense_id IS NULL THEN
+    INSERT INTO public.wallet_expenses (plan_id, payer_id, title, total_amount, status, expense_type)
+    VALUES (p_plan_id, v_host_id, 'Plan Fee', v_total_cost, 'PENDING', 'PLAN_EXPENSE')
+    RETURNING id INTO v_expense_id;
+  ELSE
+    UPDATE public.wallet_expenses
+    SET total_amount = v_total_cost, expense_type = 'PLAN_EXPENSE', updated_at = NOW()
+    WHERE id = v_expense_id;
+  END IF;
+
+  -- Remove participant rows for users no longer in JOINED, EXCEPT PRESERVE SETTLED AND PAYMENT_KEPT RECORDS
+  DELETE FROM public.wallet_expense_participants
+  WHERE expense_id = v_expense_id
+    AND status != 'SETTLED'
+    AND user_id NOT IN (
+      SELECT user_id FROM public.plan_participants
+      WHERE plan_id = p_plan_id 
+        AND (
+          rsvp_status = 'JOINED'
+          OR (rsvp_status = 'SKIPPED' AND skip_reason = 'PAYMENT_KEPT')
+        )
+    );
+
+  -- Upsert participant shares for all JOINED participants, PRESERVING existing 'SETTLED' status and amount_paid
+  INSERT INTO public.wallet_expense_participants (expense_id, user_id, amount_owed, amount_paid, status)
+  SELECT v_expense_id, pp.user_id, v_share, 0, 'PENDING'
+  FROM public.plan_participants pp
+  WHERE pp.plan_id = p_plan_id 
+    AND pp.rsvp_status = 'JOINED'
+  ON CONFLICT (expense_id, user_id) DO UPDATE 
+    SET amount_owed = EXCLUDED.amount_owed,
+        -- Preserve the status if it's already SETTLED
+        status = CASE 
+                   WHEN wallet_expense_participants.status = 'SETTLED' THEN 'SETTLED'
+                   -- Check if new amount_owed is satisfied by existing amount_paid
+                   WHEN wallet_expense_participants.amount_paid >= EXCLUDED.amount_owed THEN 'SETTLED'
+                   ELSE EXCLUDED.status 
+                 END,
+        -- amount_paid is intentionally NOT updated from EXCLUDED
+        updated_at = NOW();
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.recalculate_wallet_expenses(UUID) TO authenticated;
+
+
+-- 2. Update complete_plan RPC
+CREATE OR REPLACE FUNCTION public.complete_plan(p_plan_id uuid, p_attendance_input jsonb, p_expense_mode text DEFAULT 'NONE'::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_caller_id UUID;
+  v_host_id UUID;
+  v_plan_status plan_status;
+  v_scheduled_at TIMESTAMPTZ;
+  v_rsvp_deadline TIMESTAMPTZ;
+  v_final_total_cost NUMERIC;
+  v_participant RECORD;
+  v_input_attendance attendance_status;
+  v_final_attendance attendance_status;
+  v_final_state rsvp_status;
+  v_final_count INT;
+  v_plan_expense RECORD;
+  v_share NUMERIC;
+BEGIN
+  -- 1. Authenticate caller
+  v_caller_id := auth.uid();
+  IF v_caller_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated' USING ERRCODE = '40100';
+  END IF;
+
+  -- 2. Verify plan and host, also fetching total_cost
+  SELECT host_id, status, scheduled_at, rsvp_deadline, total_cost
+  INTO v_host_id, v_plan_status, v_scheduled_at, v_rsvp_deadline, v_final_total_cost
+  FROM public.plans
+  WHERE id = p_plan_id
+  FOR UPDATE; 
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Plan not found' USING ERRCODE = '40400';
+  END IF;
+
+  IF v_caller_id != v_host_id THEN
+    RAISE EXCEPTION 'NOT_PLAN_HOST' USING ERRCODE = '40300';
+  END IF;
+
+  IF v_plan_status = 'COMPLETED'::plan_status THEN
+    RAISE EXCEPTION 'PLAN_ALREADY_COMPLETED' USING ERRCODE = '40000';
+  END IF;
+
+  IF jsonb_typeof(p_attendance_input) != 'array' THEN
+    RAISE EXCEPTION 'INVALID_ATTENDANCE_FORMAT' USING ERRCODE = '40000';
+  END IF;
+
+  -- 3. Auto-insert newly added attendees
+  INSERT INTO public.plan_participants (
+    plan_id, user_id, rsvp_status, final_attendance, final_state, created_at, updated_at
+  )
+  SELECT
+    p_plan_id,
+    (item->>'user_id')::UUID,
+    'JOINED'::rsvp_status,
+    'ATTENDED'::attendance_status,
+    'JOINED'::rsvp_status,
+    now(),
+    now()
+  FROM jsonb_array_elements(p_attendance_input) AS arr(item)
+  WHERE (item->>'attendance') = 'ATTENDED'
+    AND (item->>'user_id')::UUID NOT IN (
+      SELECT user_id FROM public.plan_participants WHERE plan_id = p_plan_id
+    )
+  ON CONFLICT (plan_id, user_id) DO NOTHING;
+
+  -- Check if host is marked absent
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(p_attendance_input) AS arr(item)
+    WHERE (item->>'user_id')::UUID = v_host_id
+      AND (item->>'attendance') = 'DID_NOT_ATTEND'
+  ) THEN
+    RAISE EXCEPTION 'HOST_CANNOT_BE_MARKED_ABSENT' USING ERRCODE = '40000';
+  END IF;
+
+  -- 4. Finalize attendance for all participants
+  FOR v_participant IN
+    SELECT user_id, rsvp_status, skip_reason
+    FROM public.plan_participants
+    WHERE plan_id = p_plan_id
+    FOR UPDATE
+  LOOP
+    v_input_attendance := NULL;
+
+    SELECT (item->>'attendance')::attendance_status
+    INTO v_input_attendance
+    FROM jsonb_array_elements(p_attendance_input) AS arr(item)
+    WHERE (item->>'user_id')::UUID = v_participant.user_id;
+
+    IF v_participant.user_id = v_host_id THEN
+      v_final_attendance := 'ATTENDED'::attendance_status;
+      v_final_state := 'JOINED'::rsvp_status;
+
+    ELSIF v_input_attendance IS NOT NULL THEN
+      v_final_attendance := v_input_attendance;
+      IF v_input_attendance = 'ATTENDED'::attendance_status THEN
+        v_final_state := 'JOINED'::rsvp_status;
+      ELSE
+        v_final_state := 'SKIPPED'::rsvp_status;
+      END IF;
+
+    ELSE
+      -- Implicit fallback for participants not in the payload
+      IF v_participant.rsvp_status = 'JOINED'::rsvp_status THEN
+        v_final_attendance := 'ATTENDED'::attendance_status;
+        v_final_state := 'JOINED'::rsvp_status;
+      ELSE
+        v_final_attendance := 'DID_NOT_ATTEND'::attendance_status;
+        IF v_participant.rsvp_status = 'WAITLISTED'::rsvp_status THEN
+          v_final_state := 'WAITLISTED'::rsvp_status;
+        ELSIF v_participant.rsvp_status = 'INVITED'::rsvp_status THEN
+          v_final_state := 'INVITED'::rsvp_status;
+        ELSE
+          v_final_state := 'SKIPPED'::rsvp_status;
+        END IF;
+      END IF;
+    END IF;
+
+    UPDATE public.plan_participants
+    SET rsvp_status = v_final_state,
+        final_attendance = v_final_attendance,
+        final_state = v_final_state,
+        updated_at = now()
+    WHERE plan_id = p_plan_id AND user_id = v_participant.user_id;
+  END LOOP;
+
+  -- 5. Calculate Final Attended Count
+  SELECT count(*) INTO v_final_count
+  FROM public.plan_participants
+  WHERE plan_id = p_plan_id AND final_attendance = 'ATTENDED'::attendance_status;
+
+  -- 6. Handle Plan Expense Recalculation
+  IF p_expense_mode IN ('SPLIT_ALL', 'KEEP_CURRENT_COST') AND v_final_count > 0 THEN
+    SELECT * INTO v_plan_expense
+    FROM public.wallet_expenses
+    WHERE plan_id = p_plan_id
+      AND (expense_type = 'PLAN_EXPENSE' OR (message_id IS NULL AND (title = 'Plan Fee' OR title = 'Plan Expense')))
+    ORDER BY created_at ASC
+    LIMIT 1;
+
+    IF v_plan_expense.id IS NOT NULL THEN
+      
+      IF p_expense_mode = 'SPLIT_ALL' THEN
+        v_share := ROUND((v_plan_expense.total_amount / v_final_count)::numeric, 2);
+        v_final_total_cost := v_plan_expense.total_amount;
+      ELSIF p_expense_mode = 'KEEP_CURRENT_COST' THEN
+        SELECT amount_owed INTO v_share
+        FROM public.wallet_expense_participants
+        WHERE expense_id = v_plan_expense.id AND amount_owed > 0
+        ORDER BY amount_owed DESC
+        LIMIT 1;
+
+        IF v_share IS NULL OR v_share <= 0 THEN
+          v_share := ROUND((v_plan_expense.total_amount / v_final_count)::numeric, 2);
+        END IF;
+
+        v_final_total_cost := v_share * v_final_count;
+
+        UPDATE public.wallet_expenses
+        SET total_amount = v_final_total_cost,
+            updated_at = NOW()
+        WHERE id = v_plan_expense.id;
+      END IF;
+      
+      IF v_share IS NULL THEN
+        v_share := 0;
+      END IF;
+
+      -- Reconcile participant obligations
+      FOR v_participant IN
+        SELECT user_id, final_attendance
+        FROM public.plan_participants
+        WHERE plan_id = p_plan_id
+      LOOP
+        IF v_participant.final_attendance = 'ATTENDED'::attendance_status THEN
+          INSERT INTO public.wallet_expense_participants (
+            expense_id, user_id, amount_owed, amount_paid, status, created_at, updated_at
+          )
+          VALUES (
+            v_plan_expense.id, v_participant.user_id, v_share, 0, 'PENDING', now(), now()
+          )
+          ON CONFLICT (expense_id, user_id) DO UPDATE
+          SET amount_owed = EXCLUDED.amount_owed,
+              status = CASE 
+                 WHEN wallet_expense_participants.status = 'SETTLED' THEN 'SETTLED'
+                 WHEN wallet_expense_participants.amount_paid >= EXCLUDED.amount_owed THEN 'SETTLED'
+                 ELSE EXCLUDED.status 
+               END,
+              updated_at = now();
+        ELSE
+          -- Ensure participants who didn't attend have no remaining obligation
+          -- UNLESS they have skip_reason = 'PAYMENT_KEPT' or status = 'SETTLED'
+          IF NOT EXISTS (
+            SELECT 1 FROM public.plan_participants 
+            WHERE plan_id = p_plan_id 
+              AND user_id = v_participant.user_id 
+              AND skip_reason = 'PAYMENT_KEPT'
+          ) THEN
+            DELETE FROM public.wallet_expense_participants
+            WHERE expense_id = v_plan_expense.id 
+              AND user_id = v_participant.user_id
+              AND status != 'SETTLED';
+          END IF;
+        END IF;
+      END LOOP;
+
+    END IF;
+  END IF;
+
+  -- 7. Update Plan Status & max_participants & total_cost
+  IF now() < v_scheduled_at THEN
+    v_scheduled_at := now();
+    IF v_rsvp_deadline > v_scheduled_at THEN
+      v_rsvp_deadline := v_scheduled_at;
+    END IF;
+  END IF;
+
+  UPDATE public.plans
+  SET status = 'COMPLETED'::plan_status,
+      max_participants = v_final_count,
+      total_cost = v_final_total_cost,
+      scheduled_at = v_scheduled_at,
+      rsvp_deadline = v_rsvp_deadline,
+      updated_at = now()
+  WHERE id = p_plan_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'plan_id', p_plan_id,
+    'status', 'COMPLETED',
+    'final_count', v_final_count,
+    'total_cost', v_final_total_cost,
+    'scheduled_at', v_scheduled_at,
+    'rsvp_deadline', v_rsvp_deadline
+  );
+
+END;
+$function$;
+
+GRANT EXECUTE ON FUNCTION public.complete_plan(UUID, JSONB, TEXT) TO authenticated;
