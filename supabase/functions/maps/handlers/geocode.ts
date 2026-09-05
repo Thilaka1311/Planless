@@ -8,7 +8,7 @@ export async function handleGeocode(body: any): Promise<any> {
     throw new Error("Missing 'address' parameter.");
   }
 
-  const apiKey = getGoogleApiKey();
+  const apiKey = await getGoogleApiKey();
   const params = new URLSearchParams({
     address,
     key: apiKey,

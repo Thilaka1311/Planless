@@ -147,7 +147,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     if (isCompletedPlan) {
-      const t: ParticipantTab[] = ['going'];
+      const t: ParticipantTab[] = [];
+      if (displayGoing.length > 0) t.push('going');
       if (displaySkipped.length > 0) t.push('skipped');
       return t;
     }
@@ -157,11 +158,14 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       }
       return ['going', 'waitlist'];
     }
-    const t: ParticipantTab[] = ['going'];
-    if (displayWaitlist.length > 0) t.push('waitlist');
+    const t: ParticipantTab[] = [];
+    const hasGoing = displayGoing.length > 0;
+    const hasWait = displayWaitlist.length > 0;
+    if (hasGoing) t.push('going');
+    if (hasWait) t.push('waitlist');
     if (displaySkipped.length > 0) t.push('skipped');
     return t;
-  }, [displayWaitlist, displaySkipped, mode, isCompletedPlan, hasWaitlist]);
+  }, [displayGoing.length, displayWaitlist.length, displaySkipped.length, mode, isCompletedPlan, hasWaitlist]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>(
     mode === 'wizard' ? (hasWaitlist ? 'going' : 'invited') : 'going'
@@ -181,11 +185,20 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       let defaultTab: ParticipantTab = 'going';
       if (initialTab && visibleTabs.includes(initialTab) && initialTab !== 'invited') {
         defaultTab = initialTab;
+      } else if (!visibleTabs.includes('going')) {
+        defaultTab = visibleTabs[0];
       }
       setActiveTab(defaultTab);
       initialMountRef.current = false;
     }
   }, [visibleTabs, initialTab, hasWaitlist, mode, activeTab]);
+
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.includes(activeTab)) {
+      const fallbackTab = (['going', 'waitlist', 'invited', 'skipped'] as ParticipantTab[]).find((t) => visibleTabs.includes(t)) || visibleTabs[0];
+      setActiveTab(fallbackTab);
+    }
+  }, [visibleTabs, activeTab]);
 
   // Action sheet & capacity editing state
   const [selectedItem, setSelectedItem] = useState<Friend | null>(null);

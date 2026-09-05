@@ -11,6 +11,7 @@ import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { CircleAvatar } from "../../../shared/components/CircleAvatar";
 import { useProfileUpload } from "../../profile/hooks/useProfileUpload";
 import { CirclePermissions } from "./CirclePermissions";
+import { SUPABASE_URL } from "../../../../lib/supabaseClient";
 export const CircleDetailScreen = (props: any) => {
   const {
     circle,
@@ -120,8 +121,7 @@ export const CircleDetailScreen = (props: any) => {
     const pathResult = await uploadImage(file, activeUserUuid || activeUserId);
     if (pathResult) {
       try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const publicUrl = `${supabaseUrl}/storage/v1/object/public/avatars/${pathResult}`;
+        const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/avatars/${pathResult}`;
         const targetCircleUuid = freshCircle.dbUuid || dbCircle?.id || freshCircle.id;
         await updateCircle({ circleId: targetCircleUuid, name: circleNameInput, description: descriptionInput, coverImage: publicUrl });
         const updated = {

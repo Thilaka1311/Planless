@@ -133,7 +133,10 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     if (isCompletedPlan) {
-      const tabs: ParticipantTab[] = ['going'];
+      const tabs: ParticipantTab[] = [];
+      if (displayGoing.length > 0) {
+        tabs.push('going');
+      }
       if (displaySkipped.length > 0) {
         tabs.push('skipped');
       }
@@ -142,18 +145,22 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
     if (mode === 'wizard') {
       return ['invited'];
     }
+
     const tabs: ParticipantTab[] = [];
-    if (!isFull) {
-      tabs.push('invited');
-    } else {
+    const hasGoing = displayGoing.length > 0;
+    const hasWaitlist = displayWaitlist.length > 0;
+
+    if (hasGoing) {
       tabs.push('going');
+    }
+    if (hasWaitlist) {
       tabs.push('waitlist');
     }
     if (displaySkipped.length > 0) {
       tabs.push('skipped');
     }
     return tabs;
-  }, [mode, isFull, displaySkipped.length, isCompletedPlan]);
+  }, [mode, displayGoing.length, displayWaitlist.length, displaySkipped.length, isCompletedPlan]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>(
     mode === 'wizard' ? 'invited' : 'going'

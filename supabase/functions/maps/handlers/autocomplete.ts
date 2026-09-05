@@ -8,7 +8,7 @@ export async function handleAutocomplete(body: any): Promise<any> {
     throw new Error("Missing 'input' parameter for search.");
   }
 
-  const apiKey = getGoogleApiKey();
+  const apiKey = await getGoogleApiKey();
   const params = new URLSearchParams({
     input,
     key: apiKey,

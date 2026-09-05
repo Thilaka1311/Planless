@@ -6,8 +6,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // Load .env from the monorepo root (3 levels up from apps/app/backend/)
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
-// Also attempt apps/app/.env as a local override
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
+dotenv.config({ path: path.resolve(__dirname, "../../../.env.local"), override: true });
+// Also attempt apps/app/.env and .env.local as local overrides
+dotenv.config({ path: path.resolve(__dirname, "../.env"), override: true });
+dotenv.config({ path: path.resolve(__dirname, "../.env.local"), override: true });
 import { env } from "./config/env";
 import express from "express";
 import http from "http";
@@ -19,6 +21,7 @@ import dbRouter from "./routes/db";
 import aiRouter from "./routes/ai";
 import paymentsRouter from "./routes/payments";
 import adminRouter from "./routes/admin";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -95,6 +98,33 @@ export async function findUserByPhone(client: any, phone: string) {
 
 async function startServer() {
   const app = express();
+
+  // Supabase Local Gateway Reverse Proxy
+  // Forwards Supabase Auth, REST, Storage, Realtime, and Functions traffic directly
+  // to the local Kong gateway (port 54321). This allows mobile devices connecting via ngrok
+  // to reach the local Supabase stack seamlessly without needing a separate ngrok tunnel.
+  // Mounted BEFORE express.json() to prevent request body consumption on POST/PUT requests.
+  const supabaseGatewayTarget = "http://127.0.0.1:54321";
+  const supabaseProxy = createProxyMiddleware({
+    target: supabaseGatewayTarget,
+    changeOrigin: true,
+    xfwd: true,
+  });
+
+  // Preserve full URL paths (/auth/v1, /rest/v1, etc.) without Express stripping the prefix
+  app.use((req, res, next) => {
+    if (
+      req.url.startsWith("/auth/v1") ||
+      req.url.startsWith("/rest/v1") ||
+      req.url.startsWith("/storage/v1") ||
+      req.url.startsWith("/realtime/v1") ||
+      req.url.startsWith("/functions/v1")
+    ) {
+      return supabaseProxy(req, res, next);
+    }
+    next();
+  });
+
   app.use(express.json({ limit: "50mb" }));
 
   // 1. API ROUTES FIRST
@@ -123,11 +153,18 @@ async function startServer() {
 
   const httpServer = http.createServer(app);
 
+  // Support WebSocket upgrade for Supabase Realtime subscriptions
+  httpServer.on("upgrade", (req, socket, head) => {
+    if (req.url?.startsWith("/realtime/v1")) {
+      (supabaseProxy as any).upgrade?.(req, socket, head);
+    }
+  });
+
   // 2. VITE MIDDLEWARE (DEV) OR STATIC CHASSIS (PROD)
   if (env.NODE_ENV !== "production") {
-    // Explicitly serve a self-unregistering service worker for /sw.js in dev mode.
-    // When a browser/PWA with an active production SW checks for updates to /sw.js,
-    // this script immediately unregisters the SW, clears CacheStorage, and reloads the page.
+    // In development mode, serve an unregistering service worker script for /sw.js.
+    // It silently unregisters any active service worker and clears caches without forcing
+    // disruptive page reload loops while modules are in flight.
     app.get(["/sw.js", "/sw.js.map"], (req, res) => {
       res.setHeader("Content-Type", "application/javascript");
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -138,10 +175,6 @@ async function startServer() {
             self.registration.unregister()
               .then(() => self.caches.keys())
               .then((keys) => Promise.all(keys.map((k) => self.caches.delete(k))))
-              .then(() => self.clients.matchAll({ type: 'window' }))
-              .then((clients) => {
-                clients.forEach((client) => client.navigate(client.url));
-              })
           );
         });
       `);

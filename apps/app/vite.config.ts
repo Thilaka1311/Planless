@@ -44,13 +44,29 @@ export default defineConfig(() => {
           // Precache static assets like CSS, JS, HTML and common images
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           // Exclude Supabase to ensure Realtime, Auth, and DB endpoints remain network-live
-          navigateFallbackDenylist: [/^\/api\//, /.*supabase\.co.*/],
+          navigateFallbackDenylist: [
+            /^\/api\//,
+            /^\/auth\/v1\//,
+            /^\/rest\/v1\//,
+            /^\/storage\/v1\//,
+            /^\/realtime\/v1\//,
+            /^\/functions\/v1\//,
+            /.*supabase\.co.*/,
+            /.*ngrok-free\.dev.*/,
+          ],
           runtimeCaching: [
             {
               urlPattern: /.*supabase\.co.*/,
               handler: 'NetworkOnly',
               options: {
                 cacheName: 'supabase-network-only',
+              },
+            },
+            {
+              urlPattern: /^https?:\/\/.*\/((auth|rest|storage|realtime|functions)\/v1)/,
+              handler: 'NetworkOnly',
+              options: {
+                cacheName: 'supabase-local-network-only',
               },
             },
           ]

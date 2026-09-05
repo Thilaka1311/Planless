@@ -8,7 +8,7 @@ export async function handlePlaceDetails(body: any): Promise<any> {
     throw new Error("Missing 'placeid' parameter.");
   }
 
-  const apiKey = getGoogleApiKey();
+  const apiKey = await getGoogleApiKey();
   const params = new URLSearchParams({
     place_id: placeid,
     key: apiKey,
