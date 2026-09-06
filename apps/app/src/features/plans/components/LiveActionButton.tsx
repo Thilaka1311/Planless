@@ -84,6 +84,13 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
       borderColor: 'rgba(245, 158, 11, 0.25)',
       textColor: 'text-amber-200',
     };
+  } else if (status === 'REJOINED') {
+    text = "Rejoin Request Pending";
+    glassStyle = {
+      backgroundColor: 'rgba(120, 53, 15, 0.3)',
+      borderColor: 'rgba(245, 158, 11, 0.25)',
+      textColor: 'text-amber-200',
+    };
   } else if (status === 'SKIPPED') {
     if (skipReason === 'REMOVED') {
       text = "You've Been Removed";

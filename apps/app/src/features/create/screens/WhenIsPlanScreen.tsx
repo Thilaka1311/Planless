@@ -6,6 +6,8 @@ import { ExitEditingDialog } from "../components/ExitEditingDialog";
 import { PlanSizeSlider } from "../components/PlanSizeSlider";
 import { ContinueButton } from "../components/ContinueButton";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
+import { pickImageFromGallery } from "../../../shared/utils/imageUtils";
+import { PlanImageEditorModal } from "../components/PlanImageEditorModal";
 
 interface WhenIsPlanScreenProps {
   form: any;
@@ -27,7 +29,20 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
   selectedCategory = 'custom',
 }) => {
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const [editorImageFile, setEditorImageFile] = useState<File | Blob | string | null>(null);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
   const isAlreadySetup = form.totalCapacity !== undefined && form.totalCapacity >= 2 && form.totalCapacity <= 50;
+
+  const handlePickCoverImage = async () => {
+    try {
+      const file = await pickImageFromGallery();
+      if (!file) return;
+      setEditorImageFile(file);
+      setIsEditorOpen(true);
+    } catch (err: any) {
+      console.error("[WhenIsPlanScreen] Error picking cover image:", err);
+    }
+  };
 
   const [activeExpandedSection, setActiveExpandedSection] = useState<'date' | 'time' | 'rsvp' | 'plansize' | null>(() => isAlreadySetup ? null : 'date');
   const [targetExpandedSection, setTargetExpandedSection] = useState<'date' | 'time' | 'rsvp' | 'plansize' | null>(() => isAlreadySetup ? null : 'date');
@@ -311,7 +326,9 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
     >
       {/* ── Hero image (Vercel Core: sharp top container, full color backdrop) ── */}
       <div
-        className="relative w-full shrink-0 h-[220px]"
+        onClick={handlePickCoverImage}
+        className="relative w-full shrink-0 h-[220px] cursor-pointer"
+        title="Tap to change photo"
       >
         <DiscoveryImages
           src={coverImage}
@@ -910,6 +927,20 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
         visible={showExitDialog}
         onKeepEditing={() => setShowExitDialog(false)}
         onStopEditing={() => { setShowExitDialog(false); onBack(); }}
+      />
+
+      <PlanImageEditorModal
+        imageSrc={editorImageFile}
+        isOpen={isEditorOpen}
+        onClose={() => {
+          setIsEditorOpen(false);
+          setEditorImageFile(null);
+        }}
+        onSave={({ previewUrl, blob }) => {
+          form.setCustomCoverImage(previewUrl, blob);
+          setIsEditorOpen(false);
+          setEditorImageFile(null);
+        }}
       />
     </div>
   );

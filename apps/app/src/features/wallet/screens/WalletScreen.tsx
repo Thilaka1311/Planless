@@ -230,9 +230,9 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
               userId: uId,
               fullName: userMatch?.full_name || userMatch?.name || userMatch?.username || "Participant",
               profilePhoto: userMatch?.profile_photo_path || userMatch?.profile_photo || userMatch?.avatar || "",
-              amountOwed: 0,
-              amountPaid: 0,
-              status: pp.rsvp_status || pp.status || "JOINED",
+              amount: 0,
+              role: "debtor" as const,
+              status: "PENDING" as const,
             };
           });
 
@@ -379,23 +379,8 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
         id="wallet_screen_header"
         className="h-16 shrink-0 bg-[#09090b]/99 backdrop-blur-md flex items-center justify-between px-4 z-30 select-none relative"
       >
-        {/* Left Column: Avatar */}
-        <div className="flex-1 flex items-center justify-start z-10">
-          {userProfile && (
-            <button
-              onClick={() => setActiveTab?.("profile")}
-              className="relative group shrink-0 block focus:outline-none cursor-pointer"
-              aria-label="View Profile Settings"
-            >
-              <UserAvatar
-                src={userProfile.avatar}
-                alt={userProfile.name}
-                size="w-10 h-10"
-                className="border-2 border-zinc-800 hover:border-[#ff8b66] transition-colors"
-              />
-            </button>
-          )}
-        </div>
+        {/* Left Column: Layout Balance Spacer */}
+        <div className="flex-1 flex items-center justify-start z-10" />
 
         {/* Center Column: Perfectly Centered Title */}
         <div className="flex-shrink-0 flex items-center justify-center z-10">

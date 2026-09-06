@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Plus, Activity, ChevronLeft, Users } from 'lucide-react';
+import { Settings, Plus, Activity, ArrowLeft, Users } from 'lucide-react';
 
 interface ParticipantHeaderProps {
   title: string;
@@ -46,7 +46,7 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
               className="p-2 -ml-2 text-white hover:text-white/80 active:scale-95 transition cursor-pointer flex items-center justify-center mr-2 shrink-0"
               title="Back"
             >
-              <ChevronLeft className="w-6 h-6" />
+              <ArrowLeft className="w-6 h-6" />
             </button>
           )}
           <h1
@@ -91,7 +91,7 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
           className="p-2 -ml-2 text-white hover:text-white/80 active:scale-95 transition cursor-pointer flex items-center justify-center mr-3"
           title="Back"
         >
-          <ChevronLeft className="w-6 h-6" />
+          <ArrowLeft className="w-6 h-6" />
         </button>
       )}
 

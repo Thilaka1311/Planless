@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { ChevronLeft, ChevronRight, Crown, Sparkles, History, Search } from "lucide-react";
+import { ArrowLeft, ChevronRight, Crown, Sparkles, History, Search } from "lucide-react";
 import { motion } from "motion/react";
 import { Plan, DbPlanParticipant } from "../../../../core/types";
 import { normalizeStatus } from "../../../../../lib/participantStatus";
@@ -10,6 +10,8 @@ import { EmptyState } from "../../../home/components/EmptyState";
 import { getPlanCover } from "../../config/planCoverImages";
 import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
 import { CancelledPlans } from "./CancelledPlans";
+
+import { getPendingHostActionPlanIds } from "../../utils/planHostActions";
 
 interface HostedPlansScreenProps {
   onBack: () => void;
@@ -137,6 +139,11 @@ export const HostedPlansScreen = React.memo(({
     return ids;
   }, [userUuid, activeUserId, userProfile]);
 
+  // Derive Set of plan IDs where the current user is an active HOST and there is a pending action (e.g. leave request)
+  const pendingActionPlanIds = useMemo(() => {
+    return getPendingHostActionPlanIds(dbPlanParticipants, allMyUserIds);
+  }, [dbPlanParticipants, allMyUserIds]);
+
   const participantMap = useMemo(() => {
     const map = new Map<string, DbPlanParticipant>();
     (dbPlanParticipants || []).forEach(pp => {
@@ -153,22 +160,23 @@ export const HostedPlansScreen = React.memo(({
       const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
       const rsvpStatus = normalizeStatus(myParticipant?.rsvp_status);
       const isJoined = rsvpStatus === "JOINED";
-      const isHostRole = myParticipant?.role === "HOST" || p.hostId === userUuid || p.creatorId === userUuid;
+      const isHostRole = myParticipant?.role === "HOST";
       return isHostRole && isJoined;
     });
-  }, [plans, participantMap, userUuid]);
+  }, [plans, participantMap]);
 
   const cancelledPlansCount = useMemo(() => {
     return plans.filter((p) => {
       if ((p.status || "").toUpperCase() !== "CANCELLED") return false;
       const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
-      const isHostRole = myParticipant?.role === "HOST" || p.hostId === userUuid || p.creatorId === userUuid;
+      const isHostRole = myParticipant?.role === "HOST";
       return isHostRole;
     }).length;
-  }, [plans, participantMap, userUuid]);
+  }, [plans, participantMap]);
 
   const renderPlanRow = (plan: Plan, section: string) => {
     const timeLabel = formatPlanDate(plan.datetime || plan.createdAt);
+    const hasPendingAction = pendingActionPlanIds.has(plan.id) || Boolean(plan.dbUuid && pendingActionPlanIds.has(plan.dbUuid));
 
     return (
       <motion.div
@@ -178,40 +186,50 @@ export const HostedPlansScreen = React.memo(({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         onClick={() => setSelectedPlanId(plan.id)}
-        className="w-full bg-white/[0.02] hover:bg-white/[0.04] active:bg-white/[0.06] border border-white/5 rounded-2xl py-2.5 px-4 transition-all duration-150 cursor-pointer flex items-center justify-between group active:scale-[0.99] select-none text-left"
+        className="w-full py-2.5 px-1 transition-all duration-150 cursor-pointer flex items-center justify-between group active:scale-[0.99] select-none text-left"
       >
         <div className="flex items-center gap-3.5 min-w-0 flex-1">
           {/* Thumbnail circle avatar */}
-          <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-amber-500/20 shadow-md flex-shrink-0 relative bg-zinc-955">
-            <div className="absolute inset-0 bg-black/40 z-10" />
+          <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.06] shadow-md flex-shrink-0 relative bg-zinc-955">
             <DiscoveryImages
-              src={plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory)}
+              src={plan.coverImage}
+              planId={plan.dbUuid || plan.id}
               category={plan.category}
+              subcategory={(plan as any).subcategory}
+              screen="Hosted Plans"
               alt={plan.title}
-              className="w-full h-full object-cover relative z-0 scale-100 group-hover:scale-105 transition-transform duration-200"
+              className="w-full h-full object-cover scale-100 group-hover:scale-105 transition-transform duration-200"
             />
           </div>
 
           {/* Content details */}
           <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate">
-                {plan.title}
-              </h3>
-              <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300">
-                <Crown className="w-2.5 h-2.5" /> HOST
-              </span>
-            </div>
+            <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate">
+              {plan.title}
+            </h3>
             <span className="text-[11px] text-[#8E8E93] font-sans font-medium">
               {timeLabel}
             </span>
           </div>
         </div>
 
-        {/* Chevron on the right */}
-        <div className="flex items-center flex-shrink-0 ml-3">
-          <ChevronRight className="w-4 h-4 text-zinc-650 group-hover:text-zinc-400 group-hover:translate-x-0.5 transition-all" />
-        </div>
+        {/* Plan-level pending host action indicator */}
+        {hasPendingAction && (
+          <span
+            title="Action required"
+            style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: '#F59E0B',
+              marginRight: 8,
+              lineHeight: 1,
+              flexShrink: 0,
+              fontFamily: 'Inter, sans-serif',
+            }}
+          >
+            !
+          </span>
+        )}
       </motion.div>
     );
   };
@@ -220,11 +238,11 @@ export const HostedPlansScreen = React.memo(({
     const groups = groupPlansByDate(plansList);
 
     const sectionsToRender = [
-      { id: 'today' as const, label: 'TODAY', plans: groups.today },
-      { id: 'tomorrow' as const, label: 'TOMORROW', plans: groups.tomorrow },
-      { id: 'thisWeek' as const, label: 'THIS WEEK', plans: groups.thisWeek },
-      { id: 'later' as const, label: 'LATER', plans: groups.later },
-      { id: 'past' as const, label: 'PAST', plans: groups.past },
+      { id: 'today' as const, label: 'Today', plans: groups.today },
+      { id: 'tomorrow' as const, label: 'Tomorrow', plans: groups.tomorrow },
+      { id: 'thisWeek' as const, label: 'This Week', plans: groups.thisWeek },
+      { id: 'later' as const, label: 'Later', plans: groups.later },
+      { id: 'past' as const, label: 'Past', plans: groups.past },
     ];
 
     const activeSections = sectionsToRender.filter(s => s.plans.length > 0);
@@ -242,20 +260,14 @@ export const HostedPlansScreen = React.memo(({
 
     return (
       <div className="space-y-4 pt-0">
-        {activeSections.map((sec) => (
+        {activeSections.map((sec, index) => (
           <div key={sec.id} className="space-y-2.5">
             {/* Section Header */}
-            <div className="flex items-center gap-3 w-full mt-2 mb-1.5 select-none">
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                <span className="text-[10px] uppercase font-mono tracking-[0.2em] text-[#8E8E93] font-bold">
-                  {sec.label}
-                </span>
-              </div>
-              <div className="flex-1 h-[0.5px] bg-[#1C1C1E]"></div>
-              <span className="text-[10px] font-mono text-[#8E8E93]">
-                {sec.plans.length} {sec.plans.length === 1 ? 'plan' : 'plans'}
+            <div className={`flex items-center gap-3 w-full mb-1.5 select-none ${index === 0 ? 'mt-1' : 'mt-4'}`}>
+              <span className="text-[12px] font-sans font-medium text-[#8E8E93] shrink-0">
+                {sec.label}
               </span>
+              {sec.id !== 'today' && <div className="flex-1 h-[0.5px] bg-[#1C1C1E]"></div>}
             </div>
 
             {/* Cards List */}
@@ -281,19 +293,19 @@ export const HostedPlansScreen = React.memo(({
 
   return (
     <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none justify-between">
-      {/* Header matching secondary screens (PastPlans & CancelledPlans) */}
-      <div className="bg-black/40 backdrop-blur-xl border-b border-white/10 px-4 py-3.5 flex items-center justify-between flex-shrink-0 pt-[calc(0.875rem+env(safe-area-inset-top,0px))]">
+      {/* Header matching main screen black background */}
+      <div className="bg-[#050505] px-6 py-3.5 flex items-center justify-between flex-shrink-0 pt-[calc(0.875rem+env(safe-area-inset-top,0px))]">
         <button
           type="button"
           onClick={onBack}
-          className="w-9 h-9 rounded-full bg-white/10 border border-white/10 backdrop-blur-sm flex items-center justify-center text-white active:scale-95 transition cursor-pointer"
+          className="text-white/80 hover:text-white active:scale-95 transition cursor-pointer p-1 -ml-1 flex items-center justify-center"
         >
-          <ChevronLeft className="w-5 h-5" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-base font-bold text-white tracking-wide text-center">
           Hosted Plans
         </h1>
-        <div className="w-9" />
+        <div className="w-5" />
       </div>
 
       {/* Scrollable Content Container */}

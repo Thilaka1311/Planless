@@ -1,6 +1,6 @@
 import React, { useCallback } from "react";
 import { supabase } from "../../../../lib/supabaseClient";
-import { normalizeStatus } from "../../../../lib/participantStatus";
+import { normalizeStatus, partitionAutomaticParticipants } from "../../../../lib/participantStatus";
 import { Plan, DbPlan, DbPlanParticipant, User } from "../../../core/types";
 import { updateParticipantStatus, insertParticipant, deleteParticipant, syncUserStats } from "../../../../lib/db";
 import { cleanPlanId, isUuid as isUuidUtil, resolveUserUuid as resolveUserUuidUtil } from "../utils/planUtils";
@@ -18,6 +18,7 @@ export interface UsePlanParticipantsProps {
   userId: string;
   dbUsers: User[];
   dbPlans: DbPlan[];
+  setDbPlans?: React.Dispatch<React.SetStateAction<DbPlan[]>>;
   plans: Plan[];
   dbPlanParticipants: DbPlanParticipant[];
   setDbPlanParticipants: React.Dispatch<React.SetStateAction<DbPlanParticipant[]>>;
@@ -40,6 +41,7 @@ export function usePlanParticipants({
   userId,
   dbUsers,
   dbPlans,
+  setDbPlans,
   plans,
   dbPlanParticipants,
   setDbPlanParticipants,
@@ -166,7 +168,7 @@ export function usePlanParticipants({
   ) => {
     const matchedPlan = plans.find(p => p.id === planUuid || p.dbUuid === planUuid);
     const dbPlanObj = dbPlans.find(p => p.id === planUuid);
-    const hostUuid = resolveUserUuid(matchedPlan?.hostId || dbPlanObj?.host_id || "");
+    const hostUuid = resolveUserUuid(matchedPlan?.hostId || "");
 
     const participantUuid = resolveUserUuid(participantUserUuid);
     const normOld = oldStatus ? normalizeStatus(oldStatus) : null;
@@ -337,7 +339,15 @@ export function usePlanParticipants({
       pp => pp.plan_id === planUuid && pp.rsvp_status === "JOINED"
     ).length;
     const dbPlanObj = dbPlans.find(p => p.id === planUuid || p.public_id === planUuid);
-    const limit = matchedPlan?.capacity || matchedPlan?.joinLimit || matchedPlan?.maxSpots || (dbPlanObj as any)?.max_participants || 0;
+    const limit =
+      matchedPlan?.plan_size ||
+      (matchedPlan as any)?.planSize ||
+      (dbPlanObj as any)?.plan_size ||
+      matchedPlan?.capacity ||
+      matchedPlan?.joinLimit ||
+      matchedPlan?.maxSpots ||
+      (dbPlanObj as any)?.max_participants ||
+      0;
     const isWaitlistMode = !!(limit > 0 && acceptedCount >= limit);
 
 
@@ -353,11 +363,7 @@ export function usePlanParticipants({
       }
 
       const dbPlan = dbPlans.find(p => p.id === planUuid || p.public_id === planUuid);
-      const planCircleId = dbPlan?.circle_id || (matchedPlan as any).circle_id || null;
-      const belongsToCircle = planCircleId && dbCircleMembers
-        ? dbCircleMembers.some((m: any) => (m.circle_id === planCircleId) && (m.user_id === userUuid))
-        : false;
-      const circleId = belongsToCircle ? planCircleId : null;
+      const circleId = null;
 
       const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
       const isAssigned = filteringMode === 'ASSIGNED';
@@ -492,39 +498,10 @@ export function usePlanParticipants({
       throw new Error("Invalid user UUID");
     }
 
-    const { data: dbPlanBefore } = await (supabase as any)
-      .from("plans")
-      .select("id, host_id")
-      .eq("id", planUuid)
-      .maybeSingle();
-
     const { data: dbParticipantsBefore } = await (supabase as any)
       .from("plan_participants")
       .select("user_id, role, rsvp_status")
       .eq("plan_id", planUuid);
-
-    const currentOwnerUuid = resolveUserUuid(matchedPlan?.hostId || dbPlanBefore?.host_id || "");
-    const isCurrentOwnerLeaving = currentOwnerUuid === userUuid;
-
-    if (isCurrentOwnerLeaving) {
-      const replacementCandidate = (dbParticipantsBefore || []).find(
-        (pp: any) => pp.user_id !== userUuid && pp.role === "HOST"
-      ) || dbPlanParticipants.find(
-        pp => pp.plan_id === planUuid && pp.user_id !== userUuid && (pp.role === "HOST" || (pp as any).isHost)
-      );
-
-      if (replacementCandidate) {
-        const nextHostUuid = resolveUserUuid(replacementCandidate.user_id);
-        const { error: hostUpdateError } = await (supabase as any)
-          .from("plans")
-          .update({ host_id: nextHostUuid })
-          .eq("id", planUuid);
-
-        if (hostUpdateError) {
-          throw new Error("Failed to transfer host ownership in plans table: " + hostUpdateError.message);
-        }
-      }
-    }
 
     const leaverParticipantRecord = (dbParticipantsBefore || []).find((p: any) => p.user_id === userUuid)
       || dbPlanParticipants.find(p => p.plan_id === planUuid && p.user_id === userUuid);
@@ -534,6 +511,8 @@ export function usePlanParticipants({
       rsvp_status: "SKIPPED",
       assigned_group: null,
       waitlist_position: null,
+      leave_requested: false,
+      leave_requested_at: null,
       responded_at: new Date().toISOString(),
       skip_reason: "LEFT"
     } as any);
@@ -592,6 +571,8 @@ export function usePlanParticipants({
         rsvp_status: "SKIPPED",
         assigned_group: null,
         waitlist_position: null,
+        leave_requested: false,
+        leave_requested_at: null,
         responded_at: new Date().toISOString(),
         skip_reason: targetSkipReason
       } as any);
@@ -650,6 +631,94 @@ export function usePlanParticipants({
     }
   }, [plans, userId, resolveUserUuid, isUuid, applyParticipantOptimisticUpdate, refreshPlans]);
 
+  const requestHostLeaveWithReplacement = useCallback(async (
+    rawPlanId: string,
+    replacementUserId: string
+  ) => {
+    const planId = cleanPlanId(rawPlanId);
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+    const callerUuid = resolveUserUuid(userId);
+    const targetUuid = resolveUserUuid(replacementUserId);
+
+    if (!callerUuid || !isUuid(callerUuid) || !targetUuid || !isUuid(targetUuid)) {
+      console.error(`[PlansContext] Cannot request host leave with replacement: invalid UUIDs`, { callerUuid, targetUuid });
+      throw new Error("Invalid user or replacement UUID");
+    }
+
+    // Optimistic Update: promote target to HOST
+    applyParticipantOptimisticUpdate(planUuid, targetUuid, {
+      role: "HOST",
+      rsvp_status: "JOINED"
+    } as any);
+
+    const isPaidPlan = matchedPlan && (
+      (matchedPlan.totalCost !== undefined && Number(matchedPlan.totalCost) > 0) ||
+      (matchedPlan.total_cost !== undefined && Number(matchedPlan.total_cost) > 0) ||
+      (matchedPlan.cost !== undefined && Number(matchedPlan.cost) > 0)
+    );
+    if (isPaidPlan) {
+      applyParticipantOptimisticUpdate(planUuid, callerUuid, {
+        leave_requested: true,
+        leave_requested_at: new Date().toISOString()
+      } as any);
+    } else {
+      applyParticipantOptimisticUpdate(planUuid, callerUuid, {
+        role: "PARTICIPANT",
+        rsvp_status: "SKIPPED",
+        skip_reason: "LEFT",
+        responded_at: new Date().toISOString()
+      } as any);
+    }
+
+    try {
+      const res = await api.requestHostLeaveWithReplacementRPC(planUuid, targetUuid);
+      await refreshPlans(["plan_participants", "plans", "plan_activity", "wallet_expenses", "wallet_expense_participants"]);
+      return res;
+    } catch (rpcError) {
+      console.error("[PlansContext requestHostLeaveWithReplacement] RPC failed:", rpcError);
+      await refreshPlans();
+      throw rpcError;
+    }
+  }, [plans, resolveUserUuid, isUuid, userId, applyParticipantOptimisticUpdate, refreshPlans]);
+
+  const stopHostingWithReplacement = useCallback(async (
+    rawPlanId: string,
+    replacementUserId: string
+  ) => {
+    const planId = cleanPlanId(rawPlanId);
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+    const callerUuid = resolveUserUuid(userId);
+    const targetUuid = resolveUserUuid(replacementUserId);
+
+    if (!callerUuid || !isUuid(callerUuid) || !targetUuid || !isUuid(targetUuid)) {
+      console.error(`[PlansContext] Cannot stop hosting with replacement: invalid UUIDs`, { callerUuid, targetUuid });
+      throw new Error("Invalid user or replacement UUID");
+    }
+
+    // Optimistic Update: promote target to HOST, demote caller to PARTICIPANT (maintaining JOINED)
+    applyParticipantOptimisticUpdate(planUuid, targetUuid, {
+      role: "HOST",
+      rsvp_status: "JOINED"
+    } as any);
+
+    applyParticipantOptimisticUpdate(planUuid, callerUuid, {
+      role: "PARTICIPANT",
+      rsvp_status: "JOINED"
+    } as any);
+
+    try {
+      const res = await api.stopHostingWithReplacementRPC(planUuid, targetUuid);
+      await refreshPlans(["plan_participants", "plans", "plan_activity"]);
+      return res;
+    } catch (rpcError) {
+      console.error("[PlansContext stopHostingWithReplacement] RPC failed:", rpcError);
+      await refreshPlans();
+      throw rpcError;
+    }
+  }, [plans, resolveUserUuid, isUuid, userId, applyParticipantOptimisticUpdate, refreshPlans]);
+
   const cancelPaidPlanLeaveRequest = useCallback(async (rawPlanId: string) => {
     const planId = cleanPlanId(rawPlanId);
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
@@ -698,31 +767,122 @@ export function usePlanParticipants({
     const existingBefore = dbPlanParticipants.find(p => p.plan_id === planUuid && p.user_id === userUuid);
 
     if (!existingBefore) {
-
       return;
     }
 
     const hostUuid = matchedPlan?.hostId;
     const isHost = hostUuid === userUuid;
     if (isHost) {
-
       return;
     }
 
     const normStatus = normalizeStatus(existingBefore.rsvp_status);
     const isRejoinable = normStatus === "SKIPPED";
     if (!isRejoinable) {
-
       return;
     }
 
+    // Optimistically update participant state to REJOINED
+    setDbPlanParticipants(prev => prev.map(pp => {
+      if ((pp.plan_id === planUuid || pp.plan_id === planId) && pp.user_id === userUuid) {
+        return {
+          ...pp,
+          rsvp_status: "REJOINED" as const,
+          skip_reason: null,
+          leave_requested: false,
+          leave_requested_at: null,
+          responded_at: new Date().toISOString()
+        };
+      }
+      return pp;
+    }));
 
+    try {
+      await api.rejoinPlanRPC(planUuid);
+      await refreshPlans(["plan_participants"]);
+    } catch (err) {
+      console.error("[rejoinPlan] RPC failed, rolling back:", err);
+      await refreshPlans(["plan_participants"]);
+      throw err;
+    }
+  }, [plans, userId, resolveUserUuid, isUuid, dbPlanParticipants, refreshPlans]);
 
-    // Delegate core admission logic to joinPlan, skipping payment checkout
-    await joinPlan(planId, userProfile, {
-      skipPayment: true
+  const resolveRejoinedParticipant = useCallback(async (
+    planId: string,
+    targetUserId: string,
+    decision: 'JOINED' | 'WAITLIST' | 'WAITLISTED' | 'REMOVE'
+  ) => {
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+    const resolvedTargetUuid = resolveUserUuid(targetUserId);
+
+    if (!planUuid || !resolvedTargetUuid) {
+      throw new Error("Missing plan or target participant ID");
+    }
+
+    const waitlistMode = (matchedPlan as any)?.participant_filtering || (matchedPlan as any)?.participantFiltering || (matchedPlan as any)?.waitlistOrderMode || 'AUTOMATIC';
+    const isAssigned = String(waitlistMode).toUpperCase() === 'ASSIGNED';
+
+    const normalizedDecision = decision.toUpperCase();
+    setDbPlanParticipants(prev => {
+      if (normalizedDecision === 'REMOVE') {
+        return prev.filter(pp => !(
+          (pp.plan_id === planUuid || pp.plan_id === planId) &&
+          (pp.user_id === resolvedTargetUuid || pp.user_id === targetUserId)
+        ));
+      }
+
+      let maxWaitlistPos = 0;
+      if (isAssigned) {
+        for (const pp of prev) {
+          if ((pp.plan_id === planUuid || pp.plan_id === planId) && pp.assigned_group === 'WAITLIST') {
+            if (typeof pp.waitlist_position === 'number' && pp.waitlist_position > maxWaitlistPos) {
+              maxWaitlistPos = pp.waitlist_position;
+            }
+          }
+        }
+      }
+
+      return prev.map(pp => {
+        if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedTargetUuid || pp.user_id === targetUserId)) {
+          if (normalizedDecision === 'JOINED') {
+            return {
+              ...pp,
+              assigned_group: isAssigned ? ('GOING' as const) : null,
+              waitlist_position: null,
+              rsvp_status: 'JOINED' as const,
+              skip_reason: null,
+              leave_requested: false,
+              leave_requested_at: null,
+              responded_at: pp.responded_at || new Date().toISOString(),
+            };
+          } else {
+            return {
+              ...pp,
+              assigned_group: isAssigned ? ('WAITLIST' as const) : null,
+              waitlist_position: isAssigned ? (maxWaitlistPos + 1) : null,
+              joined_queue_at: new Date().toISOString(),
+              rsvp_status: 'WAITLISTED' as const,
+              skip_reason: null,
+              leave_requested: false,
+              leave_requested_at: null,
+              responded_at: new Date().toISOString(),
+            };
+          }
+        }
+        return pp;
+      });
     });
-  }, [plans, userId, resolveUserUuid, isUuid, dbPlanParticipants, joinPlan]);
+
+    try {
+      await api.resolveRejoinedParticipantRPC(planUuid, resolvedTargetUuid, decision);
+      await refreshPlans(["plan_participants", "wallet_expenses", "wallet_expense_participants"]);
+    } catch (err) {
+      console.error("[resolveRejoinedParticipant] RPC error:", err);
+      await refreshPlans(["plan_participants"]);
+      throw err;
+    }
+  }, [plans, resolveUserUuid, refreshPlans]);
 
   const removeParticipant = useCallback(async (planId: string, participantUserUuid: string) => {
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
@@ -744,8 +904,7 @@ export function usePlanParticipants({
     }
 
     // host validation (Creator Host or Additional Host with role === "HOST")
-    const dbPlanObj = dbPlans.find(p => p.id === planUuid);
-    const hostUuid = resolveUserUuid(matchedPlan?.hostId || dbPlanObj?.host_id || "");
+    const hostUuid = resolveUserUuid(matchedPlan?.hostId || "");
     const activeUserUuidResolved = resolveUserUuid(userId || "");
 
     const callerParticipant = dbPlanParticipants.find(
@@ -758,19 +917,124 @@ export function usePlanParticipants({
       throw new Error("Unauthorized: Only a Plan Host can manage or remove participants.");
     }
 
-    // Optimistic state update: set target participant as SKIPPED immediately
-    setDbPlanParticipants(prev => prev.map(pp => {
-      if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedParticipantUuid || pp.user_id === participantUserUuid)) {
-        return {
-          ...pp,
-          rsvp_status: "SKIPPED" as const,
-          assigned_group: null,
-          waitlist_position: null,
-          skip_reason: "REMOVED"
-        };
+    // Inspect if target participant requested leave and their RSVP status
+    const targetParticipant = dbPlanParticipants.find(
+      pp => (pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedParticipantUuid || pp.user_id === participantUserUuid)
+    );
+    const targetMember = matchedPlan?.members?.find(
+      (m: any) => {
+        const mId = m.userId || m.userUuid || m.user_id || m.id || m.dbUuid;
+        return mId === resolvedParticipantUuid || mId === participantUserUuid;
       }
-      return pp;
-    }));
+    );
+    const isTargetLeaveRequested = Boolean(targetParticipant?.leave_requested === true);
+    const rawTargetStatus = targetParticipant?.rsvp_status || targetMember?.rsvp_status || targetMember?.joinState;
+    const targetStatus = normalizeStatus(rawTargetStatus);
+    const isTargetInvited = targetStatus === 'INVITED';
+
+    // Automatic waitlist plan-size evaluation:
+    const matchedDbPlan = dbPlans.find(p => p.id === planUuid || p.id === planId || (p as any).dbUuid === planUuid);
+    const filteringMode = String(
+      matchedPlan?.participantFiltering ||
+      (matchedPlan as any)?.participant_filtering ||
+      matchedDbPlan?.participant_filtering ||
+      'AUTOMATIC'
+    ).trim().toUpperCase();
+    const isAutomatic = filteringMode === 'AUTOMATIC';
+
+    const currentPlanSize = Number(
+      matchedPlan?.plan_size ||
+      (matchedPlan as any)?.planSize ||
+      matchedPlan?.capacity ||
+      matchedDbPlan?.plan_size ||
+      matchedDbPlan?.max_participants ||
+      matchedPlan?.joinLimit ||
+      0
+    );
+
+    const currentMaxParticipants = Number(
+      matchedPlan?.max_participants ||
+      (matchedPlan as any)?.maxParticipants ||
+      matchedDbPlan?.max_participants ||
+      currentPlanSize
+    );
+
+    // Active participants before this removal (excluding already skipped/left)
+    const activeParticipants = (matchedPlan?.members && matchedPlan.members.length > 0)
+      ? matchedPlan.members.filter(m => normalizeStatus(m.joinState || (m as any).rsvp_status) !== 'SKIPPED')
+      : dbPlanParticipants.filter(pp =>
+          (pp.plan_id === planUuid || pp.plan_id === planId) &&
+          normalizeStatus(pp.rsvp_status) !== 'SKIPPED'
+        );
+
+    const partition = partitionAutomaticParticipants(activeParticipants as any[], currentPlanSize, userId);
+    const hasWaitlist = partition.waitlist.length > 0;
+    const invitedParticipantCount = activeParticipants.length;
+    const remainingInvitedCount = Math.max(0, invitedParticipantCount - 1);
+
+    // Rule: The plan size should only automatically decrease when there is NO waitlist
+    // AND the plan size currently equals the number of invited participants.
+    // Removing a participant from a waitlist should NEVER decrease the plan size.
+    const shouldDecreasePlanSize =
+      isAutomatic &&
+      !hasWaitlist &&
+      currentPlanSize > 0 &&
+      currentPlanSize === invitedParticipantCount;
+
+    const targetCapacity = shouldDecreasePlanSize ? Math.max(2, currentPlanSize - 1) : currentPlanSize;
+
+    // max_participants should never be lower than the number of people currently invited.
+    // If there is no waitlist and max_participants was tied to invited count, decrease it alongside plan_size:
+    const shouldDecreaseMaxParticipants =
+      shouldDecreasePlanSize &&
+      currentMaxParticipants === invitedParticipantCount;
+    const targetMaxParticipants = shouldDecreaseMaxParticipants
+      ? Math.max(2, targetCapacity, remainingInvitedCount)
+      : Math.max(currentMaxParticipants, remainingInvitedCount);
+
+    // Optimistic state update:
+    // If participant is still INVITED, remove them entirely from local state.
+    // If participant has interacted (e.g. JOINED, WAITLISTED), preserve existing transition to SKIPPED.
+    if (isTargetInvited) {
+      setDbPlanParticipants(prev => prev.filter(pp =>
+        !((pp.plan_id === planUuid || pp.plan_id === planId) &&
+          (pp.user_id === resolvedParticipantUuid || pp.user_id === participantUserUuid))
+      ));
+    } else {
+      setDbPlanParticipants(prev => prev.map(pp => {
+        if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedParticipantUuid || pp.user_id === participantUserUuid)) {
+          return {
+            ...pp,
+            rsvp_status: "SKIPPED" as const,
+            assigned_group: null,
+            waitlist_position: null,
+            leave_requested: false,
+            leave_requested_at: null,
+            skip_reason: isTargetLeaveRequested ? "LEFT" : "REMOVED"
+          };
+        }
+        return pp;
+      }));
+    }
+
+    // Optimistic plan size & max_participants update: update immediately in local state
+    if (setDbPlans && (shouldDecreasePlanSize || targetMaxParticipants !== currentMaxParticipants)) {
+      setDbPlans(prev => prev.map(p => {
+        if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId) {
+          return {
+            ...p,
+            plan_size: targetCapacity,
+            planSize: targetCapacity,
+            capacity: targetCapacity,
+            joinLimit: targetCapacity,
+            maxSpots: targetCapacity,
+            max_participants: targetMaxParticipants,
+            maxParticipants: targetMaxParticipants,
+          };
+        }
+        return p;
+      }));
+    }
 
     // 1. Pre-emptively clean up any team assignment before deleting participant
     try {
@@ -782,6 +1046,17 @@ export function usePlanParticipants({
     // 2. Persist removal via trusted SECURITY DEFINER RPC
     try {
       await api.removeParticipantRPC(planUuid, resolvedParticipantUuid);
+
+      if (shouldDecreasePlanSize && targetCapacity < currentPlanSize) {
+        await api.updatePlanCapacityRPC(planUuid, targetCapacity);
+      }
+
+      if (targetMaxParticipants < currentMaxParticipants) {
+        await (supabase as any)
+          .from("plans")
+          .update({ max_participants: targetMaxParticipants })
+          .eq("id", planUuid);
+      }
 
       renumberWaitlistPositions(planUuid).catch(() => {});
       // Recalculate wallet expenses when a participant is removed
@@ -796,7 +1071,7 @@ export function usePlanParticipants({
     }
 
 
-  }, [plans, dbPlans, userId, resolveUserUuid, dbPlanParticipants, deleteParticipant, dbUsers, insertSystemMessage, promoteWaitlistIfSpotsAvailable, unassignTeam, applyParticipantOptimisticUpdate]);
+  }, [plans, dbPlans, setDbPlans, setDbPlanParticipants, userId, resolveUserUuid, dbPlanParticipants, deleteParticipant, dbUsers, insertSystemMessage, promoteWaitlistIfSpotsAvailable, unassignTeam, applyParticipantOptimisticUpdate]);
 
 
   const getAvailableCapacity = useCallback((planId: string) => {
@@ -830,8 +1105,7 @@ export function usePlanParticipants({
     if (!planUuid || inviteeUuids.length === 0) return;
 
     const dbPlan = dbPlans.find(p => p.id === planUuid || p.public_id === planUuid);
-    const planCircleId = dbPlan?.circle_id || (matchedPlan as any).circle_id || null;
-
+    const circleId = null;
     const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
     const effectiveAssignedGroup = filteringMode === 'ASSIGNED' ? (assignedGroup || 'GOING') : null;
 
@@ -877,7 +1151,28 @@ export function usePlanParticipants({
     });
     let maxWaitlistPos = currentWaitlist.reduce((max, p) => Math.max(max, p.waitlist_position || 0), 0);
 
-    // Optimistic updates
+    // Recalculate total invited participants to enforce: max_participants >= total invited
+    const activeParticipants = dbPlanParticipants.filter(pp =>
+      (pp.plan_id === planUuid || pp.plan_id === planId) &&
+      pp.rsvp_status !== 'SKIPPED'
+    );
+    const existingActiveUserIds = new Set(activeParticipants.map(p => p.user_id));
+    const trulyNewInvitees = inviteeUuids.filter(id => !existingActiveUserIds.has(id));
+    const newTotalInvited = activeParticipants.length + trulyNewInvitees.length;
+
+    const currentPlan = (plans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid) ||
+      (dbPlans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid);
+    const currentMax = Number(
+      currentPlan?.max_participants ??
+      (currentPlan as any)?.maxParticipants ??
+      0
+    );
+    const nextMaxParticipants = Math.max(currentMax, newTotalInvited);
+    const shouldIncreaseMax = nextMaxParticipants > currentMax;
+
+    const previousDbPlans = dbPlans;
+
+    // Optimistic updates for participants
     inviteeUuids.forEach((inviteeUuid) => {
       const waitlistPos = effectiveAssignedGroup === 'WAITLIST' ? ++maxWaitlistPos : null;
       const foundUser = dbUsers.find(u => u.id === inviteeUuid || (u as any).dbUuid === inviteeUuid);
@@ -899,8 +1194,22 @@ export function usePlanParticipants({
       } as any);
     });
 
+    // Optimistically increase max_participants immediately if total invited count exceeds current max
+    if (shouldIncreaseMax && setDbPlans) {
+      setDbPlans(prev => prev.map(p => {
+        if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId) {
+          return {
+            ...p,
+            max_participants: nextMaxParticipants,
+            maxParticipants: nextMaxParticipants,
+          };
+        }
+        return p;
+      }));
+    }
+
     try {
-      // 2. Persist via trusted SECURITY DEFINER RPC
+      // 2. Persist via trusted SECURITY DEFINER RPC (which also enforces max_participants >= total_invited in Postgres)
       await api.inviteParticipantsRPC(planUuid, inviteeUuids, effectiveAssignedGroup);
 
       // Insert plan_activity entries for each added participant
@@ -955,6 +1264,9 @@ export function usePlanParticipants({
     } catch (err: any) {
       console.error("[addParticipantsToPlan] Failed to persist invites, rolling back optimistic state:", err);
       setDbPlanParticipants(prev => prev.filter(pp => !(pp.plan_id === planUuid && inviteeUuids.includes(pp.user_id))));
+      if (shouldIncreaseMax && setDbPlans) {
+        setDbPlans(previousDbPlans);
+      }
       throw err;
     }
   }, [plans, dbPlans, dbPlanParticipants, dbUsers, refreshPlans, applyParticipantOptimisticUpdate, setDbPlanParticipants, renumberWaitlistPositions, recalculateWalletExpenses, userId]);
@@ -1028,28 +1340,37 @@ export function usePlanParticipants({
     // Fetch fresh participants to avoid stale state
     const { data: freshParticipantsData } = await (supabase as any)
       .from("plan_participants")
-      .select("*");
+      .select("*")
+      .eq("plan_id", planUuid);
     const freshParticipants = freshParticipantsData || dbPlanParticipants;
 
     const planParts = freshParticipants.filter(pp => pp.plan_id === planUuid);
 
-    // Filter and sort going participants by responded_at ASC (oldest first)
+    // Comparator for First-Come, First-Served:
+    // 1. Primary: join_queue_at / joined_queue_at ASC (earliest first)
+    // 2. Fallback: Alphabetical name ordering
+    const compareFCFS = (a: any, b: any) => {
+      const qA = a.join_queue_at || a.joinQueueAt || a.joined_queue_at || a.joinedQueueAt || a.responded_at || a.created_at;
+      const qB = b.join_queue_at || b.joinQueueAt || b.joined_queue_at || b.joinedQueueAt || b.responded_at || b.created_at;
+      const timeA = qA ? new Date(qA).getTime() : null;
+      const timeB = qB ? new Date(qB).getTime() : null;
+      if (timeA !== null && timeB !== null && timeA !== timeB) return timeA - timeB;
+      if (timeA !== null && timeB === null) return -1;
+      if (timeA === null && timeB !== null) return 1;
+      const nameA = a.name || a.full_name || a.username || '';
+      const nameB = b.name || b.full_name || b.username || '';
+      return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+    };
+
+    // Filter and sort going participants by FCFS (oldest first)
     const going = planParts
       .filter(pp => pp.rsvp_status === "JOINED")
-      .sort((a, b) => {
-        const timeA = a.responded_at ? new Date(a.responded_at).getTime() : 0;
-        const timeB = b.responded_at ? new Date(b.responded_at).getTime() : 0;
-        return timeA - timeB;
-      });
+      .sort(compareFCFS);
 
-    // Filter and sort waitlisted participants by responded_at or created_at ASC (oldest first)
+    // Filter and sort waitlisted participants by FCFS (oldest first)
     const waitlist = planParts
       .filter(pp => pp.rsvp_status === "WAITLISTED")
-      .sort((a, b) => {
-        const timeA = a.responded_at ? new Date(a.responded_at).getTime() : (a.created_at ? new Date(a.created_at).getTime() : 0);
-        const timeB = b.responded_at ? new Date(b.responded_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : 0);
-        return timeA - timeB;
-      });
+      .sort(compareFCFS);
 
     const updatedParticipants: any[] = [];
     let promotedCount = 0;
@@ -1136,7 +1457,7 @@ export function usePlanParticipants({
 
     const existingPart = (dbPlanParticipants || []).find((p: any) => (p.plan_id === planUuid || p.plan_id === planId) && (p.user_id === resolvedUserUuid || p.user_id === participantUserUuid));
     let nextRsvp = existingPart?.rsvp_status || 'INVITED';
-    if (nextRsvp === 'WAITLISTED') nextRsvp = 'JOINED';
+    if (nextRsvp === 'WAITLISTED' || nextRsvp === 'REJOINED') nextRsvp = 'JOINED';
 
     // Optimistic state update: update assigned_group to GOING and sync rsvp_status to JOINED where applicable
     setDbPlanParticipants(prev => prev.map(pp => {
@@ -1146,6 +1467,7 @@ export function usePlanParticipants({
           assigned_group: isAssigned ? 'GOING' : null,
           waitlist_position: null,
           rsvp_status: nextRsvp as any,
+          skip_reason: null,
           responded_at: pp.responded_at || new Date().toISOString()
         };
       }
@@ -1158,7 +1480,7 @@ export function usePlanParticipants({
       const { error: updateErr } = await (supabase as any)
         .from("plan_participants")
         .update({
-          assigned_group: "GOING",
+          assigned_group: isAssigned ? "GOING" : null,
           waitlist_position: null,
           rsvp_status: nextRsvp,
           skip_reason: existingSr,
@@ -1199,7 +1521,7 @@ export function usePlanParticipants({
 
     const existingPart = (dbPlanParticipants || []).find((p: any) => (p.plan_id === planUuid || p.plan_id === planId) && (p.user_id === resolvedUserUuid || p.user_id === participantUserUuid));
     let nextRsvp = existingPart?.rsvp_status || 'INVITED';
-    if (nextRsvp === 'JOINED') nextRsvp = 'WAITLISTED';
+    if (nextRsvp === 'JOINED' || nextRsvp === 'REJOINED') nextRsvp = 'WAITLISTED';
 
     // Optimistic state update: update assigned_group to WAITLIST and set waitlist_position immediately
     setDbPlanParticipants(prev => {
@@ -1636,6 +1958,20 @@ export function usePlanParticipants({
       throw new Error("Missing plan or target participant ID");
     }
 
+    // Optimistic state update: clear leave_requested immediately
+    setDbPlanParticipants(prev => prev.map(pp => {
+      if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedTargetUuid || pp.user_id === targetUserId)) {
+        return {
+          ...pp,
+          rsvp_status: "SKIPPED" as const,
+          leave_requested: false,
+          leave_requested_at: null,
+          skip_reason: resolution === 'KEEP_PAYMENT' ? 'PAYMENT_KEPT' : 'REPLACED'
+        };
+      }
+      return pp;
+    }));
+
     const { data: rpcResult, error: rpcError } = await (supabase as any)
       .rpc('resolve_paid_plan_leave_request', {
         p_plan_id: planUuid,
@@ -1761,11 +2097,14 @@ export function usePlanParticipants({
     leavePlan,
     skipPlan,
     requestPaidPlanLeave,
+    requestHostLeaveWithReplacement,
+    stopHostingWithReplacement,
     cancelPaidPlanLeaveRequest,
     resolvePaidPlanLeaveRequest,
     replaceParticipant,
     moveParticipantToWaitlistAndDecreaseCapacity,
     rejoinPlan,
+    resolveRejoinedParticipant,
     removeParticipant,
     promoteWaitlistIfSpotsAvailable,
     handleParticipantStatusChange,

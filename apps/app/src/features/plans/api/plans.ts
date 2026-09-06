@@ -1,15 +1,7 @@
 import { supabase } from "../../../../lib/supabaseClient";
 
 export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]> {
-  // Phase 1 - Query A: Fetch plans where host_id = activeUserUuid
-  const { data: hostedData, error: hostedError } = await supabase
-    .from("plans")
-    .select("id")
-    .eq("host_id", activeUserUuid);
-
-  if (hostedError) throw hostedError;
-
-  // Phase 1 - Query B: Fetch participant rows where user_id = activeUserUuid
+  // Phase 1: Fetch all plan IDs where user is a participant or host
   const { data: partData, error: partError } = await supabase
     .from("plan_participants")
     .select("plan_id, rsvp_status, skip_reason")
@@ -17,11 +9,7 @@ export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]
 
   if (partError) throw partError;
 
-  // Phase 1 - Merge
-  const hostedPlanIds = (hostedData || []).map(p => p.id);
-  const participantPlanIds = (partData || []).map(p => p.plan_id);
-
-  const allPlanIds = Array.from(new Set([...hostedPlanIds, ...participantPlanIds])).filter(Boolean);
+  const allPlanIds = Array.from(new Set((partData || []).map(p => p.plan_id))).filter(Boolean);
 
   if (allPlanIds.length === 0) {
     return [];
@@ -32,7 +20,6 @@ export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]
     .from("plans")
     .select(`
       *,
-      host_profile:users!plans_host_id_fkey(id, public_id, full_name, profile_photo_path),
       discovery_items(category, subcategory, cover_image_url)
     `)
     .in("id", allPlanIds);
@@ -147,6 +134,20 @@ export async function leavePlanRPC(planId: string): Promise<any> {
   return data;
 }
 
+/**
+ * Invokes request_host_leave_with_replacement SECURITY DEFINER RPC in PostgreSQL.
+ * Atomically promotes a joined participant to HOST and creates a leave request / executes leave for the current host.
+ */
+export async function requestHostLeaveWithReplacementRPC(planId: string, replacementUserId: string): Promise<any> {
+  const { data, error } = await supabase.rpc("request_host_leave_with_replacement" as any, {
+    p_plan_id: planId,
+    p_replacement_user_id: replacementUserId
+  });
+
+  if (error) throw error;
+  return data;
+}
+
 export async function updatePlanSettingsInDb(
   planId: string,
   settings: {
@@ -245,7 +246,17 @@ export async function updatePlanCapacityRPC(
     p_max_participants: maxParticipants
   });
 
-  if (error) throw error;
+  if (error) {
+    console.error("[updatePlanCapacityRPC] Supabase RPC error:", {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      planId,
+      maxParticipants,
+    });
+    throw error;
+  }
   return data;
 }
 
@@ -275,6 +286,41 @@ export async function removeParticipantRPC(
   const { data, error } = await supabase.rpc("remove_participant" as any, {
     p_plan_id: planId,
     p_target_user_id: targetUserId
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Invokes the rejoin_plan SECURITY DEFINER RPC.
+ * Transition a skipped participant's status to 'REJOINED' awaiting host decision.
+ */
+export async function rejoinPlanRPC(
+  planId: string
+): Promise<any> {
+  const { data, error } = await supabase.rpc("rejoin_plan" as any, {
+    p_plan_id: planId
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Invokes the resolve_rejoined_participant SECURITY DEFINER RPC.
+ * Authorized for any active Host.
+ * Resolves a REJOINED participant via 'JOINED', 'WAITLISTED', or 'REMOVE'.
+ */
+export async function resolveRejoinedParticipantRPC(
+  planId: string,
+  targetUserId: string,
+  decision: 'JOINED' | 'WAITLIST' | 'WAITLISTED' | 'REMOVE'
+): Promise<any> {
+  const { data, error } = await supabase.rpc("resolve_rejoined_participant" as any, {
+    p_plan_id: planId,
+    p_target_user_id: targetUserId,
+    p_decision: decision
   });
 
   if (error) throw error;
@@ -356,6 +402,25 @@ export async function manageCompletedPlanParticipantsRPC(
     p_users_to_add: usersToAdd,
     p_users_to_remove: usersToRemove,
     p_expense_mode: expenseMode,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Invokes the stop_hosting_with_replacement SECURITY DEFINER RPC.
+ * Authorized for active Hosts.
+ * Atomically promotes a joined participant to HOST and demotes the caller to PARTICIPANT,
+ * keeping the caller in the plan without creating a leave request.
+ */
+export async function stopHostingWithReplacementRPC(
+  planId: string,
+  replacementUserId: string
+): Promise<any> {
+  const { data, error } = await (supabase.rpc as any)("stop_hosting_with_replacement", {
+    p_plan_id: planId,
+    p_replacement_user_id: replacementUserId,
   });
 
   if (error) throw error;

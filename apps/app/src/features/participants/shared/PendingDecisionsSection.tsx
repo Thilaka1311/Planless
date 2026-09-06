@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeftRight, IndianRupee, ChevronDown } from 'lucide-react';
+import { ArrowLeftRight, UserMinus, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { PendingLeaveParticipant } from '../shared/types';
@@ -7,12 +7,15 @@ import { PendingLeaveParticipant } from '../shared/types';
 interface PendingDecisionsSectionProps {
   pendingRequests: PendingLeaveParticipant[];
   onReplaceParticipant?: (participantId: string) => void;
+  onRemoveParticipant?: (participant: PendingLeaveParticipant) => void;
+  /** @deprecated - Kept for backwards compatibility */
   onKeepPayment?: (participantId: string) => void;
 }
 
 export const PendingDecisionsSection: React.FC<PendingDecisionsSectionProps> = ({
   pendingRequests,
   onReplaceParticipant,
+  onRemoveParticipant,
   onKeepPayment,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -156,23 +159,27 @@ export const PendingDecisionsSection: React.FC<PendingDecisionsSectionProps> = (
                       </div>
                     </div>
 
-                    {/* Decision Action Buttons (Side by Side) */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {/* Decision Action Button */}
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onReplaceParticipant?.(req.id);
+                          if (onRemoveParticipant) {
+                            onRemoveParticipant(req);
+                          } else if (onKeepPayment) {
+                            onKeepPayment(req.id);
+                          }
                         }}
                         style={{
-                          flex: 1,
+                          width: '100%',
                           padding: '7px 10px',
                           borderRadius: 8,
                           fontSize: 11.5,
                           fontWeight: 600,
-                          color: '#F59E0B',
-                          background: 'rgba(245, 158, 11, 0.1)',
-                          border: '1px solid rgba(245, 158, 11, 0.25)',
+                          color: '#EF4444',
+                          background: 'rgba(239, 68, 68, 0.12)',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
@@ -181,39 +188,10 @@ export const PendingDecisionsSection: React.FC<PendingDecisionsSectionProps> = (
                           fontFamily: 'Inter, sans-serif',
                           transition: 'all 0.15s ease',
                         }}
-                        className="hover:bg-amber-500/20 active:scale-[0.98]"
+                        className="hover:bg-red-500/20 active:scale-[0.98]"
                       >
-                        <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
-                        <span>Replace participant</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onKeepPayment?.(req.id);
-                        }}
-                        style={{
-                          flex: 1,
-                          padding: '7px 10px',
-                          borderRadius: 8,
-                          fontSize: 11.5,
-                          fontWeight: 600,
-                          color: '#E4E4E7',
-                          background: 'rgba(255, 255, 255, 0.05)',
-                          border: '1px solid rgba(255, 255, 255, 0.12)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 5,
-                          fontFamily: 'Inter, sans-serif',
-                          transition: 'all 0.15s ease',
-                        }}
-                        className="hover:bg-white/10 active:scale-[0.98]"
-                      >
-                        <IndianRupee className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                        <span>Keep payment</span>
+                        <UserMinus className="w-3.5 h-3.5 shrink-0" />
+                        <span>Remove Participant</span>
                       </button>
                     </div>
                   </div>

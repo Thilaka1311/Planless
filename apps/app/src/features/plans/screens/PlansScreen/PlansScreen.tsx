@@ -12,6 +12,8 @@ import { getPlanCover } from "../../config/planCoverImages";
 import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
 import { PlansDivider } from "../../components/PlansDivider";
 
+import { getPendingHostActionPlanIds } from "../../utils/planHostActions";
+
 interface PlansScreenProps {
   setSelectedPlanId: (planId: string | null) => void;
   skippedByPlanId?: Record<string, string[]>;
@@ -145,6 +147,11 @@ export const PlansScreen = React.memo(({
     return ids;
   }, [userUuid, activeUserId, userProfile]);
 
+  // Derive Set of plan IDs where the current user is an active HOST and there is a pending action (e.g. leave request)
+  const pendingActionPlanIds = useMemo(() => {
+    return getPendingHostActionPlanIds(dbPlanParticipants, allMyUserIds);
+  }, [dbPlanParticipants, allMyUserIds]);
+
   // 2. Build efficient O(1) participant lookup for current user: planId -> DbPlanParticipant
   const participantMap = useMemo(() => {
     const map = new Map<string, DbPlanParticipant>();
@@ -181,7 +188,7 @@ export const PlansScreen = React.memo(({
       const rsvpStatus = normalizeStatus(myParticipant?.rsvp_status);
 
       // Strict categorisation based on plan_participants.rsvp_status
-      const isSkipped = rsvpStatus === "SKIPPED";
+      const isSkipped = rsvpStatus === "SKIPPED" || rsvpStatus === "REJOINED";
       const isJoined = rsvpStatus === "JOINED";
       const isWaitlisted = rsvpStatus === "WAITLISTED";
 
@@ -211,6 +218,7 @@ export const PlansScreen = React.memo(({
 
   const renderPlanRow = (plan: Plan, section: 'today' | 'tomorrow' | 'thisWeek' | 'later' | 'past') => {
     const timeLabel = getPlanTimeLabel(plan, section);
+    const hasPendingAction = pendingActionPlanIds.has(plan.id) || Boolean(plan.dbUuid && pendingActionPlanIds.has(plan.dbUuid));
 
     return (
       <motion.div
@@ -225,12 +233,14 @@ export const PlansScreen = React.memo(({
         <div className="flex items-center gap-3.5 min-w-0 flex-1">
           {/* Thumbnail circle avatar */}
           <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.06] shadow-md flex-shrink-0 relative bg-zinc-955">
-            <div className="absolute inset-0 bg-black/40 z-10" />
             <DiscoveryImages
-              src={plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory)}
+              src={plan.coverImage}
+              planId={plan.dbUuid || plan.id}
               category={plan.category}
+              subcategory={(plan as any).subcategory}
+              screen="Plans Page"
               alt={plan.title}
-              className="w-full h-full object-cover relative z-0 scale-100 group-hover:scale-105 transition-transform duration-200"
+              className="w-full h-full object-cover scale-100 group-hover:scale-105 transition-transform duration-200"
             />
           </div>
 
@@ -244,6 +254,24 @@ export const PlansScreen = React.memo(({
             </span>
           </div>
         </div>
+
+        {/* Plan-level pending host action indicator */}
+        {hasPendingAction && (
+          <span
+            title="Action required"
+            style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: '#F59E0B',
+              marginRight: 8,
+              lineHeight: 1,
+              flexShrink: 0,
+              fontFamily: 'Inter, sans-serif',
+            }}
+          >
+            !
+          </span>
+        )}
       </motion.div>
     );
   };
@@ -255,11 +283,11 @@ export const PlansScreen = React.memo(({
     const todayPlans = plansFilter === 'SKIPPED' ? [...groups.today, ...groups.past] : groups.today;
 
     const sectionsToRender = [
-      { id: 'today' as const, label: 'TODAY', plans: todayPlans },
-      { id: 'tomorrow' as const, label: 'TOMORROW', plans: groups.tomorrow },
-      { id: 'thisWeek' as const, label: 'THIS WEEK', plans: groups.thisWeek },
-      { id: 'later' as const, label: 'LATER', plans: groups.later },
-      ...(plansFilter !== 'SKIPPED' ? [{ id: 'past' as const, label: 'PAST', plans: groups.past }] : []),
+      { id: 'today' as const, label: 'Today', plans: todayPlans },
+      { id: 'tomorrow' as const, label: 'Tomorrow', plans: groups.tomorrow },
+      { id: 'thisWeek' as const, label: 'This Week', plans: groups.thisWeek },
+      { id: 'later' as const, label: 'Later', plans: groups.later },
+      ...(plansFilter !== 'SKIPPED' ? [{ id: 'past' as const, label: 'Past', plans: groups.past }] : []),
     ];
 
     const activeSections = sectionsToRender.filter(s => s.plans.length > 0);
@@ -291,20 +319,14 @@ export const PlansScreen = React.memo(({
 
     return (
       <div className="space-y-4">
-        {activeSections.map((sec) => (
+        {activeSections.map((sec, index) => (
           <div key={sec.id} className="space-y-2.5">
             {/* Section Header */}
-            <div className="flex items-center gap-3 w-full mt-2 mb-1.5 select-none">
-              <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
-                <span className="text-[10px] uppercase font-mono tracking-[0.2em] text-[#8E8E93] font-bold">
-                  {sec.label}
-                </span>
-              </div>
-              <div className="flex-1 h-[0.5px] bg-[#1C1C1E]"></div>
-              <span className="text-[10px] font-mono text-[#8E8E93]">
-                {sec.plans.length} {sec.plans.length === 1 ? 'plan' : 'plans'}
+            <div className={`flex items-center gap-3 w-full mb-1.5 select-none ${index === 0 ? 'mt-1' : 'mt-4'}`}>
+              <span className="text-[12px] font-sans font-medium text-[#8E8E93] shrink-0">
+                {sec.label}
               </span>
+              {sec.id !== 'today' && <div className="flex-1 h-[0.5px] bg-[#1C1C1E]"></div>}
             </div>
 
             {/* Cards List */}
@@ -322,18 +344,20 @@ export const PlansScreen = React.memo(({
       {/* Scrollable Container */}
       <div
         onScroll={(e) => onScroll?.(e.currentTarget.scrollTop)}
-        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-3.5 pb-6"
+        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pb-6"
       >
-
-        <PlansDivider
-          selected={plansFilter as any}
-          counts={{
-            joined: joinedCount,
-            waitlisted: waitlistedCount,
-            skipped: skippedCount,
-          }}
-          onSelect={setPlansFilter}
-        />
+        {/* Sticky Participation Tabs */}
+        <div className="sticky top-0 z-20 bg-[#050505] -mx-8 px-3.5 pt-1 pb-2">
+          <PlansDivider
+            selected={plansFilter as any}
+            counts={{
+              joined: joinedCount,
+              waitlisted: waitlistedCount,
+              skipped: skippedCount,
+            }}
+            onSelect={setPlansFilter}
+          />
+        </div>
 
         {/* Active Tab Screen Area */}
         <div className="flex-1 flex flex-col">

@@ -1,0 +1,737 @@
+=== 1. EXTENSIONS ===
+      extname       | extversion 
+--------------------+------------
+ hypopg             | 1.4.1
+ index_advisor      | 0.2.0
+ pg_stat_statements | 1.11
+ pgcrypto           | 1.3
+ plpgsql            | 1.0
+ supabase_vault     | 0.3.1
+ uuid-ossp          | 1.1
+(7 rows)
+
+=== 2. PUBLIC TABLES & ROW COUNTS ===
+          table_name           | estimated_row_count | rls_enabled | rls_forced 
+-------------------------------+---------------------+-------------+------------
+ discovery_items               |                  -1 | t           | f
+ discovery_sections            |                  -1 | t           | f
+ friendships                   |                  -1 | t           | f
+ memories                      |                  -1 | t           | f
+ memory_results                |                  -1 | t           | f
+ notifications                 |                  -1 | t           | f
+ plan_activity                 |                  -1 | t           | f
+ plan_invites                  |                  -1 | t           | f
+ plan_messages                 |                  -1 | t           | f
+ plan_outcomes                 |                  -1 | t           | f
+ plan_participants             |                  -1 | t           | f
+ plan_team_assignments         |                  -1 | t           | f
+ plans                         |                  -1 | t           | f
+ users                         |                  -1 | t           | f
+ wallet_expense_participants   |                  -1 | t           | f
+ wallet_expenses               |                  -1 | t           | f
+ wallet_settlement_allocations |                  -1 | t           | f
+ wallet_settlements            |                  -1 | t           | f
+ wallet_transactions           |                  -1 | t           | f
+(19 rows)
+
+=== 3. PUBLIC VIEWS ===
+ table_name | view_definition 
+------------+-----------------
+(0 rows)
+
+=== 4. PUBLIC SEQUENCES ===
+          sequence_name           | data_type | start_value | minimum_value |    maximum_value    | increment 
+----------------------------------+-----------+-------------+---------------+---------------------+-----------
+ discovery_public_id_seq          | bigint    | 1           | 1             | 9223372036854775807 | 1
+ user_public_id_seq               | bigint    | 1           | 1             | 9223372036854775807 | 1
+ wallet_transaction_public_id_seq | bigint    | 1           | 1             | 9223372036854775807 | 1
+(3 rows)
+
+=== 5. COLUMNS IN PUBLIC TABLES ===
+          table_name           |         column_name         |        data_type         |          udt_name          | is_nullable |              column_default               
+-------------------------------+-----------------------------+--------------------------+----------------------------+-------------+-------------------------------------------
+ discovery_items               | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ discovery_items               | public_id                   | text                     | text                       | NO          | generate_discovery_public_id()
+ discovery_items               | section_id                  | uuid                     | uuid                       | YES         | 
+ discovery_items               | title                       | text                     | text                       | NO          | 
+ discovery_items               | category                    | USER-DEFINED             | discovery_category         | NO          | 
+ discovery_items               | subcategory                 | text                     | text                       | YES         | 
+ discovery_items               | description                 | text                     | text                       | YES         | 
+ discovery_items               | cover_image_url             | text                     | text                       | YES         | 
+ discovery_items               | location                    | text                     | text                       | YES         | 
+ discovery_items               | suggested_duration_minutes  | integer                  | int4                       | YES         | 
+ discovery_items               | suggested_cost_amount       | numeric                  | numeric                    | YES         | 0
+ discovery_items               | suggested_capacity          | integer                  | int4                       | YES         | 
+ discovery_items               | default_rsvp_offset_minutes | integer                  | int4                       | YES         | 60
+ discovery_items               | display_order               | integer                  | int4                       | YES         | 0
+ discovery_items               | featured                    | boolean                  | bool                       | YES         | false
+ discovery_items               | status                      | USER-DEFINED             | discovery_status           | NO          | 'ACTIVE'::discovery_status
+ discovery_items               | created_at                  | timestamp with time zone | timestamptz                | NO          | timezone('utc'::text, now())
+ discovery_items               | updated_at                  | timestamp with time zone | timestamptz                | NO          | timezone('utc'::text, now())
+ discovery_items               | place_id                    | text                     | text                       | YES         | 
+ discovery_items               | latitude                    | double precision         | float8                     | YES         | 
+ discovery_items               | longitude                   | double precision         | float8                     | YES         | 
+ discovery_items               | place_name                  | text                     | text                       | YES         | 
+ discovery_items               | place_address               | text                     | text                       | YES         | 
+ discovery_sections            | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ discovery_sections            | public_id                   | text                     | text                       | NO          | 
+ discovery_sections            | category                    | USER-DEFINED             | discovery_category         | NO          | 
+ discovery_sections            | display_order               | integer                  | int4                       | YES         | 0
+ discovery_sections            | status                      | USER-DEFINED             | discovery_status           | NO          | 'ACTIVE'::discovery_status
+ discovery_sections            | created_at                  | timestamp with time zone | timestamptz                | NO          | timezone('utc'::text, now())
+ discovery_sections            | updated_at                  | timestamp with time zone | timestamptz                | NO          | timezone('utc'::text, now())
+ discovery_sections            | subcategory                 | text                     | text                       | YES         | 
+ friendships                   | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ friendships                   | user_1_id                   | uuid                     | uuid                       | NO          | 
+ friendships                   | user_2_id                   | uuid                     | uuid                       | NO          | 
+ friendships                   | requested_by                | uuid                     | uuid                       | NO          | 
+ friendships                   | created_from_plan_id        | uuid                     | uuid                       | YES         | 
+ friendships                   | status                      | USER-DEFINED             | friendship_status          | NO          | 'PENDING'::friendship_status
+ friendships                   | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ friendships                   | responded_at                | timestamp with time zone | timestamptz                | YES         | 
+ memories                      | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ memories                      | plan_id                     | uuid                     | uuid                       | NO          | 
+ memories                      | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ memories                      | memory_type                 | text                     | text                       | NO          | 'custom'::text
+ memories                      | status                      | text                     | text                       | NO          | 'PENDING'::text
+ memories                      | editable_until              | timestamp with time zone | timestamptz                | YES         | 
+ memories                      | locked_at                   | timestamp with time zone | timestamptz                | YES         | 
+ memory_results                | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ memory_results                | memory_id                   | uuid                     | uuid                       | NO          | 
+ memory_results                | score_home                  | integer                  | int4                       | YES         | 
+ memory_results                | score_away                  | integer                  | int4                       | YES         | 
+ memory_results                | mvp_user_id                 | uuid                     | uuid                       | YES         | 
+ memory_results                | average_rating              | numeric                  | numeric                    | YES         | 
+ memory_results                | review                      | text                     | text                       | YES         | 
+ memory_results                | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ notifications                 | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ notifications                 | user_id                     | uuid                     | uuid                       | NO          | 
+ notifications                 | type                        | USER-DEFINED             | notification_type          | NO          | 
+ notifications                 | title                       | text                     | text                       | NO          | 
+ notifications                 | body                        | text                     | text                       | NO          | 
+ notifications                 | related_plan_id             | uuid                     | uuid                       | YES         | 
+ notifications                 | is_read                     | boolean                  | bool                       | NO          | false
+ notifications                 | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ notifications                 | read_at                     | timestamp with time zone | timestamptz                | YES         | 
+ plan_activity                 | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ plan_activity                 | plan_id                     | uuid                     | uuid                       | NO          | 
+ plan_activity                 | actor_id                    | uuid                     | uuid                       | YES         | 
+ plan_activity                 | target_user_id              | uuid                     | uuid                       | YES         | 
+ plan_activity                 | activity_type               | USER-DEFINED             | plan_activity_type         | NO          | 
+ plan_activity                 | metadata                    | jsonb                    | jsonb                      | NO          | '{}'::jsonb
+ plan_activity                 | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ plan_invites                  | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ plan_invites                  | plan_id                     | uuid                     | uuid                       | NO          | 
+ plan_invites                  | invite_token                | text                     | text                       | NO          | 
+ plan_invites                  | created_by                  | uuid                     | uuid                       | NO          | 
+ plan_invites                  | is_active                   | boolean                  | bool                       | NO          | true
+ plan_invites                  | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ plan_messages                 | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ plan_messages                 | plan_id                     | uuid                     | uuid                       | NO          | 
+ plan_messages                 | sender_id                   | uuid                     | uuid                       | NO          | 
+ plan_messages                 | message_type                | USER-DEFINED             | message_type               | NO          | 'text'::message_type
+ plan_messages                 | content                     | text                     | text                       | NO          | 
+ plan_messages                 | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ plan_messages                 | updated_at                  | timestamp with time zone | timestamptz                | YES         | 
+ plan_messages                 | system_message_type         | USER-DEFINED             | system_message_type        | YES         | 
+ plan_outcomes                 | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ plan_outcomes                 | plan_id                     | uuid                     | uuid                       | NO          | 
+ plan_outcomes                 | submitted_by_user_id        | uuid                     | uuid                       | NO          | 
+ plan_outcomes                 | outcome_type                | text                     | text                       | NO          | 
+ plan_outcomes                 | payload                     | jsonb                    | jsonb                      | NO          | '{}'::jsonb
+ plan_outcomes                 | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ plan_participants             | plan_id                     | uuid                     | uuid                       | NO          | 
+ plan_participants             | user_id                     | uuid                     | uuid                       | NO          | 
+ plan_participants             | role                        | USER-DEFINED             | participant_role           | NO          | 'PARTICIPANT'::participant_role
+ plan_participants             | rsvp_status                 | USER-DEFINED             | rsvp_status                | NO          | 'INVITED'::rsvp_status
+ plan_participants             | responded_at                | timestamp with time zone | timestamptz                | YES         | 
+ plan_participants             | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ plan_participants             | updated_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ plan_participants             | delivery_status             | character varying        | varchar                    | NO          | 'DELIVERED'::character varying
+ plan_participants             | skip_reason                 | USER-DEFINED             | skip_reason                | YES         | 
+ plan_participants             | cost_per_participant        | numeric                  | numeric                    | YES         | 
+ plan_participants             | circle_id                   | uuid                     | uuid                       | YES         | 
+ plan_participants             | joined_queue_at             | timestamp with time zone | timestamptz                | YES         | now()
+ plan_participants             | assigned_group              | USER-DEFINED             | assigned_group_enum        | YES         | 
+ plan_participants             | waitlist_position           | integer                  | int4                       | YES         | 
+ plan_participants             | leave_requested             | boolean                  | bool                       | NO          | false
+ plan_participants             | leave_requested_at          | timestamp with time zone | timestamptz                | YES         | 
+ plan_participants             | final_attendance            | USER-DEFINED             | attendance_status          | YES         | 
+ plan_participants             | final_state                 | USER-DEFINED             | rsvp_status                | YES         | 
+ plan_team_assignments         | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ plan_team_assignments         | plan_id                     | uuid                     | uuid                       | NO          | 
+ plan_team_assignments         | user_id                     | uuid                     | uuid                       | NO          | 
+ plan_team_assignments         | team                        | text                     | text                       | NO          | 
+ plan_team_assignments         | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ plan_team_assignments         | updated_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ plans                         | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ plans                         | public_id                   | text                     | text                       | NO          | 
+ plans                         | title                       | text                     | text                       | NO          | 
+ plans                         | place_id                    | text                     | text                       | YES         | 
+ plans                         | place_name                  | text                     | text                       | NO          | 
+ plans                         | place_address               | text                     | text                       | NO          | 
+ plans                         | scheduled_at                | timestamp with time zone | timestamptz                | NO          | 
+ plans                         | rsvp_deadline               | timestamp with time zone | timestamptz                | NO          | 
+ plans                         | max_participants            | integer                  | int4                       | YES         | 
+ plans                         | status                      | USER-DEFINED             | plan_status                | NO          | 'LIVE'::plan_status
+ plans                         | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ plans                         | updated_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ plans                         | cover_image                 | text                     | text                       | YES         | 
+ plans                         | discovery_item_id           | uuid                     | uuid                       | YES         | 
+ plans                         | category                    | text                     | text                       | NO          | 'CUSTOM'::text
+ plans                         | subcategory                 | text                     | text                       | NO          | 'OTHER'::text
+ plans                         | latitude                    | double precision         | float8                     | YES         | 
+ plans                         | longitude                   | double precision         | float8                     | YES         | 
+ plans                         | total_cost                  | numeric                  | numeric                    | NO          | 0
+ plans                         | allow_participant_invites   | boolean                  | bool                       | NO          | false
+ plans                         | participant_filtering       | USER-DEFINED             | participant_filtering_type | NO          | 'AUTOMATIC'::participant_filtering_type
+ plans                         | waitlist_order_mode         | USER-DEFINED             | waitlist_order_mode_enum   | NO          | 'AUTO'::waitlist_order_mode_enum
+ plans                         | attended_participants       | integer                  | int4                       | NO          | 0
+ plans                         | plan_size                   | integer                  | int4                       | YES         | 
+ users                         | id                          | uuid                     | uuid                       | NO          | 
+ users                         | public_id                   | text                     | text                       | NO          | 
+ users                         | full_name                   | text                     | text                       | NO          | ''::text
+ users                         | profile_photo_path          | text                     | text                       | YES         | 
+ users                         | bio                         | text                     | text                       | NO          | ''::text
+ users                         | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ users                         | updated_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ users                         | profile_completed           | boolean                  | bool                       | NO          | false
+ users                         | username                    | text                     | text                       | YES         | 
+ users                         | role                        | USER-DEFINED             | user_role                  | NO          | 'user'::user_role
+ users                         | friends                     | integer                  | int4                       | NO          | 0
+ wallet_expense_participants   | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ wallet_expense_participants   | expense_id                  | uuid                     | uuid                       | NO          | 
+ wallet_expense_participants   | user_id                     | uuid                     | uuid                       | NO          | 
+ wallet_expense_participants   | amount_owed                 | numeric                  | numeric                    | NO          | 
+ wallet_expense_participants   | amount_paid                 | numeric                  | numeric                    | NO          | 0
+ wallet_expense_participants   | status                      | USER-DEFINED             | participant_payment_status | NO          | 'PENDING'::participant_payment_status
+ wallet_expense_participants   | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ wallet_expense_participants   | updated_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ wallet_expenses               | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ wallet_expenses               | plan_id                     | uuid                     | uuid                       | NO          | 
+ wallet_expenses               | status                      | USER-DEFINED             | wallet_expense_status      | NO          | 'PENDING'::wallet_expense_status
+ wallet_expenses               | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ wallet_expenses               | updated_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ wallet_expenses               | public_id                   | text                     | text                       | NO          | 
+ wallet_expenses               | message_id                  | uuid                     | uuid                       | YES         | 
+ wallet_expenses               | title                       | text                     | text                       | NO          | 
+ wallet_expenses               | total_amount                | numeric                  | numeric                    | NO          | 
+ wallet_expenses               | payer_id                    | uuid                     | uuid                       | NO          | 
+ wallet_expenses               | expense_type                | USER-DEFINED             | wallet_expense_type        | YES         | 'ADDITIONAL_EXPENSE'::wallet_expense_type
+ wallet_settlement_allocations | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ wallet_settlement_allocations | settlement_id               | uuid                     | uuid                       | NO          | 
+ wallet_settlement_allocations | expense_participant_id      | uuid                     | uuid                       | NO          | 
+ wallet_settlement_allocations | amount                      | numeric                  | numeric                    | NO          | 
+ wallet_settlement_allocations | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ wallet_settlements            | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ wallet_settlements            | payer_id                    | uuid                     | uuid                       | NO          | 
+ wallet_settlements            | receiver_id                 | uuid                     | uuid                       | NO          | 
+ wallet_settlements            | amount                      | numeric                  | numeric                    | NO          | 
+ wallet_settlements            | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ wallet_settlements            | updated_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ wallet_settlements            | plan_id                     | uuid                     | uuid                       | YES         | 
+ wallet_transactions           | id                          | uuid                     | uuid                       | NO          | gen_random_uuid()
+ wallet_transactions           | expense_id                  | uuid                     | uuid                       | NO          | 
+ wallet_transactions           | plan_id                     | uuid                     | uuid                       | NO          | 
+ wallet_transactions           | sender_id                   | uuid                     | uuid                       | NO          | 
+ wallet_transactions           | receiver_id                 | uuid                     | uuid                       | NO          | 
+ wallet_transactions           | amount                      | numeric                  | numeric                    | NO          | 
+ wallet_transactions           | status                      | USER-DEFINED             | transaction_status         | NO          | 'COMPLETED'::transaction_status
+ wallet_transactions           | public_id                   | text                     | text                       | YES         | 
+ wallet_transactions           | created_at                  | timestamp with time zone | timestamptz                | NO          | now()
+ wallet_transactions           | updated_at                  | timestamp with time zone | timestamptz                | NO          | now()
+(190 rows)
+
+=== 6. CONSTRAINTS (PK, FK, UNIQUE, CHECK) ===
+          table_name           |                          conname                          | constraint_type |                                                                                                                                 definition                                                                                                                                  
+-------------------------------+-----------------------------------------------------------+-----------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ discovery_items               | discovery_items_section_id_fkey                           | FOREIGN KEY     | FOREIGN KEY (section_id) REFERENCES discovery_sections(id) ON DELETE CASCADE
+ discovery_items               | discovery_items_pkey                                      | PRIMARY KEY     | PRIMARY KEY (id)
+ discovery_items               | discovery_items_public_id_key                             | UNIQUE          | UNIQUE (public_id)
+ discovery_sections            | discovery_sections_pkey                                   | PRIMARY KEY     | PRIMARY KEY (id)
+ discovery_sections            | discovery_sections_public_id_key                          | UNIQUE          | UNIQUE (public_id)
+ friendships                   | check_canonical_order                                     | CHECK           | CHECK ((user_1_id < user_2_id))
+ friendships                   | check_requested_by                                        | CHECK           | CHECK (((requested_by = user_1_id) OR (requested_by = user_2_id)))
+ friendships                   | friendships_created_from_plan_id_fkey                     | FOREIGN KEY     | FOREIGN KEY (created_from_plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ friendships                   | friendships_requested_by_fkey                             | FOREIGN KEY     | FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE CASCADE
+ friendships                   | friendships_user_1_id_fkey                                | FOREIGN KEY     | FOREIGN KEY (user_1_id) REFERENCES users(id) ON DELETE CASCADE
+ friendships                   | friendships_user_2_id_fkey                                | FOREIGN KEY     | FOREIGN KEY (user_2_id) REFERENCES users(id) ON DELETE CASCADE
+ friendships                   | friendships_pkey                                          | PRIMARY KEY     | PRIMARY KEY (id)
+ friendships                   | unique_friendship                                         | UNIQUE          | UNIQUE (user_1_id, user_2_id)
+ memories                      | memories_plan_id_fkey                                     | FOREIGN KEY     | FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ memories                      | memories_pkey                                             | PRIMARY KEY     | PRIMARY KEY (id)
+ memories                      | unique_memory_plan                                        | UNIQUE          | UNIQUE (plan_id)
+ memory_results                | memory_results_memory_id_fkey                             | FOREIGN KEY     | FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+ memory_results                | memory_results_mvp_user_id_fkey                           | FOREIGN KEY     | FOREIGN KEY (mvp_user_id) REFERENCES users(id) ON DELETE SET NULL
+ memory_results                | memory_results_pkey                                       | PRIMARY KEY     | PRIMARY KEY (id)
+ memory_results                | unique_memory_result                                      | UNIQUE          | UNIQUE (memory_id)
+ notifications                 | notifications_related_plan_id_fkey                        | FOREIGN KEY     | FOREIGN KEY (related_plan_id) REFERENCES plans(id) ON DELETE SET NULL
+ notifications                 | notifications_user_id_fkey                                | FOREIGN KEY     | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+ notifications                 | notifications_pkey                                        | PRIMARY KEY     | PRIMARY KEY (id)
+ plan_activity                 | plan_activity_actor_id_fkey                               | FOREIGN KEY     | FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE CASCADE
+ plan_activity                 | plan_activity_plan_id_fkey                                | FOREIGN KEY     | FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ plan_activity                 | plan_activity_target_user_id_fkey                         | FOREIGN KEY     | FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE SET NULL
+ plan_activity                 | plan_activity_pkey                                        | PRIMARY KEY     | PRIMARY KEY (id)
+ plan_invites                  | plan_invites_created_by_fkey                              | FOREIGN KEY     | FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+ plan_invites                  | plan_invites_plan_id_fkey                                 | FOREIGN KEY     | FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ plan_invites                  | plan_invites_pkey                                         | PRIMARY KEY     | PRIMARY KEY (id)
+ plan_invites                  | plan_invites_invite_token_key                             | UNIQUE          | UNIQUE (invite_token)
+ plan_messages                 | check_plan_message_content_not_empty                      | CHECK           | CHECK ((length(TRIM(BOTH FROM content)) > 0))
+ plan_messages                 | check_system_message_type_invariant                       | CHECK           | CHECK ((((message_type = 'system'::message_type) AND (system_message_type IS NOT NULL)) OR ((message_type = ANY (ARRAY['text'::message_type, 'poll'::message_type, 'cost'::message_type])) AND (system_message_type IS NULL))))
+ plan_messages                 | plan_messages_plan_id_fkey                                | FOREIGN KEY     | FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ plan_messages                 | plan_messages_sender_id_fkey                              | FOREIGN KEY     | FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+ plan_messages                 | plan_messages_pkey                                        | PRIMARY KEY     | PRIMARY KEY (id)
+ plan_outcomes                 | plan_outcomes_plan_id_fkey                                | FOREIGN KEY     | FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ plan_outcomes                 | plan_outcomes_submitted_by_user_id_fkey                   | FOREIGN KEY     | FOREIGN KEY (submitted_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+ plan_outcomes                 | plan_outcomes_pkey                                        | PRIMARY KEY     | PRIMARY KEY (id)
+ plan_outcomes                 | unique_plan_outcome                                       | UNIQUE          | UNIQUE (plan_id, submitted_by_user_id, outcome_type)
+ plan_participants             | check_final_state_attendance                              | CHECK           | CHECK ((((final_attendance IS NULL) AND (final_state IS NULL)) OR ((final_attendance = 'ATTENDED'::attendance_status) AND (final_state = 'JOINED'::rsvp_status)) OR ((final_attendance = 'DID_NOT_ATTEND'::attendance_status) AND (final_state = 'SKIPPED'::rsvp_status))))
+ plan_participants             | check_skip_reason_validity                                | CHECK           | CHECK (((rsvp_status = 'SKIPPED'::rsvp_status) OR (skip_reason IS NULL)))
+ plan_participants             | plan_participants_delivery_status_check                   | CHECK           | CHECK (((delivery_status)::text = 'DELIVERED'::text))
+ plan_participants             | plan_participants_plan_id_fkey                            | FOREIGN KEY     | FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ plan_participants             | plan_participants_user_id_fkey                            | FOREIGN KEY     | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+ plan_participants             | plan_participants_pkey                                    | PRIMARY KEY     | PRIMARY KEY (plan_id, user_id)
+ plan_team_assignments         | plan_team_assignments_team_check                          | CHECK           | CHECK ((team = ANY (ARRAY['A'::text, 'B'::text, 'TEAM_1'::text, 'TEAM_2'::text])))
+ plan_team_assignments         | plan_team_assignments_plan_id_fkey                        | FOREIGN KEY     | FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ plan_team_assignments         | plan_team_assignments_user_id_fkey                        | FOREIGN KEY     | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+ plan_team_assignments         | plan_team_assignments_pkey                                | PRIMARY KEY     | PRIMARY KEY (id)
+ plan_team_assignments         | unique_plan_user_team                                     | UNIQUE          | UNIQUE (plan_id, user_id)
+ plans                         | check_attended_participants_nonnegative                   | CHECK           | CHECK ((attended_participants >= 0))
+ plans                         | check_max_participants                                    | CHECK           | CHECK (((max_participants IS NULL) OR (max_participants > 0)))
+ plans                         | check_plan_size_bounds                                    | CHECK           | CHECK (((plan_size IS NULL) OR ((plan_size >= 1) AND ((max_participants IS NULL) OR (plan_size <= max_participants)))))
+ plans                         | check_rsvp_deadline_before_scheduled                      | CHECK           | CHECK ((rsvp_deadline <= scheduled_at))
+ plans                         | check_title                                               | CHECK           | CHECK ((length(TRIM(BOTH FROM title)) > 0))
+ plans                         | check_title_max_length                                    | CHECK           | CHECK ((char_length(title) <= 50))
+ plans                         | plans_discovery_item_id_fkey                              | FOREIGN KEY     | FOREIGN KEY (discovery_item_id) REFERENCES discovery_items(id) ON DELETE SET NULL
+ plans                         | plans_pkey                                                | PRIMARY KEY     | PRIMARY KEY (id)
+ plans                         | plans_public_id_key                                       | UNIQUE          | UNIQUE (public_id)
+ users                         | full_name_length_check                                    | CHECK           | CHECK (((full_name IS NULL) OR (char_length(full_name) <= 40)))
+ users                         | username_length_check                                     | CHECK           | CHECK (((username IS NULL) OR (char_length(username) <= 15)))
+ users                         | users_id_fkey                                             | FOREIGN KEY     | FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE
+ users                         | users_pkey                                                | PRIMARY KEY     | PRIMARY KEY (id)
+ users                         | users_public_id_key                                       | UNIQUE          | UNIQUE (public_id)
+ wallet_expense_participants   | wallet_expense_participants_expense_id_fkey               | FOREIGN KEY     | FOREIGN KEY (expense_id) REFERENCES wallet_expenses(id) ON DELETE CASCADE
+ wallet_expense_participants   | wallet_expense_participants_user_id_fkey                  | FOREIGN KEY     | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+ wallet_expense_participants   | wallet_expense_participants_pkey                          | PRIMARY KEY     | PRIMARY KEY (id)
+ wallet_expense_participants   | wallet_expense_participants_unique_user                   | UNIQUE          | UNIQUE (expense_id, user_id)
+ wallet_expenses               | wallet_expenses_message_id_fkey                           | FOREIGN KEY     | FOREIGN KEY (message_id) REFERENCES plan_messages(id) ON DELETE SET NULL
+ wallet_expenses               | wallet_expenses_payer_id_fkey                             | FOREIGN KEY     | FOREIGN KEY (payer_id) REFERENCES users(id) ON DELETE CASCADE
+ wallet_expenses               | wallet_expenses_plan_id_fkey                              | FOREIGN KEY     | FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ wallet_expenses               | wallet_expenses_pkey                                      | PRIMARY KEY     | PRIMARY KEY (id)
+ wallet_expenses               | wallet_expenses_public_id_key                             | UNIQUE          | UNIQUE (public_id)
+ wallet_settlement_allocations | wallet_settlement_allocations_amount_check                | CHECK           | CHECK ((amount > (0)::numeric))
+ wallet_settlement_allocations | wallet_settlement_allocations_expense_participant_id_fkey | FOREIGN KEY     | FOREIGN KEY (expense_participant_id) REFERENCES wallet_expense_participants(id) ON DELETE CASCADE
+ wallet_settlement_allocations | wallet_settlement_allocations_settlement_id_fkey          | FOREIGN KEY     | FOREIGN KEY (settlement_id) REFERENCES wallet_settlements(id) ON DELETE CASCADE
+ wallet_settlement_allocations | wallet_settlement_allocations_pkey                        | PRIMARY KEY     | PRIMARY KEY (id)
+ wallet_settlements            | check_payer_not_receiver                                  | CHECK           | CHECK ((payer_id <> receiver_id))
+ wallet_settlements            | wallet_settlements_amount_check                           | CHECK           | CHECK ((amount > (0)::numeric))
+ wallet_settlements            | wallet_settlements_payer_id_fkey                          | FOREIGN KEY     | FOREIGN KEY (payer_id) REFERENCES users(id) ON DELETE CASCADE
+ wallet_settlements            | wallet_settlements_plan_id_fkey                           | FOREIGN KEY     | FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ wallet_settlements            | wallet_settlements_receiver_id_fkey                       | FOREIGN KEY     | FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
+ wallet_settlements            | wallet_settlements_pkey                                   | PRIMARY KEY     | PRIMARY KEY (id)
+ wallet_transactions           | chk_wallet_transactions_amount_positive                   | CHECK           | CHECK ((amount > (0)::numeric))
+ wallet_transactions           | chk_wallet_transactions_sender_receiver_different         | CHECK           | CHECK ((sender_id <> receiver_id))
+ wallet_transactions           | wallet_transactions_expense_id_fkey                       | FOREIGN KEY     | FOREIGN KEY (expense_id) REFERENCES wallet_expenses(id) ON DELETE CASCADE
+ wallet_transactions           | wallet_transactions_plan_id_fkey                          | FOREIGN KEY     | FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE
+ wallet_transactions           | wallet_transactions_receiver_id_fkey                      | FOREIGN KEY     | FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
+ wallet_transactions           | wallet_transactions_sender_id_fkey                        | FOREIGN KEY     | FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+ wallet_transactions           | wallet_transactions_pkey                                  | PRIMARY KEY     | PRIMARY KEY (id)
+(91 rows)
+
+=== 7. INDEXES IN PUBLIC SCHEMA ===
+           tablename           |                        indexname                         |                                                                                                        indexdef                                                                                                         
+-------------------------------+----------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ discovery_items               | discovery_items_pkey                                     | CREATE UNIQUE INDEX discovery_items_pkey ON public.discovery_items USING btree (id)
+ discovery_items               | discovery_items_public_id_key                            | CREATE UNIQUE INDEX discovery_items_public_id_key ON public.discovery_items USING btree (public_id)
+ discovery_sections            | discovery_sections_pkey                                  | CREATE UNIQUE INDEX discovery_sections_pkey ON public.discovery_sections USING btree (id)
+ discovery_sections            | discovery_sections_public_id_key                         | CREATE UNIQUE INDEX discovery_sections_public_id_key ON public.discovery_sections USING btree (public_id)
+ friendships                   | friendships_pkey                                         | CREATE UNIQUE INDEX friendships_pkey ON public.friendships USING btree (id)
+ friendships                   | unique_friendship                                        | CREATE UNIQUE INDEX unique_friendship ON public.friendships USING btree (user_1_id, user_2_id)
+ memories                      | memories_pkey                                            | CREATE UNIQUE INDEX memories_pkey ON public.memories USING btree (id)
+ memories                      | unique_memory_plan                                       | CREATE UNIQUE INDEX unique_memory_plan ON public.memories USING btree (plan_id)
+ memory_results                | memory_results_pkey                                      | CREATE UNIQUE INDEX memory_results_pkey ON public.memory_results USING btree (id)
+ memory_results                | unique_memory_result                                     | CREATE UNIQUE INDEX unique_memory_result ON public.memory_results USING btree (memory_id)
+ notifications                 | notifications_pkey                                       | CREATE UNIQUE INDEX notifications_pkey ON public.notifications USING btree (id)
+ plan_activity                 | idx_plan_activity_activity_type                          | CREATE INDEX idx_plan_activity_activity_type ON public.plan_activity USING btree (activity_type)
+ plan_activity                 | idx_plan_activity_created_at                             | CREATE INDEX idx_plan_activity_created_at ON public.plan_activity USING btree (created_at)
+ plan_activity                 | idx_plan_activity_plan_created_at_desc                   | CREATE INDEX idx_plan_activity_plan_created_at_desc ON public.plan_activity USING btree (plan_id, created_at DESC)
+ plan_activity                 | idx_plan_activity_plan_id                                | CREATE INDEX idx_plan_activity_plan_id ON public.plan_activity USING btree (plan_id)
+ plan_activity                 | plan_activity_pkey                                       | CREATE UNIQUE INDEX plan_activity_pkey ON public.plan_activity USING btree (id)
+ plan_invites                  | plan_invites_invite_token_key                            | CREATE UNIQUE INDEX plan_invites_invite_token_key ON public.plan_invites USING btree (invite_token)
+ plan_invites                  | plan_invites_pkey                                        | CREATE UNIQUE INDEX plan_invites_pkey ON public.plan_invites USING btree (id)
+ plan_messages                 | idx_plan_messages_plan_created_at                        | CREATE INDEX idx_plan_messages_plan_created_at ON public.plan_messages USING btree (plan_id, created_at)
+ plan_messages                 | idx_plan_messages_plan_id                                | CREATE INDEX idx_plan_messages_plan_id ON public.plan_messages USING btree (plan_id)
+ plan_messages                 | idx_plan_messages_sender_id                              | CREATE INDEX idx_plan_messages_sender_id ON public.plan_messages USING btree (sender_id)
+ plan_messages                 | plan_messages_pkey                                       | CREATE UNIQUE INDEX plan_messages_pkey ON public.plan_messages USING btree (id)
+ plan_outcomes                 | plan_outcomes_pkey                                       | CREATE UNIQUE INDEX plan_outcomes_pkey ON public.plan_outcomes USING btree (id)
+ plan_outcomes                 | unique_plan_outcome                                      | CREATE UNIQUE INDEX unique_plan_outcome ON public.plan_outcomes USING btree (plan_id, submitted_by_user_id, outcome_type)
+ plan_participants             | idx_uniq_plan_waitlist_position                          | CREATE UNIQUE INDEX idx_uniq_plan_waitlist_position ON public.plan_participants USING btree (plan_id, waitlist_position) WHERE ((assigned_group = 'WAITLIST'::assigned_group_enum) AND (waitlist_position IS NOT NULL))
+ plan_participants             | plan_participants_pkey                                   | CREATE UNIQUE INDEX plan_participants_pkey ON public.plan_participants USING btree (plan_id, user_id)
+ plan_team_assignments         | plan_team_assignments_pkey                               | CREATE UNIQUE INDEX plan_team_assignments_pkey ON public.plan_team_assignments USING btree (id)
+ plan_team_assignments         | unique_plan_user_team                                    | CREATE UNIQUE INDEX unique_plan_user_team ON public.plan_team_assignments USING btree (plan_id, user_id)
+ plans                         | plans_pkey                                               | CREATE UNIQUE INDEX plans_pkey ON public.plans USING btree (id)
+ plans                         | plans_public_id_key                                      | CREATE UNIQUE INDEX plans_public_id_key ON public.plans USING btree (public_id)
+ users                         | users_pkey                                               | CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)
+ users                         | users_public_id_key                                      | CREATE UNIQUE INDEX users_public_id_key ON public.users USING btree (public_id)
+ wallet_expense_participants   | idx_wallet_expense_participants_expense_id               | CREATE INDEX idx_wallet_expense_participants_expense_id ON public.wallet_expense_participants USING btree (expense_id)
+ wallet_expense_participants   | idx_wallet_expense_participants_user_id                  | CREATE INDEX idx_wallet_expense_participants_user_id ON public.wallet_expense_participants USING btree (user_id)
+ wallet_expense_participants   | wallet_expense_participants_pkey                         | CREATE UNIQUE INDEX wallet_expense_participants_pkey ON public.wallet_expense_participants USING btree (id)
+ wallet_expense_participants   | wallet_expense_participants_unique_user                  | CREATE UNIQUE INDEX wallet_expense_participants_unique_user ON public.wallet_expense_participants USING btree (expense_id, user_id)
+ wallet_expenses               | wallet_expenses_pkey                                     | CREATE UNIQUE INDEX wallet_expenses_pkey ON public.wallet_expenses USING btree (id)
+ wallet_expenses               | wallet_expenses_public_id_key                            | CREATE UNIQUE INDEX wallet_expenses_public_id_key ON public.wallet_expenses USING btree (public_id)
+ wallet_settlement_allocations | idx_wallet_settlement_allocations_expense_participant_id | CREATE INDEX idx_wallet_settlement_allocations_expense_participant_id ON public.wallet_settlement_allocations USING btree (expense_participant_id)
+ wallet_settlement_allocations | idx_wallet_settlement_allocations_settlement_id          | CREATE INDEX idx_wallet_settlement_allocations_settlement_id ON public.wallet_settlement_allocations USING btree (settlement_id)
+ wallet_settlement_allocations | wallet_settlement_allocations_pkey                       | CREATE UNIQUE INDEX wallet_settlement_allocations_pkey ON public.wallet_settlement_allocations USING btree (id)
+ wallet_settlements            | idx_wallet_settlements_created_at                        | CREATE INDEX idx_wallet_settlements_created_at ON public.wallet_settlements USING btree (created_at DESC)
+ wallet_settlements            | idx_wallet_settlements_payer_receiver                    | CREATE INDEX idx_wallet_settlements_payer_receiver ON public.wallet_settlements USING btree (payer_id, receiver_id)
+ wallet_settlements            | idx_wallet_settlements_plan_id                           | CREATE INDEX idx_wallet_settlements_plan_id ON public.wallet_settlements USING btree (plan_id)
+ wallet_settlements            | wallet_settlements_pkey                                  | CREATE UNIQUE INDEX wallet_settlements_pkey ON public.wallet_settlements USING btree (id)
+ wallet_transactions           | idx_wallet_transactions_expense_id                       | CREATE INDEX idx_wallet_transactions_expense_id ON public.wallet_transactions USING btree (expense_id)
+ wallet_transactions           | idx_wallet_transactions_plan_id                          | CREATE INDEX idx_wallet_transactions_plan_id ON public.wallet_transactions USING btree (plan_id)
+ wallet_transactions           | idx_wallet_transactions_receiver_id                      | CREATE INDEX idx_wallet_transactions_receiver_id ON public.wallet_transactions USING btree (receiver_id)
+ wallet_transactions           | idx_wallet_transactions_sender_id                        | CREATE INDEX idx_wallet_transactions_sender_id ON public.wallet_transactions USING btree (sender_id)
+ wallet_transactions           | idx_wallet_transactions_status                           | CREATE INDEX idx_wallet_transactions_status ON public.wallet_transactions USING btree (status)
+ wallet_transactions           | wallet_transactions_pkey                                 | CREATE UNIQUE INDEX wallet_transactions_pkey ON public.wallet_transactions USING btree (id)
+(51 rows)
+
+=== 8. ENUMS AND CUSTOM TYPES ===
+            typname            | typtype |                                                                                                                                                  enum_values                                                                                                                                                   
+-------------------------------+---------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ activity_category             | e       | SPORTS, MOVIES, DINING, ENTERTAINMENT, TRAVEL, FITNESS, STUDY, OTHER
+ activity_subcategory          | e       | FOOTBALL, BADMINTON, CRICKET, BASKETBALL, VOLLEYBALL, TENNIS, PICKLEBALL, BOWLING, GO_KARTING, MOVIE, RESTAURANT, CAFE, ROAD_TRIP, GYM, STUDY_SESSION, OTHER
+ assigned_group_enum           | e       | GOING, WAITLIST
+ attendance_status             | e       | ATTENDED, DID_NOT_ATTEND
+ circle_role                   | e       | creator_admin, admin, member
+ completion_status             | e       | PENDING, SUBMITTED, VERIFIED
+ discovery_category            | e       | SPORTS, MOVIES, DINING, DRINKS, CUSTOM, QUICK_PLAN
+ discovery_items               | c       | 
+ discovery_sections            | c       | 
+ discovery_status              | e       | ACTIVE, INACTIVE, ARCHIVED
+ friendship_status             | e       | PENDING, ACCEPTED
+ friendships                   | c       | 
+ memories                      | c       | 
+ memory_results                | c       | 
+ message_status                | e       | SENT, DELIVERED
+ message_type                  | e       | text, system, poll, cost
+ notification_type             | e       | PLAN_INVITATION, PARTICIPANT_JOINED, PARTICIPANT_SKIPPED, PLAN_CANCELLED, PLAN_REMINDER, FRIEND_REQUEST, FRIEND_REQUEST_ACCEPTED, PAYMENT_RECEIVED, PAYMENT_REMINDER, MEMORY_GENERATED
+ notifications                 | c       | 
+ participant_filtering_type    | e       | AUTOMATIC, ASSIGNED
+ participant_payment_status    | e       | PENDING, SETTLED
+ participant_role              | e       | HOST, PARTICIPANT
+ plan_activity                 | c       | 
+ plan_activity_type            | e       | participant_joined, participant_waitlisted, participant_skipped, participant_moved_to_joined, participant_moved_to_waitlist, participant_removed, participant_left, plan_datetime_changed, plan_created, plan_location_changed, participant_invites_toggled, participants_swapped, plan_changed, host_promoted
+ plan_invites                  | c       | 
+ plan_messages                 | c       | 
+ plan_outcomes                 | c       | 
+ plan_participants             | c       | 
+ plan_status                   | e       | LIVE, COMPLETED, CANCELLED
+ plan_team_assignments         | c       | 
+ plans                         | c       | 
+ rsvp_status                   | e       | INVITED, JOINED, SKIPPED, WAITLISTED, REJOINED
+ skip_reason                   | e       | LEFT, REMOVED, REPLACED, PAYMENT_KEPT, SKIPPED
+ system_message_type           | e       | plan_created, participant_joined, participant_left, title_changed, description_changed, date_changed, time_changed, venue_changed, plan_cancelled, plan_restored, plan_completed
+ team_type                     | e       | TEAM_1, TEAM_2
+ transaction_status            | e       | PENDING, COMPLETED, FAILED, CANCELLED
+ user_role                     | e       | user, admin
+ users                         | c       | 
+ waitlist_order_mode_enum      | e       | AUTO, CUSTOM
+ wallet_expense_participants   | c       | 
+ wallet_expense_status         | e       | PENDING, SETTLED
+ wallet_expense_type           | e       | PLAN_EXPENSE, ADDITIONAL_EXPENSE
+ wallet_expenses               | c       | 
+ wallet_settlement_allocations | c       | 
+ wallet_settlements            | c       | 
+ wallet_status                 | e       | PENDING, PAID
+ wallet_transactions           | c       | 
+(46 rows)
+
+=== 9. TRIGGERS IN PUBLIC SCHEMA ===
+         table_name          |                      trigger_name                      | event_manipulation | action_timing |                         action_statement                          
+-----------------------------+--------------------------------------------------------+--------------------+---------------+-------------------------------------------------------------------
+ friendships                 | trg_update_user_friends_count                          | INSERT             | AFTER         | EXECUTE FUNCTION update_user_friends_count()
+ friendships                 | trg_update_user_friends_count                          | DELETE             | AFTER         | EXECUTE FUNCTION update_user_friends_count()
+ friendships                 | trg_update_user_friends_count                          | UPDATE             | AFTER         | EXECUTE FUNCTION update_user_friends_count()
+ plan_participants           | enforce_skip_reason_null_trigger                       | INSERT             | BEFORE        | EXECUTE FUNCTION trigger_enforce_skip_reason_null()
+ plan_participants           | enforce_skip_reason_null_trigger                       | UPDATE             | BEFORE        | EXECUTE FUNCTION trigger_enforce_skip_reason_null()
+ plan_participants           | trg_auto_promote_on_vacancy_trigger                    | UPDATE             | AFTER         | EXECUTE FUNCTION trg_auto_promote_on_vacancy()
+ plan_participants           | trg_block_manual_queue_move_on_automatic_trigger       | UPDATE             | BEFORE        | EXECUTE FUNCTION trg_block_manual_queue_move_on_automatic()
+ plan_participants           | trg_enforce_waitlist_position_invariant_trigger        | INSERT             | BEFORE        | EXECUTE FUNCTION trg_enforce_waitlist_position_invariant()
+ plan_participants           | trg_enforce_waitlist_position_invariant_trigger        | UPDATE             | BEFORE        | EXECUTE FUNCTION trg_enforce_waitlist_position_invariant()
+ plan_participants           | trg_log_plan_participant_activity                      | UPDATE             | AFTER         | EXECUTE FUNCTION log_plan_participant_activity()
+ plan_participants           | trg_maintain_joined_queue_at_trigger                   | INSERT             | BEFORE        | EXECUTE FUNCTION trg_maintain_joined_queue_at()
+ plan_participants           | trg_maintain_joined_queue_at_trigger                   | UPDATE             | BEFORE        | EXECUTE FUNCTION trg_maintain_joined_queue_at()
+ plan_participants           | trg_preserve_payment_kept_skip_reason_trigger          | UPDATE             | BEFORE        | EXECUTE FUNCTION trg_preserve_payment_kept_skip_reason()
+ plan_participants           | trg_reset_waitlisted_or_skipped_host_role_trigger      | INSERT             | BEFORE        | EXECUTE FUNCTION trg_reset_waitlisted_or_skipped_host_role()
+ plan_participants           | trg_reset_waitlisted_or_skipped_host_role_trigger      | UPDATE             | BEFORE        | EXECUTE FUNCTION trg_reset_waitlisted_or_skipped_host_role()
+ plan_participants           | trigger_set_participant_cost_share_on_join             | INSERT             | BEFORE        | EXECUTE FUNCTION set_participant_cost_share_on_join()
+ plan_participants           | trigger_set_participant_cost_share_on_join             | UPDATE             | BEFORE        | EXECUTE FUNCTION set_participant_cost_share_on_join()
+ plans                       | trg_auto_insert_plan_host_participant                  | INSERT             | AFTER         | EXECUTE FUNCTION handle_new_plan_creator_participant()
+ plans                       | trg_log_plan_lifecycle_activity                        | INSERT             | AFTER         | EXECUTE FUNCTION log_plan_lifecycle_activity()
+ plans                       | trg_log_plan_lifecycle_activity                        | UPDATE             | AFTER         | EXECUTE FUNCTION log_plan_lifecycle_activity()
+ plans                       | trg_plans_public_id                                    | INSERT             | BEFORE        | EXECUTE FUNCTION generate_plan_public_id()
+ plans                       | trigger_enforce_plan_participants_completion_lifecycle | INSERT             | AFTER         | EXECUTE FUNCTION enforce_plan_participants_completion_lifecycle()
+ plans                       | trigger_enforce_plan_participants_completion_lifecycle | UPDATE             | AFTER         | EXECUTE FUNCTION enforce_plan_participants_completion_lifecycle()
+ plans                       | trigger_sync_plan_participant_cost_share               | UPDATE             | AFTER         | EXECUTE FUNCTION sync_plan_participant_cost_share()
+ wallet_expense_participants | trg_wallet_expense_participants_updated_at             | UPDATE             | BEFORE        | EXECUTE FUNCTION set_wallet_expense_participants_updated_at()
+ wallet_expenses             | trg_wallet_expenses_public_id                          | INSERT             | BEFORE        | EXECUTE FUNCTION generate_wallet_expense_public_id()
+ wallet_transactions         | trg_wallet_transactions_public_id                      | INSERT             | BEFORE        | EXECUTE FUNCTION generate_wallet_transaction_public_id()
+ wallet_transactions         | trg_wallet_transactions_updated_at                     | UPDATE             | BEFORE        | EXECUTE FUNCTION set_wallet_transactions_updated_at()
+(28 rows)
+
+=== 10. FUNCTIONS AND RPCS IN PUBLIC SCHEMA ===
+                   function_name                    |                                                 identity_arguments                                                 | return_type | is_security_definer | language 
+----------------------------------------------------+--------------------------------------------------------------------------------------------------------------------+-------------+---------------------+----------
+ auto_promote_waitlist_for_assigned                 | p_plan_id uuid, p_vacated_group assigned_group_enum                                                                | integer     | t                   | plpgsql
+ auto_promote_waitlist_for_automatic                | p_plan_id uuid                                                                                                     | integer     | t                   | plpgsql
+ cancel_paid_plan_leave_request                     | p_plan_id uuid                                                                                                     | jsonb       | t                   | plpgsql
+ cancel_plan                                        | p_plan_id uuid                                                                                                     | jsonb       | t                   | plpgsql
+ check_circle_host_invariant                        |                                                                                                                    | trigger     | f                   | plpgsql
+ complete_plan                                      | p_plan_id uuid, p_attendance_input jsonb                                                                           | jsonb       | t                   | plpgsql
+ complete_plan                                      | p_plan_id uuid, p_attendance_input jsonb, p_expense_mode text                                                      | jsonb       | t                   | plpgsql
+ create_wallet_settlement                           | p_other_user_id uuid, p_amount numeric, p_plan_id uuid                                                             | jsonb       | t                   | plpgsql
+ delete_wallet_expense                              | p_expense_id uuid                                                                                                  | jsonb       | t                   | plpgsql
+ delete_wallet_settlement                           | p_settlement_id uuid                                                                                               | jsonb       | t                   | plpgsql
+ demote_from_host                                   | p_plan_id uuid, p_target_user_id uuid                                                                              | jsonb       | t                   | plpgsql
+ enforce_plan_participants_completion_lifecycle     |                                                                                                                    | trigger     | t                   | plpgsql
+ generate_circle_public_id                          |                                                                                                                    | trigger     | f                   | plpgsql
+ generate_discovery_public_id                       |                                                                                                                    | text        | t                   | plpgsql
+ generate_plan_public_id                            |                                                                                                                    | trigger     | f                   | plpgsql
+ generate_user_public_id                            |                                                                                                                    | text        | t                   | plpgsql
+ generate_wallet_expense_public_id                  |                                                                                                                    | trigger     | f                   | plpgsql
+ generate_wallet_transaction_public_id              |                                                                                                                    | trigger     | f                   | plpgsql
+ get_plan_participant_filtering                     | p_plan_id uuid                                                                                                     | text        | t                   | sql
+ handle_new_plan_creator_participant                |                                                                                                                    | trigger     | t                   | plpgsql
+ insert_cost_expense                                | p_plan_id uuid, p_message_id uuid, p_payer_id uuid, p_title text, p_total_amount numeric, p_participant_ids uuid[] | uuid        | t                   | plpgsql
+ invite_participants                                | p_plan_id uuid, p_invitee_user_ids uuid[], p_assigned_group assigned_group_enum                                    | jsonb       | t                   | plpgsql
+ is_expense_participant                             | p_expense_id uuid, p_user_id uuid                                                                                  | boolean     | t                   | sql
+ is_plan_host                                       | p_plan_id uuid, p_user_id uuid                                                                                     | boolean     | t                   | sql
+ is_plan_image_host                                 | object_name text, user_id uuid                                                                                     | boolean     | t                   | plpgsql
+ is_wallet_expense_participant                      | p_expense_id uuid, p_user_id uuid                                                                                  | boolean     | t                   | sql
+ leave_plan                                         | p_plan_id uuid                                                                                                     | jsonb       | t                   | plpgsql
+ log_plan_lifecycle_activity                        |                                                                                                                    | trigger     | t                   | plpgsql
+ log_plan_participant_activity                      |                                                                                                                    | trigger     | t                   | plpgsql
+ manage_completed_plan_participants                 | p_plan_id uuid, p_users_to_add uuid[], p_users_to_remove uuid[]                                                    | jsonb       | t                   | plpgsql
+ manage_completed_plan_participants                 | p_plan_id uuid, p_users_to_add uuid[], p_users_to_remove uuid[], p_expense_mode text                               | jsonb       | t                   | plpgsql
+ move_participant_to_waitlist_and_decrease_capacity | p_plan_id uuid, p_target_user_id uuid                                                                              | jsonb       | t                   | plpgsql
+ move_waitlist_to_going                             | p_plan_id uuid, p_target_user_id uuid                                                                              | jsonb       | t                   | plpgsql
+ promote_to_host                                    | p_plan_id uuid, p_target_user_id uuid                                                                              | jsonb       | t                   | plpgsql
+ rebuild_waitlist_queue                             | p_plan_id uuid                                                                                                     | void        | t                   | plpgsql
+ recalculate_wallet_expenses                        | p_plan_id uuid                                                                                                     | void        | t                   | plpgsql
+ rejoin_plan                                        | p_plan_id uuid                                                                                                     | jsonb       | t                   | plpgsql
+ remove_and_replace_participant                     | p_plan_id uuid, p_remove_user_id uuid, p_promote_user_id uuid                                                      | jsonb       | t                   | plpgsql
+ remove_expense_participant_and_redistribute        | p_expense_id uuid, p_participant_user_id uuid                                                                      | jsonb       | t                   | plpgsql
+ remove_expense_participant_and_redistribute        | p_expense_id uuid, p_participant_user_id uuid, p_strategy text                                                     | jsonb       | t                   | plpgsql
+ remove_participant                                 | p_plan_id uuid, p_target_user_id uuid                                                                              | jsonb       | t                   | plpgsql
+ reorder_waitlist                                   | p_plan_id uuid, p_ordered_user_ids uuid[]                                                                          | void        | t                   | plpgsql
+ replace_participant                                | p_plan_id uuid, p_target_user_id uuid, p_replacement_user_id uuid                                                  | jsonb       | t                   | plpgsql
+ request_host_leave_with_replacement                | p_plan_id uuid, p_replacement_user_id uuid                                                                         | jsonb       | t                   | plpgsql
+ request_paid_plan_leave                            | p_plan_id uuid                                                                                                     | jsonb       | t                   | plpgsql
+ resolve_paid_plan_leave_request                    | p_plan_id uuid, p_target_user_id uuid, p_resolution text, p_replacement_user_id uuid                               | jsonb       | t                   | plpgsql
+ resolve_rejoined_participant                       | p_plan_id uuid, p_target_user_id uuid, p_decision text                                                             | jsonb       | t                   | plpgsql
+ set_participant_cost_share_on_join                 |                                                                                                                    | trigger     | t                   | plpgsql
+ set_wallet_expense_participants_updated_at         |                                                                                                                    | trigger     | f                   | plpgsql
+ set_wallet_transactions_updated_at                 |                                                                                                                    | trigger     | f                   | plpgsql
+ settle_wallet_expense                              | p_expense_id uuid, p_debtor_id uuid                                                                                | jsonb       | t                   | plpgsql
+ settle_wallet_relationship                         | p_debtor_id uuid                                                                                                   | jsonb       | t                   | plpgsql
+ stop_hosting_with_replacement                      | p_plan_id uuid, p_replacement_user_id uuid                                                                         | jsonb       | t                   | plpgsql
+ swap_plan_participants                             | p_plan_id uuid, p_going_user_id uuid, p_waitlist_user_id uuid                                                      | jsonb       | t                   | plpgsql
+ switch_to_automatic_waitlist_mode                  | p_plan_id uuid, p_promoted_user_ids uuid[]                                                                         | void        | t                   | plpgsql
+ sync_plan_participant_cost_share                   |                                                                                                                    | trigger     | t                   | plpgsql
+ transfer_circle_ownership                          | p_circle_id uuid, p_old_host_id uuid, p_new_host_id uuid                                                           | void        | t                   | plpgsql
+ trg_auto_promote_on_vacancy                        |                                                                                                                    | trigger     | t                   | plpgsql
+ trg_block_manual_queue_move_on_automatic           |                                                                                                                    | trigger     | t                   | plpgsql
+ trg_enforce_waitlist_position_invariant            |                                                                                                                    | trigger     | t                   | plpgsql
+ trg_maintain_joined_queue_at                       |                                                                                                                    | trigger     | f                   | plpgsql
+ trg_preserve_payment_kept_skip_reason              |                                                                                                                    | trigger     | f                   | plpgsql
+ trg_reset_waitlisted_or_skipped_host_role          |                                                                                                                    | trigger     | t                   | plpgsql
+ trigger_enforce_skip_reason_null                   |                                                                                                                    | trigger     | f                   | plpgsql
+ update_cost_expense                                | p_expense_id uuid, p_title text, p_total_amount numeric, p_plan_id uuid, p_participant_ids uuid[]                  | jsonb       | t                   | plpgsql
+ update_plan_capacity                               | p_plan_id uuid, p_max_participants integer                                                                         | jsonb       | t                   | plpgsql
+ update_updated_at_column                           |                                                                                                                    | trigger     | f                   | plpgsql
+ update_user_friends_count                          |                                                                                                                    | trigger     | f                   | plpgsql
+(68 rows)
+
+=== 11. RLS POLICIES IN PUBLIC SCHEMA ===
+           tablename           |                      policyname                      | permissive |      roles      |  cmd   |                                                                                        qual                                                                                         |                                                                              with_check                                                                              
+-------------------------------+------------------------------------------------------+------------+-----------------+--------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ discovery_items               | Admins can delete discovery items                    | PERMISSIVE | {authenticated} | DELETE | (EXISTS ( SELECT 1                                                                                                                                                                 +| 
+                               |                                                      |            |                 |        |    FROM users                                                                                                                                                                      +| 
+                               |                                                      |            |                 |        |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role))))                                                                                                           | 
+ discovery_items               | Admins can insert discovery items                    | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | (EXISTS ( SELECT 1                                                                                                                                                  +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |    FROM users                                                                                                                                                       +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role))))
+ discovery_items               | Admins can update discovery items                    | PERMISSIVE | {authenticated} | UPDATE | (EXISTS ( SELECT 1                                                                                                                                                                 +| (EXISTS ( SELECT 1                                                                                                                                                  +
+                               |                                                      |            |                 |        |    FROM users                                                                                                                                                                      +|    FROM users                                                                                                                                                       +
+                               |                                                      |            |                 |        |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role))))                                                                                                           |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role))))
+ discovery_items               | Allow public read access on discovery_items          | PERMISSIVE | {public}        | SELECT | true                                                                                                                                                                                | 
+ discovery_sections            | Admins can delete discovery sections                 | PERMISSIVE | {authenticated} | DELETE | (EXISTS ( SELECT 1                                                                                                                                                                 +| 
+                               |                                                      |            |                 |        |    FROM users                                                                                                                                                                      +| 
+                               |                                                      |            |                 |        |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role))))                                                                                                           | 
+ discovery_sections            | Admins can insert discovery sections                 | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | (EXISTS ( SELECT 1                                                                                                                                                  +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |    FROM users                                                                                                                                                       +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role))))
+ discovery_sections            | Admins can update discovery sections                 | PERMISSIVE | {authenticated} | UPDATE | (EXISTS ( SELECT 1                                                                                                                                                                 +| (EXISTS ( SELECT 1                                                                                                                                                  +
+                               |                                                      |            |                 |        |    FROM users                                                                                                                                                                      +|    FROM users                                                                                                                                                       +
+                               |                                                      |            |                 |        |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role))))                                                                                                           |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role))))
+ discovery_sections            | Allow public read access on discovery_sections       | PERMISSIVE | {public}        | SELECT | true                                                                                                                                                                                | 
+ friendships                   | Allow authenticated users to delete friendships      | PERMISSIVE | {authenticated} | DELETE | ((auth.uid() = user_1_id) OR (auth.uid() = user_2_id))                                                                                                                              | 
+ friendships                   | Allow authenticated users to insert friendships      | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | ((auth.uid() = user_1_id) OR (auth.uid() = user_2_id))
+ friendships                   | Allow authenticated users to update friendships      | PERMISSIVE | {authenticated} | UPDATE | ((auth.uid() = user_1_id) OR (auth.uid() = user_2_id))                                                                                                                              | ((auth.uid() = user_1_id) OR (auth.uid() = user_2_id))
+ friendships                   | Allow authenticated users to view friendships        | PERMISSIVE | {authenticated} | SELECT | ((auth.uid() = user_1_id) OR (auth.uid() = user_2_id))                                                                                                                              | 
+ memory_results                | Allow authenticated users to insert memory results   | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | true
+ memory_results                | Allow authenticated users to update memory results   | PERMISSIVE | {authenticated} | UPDATE | true                                                                                                                                                                                | true
+ memory_results                | Allow authenticated users to view memory results     | PERMISSIVE | {authenticated} | SELECT | true                                                                                                                                                                                | 
+ notifications                 | Authenticated users can insert notifications         | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | true
+ notifications                 | Users can update their own notifications             | PERMISSIVE | {authenticated} | UPDATE | (auth.uid() = user_id)                                                                                                                                                              | (auth.uid() = user_id)
+ notifications                 | Users can view their own notifications               | PERMISSIVE | {authenticated} | SELECT | (auth.uid() = user_id)                                                                                                                                                              | 
+ plan_activity                 | Allow authenticated users to insert plan_activity    | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | (EXISTS ( SELECT 1                                                                                                                                                  +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |    FROM plan_participants pp                                                                                                                                        +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |   WHERE ((pp.plan_id = plan_activity.plan_id) AND (pp.user_id = auth.uid()))))
+ plan_activity                 | Allow plan participants to select plan_activity      | PERMISSIVE | {authenticated} | SELECT | (EXISTS ( SELECT 1                                                                                                                                                                 +| 
+                               |                                                      |            |                 |        |    FROM plan_participants                                                                                                                                                          +| 
+                               |                                                      |            |                 |        |   WHERE ((plan_participants.plan_id = plan_activity.plan_id) AND (plan_participants.user_id = auth.uid()))))                                                                        | 
+ plan_activity                 | Deny delete on plan_activity for authenticated users | PERMISSIVE | {authenticated} | DELETE | false                                                                                                                                                                               | 
+ plan_activity                 | Deny update on plan_activity for authenticated users | PERMISSIVE | {authenticated} | UPDATE | false                                                                                                                                                                               | false
+ plan_invites                  | Allow authenticated users to view plan invites       | PERMISSIVE | {authenticated} | SELECT | true                                                                                                                                                                                | 
+ plan_invites                  | Allow hosts to insert plan invites                   | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | ((auth.uid() = created_by) AND (EXISTS ( SELECT 1                                                                                                                   +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |    FROM plan_participants pp                                                                                                                                        +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |   WHERE ((pp.plan_id = plan_invites.plan_id) AND (pp.user_id = auth.uid()) AND (pp.role = 'HOST'::participant_role) AND (pp.rsvp_status = 'JOINED'::rsvp_status)))))
+ plan_invites                  | Allow hosts to update plan invites                   | PERMISSIVE | {authenticated} | UPDATE | (EXISTS ( SELECT 1                                                                                                                                                                 +| (EXISTS ( SELECT 1                                                                                                                                                  +
+                               |                                                      |            |                 |        |    FROM plan_participants pp                                                                                                                                                       +|    FROM plan_participants pp                                                                                                                                        +
+                               |                                                      |            |                 |        |   WHERE ((pp.plan_id = plan_invites.plan_id) AND (pp.user_id = auth.uid()) AND (pp.role = 'HOST'::participant_role) AND (pp.rsvp_status = 'JOINED'::rsvp_status))))                 |   WHERE ((pp.plan_id = plan_invites.plan_id) AND (pp.user_id = auth.uid()) AND (pp.role = 'HOST'::participant_role) AND (pp.rsvp_status = 'JOINED'::rsvp_status))))
+ plan_messages                 | Allow plan participants to insert messages           | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | ((auth.uid() = sender_id) AND (EXISTS ( SELECT 1                                                                                                                    +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |    FROM plan_participants                                                                                                                                           +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |   WHERE ((plan_participants.plan_id = plan_messages.plan_id) AND (plan_participants.user_id = auth.uid())))))
+ plan_messages                 | Allow plan participants to select messages           | PERMISSIVE | {authenticated} | SELECT | (EXISTS ( SELECT 1                                                                                                                                                                 +| 
+                               |                                                      |            |                 |        |    FROM plan_participants                                                                                                                                                          +| 
+                               |                                                      |            |                 |        |   WHERE ((plan_participants.plan_id = plan_messages.plan_id) AND (plan_participants.user_id = auth.uid()))))                                                                        | 
+ plan_messages                 | Deny all deletes on plan messages                    | PERMISSIVE | {authenticated} | DELETE | false                                                                                                                                                                               | 
+ plan_messages                 | Deny all updates on plan messages                    | PERMISSIVE | {authenticated} | UPDATE | false                                                                                                                                                                               | false
+ plan_outcomes                 | Allow authenticated users to insert plan outcomes    | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | true
+ plan_outcomes                 | Allow authenticated users to update plan outcomes    | PERMISSIVE | {authenticated} | UPDATE | true                                                                                                                                                                                | true
+ plan_outcomes                 | Allow authenticated users to view plan outcomes      | PERMISSIVE | {authenticated} | SELECT | true                                                                                                                                                                                | 
+ plan_participants             | Hosts and users can delete plan participants         | PERMISSIVE | {public}        | DELETE | ((auth.uid() = user_id) OR (EXISTS ( SELECT 1                                                                                                                                      +| 
+                               |                                                      |            |                 |        |    FROM plan_participants pp                                                                                                                                                       +| 
+                               |                                                      |            |                 |        |   WHERE ((pp.plan_id = plan_participants.plan_id) AND (pp.user_id = auth.uid()) AND (pp.role = 'HOST'::participant_role)))))                                                        | 
+ plan_participants             | Hosts and users can update plan participants         | PERMISSIVE | {public}        | UPDATE | ((auth.uid() = user_id) OR (EXISTS ( SELECT 1                                                                                                                                      +| 
+                               |                                                      |            |                 |        |    FROM plan_participants pp                                                                                                                                                       +| 
+                               |                                                      |            |                 |        |   WHERE ((pp.plan_id = plan_participants.plan_id) AND (pp.user_id = auth.uid()) AND (pp.role = 'HOST'::participant_role)))))                                                        | 
+ plan_participants             | Users can insert plan participants                   | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | true
+ plan_participants             | Users can view plan participants                     | PERMISSIVE | {authenticated} | SELECT | true                                                                                                                                                                                | 
+ plan_team_assignments         | Allow authenticated users to delete team assignments | PERMISSIVE | {authenticated} | DELETE | true                                                                                                                                                                                | 
+ plan_team_assignments         | Allow authenticated users to insert team assignments | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | true
+ plan_team_assignments         | Allow authenticated users to update team assignments | PERMISSIVE | {authenticated} | UPDATE | true                                                                                                                                                                                | true
+ plan_team_assignments         | Allow authenticated users to view team assignments   | PERMISSIVE | {authenticated} | SELECT | true                                                                                                                                                                                | 
+ plans                         | Allow hosts to update plans                          | PERMISSIVE | {authenticated} | UPDATE | (EXISTS ( SELECT 1                                                                                                                                                                 +| (EXISTS ( SELECT 1                                                                                                                                                  +
+                               |                                                      |            |                 |        |    FROM plan_participants pp                                                                                                                                                       +|    FROM plan_participants pp                                                                                                                                        +
+                               |                                                      |            |                 |        |   WHERE ((pp.plan_id = plans.id) AND (pp.user_id = auth.uid()) AND (pp.role = 'HOST'::participant_role) AND (pp.rsvp_status = 'JOINED'::rsvp_status))))                             |   WHERE ((pp.plan_id = plans.id) AND (pp.user_id = auth.uid()) AND (pp.role = 'HOST'::participant_role) AND (pp.rsvp_status = 'JOINED'::rsvp_status))))
+ plans                         | Users can insert plans                               | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | true
+ plans                         | Users can view plans                                 | PERMISSIVE | {authenticated} | SELECT | true                                                                                                                                                                                | 
+ plans                         | select_plans                                         | PERMISSIVE | {public}        | SELECT | true                                                                                                                                                                                | 
+ users                         | Allow authenticated users to read all profiles       | PERMISSIVE | {authenticated} | SELECT | true                                                                                                                                                                                | 
+ users                         | Users can create their own profile                   | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | (auth.uid() = id)
+ users                         | Users can update their own profile                   | PERMISSIVE | {authenticated} | UPDATE | (auth.uid() = id)                                                                                                                                                                   | (auth.uid() = id)
+ users                         | Users can view accepted friends profiles             | PERMISSIVE | {authenticated} | SELECT | (EXISTS ( SELECT 1                                                                                                                                                                 +| 
+                               |                                                      |            |                 |        |    FROM friendships f                                                                                                                                                              +| 
+                               |                                                      |            |                 |        |   WHERE ((f.status = 'ACCEPTED'::friendship_status) AND (((f.user_1_id = auth.uid()) AND (f.user_2_id = users.id)) OR ((f.user_2_id = auth.uid()) AND (f.user_1_id = users.id)))))) | 
+ users                         | Users can view their own profile                     | PERMISSIVE | {authenticated} | SELECT | (auth.uid() = id)                                                                                                                                                                   | 
+ users                         | select_users                                         | PERMISSIVE | {public}        | SELECT | true                                                                                                                                                                                | 
+ wallet_expense_participants   | wallet_expense_participants_delete                   | PERMISSIVE | {authenticated} | DELETE | ((EXISTS ( SELECT 1                                                                                                                                                                +| 
+                               |                                                      |            |                 |        |    FROM wallet_expenses we                                                                                                                                                         +| 
+                               |                                                      |            |                 |        |   WHERE ((we.id = wallet_expense_participants.expense_id) AND (we.payer_id = auth.uid())))) OR (EXISTS ( SELECT 1                                                                  +| 
+                               |                                                      |            |                 |        |    FROM wallet_expenses we                                                                                                                                                         +| 
+                               |                                                      |            |                 |        |   WHERE ((we.id = wallet_expense_participants.expense_id) AND is_plan_host(we.plan_id, auth.uid())))))                                                                              | 
+ wallet_expense_participants   | wallet_expense_participants_insert                   | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | ((EXISTS ( SELECT 1                                                                                                                                                 +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |    FROM wallet_expenses we                                                                                                                                          +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |   WHERE ((we.id = wallet_expense_participants.expense_id) AND (we.payer_id = auth.uid())))) OR (EXISTS ( SELECT 1                                                   +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |    FROM wallet_expenses we                                                                                                                                          +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |   WHERE ((we.id = wallet_expense_participants.expense_id) AND is_plan_host(we.plan_id, auth.uid())))))
+ wallet_expense_participants   | wallet_expense_participants_select                   | PERMISSIVE | {authenticated} | SELECT | ((user_id = auth.uid()) OR is_expense_participant(expense_id, auth.uid()) OR (EXISTS ( SELECT 1                                                                                    +| 
+                               |                                                      |            |                 |        |    FROM wallet_expenses we                                                                                                                                                         +| 
+                               |                                                      |            |                 |        |   WHERE ((we.id = wallet_expense_participants.expense_id) AND (we.payer_id = auth.uid())))) OR (EXISTS ( SELECT 1                                                                  +| 
+                               |                                                      |            |                 |        |    FROM wallet_expenses we                                                                                                                                                         +| 
+                               |                                                      |            |                 |        |   WHERE ((we.id = wallet_expense_participants.expense_id) AND is_plan_host(we.plan_id, auth.uid())))))                                                                              | 
+ wallet_expense_participants   | wallet_expense_participants_update                   | PERMISSIVE | {authenticated} | UPDATE | ((EXISTS ( SELECT 1                                                                                                                                                                +| 
+                               |                                                      |            |                 |        |    FROM wallet_expenses we                                                                                                                                                         +| 
+                               |                                                      |            |                 |        |   WHERE ((we.id = wallet_expense_participants.expense_id) AND (we.payer_id = auth.uid())))) OR (EXISTS ( SELECT 1                                                                  +| 
+                               |                                                      |            |                 |        |    FROM wallet_expenses we                                                                                                                                                         +| 
+                               |                                                      |            |                 |        |   WHERE ((we.id = wallet_expense_participants.expense_id) AND is_plan_host(we.plan_id, auth.uid())))))                                                                              | 
+ wallet_expenses               | wallet_expenses_delete                               | PERMISSIVE | {authenticated} | DELETE | ((payer_id = auth.uid()) OR is_plan_host(plan_id, auth.uid()))                                                                                                                      | 
+ wallet_expenses               | wallet_expenses_insert                               | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | ((payer_id = auth.uid()) AND (EXISTS ( SELECT 1                                                                                                                     +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |    FROM plan_participants                                                                                                                                           +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |   WHERE ((plan_participants.plan_id = wallet_expenses.plan_id) AND (plan_participants.user_id = auth.uid())))))
+ wallet_expenses               | wallet_expenses_select                               | PERMISSIVE | {authenticated} | SELECT | ((payer_id = auth.uid()) OR is_wallet_expense_participant(id, auth.uid()) OR is_plan_host(plan_id, auth.uid()))                                                                     | 
+ wallet_expenses               | wallet_expenses_update                               | PERMISSIVE | {authenticated} | UPDATE | ((payer_id = auth.uid()) OR is_plan_host(plan_id, auth.uid()))                                                                                                                      | ((payer_id = auth.uid()) OR is_plan_host(plan_id, auth.uid()))
+ wallet_settlement_allocations | Users can view allocations they are part of          | PERMISSIVE | {public}        | SELECT | (EXISTS ( SELECT 1                                                                                                                                                                 +| 
+                               |                                                      |            |                 |        |    FROM wallet_settlements s                                                                                                                                                       +| 
+                               |                                                      |            |                 |        |   WHERE ((s.id = wallet_settlement_allocations.settlement_id) AND ((s.payer_id = auth.uid()) OR (s.receiver_id = auth.uid())))))                                                    | 
+ wallet_settlements            | Parties can delete settlements                       | PERMISSIVE | {public}        | DELETE | ((auth.uid() = payer_id) OR (auth.uid() = receiver_id))                                                                                                                             | 
+ wallet_settlements            | Payer can insert settlements                         | PERMISSIVE | {public}        | INSERT |                                                                                                                                                                                     | (auth.uid() = payer_id)
+ wallet_settlements            | Users can view settlements they are part of          | PERMISSIVE | {public}        | SELECT | ((auth.uid() = payer_id) OR (auth.uid() = receiver_id))                                                                                                                             | 
+ wallet_transactions           | wallet_transactions_delete                           | PERMISSIVE | {authenticated} | DELETE | ((receiver_id = auth.uid()) OR is_plan_host(plan_id, auth.uid()))                                                                                                                   | 
+ wallet_transactions           | wallet_transactions_insert                           | PERMISSIVE | {authenticated} | INSERT |                                                                                                                                                                                     | (((sender_id = auth.uid()) OR (receiver_id = auth.uid()) OR is_plan_host(plan_id, auth.uid())) AND (EXISTS ( SELECT 1                                               +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |    FROM plan_participants                                                                                                                                           +
+                               |                                                      |            |                 |        |                                                                                                                                                                                     |   WHERE ((plan_participants.plan_id = wallet_transactions.plan_id) AND (plan_participants.user_id = auth.uid())))))
+ wallet_transactions           | wallet_transactions_select                           | PERMISSIVE | {authenticated} | SELECT | ((sender_id = auth.uid()) OR (receiver_id = auth.uid()) OR is_plan_host(plan_id, auth.uid()))                                                                                       | 
+ wallet_transactions           | wallet_transactions_update                           | PERMISSIVE | {authenticated} | UPDATE | ((sender_id = auth.uid()) OR (receiver_id = auth.uid()) OR is_plan_host(plan_id, auth.uid()))                                                                                       | ((sender_id = auth.uid()) OR (receiver_id = auth.uid()) OR is_plan_host(plan_id, auth.uid()))
+(66 rows)
+
+=== 12. STORAGE BUCKETS ===
+        id        |       name       | public | avif_autodetection | file_size_limit |             allowed_mime_types              
+------------------+------------------+--------+--------------------+-----------------+---------------------------------------------
+ avatars          | avatars          | t      | f                  |                 | 
+ discovery-images | discovery-images | t      | f                  |                 | 
+ plan-images      | plan-images      | t      | f                  |        10485760 | {image/webp,image/jpeg,image/png,image/jpg}
+(3 rows)
+
+=== 13. STORAGE RLS POLICIES ===
+ tablename |             policyname              | permissive |      roles      |  cmd   |                                           qual                                           |                                        with_check                                        
+-----------+-------------------------------------+------------+-----------------+--------+------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------------
+ objects   | Active hosts can delete plan images | PERMISSIVE | {authenticated} | DELETE | ((bucket_id = 'plan-images'::text) AND is_plan_image_host(name, auth.uid()))             | 
+ objects   | Active hosts can update plan images | PERMISSIVE | {authenticated} | UPDATE | ((bucket_id = 'plan-images'::text) AND is_plan_image_host(name, auth.uid()))             | ((bucket_id = 'plan-images'::text) AND is_plan_image_host(name, auth.uid()))
+ objects   | Active hosts can upload plan images | PERMISSIVE | {authenticated} | INSERT |                                                                                          | ((bucket_id = 'plan-images'::text) AND is_plan_image_host(name, auth.uid()))
+ objects   | Admins can delete discovery images  | PERMISSIVE | {authenticated} | DELETE | ((bucket_id = 'discovery-images'::text) AND (EXISTS ( SELECT 1                          +| 
+           |                                     |            |                 |        |    FROM users                                                                           +| 
+           |                                     |            |                 |        |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role)))))               | 
+ objects   | Admins can update discovery images  | PERMISSIVE | {authenticated} | UPDATE | ((bucket_id = 'discovery-images'::text) AND (EXISTS ( SELECT 1                          +| ((bucket_id = 'discovery-images'::text) AND (EXISTS ( SELECT 1                          +
+           |                                     |            |                 |        |    FROM users                                                                           +|    FROM users                                                                           +
+           |                                     |            |                 |        |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role)))))               |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role)))))
+ objects   | Admins can upload discovery images  | PERMISSIVE | {authenticated} | INSERT |                                                                                          | ((bucket_id = 'discovery-images'::text) AND (EXISTS ( SELECT 1                          +
+           |                                     |            |                 |        |                                                                                          |    FROM users                                                                           +
+           |                                     |            |                 |        |                                                                                          |   WHERE ((users.id = auth.uid()) AND (users.role = 'admin'::user_role)))))
+ objects   | Public read avatars                 | PERMISSIVE | {public}        | SELECT | (bucket_id = 'avatars'::text)                                                            | 
+ objects   | Public read discovery images        | PERMISSIVE | {public}        | SELECT | (bucket_id = 'discovery-images'::text)                                                   | 
+ objects   | Public read plan images             | PERMISSIVE | {public}        | SELECT | (bucket_id = 'plan-images'::text)                                                        | 
+ objects   | Users can delete own avatar         | PERMISSIVE | {authenticated} | DELETE | ((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text)) | 
+ objects   | Users can update own avatar         | PERMISSIVE | {authenticated} | UPDATE | ((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text)) | ((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))
+ objects   | Users can upload own avatar         | PERMISSIVE | {authenticated} | INSERT |                                                                                          | ((bucket_id = 'avatars'::text) AND ((storage.foldername(name))[1] = (auth.uid())::text))
+(12 rows)
+
+=== 14. REALTIME PUBLICATION TABLES ===
+                pubname                 |           tablename           
+----------------------------------------+-------------------------------
+ supabase_realtime                      | friendships
+ supabase_realtime                      | memories
+ supabase_realtime                      | memory_results
+ supabase_realtime                      | plan_activity
+ supabase_realtime                      | plan_messages
+ supabase_realtime                      | plan_outcomes
+ supabase_realtime                      | plan_participants
+ supabase_realtime                      | plans
+ supabase_realtime                      | users
+ supabase_realtime                      | wallet_expense_participants
+ supabase_realtime                      | wallet_expenses
+ supabase_realtime                      | wallet_settlement_allocations
+ supabase_realtime                      | wallet_settlements
+ supabase_realtime_messages_publication | messages_2026_09_04
+ supabase_realtime_messages_publication | messages_2026_09_05
+ supabase_realtime_messages_publication | messages_2026_09_06
+ supabase_realtime_messages_publication | messages_2026_09_07
+ supabase_realtime_messages_publication | messages_2026_09_08
+(18 rows)
+
+=== 15. AUTH SCHEMA OBJECTS (HOOKS, TRIGGERS ON AUTH) ===
+ event_object_schema | event_object_table | trigger_name | action_statement 
+---------------------+--------------------+--------------+------------------
+(0 rows)
+

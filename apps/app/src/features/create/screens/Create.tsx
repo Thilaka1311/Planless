@@ -18,22 +18,13 @@ import { CreatePlanReview } from "./CreatePlanReview";
 import { WhenIsPlanScreen } from "./WhenIsPlanScreen";
 import { WhoIsComingScreen } from "./WhoIsComingScreen";
 import { WhoIsActuallyComing } from "./WhoIsActuallyComing";
+import { DiscardPlanBottomSheet } from "../../plans/components/BottomSheets";
 
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import defaultPlanCover from "../../../assets/planimagedefault.png";
-
-function dataURLtoBlob(dataurl: string): Blob {
-  const arr = dataurl.split(",");
-  const mime = arr[0].match(/:(.*?);/)?.[1] || "image/jpeg";
-  const bstr = atob(arr[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-  while (n--) {
-    u8arr[n] = bstr.charCodeAt(n);
-  }
-  return new Blob([u8arr], { type: mime });
-}
+import { uploadPlanImage } from "../../../shared/utils/imageUtils";
+import { clearDraftParticipants, clearCreatePlanDraft } from "../utils/draftParticipantStorage";
 
 
 interface CreatePlanScreenProps {
@@ -258,17 +249,14 @@ export const CreatePlanScreen = ({
     const isCostSet = Boolean(form.isCostManuallySet && form.costAmount !== undefined && form.costAmount !== null);
 
     if (!isDateSet && !isCostSet) {
-      showToast("Set a date and cost to create your plan.");
       form.setIsSubmitting(false);
       return;
     }
     if (!isDateSet) {
-      showToast("Set a date to create your plan.");
       form.setIsSubmitting(false);
       return;
     }
     if (!isCostSet) {
-      showToast("Set a cost to create your plan.");
       form.setIsSubmitting(false);
       return;
     }
@@ -282,8 +270,13 @@ export const CreatePlanScreen = ({
     // Formatting Standard: Saturday, Jun 27 • 7:30 PM
     const timeToUse = formatDateTimeStandard(planEventDate);
     const planId = `p_${Date.now()}`;
-    const hasCustomImage = form.customCoverImage && form.customCoverImage.startsWith("data:");
-    const coverUrl = hasCustomImage
+    const isLocalCustomImage = Boolean(
+      form.customCoverImage &&
+      (form.customCoverImage.startsWith("data:") ||
+        form.customCoverImage.startsWith("blob:") ||
+        form.customCoverImage === "custom_draft_blob")
+    );
+    const coverUrl = isLocalCustomImage
       ? getCategoryImage(selectedCategory, selectedSubcategory)
       : (form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory));
 
@@ -334,16 +327,16 @@ export const CreatePlanScreen = ({
     }
 
     const isAssigned = form.waitlistMode === "assigned";
-    const capacityToUse = form.totalCapacity !== undefined ? Number(form.totalCapacity) : null;
+    const planSizeToUse = form.totalCapacity !== undefined && form.totalCapacity !== null ? Number(form.totalCapacity) : null;
+    const totalInvited = (form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0);
+    const maxParticipantsToUse = Math.max(planSizeToUse || 2, totalInvited || 2);
 
     const newDbPlan = {
       public_id: planId,
-      host_id: hostUuid,
       discovery_item_id: form.discoveryItemId || null,
       category: dbCategory,
       subcategory: dbSubcategory,
       title: titleToUse,
-      description: form.quickNote?.trim() || `Coordination thread: ${titleToUse}`,
       place_id: form.placeId || null,
       place_name: locationToUse,
       place_address: placeAddressToUse,
@@ -351,7 +344,8 @@ export const CreatePlanScreen = ({
       longitude: form.longitude || null,
       scheduled_at: parsedIsoDateTime,
       rsvp_deadline: responseDeadlineAt,
-      max_participants: capacityToUse,
+      plan_size: planSizeToUse,
+      max_participants: maxParticipantsToUse,
       total_cost: costToUse,
       cover_image: coverUrl,
       status: "LIVE" as const,
@@ -372,20 +366,9 @@ export const CreatePlanScreen = ({
         form.priorityGuestIds || []
       );
 
-      if (hasCustomImage && form.customCoverImage && dbPlanRow?.id) {
+      if (form.customCoverBlob && dbPlanRow?.id) {
         try {
-          const blob = dataURLtoBlob(form.customCoverImage);
-          const fileName = `${dbPlanRow.id}.jpeg`;
-          const { error: uploadError } = await supabase.storage
-            .from("plan-images")
-            .upload(fileName, blob, { contentType: blob.type, upsert: true });
-
-          if (uploadError) throw uploadError;
-
-          await supabase
-            .from("plans")
-            .update({ cover_image: fileName })
-            .eq("id", dbPlanRow.id);
+          await uploadPlanImage(dbPlanRow.id, form.customCoverBlob);
         } catch (uploadErr) {
           console.error("[CreatePlanFlow] Failed to upload/update plan cover image:", uploadErr);
         }
@@ -393,6 +376,8 @@ export const CreatePlanScreen = ({
 
       setPostedPlanUuid(dbPlanRow?.id || null);
       setCreatePhase("confirmation");
+      clearDraftParticipants();
+      clearCreatePlanDraft();
       form.setIsSubmitting(false);
       showToast("✨ Plan created successfully!");
     } catch (err: any) {
@@ -498,9 +483,8 @@ export const CreatePlanScreen = ({
           form={form}
           selectedCategory={selectedCategory}
           selectedSubcategory={selectedSubcategory}
-          onBack={() => {
-            setCreatePhase('who-actually');
-          }}
+          onExit={() => setShowCancelConfirm(true)}
+          onBack={() => setShowCancelConfirm(true)}
           onEditDate={() => {
             setCameFromReview(true);
             setCreatePhase('when');
@@ -518,40 +502,19 @@ export const CreatePlanScreen = ({
           isSubmitting={form.isSubmitting}
         />
 
-        {/* Confirmation Dialog Overlay */}
-        {showCancelConfirm && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-5 animate-fade-in">
-            <div className="w-full max-w-[280px] bg-[#0E0E12] border border-white/10 rounded-3xl p-5 text-center space-y-4 shadow-2xl">
-              <h3 className="text-sm font-black text-white uppercase tracking-wider">Stop creating this plan?</h3>
-              <p className="text-[11px] text-zinc-450 font-medium leading-relaxed">
-                Your changes won't be published. Are you sure you want to stop creating this plan?
-              </p>
-              <div className="flex gap-2 pt-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCancelConfirm(false);
-                    setSelectedSubcategory(null);
-                    form.resetForm();
-                    setCustomizerStep(0);
-                    setCameFromReview(false);
-                    setCreatePhase('category');
-                  }}
-                  className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white py-2.5 rounded-xl text-[10.5px] font-bold uppercase tracking-wider transition cursor-pointer"
-                >
-                  Stop Creating
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCancelConfirm(false)}
-                  className="flex-1 bg-[#FF6B2C] hover:bg-[#FF8552] text-[#050505] py-2.5 rounded-xl text-[10.5px] font-bold uppercase tracking-wider transition cursor-pointer"
-                >
-                  Keep Editing
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Discard Confirmation Bottom Sheet */}
+        <DiscardPlanBottomSheet
+          isOpen={showCancelConfirm}
+          onDiscard={() => {
+            setShowCancelConfirm(false);
+            setSelectedSubcategory(null);
+            form.resetForm();
+            setCustomizerStep(0);
+            setCameFromReview(false);
+            setCreatePhase('category');
+          }}
+          onClose={() => setShowCancelConfirm(false)}
+        />
       </div>
     );
   }
@@ -756,7 +719,7 @@ export const CreatePlanScreen = ({
         form.resetForm();
         form.setLocalTitle("");
         form.setLocalLocation("");
-        form.setCustomCoverImage(defaultPlanCover);
+        form.setCustomCoverImage(null, null);
         form.setCostAmount(0);
         form.setIsCostManuallySet(false);
         form.setIsDateManuallySet(false);

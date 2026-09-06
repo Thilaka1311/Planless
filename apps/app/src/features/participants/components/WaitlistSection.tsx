@@ -48,6 +48,9 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
         >
           {waitlist.map((item, idx) => {
             const itemKey = item.dbUuid || item.id;
+            const itemIndex = idx + indexOffset;
+            const shouldShowIndex = Boolean(showIndex && itemIndex !== undefined);
+
             return (
               <Reorder.Item
                 key={itemKey}
@@ -72,8 +75,8 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
               >
                 <StackingFriends
                   item={item}
-                  index={idx + indexOffset}
-                  showIndex={showIndex}
+                  index={itemIndex}
+                  showIndex={shouldShowIndex}
                   onClick={onItemTap ? () => onItemTap(item) : undefined}
                 />
               </Reorder.Item>
@@ -81,15 +84,21 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
           })}
         </Reorder.Group>
       ) : (
-        waitlist.map((item, idx) => (
-          <StackingFriends
-            key={item.dbUuid || item.id}
-            item={item}
-            index={idx + indexOffset}
-            showIndex={showIndex}
-            onClick={onItemTap ? () => onItemTap(item) : undefined}
-          />
-        ))
+        waitlist.map((item, idx) => {
+          const itemKey = item.dbUuid || item.id;
+          const itemIndex = idx + indexOffset;
+          const shouldShowIndex = Boolean(showIndex && itemIndex !== undefined);
+
+          return (
+            <StackingFriends
+              key={itemKey}
+              item={item}
+              index={itemIndex}
+              showIndex={shouldShowIndex}
+              onClick={onItemTap ? () => onItemTap(item) : undefined}
+            />
+          );
+        })
       )}
 
     </div>

@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from '../shared/types';
-import { formatSkipReason, getEffectiveParticipantState } from '../../../../lib/participantStatus';
+import { formatSkipReason, getEffectiveParticipantState, getParticipantRsvpDisplayStatus, isJoinedRsvpParticipant } from '../../../../lib/participantStatus';
 
 interface AssignedParticipantActionsProps {
   selectedItem: Friend | null;
@@ -9,6 +9,7 @@ interface AssignedParticipantActionsProps {
   showConfirmRemove: boolean;
   isHostUser: boolean;
   userProfile?: any;
+  mode?: 'wizard' | 'editor';
   goingCount?: number;
   waitlistCount?: number;
   onClose: () => void;
@@ -18,10 +19,14 @@ interface AssignedParticipantActionsProps {
   onPromoteHost?: (item: Friend) => void;
   onDemoteHost?: (item: Friend) => void;
   onRemoveParticipant: (item: Friend) => void;
+  onLeavePlan?: () => void;
   onReplaceLeaveParticipant?: (participantId: string) => void;
   onKeepPaymentLeaveParticipant?: (participantId: string) => void;
   onInviteSkipped?: (item: Friend, target: 'GOING' | 'WAITLIST') => Promise<void> | void;
   onViewProfile?: (item: Friend) => void;
+  onAddToJoined?: (item: Friend) => void;
+  onAddToWaitlist?: (item: Friend) => void;
+  onRemoveFromPlan?: (item: Friend) => void;
 }
 
 export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProps> = ({
@@ -30,6 +35,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
   showConfirmRemove,
   isHostUser,
   userProfile,
+  mode,
   goingCount,
   waitlistCount,
   onClose,
@@ -39,10 +45,14 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
   onPromoteHost,
   onDemoteHost,
   onRemoveParticipant,
+  onLeavePlan,
   onReplaceLeaveParticipant,
   onKeepPaymentLeaveParticipant,
   onInviteSkipped,
   onViewProfile,
+  onAddToJoined,
+  onAddToWaitlist,
+  onRemoveFromPlan,
 }) => {
   const isActionProcessingRef = useRef(false);
   // 'first' = initial skipped action sheet, 'placement' = choose GOING or WAITLIST
@@ -50,7 +60,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
 
   if (!selectedItem || !sheetType) return null;
 
-  const canMoveToWaitlist = (goingCount === undefined || goingCount > 2) || (waitlistCount !== undefined && waitlistCount > 0);
+  const canMoveToWaitlist = mode === 'wizard' || (goingCount === undefined || goingCount > 2) || (waitlistCount !== undefined && waitlistCount > 0);
 
   const executeActionWithImmediateDismiss = (actionFn: () => Promise<void> | void) => {
     if (isActionProcessingRef.current) return;
@@ -76,6 +86,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
     selectedItem.name === 'You'
   );
 
+  const isRejoined = selectedItem.rsvpStatus === 'REJOINED' || (selectedItem as any).rsvp_status === 'REJOINED';
   const isLeaveRequested = selectedItem.leave_requested === true;
   const effectiveState = getEffectiveParticipantState(selectedItem, sheetType);
   const isSkipped = effectiveState === 'SKIPPED';
@@ -121,22 +132,102 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
           <UserAvatar src={selectedItem.avatar} alt={selectedItem.name} size="w-10 h-10" />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 16, fontWeight: 600 }}>{selectedItem.name}</span>
-            <span style={{ fontSize: 12, color: isLeaveRequested ? '#FFFFFF' : 'rgba(255, 255, 255, 0.4)', fontWeight: 400 }}>
-              {isLeaveRequested
-                ? 'Wants to leave this plan'
-                : isSkipped
-                ? skipLabel
-                : sheetType === 'going'
-                ? 'Joined'
-                : sheetType === 'waitlist'
-                ? 'Waitlist'
-                : 'Invited'}
+            <span style={{ fontSize: 12, color: (isLeaveRequested || isRejoined) ? '#FFFFFF' : 'rgba(255, 255, 255, 0.4)', fontWeight: 400 }}>
+              {getParticipantRsvpDisplayStatus(selectedItem)}
             </span>
           </div>
         </div>
 
-        {/* ── SKIPPED PARTICIPANT FLOW ── */}
-        {isSkipped ? (
+        {/* ── REJOINED PARTICIPANT FLOW ── */}
+        {isRejoined ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* 1. Add to Joined */}
+            <button
+              onClick={() => {
+                executeActionWithImmediateDismiss(() => {
+                  if (onAddToJoined) {
+                    onAddToJoined(selectedItem);
+                  } else if (onMoveToGoing) {
+                    onMoveToGoing(selectedItem);
+                  }
+                });
+              }}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
+                color: '#FFFFFF',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              Add to Joined
+            </button>
+
+            {/* 2. Add to Waitlist */}
+            <button
+              onClick={() => {
+                executeActionWithImmediateDismiss(() => {
+                  if (onAddToWaitlist) {
+                    onAddToWaitlist(selectedItem);
+                  }
+                });
+              }}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
+                color: '#FFFFFF',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              Add to Waitlist
+            </button>
+
+            {/* 3. Remove from plan */}
+            <button
+              onClick={() => {
+                executeActionWithImmediateDismiss(() => {
+                  if (onRemoveFromPlan) {
+                    onRemoveFromPlan(selectedItem);
+                  } else if (onRemoveParticipant) {
+                    onRemoveParticipant(selectedItem);
+                  }
+                });
+              }}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: 'none',
+                borderRadius: 12,
+                color: '#EF4444',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              Remove from plan
+            </button>
+
+            <button
+              onClick={handleClose}
+              style={{ width: '100%', padding: '14px', background: 'none', border: 'none', borderRadius: 12, color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: 500, cursor: 'pointer', textAlign: 'center', marginTop: 4 }}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : isSkipped ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {skippedStep === 'first' ? (
               /* Step 1: Invite to Plan */
@@ -232,51 +323,29 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {isLeaveRequested ? (
                 <>
-                  <button
-                    onClick={() => {
-                      executeActionWithImmediateDismiss(() => {
-                        const targetId = selectedItem.dbUuid || selectedItem.id;
-                        if (onKeepPaymentLeaveParticipant) onKeepPaymentLeaveParticipant(targetId);
-                      });
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '14px',
-                      background: 'rgba(255, 255, 255, 0.06)',
-                      border: 'none',
-                      borderRadius: 12,
-                      color: '#FFFFFF',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                  >
-                    Keep payment
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      executeActionWithImmediateDismiss(() => {
-                        const targetId = selectedItem.dbUuid || selectedItem.id;
-                        if (onReplaceLeaveParticipant) onReplaceLeaveParticipant(targetId);
-                      });
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '14px',
-                      background: 'rgba(245, 158, 11, 0.1)',
-                      border: 'none',
-                      borderRadius: 12,
-                      color: '#F59E0B',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                  >
-                    Replace participant
-                  </button>
+                  {onRemoveParticipant && (
+                    <button
+                      onClick={() => {
+                        executeActionWithImmediateDismiss(() => {
+                          onRemoveParticipant(selectedItem);
+                        });
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        border: 'none',
+                        borderRadius: 12,
+                        color: '#EF4444',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      Remove Participant
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
@@ -311,7 +380,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                     </button>
                   )}
 
-                  {onPromoteHost && effectiveState === 'GOING' && !selectedItem.isHost && (
+                  {onPromoteHost && isJoinedRsvpParticipant(selectedItem) && !selectedItem.isHost && (
                     <button
                       onClick={() => {
                         executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));
@@ -333,19 +402,34 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                     </button>
                   )}
 
-                  {isHostUser && (!selectedItem.isHost || onDemoteHost) && (
+                  {isSelf ? (
                     <button
                       onClick={() => {
-                        if (sheetType === 'going' && !isSelf) {
-                          executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                        if (onLeavePlan) {
+                          executeActionWithImmediateDismiss(() => onLeavePlan());
                         } else {
-                          onShowConfirmRemove(true);
+                          executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
                         }
                       }}
                       style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
                     >
-                      {isSelf ? 'Leave Plan' : 'Remove from Plan'}
+                      Leave Plan
                     </button>
+                  ) : (
+                    isHostUser && (!selectedItem.isHost || onDemoteHost) && (
+                      <button
+                        onClick={() => {
+                          if (sheetType === 'going') {
+                            executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                          } else {
+                            onShowConfirmRemove(true);
+                          }
+                        }}
+                        style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                      >
+                        Remove from Plan
+                      </button>
+                    )
                   )}
                 </>
               )}
@@ -371,7 +455,11 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                 </button>
                 <button
                   onClick={() => {
-                    executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                    if (isSelf && onLeavePlan) {
+                      executeActionWithImmediateDismiss(() => onLeavePlan());
+                    } else {
+                      executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                    }
                   }}
                   style={{ flex: 1, padding: '14px', background: '#EF4444', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
                 >

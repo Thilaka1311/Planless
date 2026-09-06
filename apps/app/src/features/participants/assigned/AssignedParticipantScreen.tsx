@@ -12,13 +12,14 @@ import { StackingFriends } from '../components/StackingFriends';
 import { ContinueButton } from '../../create/components/ContinueButton';
 import { DisplacedHostModal } from '../../plans/components/DisplacedHostModal';
 import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
-import { PendingDecisionsSection } from '../shared/PendingDecisionsSection';
 import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
 import { EditCapacityBottomSheet } from '../../plans/components/BottomSheets';
+import { getSavedDraftParticipants, saveDraftParticipants } from '../../create/utils/draftParticipantStorage';
 
 interface AssignedParticipantScreenProps extends SharedParticipantScreenProps {
   isHostSelected?: boolean;
   selectedFriends?: Friend[];
+  priorityGuestIds?: string[];
   externalGoingList?: Friend[];
   externalWaitlist?: Friend[];
   externalInvitedList?: Friend[];
@@ -35,6 +36,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   isHostSelected = false,
   userProfile,
   selectedFriends = [],
+  priorityGuestIds,
   externalGoingList,
   externalWaitlist,
   externalInvitedList,
@@ -47,11 +49,13 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   isHostUser = false,
   onBack,
   onContinue,
+  onParticipantsChange,
   onAddFriends,
   onAdjustCapacity,
   onMoveToGoing,
   onMoveToWaitlist,
   onRemoveParticipant,
+  onLeavePlan,
   onPromoteHost,
   onDemoteHost,
   onOpenSettings,
@@ -71,6 +75,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onReplaceLeaveParticipant,
   onKeepPaymentLeaveParticipant,
   onInviteSkipped,
+  onRejoinAddToWaitlist,
+  onRejoinRemoveFromPlan,
   isCompletedPlan,
   initialOpenPlanSizeSheet,
   onPlanSizeSheetDismissed,
@@ -85,6 +91,17 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     }
   }, [initialOpenPlanSizeSheet]);
 
+  // ── Helpers for alphabetical Going order and waitlist numbering ──
+  const sortGoingFriends = (friends: Friend[]): Friend[] => {
+    return [...friends].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+    );
+  };
+
+  const renumberWaitlist = (friends: Friend[]): Friend[] => {
+    return friends.map((f, idx) => ({ ...f, waitlistPosition: idx + 1 }));
+  };
+
   // ── Wizard mode internal state ──
   const hostItem = useMemo<Friend | null>(() => {
     if (!isHostSelected) return null;
@@ -97,40 +114,240 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     };
   }, [isHostSelected, userProfile?.dbUuid, userProfile?.name, userProfile?.avatar, userProfile?.profile_photo]);
 
-  const [internalGoingList, setInternalGoingList] = useState<Friend[]>([]);
-  const [internalWaitlist, setInternalWaitlist] = useState<Friend[]>([]);
+  const [internalGoingList, setInternalGoingList] = useState<Friend[]>(() => {
+    if (mode !== 'wizard') return [];
+    const savedDraft = getSavedDraftParticipants();
+    const hostArr = hostItem ? [hostItem] : [];
+
+    if (savedDraft && (savedDraft.joinedIds.length > 0 || savedDraft.waitlistIds.length > 0)) {
+      const friendMap = new Map<string, Friend>();
+      if (selectedFriends.length > 0) {
+        selectedFriends.forEach((f) => {
+          if (f.id) friendMap.set(String(f.id), f);
+          if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
+        });
+      } else {
+        if (savedDraft.joinedFriends) {
+          savedDraft.joinedFriends.forEach((f) => {
+            if (f.id) friendMap.set(String(f.id), f);
+            if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
+          });
+        }
+        if (savedDraft.waitlistFriends) {
+          savedDraft.waitlistFriends.forEach((f) => {
+            if (f.id) friendMap.set(String(f.id), f);
+            if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
+          });
+        }
+      }
+
+      const isHostInJoined = savedDraft.joinedIds.includes('host') || isHostSelected;
+      const goingGuests = savedDraft.joinedIds
+        .filter((id) => id !== 'host' && friendMap.has(id))
+        .map((id) => friendMap.get(id)!);
+      let restoredGoing = [...(isHostInJoined && hostItem ? [hostItem] : []), ...sortGoingFriends(goingGuests)];
+      const goingIdSet = new Set(restoredGoing.map((f) => f.id));
+
+      const waitGuests = savedDraft.waitlistIds
+        .filter((id) => id !== 'host' && friendMap.has(id) && !goingIdSet.has(id))
+        .map((id) => friendMap.get(id)!);
+      const allocatedIds = new Set([...goingIdSet, ...waitGuests.map((f) => f.id)]);
+      const unallocatedGuests = selectedFriends.filter((f) => !allocatedIds.has(f.id) && !f.isHost);
+
+      if (unallocatedGuests.length > 0) {
+        if (capacity === undefined) {
+          restoredGoing = [...restoredGoing, ...sortGoingFriends(unallocatedGuests)];
+        } else {
+          const availableCapacity = Math.max(0, capacity - restoredGoing.length);
+          const toGoing = unallocatedGuests.slice(0, availableCapacity);
+          restoredGoing = [...restoredGoing, ...sortGoingFriends(toGoing)];
+        }
+      }
+
+      return restoredGoing;
+    }
+
+    if (priorityGuestIds && priorityGuestIds.length > 0) {
+      const prioritySet = new Set(priorityGuestIds);
+      const goingFriends = sortGoingFriends(selectedFriends.filter((f) => prioritySet.has(f.id)));
+      return [...hostArr, ...goingFriends];
+    }
+
+    const sortedGuests = sortGoingFriends(selectedFriends);
+    const allList = [...hostArr, ...sortedGuests];
+    const effectiveCap = isConfigured && capacity !== undefined && capacity < allList.length ? capacity : allList.length;
+    return allList.slice(0, effectiveCap);
+  });
+
+  const [internalWaitlist, setInternalWaitlist] = useState<Friend[]>(() => {
+    if (mode !== 'wizard') return [];
+    const savedDraft = getSavedDraftParticipants();
+
+    if (savedDraft && (savedDraft.joinedIds.length > 0 || savedDraft.waitlistIds.length > 0)) {
+      const friendMap = new Map<string, Friend>();
+      if (selectedFriends.length > 0) {
+        selectedFriends.forEach((f) => {
+          if (f.id) friendMap.set(String(f.id), f);
+          if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
+        });
+      } else {
+        if (savedDraft.joinedFriends) {
+          savedDraft.joinedFriends.forEach((f) => {
+            if (f.id) friendMap.set(String(f.id), f);
+            if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
+          });
+        }
+        if (savedDraft.waitlistFriends) {
+          savedDraft.waitlistFriends.forEach((f) => {
+            if (f.id) friendMap.set(String(f.id), f);
+            if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
+          });
+        }
+      }
+
+      const joinedIdSet = new Set(savedDraft.joinedIds);
+      const waitGuests = savedDraft.waitlistIds
+        .filter((id) => id !== 'host' && !joinedIdSet.has(id) && friendMap.has(id))
+        .map((id) => friendMap.get(id)!);
+
+      const hostCount = (savedDraft.joinedIds.includes('host') || isHostSelected) && hostItem ? 1 : 0;
+      const goingGuestCount = savedDraft.joinedIds.filter((id) => id !== 'host' && friendMap.has(id)).length;
+      const totalGoingCount = hostCount + goingGuestCount;
+
+      const allocatedIds = new Set([...savedDraft.joinedIds, ...savedDraft.waitlistIds]);
+      const unallocatedGuests = selectedFriends.filter((f) => !allocatedIds.has(f.id) && !f.isHost);
+
+      if (unallocatedGuests.length > 0 && capacity !== undefined) {
+        const availableCapacity = Math.max(0, capacity - totalGoingCount);
+        const toWait = unallocatedGuests.slice(availableCapacity);
+        return renumberWaitlist([...waitGuests, ...toWait]);
+      }
+
+      return renumberWaitlist(waitGuests);
+    }
+
+    if (priorityGuestIds && priorityGuestIds.length > 0) {
+      const prioritySet = new Set(priorityGuestIds);
+      const waitFriends = renumberWaitlist(selectedFriends.filter((f) => !prioritySet.has(f.id)));
+      return waitFriends;
+    }
+
+    const sortedGuests = sortGoingFriends(selectedFriends);
+    const allList = [...(hostItem ? [hostItem] : []), ...sortedGuests];
+    const effectiveCap = isConfigured && capacity !== undefined && capacity < allList.length ? capacity : allList.length;
+    return renumberWaitlist(allList.slice(effectiveCap));
+  });
+
+  const isInitializedRef = React.useRef(false);
 
   const totalInvitedCount = (hostItem ? 1 : 0) + selectedFriends.length;
   const isConfigured = Boolean(isCapacityConfigured && capacity !== undefined);
-  const hasWaitlist = isConfigured && capacity !== undefined && capacity < totalInvitedCount;
+
+  const persistParticipantState = React.useCallback(
+    (going: Friend[], wait: Friend[]) => {
+      if (mode !== 'wizard') return;
+
+      const joinedIds = going.map((f) => f.id);
+      const joinedSet = new Set(joinedIds);
+      // Enforce invariant: Joined IDs ∩ Waitlist IDs = ∅
+      const cleanWaitlist = wait.filter((f) => !joinedSet.has(f.id));
+      const waitlistIds = cleanWaitlist.map((f) => f.id);
+
+      saveDraftParticipants({
+        joinedIds,
+        waitlistIds,
+        joinedFriends: going.filter((f) => !f.isHost),
+        waitlistFriends: cleanWaitlist.filter((f) => !f.isHost),
+      });
+
+      if (onParticipantsChange) {
+        onParticipantsChange(going, cleanWaitlist);
+      }
+    },
+    [mode, onParticipantsChange]
+  );
+
+  const prevSelectedFriendsRef = React.useRef<Friend[]>(selectedFriends);
 
   useEffect(() => {
     if (mode !== 'wizard') return;
-    const allList = [...(hostItem ? [hostItem] : []), ...selectedFriends];
-    const effectiveCap = hasWaitlist && capacity !== undefined ? capacity : allList.length;
-    const newGoing = allList.slice(0, effectiveCap);
-    const newWait = allList.slice(effectiveCap);
 
-    setInternalGoingList((prev) => {
-      if (
-        prev.length === newGoing.length &&
-        prev.every((item, idx) => item.id === newGoing[idx]?.id)
-      ) {
-        return prev;
-      }
-      return newGoing;
+    // After initial mount, mark initialized so subsequent changes can reconcile safely
+    if (!isInitializedRef.current) {
+      isInitializedRef.current = true;
+      return;
+    }
+
+    const currentSelectedIds = new Set(selectedFriends.map((f) => f.id));
+    const currentFriendMap = new Map<string, Friend>();
+    selectedFriends.forEach((f) => {
+      if (f.id) currentFriendMap.set(String(f.id), f);
+      if (f.dbUuid) currentFriendMap.set(String(f.dbUuid), f);
     });
 
-    setInternalWaitlist((prev) => {
-      if (
-        prev.length === newWait.length &&
-        prev.every((item, idx) => item.id === newWait[idx]?.id)
-      ) {
-        return prev;
-      }
-      return newWait;
+    const prevIds = (prevSelectedFriendsRef.current || []).map((f) => f.id).sort().join(',');
+    const currIds = selectedFriends.map((f) => f.id).sort().join(',');
+
+    if (prevIds === currIds) {
+      // Selection set unchanged: safely enrich existing entries with latest profile info
+      setInternalGoingList((prev) =>
+        prev.map((f) => (f.isHost ? f : currentFriendMap.get(f.id) || currentFriendMap.get(f.dbUuid) || f))
+      );
+      setInternalWaitlist((prev) =>
+        prev.map((f) => currentFriendMap.get(f.id) || currentFriendMap.get(f.dbUuid) || f)
+      );
+      return;
+    }
+    prevSelectedFriendsRef.current = selectedFriends;
+
+    // Selection changed: reconcile new and removed participants
+    const hostPart = isHostSelected && hostItem ? [hostItem] : [];
+    setInternalGoingList((prevGoing) => {
+      const nonHostGoing = prevGoing
+        .filter((f) => !f.isHost && currentSelectedIds.has(f.id))
+        .map((f) => currentFriendMap.get(f.id) || currentFriendMap.get(f.dbUuid) || f);
+
+      setInternalWaitlist((prevWait) => {
+        const goingIdSet = new Set(nonHostGoing.map((f) => f.id));
+        const waitRemaining = prevWait
+          .filter((f) => !f.isHost && currentSelectedIds.has(f.id) && !goingIdSet.has(f.id))
+          .map((f) => currentFriendMap.get(f.id) || currentFriendMap.get(f.dbUuid) || f);
+
+        const allocatedIds = new Set([...goingIdSet, ...waitRemaining.map((f) => f.id)]);
+        const unallocated = selectedFriends.filter((f) => !f.isHost && !allocatedIds.has(f.id));
+
+        let nextGoingGuests = [...nonHostGoing];
+        let nextWaitGuests = [...waitRemaining];
+
+        if (unallocated.length > 0) {
+          if (capacity === undefined) {
+            nextGoingGuests = [...nextGoingGuests, ...sortGoingFriends(unallocated)];
+          } else {
+            const totalGoing = hostPart.length + nextGoingGuests.length;
+            const availableCap = Math.max(0, capacity - totalGoing);
+            const toGoing = unallocated.slice(0, availableCap);
+            const toWait = unallocated.slice(availableCap);
+            nextGoingGuests = [...nextGoingGuests, ...sortGoingFriends(toGoing)];
+            nextWaitGuests = [...nextWaitGuests, ...toWait];
+          }
+        }
+
+        const finalGoing = [...hostPart, ...sortGoingFriends(nextGoingGuests)];
+        const finalWait = renumberWaitlist(nextWaitGuests);
+
+        persistParticipantState(finalGoing, finalWait);
+        return finalWait;
+      });
+
+      return prevGoing;
     });
-  }, [selectedFriends, capacity, isHostSelected, mode, isCapacityConfigured, hasWaitlist, hostItem]);
+  }, [selectedFriends, isHostSelected, mode, hostItem, capacity, persistParticipantState]);
+
+  useEffect(() => {
+    if (mode === 'wizard' && totalInvitedCount > 0 && capacity !== undefined && capacity > totalInvitedCount) {
+      onAdjustCapacity?.(totalInvitedCount);
+    }
+  }, [mode, capacity, totalInvitedCount, onAdjustCapacity]);
 
   const displayGoing = mode === 'editor' ? (externalGoingList ?? []) : internalGoingList;
   const displayWaitlist = mode === 'editor' ? (externalWaitlist ?? []) : internalWaitlist;
@@ -145,45 +362,42 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     if (isCompletedPlan) {
-      const t: ParticipantTab[] = ['going'];
+      const t: ParticipantTab[] = [];
+      if (displayGoing.length > 0) t.push('going');
       if (displaySkipped.length > 0) t.push('skipped');
       return t;
     }
-    if (mode === 'wizard') {
-      if (!hasWaitlist) {
-        return ['invited'];
-      }
-      return ['going', 'waitlist'];
-    }
-    const t: ParticipantTab[] = ['going'];
-    if (displayWaitlist.length > 0) t.push('waitlist');
-    if (displaySkipped.length > 0) t.push('skipped');
+    const t: ParticipantTab[] = [];
+    const hasGoing = displayGoing.length > 0;
+    const hasWait = displayWaitlist.length > 0;
+    if (hasGoing) t.push('going');
+    if (hasWait) t.push('waitlist');
+    if (mode === 'editor' && displaySkipped.length > 0) t.push('skipped');
     return t;
-  }, [displayWaitlist, displaySkipped, mode, isCompletedPlan, hasWaitlist]);
+  }, [displayGoing.length, displayWaitlist.length, displaySkipped.length, mode, isCompletedPlan]);
 
-  const [activeTab, setActiveTab] = useState<ParticipantTab>(
-    mode === 'wizard' ? (hasWaitlist ? 'going' : 'invited') : 'going'
-  );
+  const [activeTab, setActiveTab] = useState<ParticipantTab>('going');
   const initialMountRef = React.useRef(true);
 
   useEffect(() => {
-    if (mode === 'wizard') {
-      if (!hasWaitlist) {
-        setActiveTab((prev) => (prev !== 'invited' ? 'invited' : prev));
-      } else if (!visibleTabs.includes(activeTab)) {
-        setActiveTab(visibleTabs[0]);
-      }
-      return;
-    }
     if (initialMountRef.current && visibleTabs.length > 0) {
       let defaultTab: ParticipantTab = 'going';
       if (initialTab && visibleTabs.includes(initialTab) && initialTab !== 'invited') {
         defaultTab = initialTab;
+      } else if (!visibleTabs.includes('going')) {
+        defaultTab = visibleTabs[0];
       }
       setActiveTab(defaultTab);
       initialMountRef.current = false;
     }
-  }, [visibleTabs, initialTab, hasWaitlist, mode, activeTab]);
+  }, [visibleTabs, initialTab]);
+
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.includes(activeTab)) {
+      const fallbackTab = (['going', 'waitlist', 'invited', 'skipped'] as ParticipantTab[]).find((t) => visibleTabs.includes(t)) || visibleTabs[0];
+      setActiveTab(fallbackTab);
+    }
+  }, [visibleTabs, activeTab]);
 
   // Action sheet & capacity editing state
   const [selectedItem, setSelectedItem] = useState<Friend | null>(null);
@@ -246,8 +460,6 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   };
 
   const handleItemTap = (item: Friend, tab: ParticipantTab) => {
-    if (mode === 'wizard') return;
-
     if (!effectiveIsHost && !canParticipantInvite) {
       if (item.dbUuid || item.id) {
         setViewProfileUserId(item.dbUuid || item.id);
@@ -307,8 +519,17 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   const moveToGoingAction = async (item: Friend) => {
     closeSheet();
     if (mode === 'wizard') {
-      setInternalWaitlist((prev) => prev.filter((f) => f.id !== item.id));
-      setInternalGoingList((prev) => (prev.some((f) => f.id === item.id) ? prev : [...prev, item]));
+      const nextWait = renumberWaitlist(internalWaitlist.filter((f) => f.id !== item.id));
+      const hostPart = internalGoingList.filter((f) => f.isHost);
+      const guestPart = internalGoingList.filter((f) => !f.isHost && f.id !== item.id);
+      const nextGoing = [...hostPart, ...sortGoingFriends([...guestPart, { ...item, waitlistPosition: undefined }])];
+
+      setInternalWaitlist(nextWait);
+      setInternalGoingList(nextGoing);
+      if (onAdjustCapacity) {
+        onAdjustCapacity(nextGoing.length);
+      }
+      persistParticipantState(nextGoing, nextWait);
       return;
     }
     if (onMoveToGoing) {
@@ -319,8 +540,16 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   const moveToWaitlistAction = async (item: Friend) => {
     closeSheet();
     if (mode === 'wizard') {
-      setInternalGoingList((prev) => prev.filter((f) => f.id !== item.id));
-      setInternalWaitlist((prev) => (prev.some((f) => f.id === item.id) ? prev : [...prev, item]));
+      if (item.isHost) return;
+      const nextGoing = internalGoingList.filter((f) => f.id !== item.id);
+      const nextWait = renumberWaitlist([...internalWaitlist.filter((f) => f.id !== item.id), item]);
+
+      setInternalGoingList(nextGoing);
+      setInternalWaitlist(nextWait);
+      if (onAdjustCapacity) {
+        onAdjustCapacity(nextGoing.length);
+      }
+      persistParticipantState(nextGoing, nextWait);
       return;
     }
     if (onMoveToWaitlist) {
@@ -331,12 +560,69 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   const removeFromPlanAction = async (item: Friend) => {
     closeSheet();
     if (mode === 'wizard') {
-      setInternalGoingList((prev) => prev.filter((f) => f.id !== item.id));
-      setInternalWaitlist((prev) => prev.filter((f) => f.id !== item.id));
+      const wasInGoing = internalGoingList.some((f) => f.id === item.id);
+      const nextGoing = internalGoingList.filter((f) => f.id !== item.id);
+      const nextWait = renumberWaitlist(internalWaitlist.filter((f) => f.id !== item.id));
+
+      setInternalGoingList(nextGoing);
+      setInternalWaitlist(nextWait);
+      if (wasInGoing && onAdjustCapacity) {
+        onAdjustCapacity(Math.max(2, nextGoing.length));
+      }
+      persistParticipantState(nextGoing, nextWait);
     }
     if (onRemoveParticipant) {
       await onRemoveParticipant(item);
     }
+  };
+
+  const handleIncrementPlanSize = () => {
+    if (mode !== 'wizard') return;
+    const currentCap = capacity ?? internalGoingList.length;
+    if (currentCap >= totalInvitedCount) return;
+
+    if (internalWaitlist.length > 0) {
+      const promoted = internalWaitlist[0];
+      const nextWait = renumberWaitlist(internalWaitlist.slice(1));
+      const hostPart = internalGoingList.filter((f) => f.isHost);
+      const guestPart = internalGoingList.filter((f) => !f.isHost && f.id !== promoted.id);
+      const nextGoing = [...hostPart, ...sortGoingFriends([...guestPart, { ...promoted, waitlistPosition: undefined }])];
+
+      setInternalWaitlist(nextWait);
+      setInternalGoingList(nextGoing);
+      if (onAdjustCapacity) {
+        onAdjustCapacity(Math.min(nextGoing.length, totalInvitedCount));
+      }
+      persistParticipantState(nextGoing, nextWait);
+    }
+  };
+
+  const handleDecrementPlanSize = () => {
+    if (mode !== 'wizard') return;
+    const currentCap = capacity ?? internalGoingList.length;
+    if (currentCap <= 2) return;
+
+    if (currentCap > internalGoingList.length) {
+      if (onAdjustCapacity) {
+        onAdjustCapacity(currentCap - 1);
+      }
+      return;
+    }
+
+    const nonHostGoing = sortGoingFriends(internalGoingList.filter((f) => !f.isHost));
+    if (nonHostGoing.length === 0 || internalGoingList.length <= 2) return;
+
+    const demoted = nonHostGoing[nonHostGoing.length - 1];
+
+    const nextGoing = internalGoingList.filter((f) => f.id !== demoted.id);
+    const nextWait = renumberWaitlist([...internalWaitlist.filter((f) => f.id !== demoted.id), demoted]);
+
+    setInternalGoingList(nextGoing);
+    setInternalWaitlist(nextWait);
+    if (onAdjustCapacity) {
+      onAdjustCapacity(nextGoing.length);
+    }
+    persistParticipantState(nextGoing, nextWait);
   };
 
   useEffect(() => {
@@ -383,14 +669,6 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         />
       )}
 
-      {effectiveIsHost && pendingLeaveRequests && pendingLeaveRequests.length > 0 && (
-        <PendingDecisionsSection
-          pendingRequests={pendingLeaveRequests}
-          onReplaceParticipant={onReplaceLeaveParticipant}
-          onKeepPayment={onKeepPaymentLeaveParticipant}
-        />
-      )}
-
       <AssignedParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
@@ -416,7 +694,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             {displayGoing.length > 0 ? (
               <GoingSection
                 goingList={displayGoing}
-                onItemTap={(item) => handleItemTap(item, activeTab === 'invited' ? 'invited' : 'going')}
+                onItemTap={(item) => handleItemTap(item, 'going')}
                 showIndex={false}
               />
             ) : (
@@ -436,8 +714,16 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
                 waitlist={displayWaitlist}
                 onItemTap={(item) => handleItemTap(item, 'waitlist')}
                 onAddFriends={effectiveIsHost ? onAddFriends : undefined}
-                onReorder={mode === 'wizard' ? (newWait) => setInternalWaitlist(newWait) : (effectiveIsHost ? onReorderWaitlist : undefined)}
-                onReorderComplete={effectiveIsHost ? onReorderWaitlistComplete : undefined}
+                onReorder={mode === 'wizard' ? (newWait) => {
+                  const renumbered = renumberWaitlist(newWait);
+                  setInternalWaitlist(renumbered);
+                  persistParticipantState(internalGoingList, renumbered);
+                } : (effectiveIsHost ? onReorderWaitlist : undefined)}
+                onReorderComplete={mode === 'wizard' ? (newWait) => {
+                  const renumbered = renumberWaitlist(newWait);
+                  setInternalWaitlist(renumbered);
+                  persistParticipantState(internalGoingList, renumbered);
+                } : (effectiveIsHost ? onReorderWaitlistComplete : undefined)}
                 reorderable={mode === 'wizard' || (effectiveIsHost && Boolean(onReorderWaitlist))}
                 showIndex={true}
               />
@@ -466,15 +752,13 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
       {mode === 'wizard' && onContinue && (
         <ContinueButton
-          disabled={hasWaitlist && capacity !== undefined ? displayGoing.length < capacity : displayGoing.length < 2}
+          disabled={displayGoing.length < 2}
           onClick={() => onContinue(displayGoing, displayWaitlist)}
           text={
             continueText ||
-            (!hasWaitlist || capacity === undefined
-              ? 'Continue'
-              : (displayGoing.length < capacity
-                  ? `Continue (${displayGoing.length}/${capacity})`
-                  : `Continue (${displayGoing.length} Going • ${displayWaitlist.length} Waitlisted)`))
+            (displayWaitlist.length > 0
+              ? `Continue (${displayGoing.length} Going • ${displayWaitlist.length} Waitlisted)`
+              : 'Continue')
           }
         />
       )}
@@ -488,6 +772,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           userProfile={userProfile}
           goingCount={displayGoing.length}
           waitlistCount={displayWaitlist.length}
+          mode={mode}
           onClose={closeSheet}
           onShowConfirmRemove={setShowConfirmRemove}
           onMoveToWaitlist={moveToWaitlistAction}
@@ -495,10 +780,14 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           onPromoteHost={onPromoteHost}
           onDemoteHost={onDemoteHost}
           onRemoveParticipant={removeFromPlanAction}
+          onLeavePlan={onLeavePlan}
           onReplaceLeaveParticipant={onReplaceLeaveParticipant}
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
           onInviteSkipped={onInviteSkipped}
           onViewProfile={(item) => setViewProfileUserId(item.dbUuid || item.id)}
+          onAddToJoined={moveToGoingAction}
+          onAddToWaitlist={onRejoinAddToWaitlist}
+          onRemoveFromPlan={onRejoinRemoveFromPlan || removeFromPlanAction}
         />
       )}
 
@@ -518,15 +807,19 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       {mode === 'wizard' && (
         <EditCapacityBottomSheet
           isOpen={isCapacitySheetOpen}
-          capacity={capacity}
-          invitedCount={(hostItem ? 1 : 0) + selectedFriends.length}
+          capacity={Math.min(capacity ?? displayGoing.length, totalInvitedCount)}
+          joinedCount={displayGoing.length}
+          waitlistedCount={displayWaitlist.length}
+          invitedCount={totalInvitedCount}
           minCapacity={2}
-          maxCapacity={50}
+          maxCapacity={totalInvitedCount}
           onCapacityChange={(newCap) => {
             if (onAdjustCapacity) {
-              onAdjustCapacity(newCap);
+              onAdjustCapacity(Math.min(newCap, totalInvitedCount));
             }
           }}
+          onIncrement={handleIncrementPlanSize}
+          onDecrement={handleDecrementPlanSize}
           onAddParticipants={() => {
             setIsCapacitySheetOpen(false);
             onPlanSizeSheetDismissed?.();

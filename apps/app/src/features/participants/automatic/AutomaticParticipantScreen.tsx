@@ -12,7 +12,6 @@ import { WaitlistSection } from '../components/WaitlistSection';
 import { StackingFriends } from '../components/StackingFriends';
 import { ContinueButton } from '../../create/components/ContinueButton';
 import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
-import { PendingDecisionsSection } from '../shared/PendingDecisionsSection';
 import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
 import { EditCapacityBottomSheet } from '../../plans/components/BottomSheets';
 
@@ -48,6 +47,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   onMoveToWaitlist,
   onMoveToInvited,
   onRemoveParticipant,
+  onLeavePlan,
   onPromoteHost,
   onDemoteHost,
   onOpenSettings,
@@ -63,6 +63,8 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   pendingLeaveRequests,
   currentPage,
   onInviteSkipped,
+  onRejoinAddToWaitlist,
+  onRejoinRemoveFromPlan,
   isCompletedPlan,
   initialOpenPlanSizeSheet,
   onPlanSizeSheetDismissed,
@@ -128,10 +130,20 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
 
   const isConfigured = Boolean(isCapacityConfigured && capacity !== undefined);
   const isFull = (capacity ?? 0) > 0 && actualJoinedCount >= (capacity ?? 0);
+  const totalInvitedCount = (hostItem ? 1 : 0) + selectedFriends.length;
+
+  useEffect(() => {
+    if (mode === 'wizard' && totalInvitedCount > 0 && capacity !== undefined && capacity > totalInvitedCount) {
+      onAdjustCapacity?.(totalInvitedCount);
+    }
+  }, [mode, capacity, totalInvitedCount, onAdjustCapacity]);
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     if (isCompletedPlan) {
-      const tabs: ParticipantTab[] = ['going'];
+      const tabs: ParticipantTab[] = [];
+      if (displayGoing.length > 0) {
+        tabs.push('going');
+      }
       if (displaySkipped.length > 0) {
         tabs.push('skipped');
       }
@@ -140,18 +152,22 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
     if (mode === 'wizard') {
       return ['invited'];
     }
+
     const tabs: ParticipantTab[] = [];
-    if (!isFull) {
-      tabs.push('invited');
-    } else {
+    const hasGoing = displayGoing.length > 0;
+    const hasWaitlist = displayWaitlist.length > 0;
+
+    if (hasGoing) {
       tabs.push('going');
+    }
+    if (hasWaitlist) {
       tabs.push('waitlist');
     }
     if (displaySkipped.length > 0) {
       tabs.push('skipped');
     }
     return tabs;
-  }, [mode, isFull, displaySkipped.length, isCompletedPlan]);
+  }, [mode, displayGoing.length, displayWaitlist.length, displaySkipped.length, isCompletedPlan]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>(
     mode === 'wizard' ? 'invited' : 'going'
@@ -260,14 +276,6 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         />
       )}
 
-      {effectiveIsHost && pendingLeaveRequests && pendingLeaveRequests.length > 0 && (
-        <PendingDecisionsSection
-          pendingRequests={pendingLeaveRequests}
-          onReplaceParticipant={onReplaceLeaveParticipant}
-          onKeepPayment={onKeepPaymentLeaveParticipant}
-        />
-      )}
-
       <AutomaticParticipantTabs
         visibleTabs={visibleTabs}
         activeTab={activeTab}
@@ -291,7 +299,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         {(activeTab === 'going' || activeTab === 'invited') && (
           <GoingSection
             goingList={displayGoing}
-            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, (item.rsvpStatus === 'INVITED' || item.isAccepted === false) ? 'invited' : 'going') : undefined}
+            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, mode === 'wizard' ? 'invited' : ((item.rsvpStatus === 'INVITED' || item.isAccepted === false) ? 'invited' : 'going')) : undefined}
             showIndex={false}
           />
         )}
@@ -342,10 +350,15 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           onPromoteHost={onPromoteHost}
           onDemoteHost={onDemoteHost}
           onRemoveParticipant={onRemoveParticipant || (() => {})}
+          onLeavePlan={onLeavePlan}
           onReplaceLeaveParticipant={onReplaceLeaveParticipant}
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
           onInviteSkipped={onInviteSkipped ? (item) => onInviteSkipped(item) : undefined}
           onViewProfile={(item) => setViewProfileUserId(item.dbUuid || item.id)}
+          onAddToJoined={onMoveToGoing}
+          onAddToWaitlist={onRejoinAddToWaitlist}
+          onRemoveFromPlan={onRejoinRemoveFromPlan || onRemoveParticipant}
+          onMoveToGoing={onMoveToGoing}
         />
       )}
 
@@ -357,13 +370,13 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       {mode === 'wizard' && (
         <EditCapacityBottomSheet
           isOpen={isCapacitySheetOpen}
-          capacity={capacity}
-          invitedCount={(hostItem ? 1 : 0) + selectedFriends.length}
+          capacity={Math.min(capacity ?? totalInvitedCount, totalInvitedCount)}
+          invitedCount={totalInvitedCount}
           minCapacity={2}
-          maxCapacity={50}
+          maxCapacity={totalInvitedCount}
           onCapacityChange={(newCap) => {
             if (onAdjustCapacity) {
-              onAdjustCapacity(newCap);
+              onAdjustCapacity(Math.min(newCap, totalInvitedCount));
             }
           }}
           onAddParticipants={() => {

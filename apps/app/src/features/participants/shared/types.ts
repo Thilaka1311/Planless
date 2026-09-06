@@ -5,6 +5,7 @@ export interface Friend {
   avatar: string;
   isHost?: boolean;
   joinedQueueAt?: string;
+  joinedQueueNumber?: number | null;
   isAccepted?: boolean;
   rsvpStatus?: string;
   assignedGroup?: 'GOING' | 'WAITLIST' | null;
@@ -42,6 +43,7 @@ export interface SharedParticipantScreenProps {
   isHostUser?: boolean;
   onBack: () => void;
   onContinue?: (going: Friend[], waitlist: Friend[]) => void;
+  onParticipantsChange?: (going: Friend[], waitlist: Friend[]) => void;
   onClose?: () => void;
   onAddFriends?: (targetTab?: ParticipantTab) => void;
   onAdjustCapacity?: (newCapacity: number) => void;
@@ -49,6 +51,7 @@ export interface SharedParticipantScreenProps {
   onMoveToWaitlist?: (friend: Friend) => Promise<void> | void;
   onMoveToInvited?: (friend: Friend) => Promise<void> | void;
   onRemoveParticipant?: (friend: Friend) => Promise<void> | void;
+  onLeavePlan?: () => void;
   onPromoteHost?: (friend: Friend) => Promise<void> | void;
   onDemoteHost?: (friend: Friend) => Promise<void> | void;
   onOpenSettings?: () => void;
@@ -59,6 +62,7 @@ export interface SharedParticipantScreenProps {
   onPlanSizeEditingChange?: (isEditing: boolean) => void;
   isHostSelected?: boolean;
   selectedFriends?: Friend[];
+  priorityGuestIds?: string[];
   externalGoingList?: Friend[];
   externalWaitlist?: Friend[];
   externalInvitedList?: Friend[];
@@ -74,6 +78,8 @@ export interface SharedParticipantScreenProps {
   onReplaceLeaveParticipant?: (participantId: string) => void;
   onKeepPaymentLeaveParticipant?: (participantId: string) => void;
   onInviteSkipped?: (friend: Friend, target?: 'GOING' | 'WAITLIST') => Promise<void> | void;
+  onRejoinAddToWaitlist?: (friend: Friend) => Promise<void> | void;
+  onRejoinRemoveFromPlan?: (friend: Friend) => Promise<void> | void;
   isCompletedPlan?: boolean;
   initialOpenPlanSizeSheet?: boolean;
   onPlanSizeSheetDismissed?: () => void;

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from './types';
-import { formatSkipReason } from '../../../../lib/participantStatus';
+import { formatSkipReason, getParticipantRsvpDisplayStatus, isJoinedRsvpParticipant } from '../../../../lib/participantStatus';
 
 interface ParticipantActionSheetProps {
   selectedItem: Friend | null;
@@ -18,6 +18,7 @@ interface ParticipantActionSheetProps {
   onPromoteHost?: (item: Friend) => void;
   onDemoteHost?: (item: Friend) => void;
   onRemoveParticipant: (item: Friend) => void;
+  onLeavePlan?: () => void;
 }
 
 export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
@@ -35,6 +36,7 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
   onPromoteHost,
   onDemoteHost,
   onRemoveParticipant,
+  onLeavePlan,
 }) => {
   const isActionProcessingRef = useRef(false);
 
@@ -101,13 +103,7 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 16, fontWeight: 600 }}>{selectedItem.name}</span>
             <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)' }}>
-              {sheetType === 'going'
-                ? 'Going'
-                : sheetType === 'waitlist'
-                ? 'Waitlist'
-                : sheetType === 'skipped'
-                ? (formatSkipReason(selectedItem.skipReason) || 'Skipped')
-                : 'Invited'}
+              {getParticipantRsvpDisplayStatus(selectedItem)}
             </span>
           </div>
         </div>
@@ -132,8 +128,8 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
               </button>
             )}
 
-            {/* Make Host — only when participant has accepted (rsvpStatus === 'JOINED') and not in waitlist/skipped */}
-            {onPromoteHost && sheetType !== 'waitlist' && sheetType !== 'skipped' && selectedItem.rsvpStatus === 'JOINED' && !selectedItem.isHost && (
+            {/* Make Host — only when participant has accepted (rsvpStatus === 'JOINED') */}
+            {onPromoteHost && isJoinedRsvpParticipant(selectedItem) && !selectedItem.isHost && (
               <button
                 onClick={() => {
                   executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));
@@ -157,13 +153,28 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
             )}
 
             {/* Remove from Plan / Leave Plan — host can remove non-hosts, OR creator host can remove additional hosts */}
-            {isHostUser && (!selectedItem.isHost || onDemoteHost) && (
+            {isSelf ? (
               <button
-                onClick={() => onShowConfirmRemove(true)}
+                onClick={() => {
+                  if (onLeavePlan) {
+                    executeActionWithImmediateDismiss(() => onLeavePlan());
+                  } else {
+                    executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                  }
+                }}
                 style={{ width: '100%', padding: '14px', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
               >
-                {isSelf ? 'Leave Plan' : 'Remove from Plan'}
+                Leave Plan
               </button>
+            ) : (
+              isHostUser && (!selectedItem.isHost || onDemoteHost) && (
+                <button
+                  onClick={() => onShowConfirmRemove(true)}
+                  style={{ width: '100%', padding: '14px', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                >
+                  Remove from Plan
+                </button>
+              )
             )}
 
             <button
@@ -187,7 +198,11 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
               </button>
               <button
                 onClick={() => {
-                  executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                  if (isSelf && onLeavePlan) {
+                    executeActionWithImmediateDismiss(() => onLeavePlan());
+                  } else {
+                    executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                  }
                 }}
                 style={{ flex: 1, padding: '14px', background: '#EF4444', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
               >

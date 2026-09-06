@@ -7,7 +7,7 @@ import {
   DbCircle, DbCircleMember, DbPlan, DbPlanParticipant, DbTransaction
 } from "../src/core/types";
 import { normalizeStatus } from "./participantStatus";
-import { getPlanCover } from "../src/features/plans/config/planCoverImages";
+import { getPlanCover, PLAN_COVER_IMAGES } from "../src/features/plans/config/planCoverImages";
 import defaultAvatar from "../src/assets/default_avatar.png";
 
 // ── avatar helper ───────────────────────────────────────────────────────────
@@ -77,13 +77,17 @@ export const mapPlansToLegacyPlans = (
     // Resolve circle name - circle_id is legacy in V2 schema
     const circleIdVal = null;
     const circleNameVal = "Custom Plan";
-    const isCircleHydrating = false;
+    const itemParticipants = participants.filter(pp => pp.plan_id === p.id);
 
-    const hostIdVal = p.host_id || "unknown_host";
-    if (!p.host_id) {
-      console.warn(`[mapPlansToLegacyPlans Warning] Plan ${p.id} is missing host_id, falling back to unknown_host.`);
-    }
-    const isOwner = hostIdVal === activeUserId || hostIdVal === activeUuid || hostIdVal === activeShortId;
+    const hostParticipant = itemParticipants.find(pp => pp.role === "HOST" && pp.rsvp_status === "JOINED") 
+      || itemParticipants.find(pp => pp.role === "HOST");
+
+    const hostIdVal = hostParticipant?.user_id || (p as any).host_id || "unknown_host";
+    const isOwner = itemParticipants.some(
+      pp => pp.role === "HOST" && (
+        pp.user_id === activeUserId || pp.user_id === activeUuid || pp.user_id === activeShortId
+      )
+    ) || (hostIdVal === activeUserId || hostIdVal === activeUuid || hostIdVal === activeShortId);
 
     let creator = findUserInList(hostIdVal);
     let hostNameVal = isUsersHydrating ? "Loading..." : "Anonymous Host";
@@ -106,11 +110,6 @@ export const mapPlansToLegacyPlans = (
       wallet_balance: 0,
       active_status: true
     };
-
-    // Filter participants for this plan
-    const itemParticipants = participants.filter(pp => {
-      return pp.plan_id === p.id;
-    });
 
     // Sort by updated_at descending so the latest state update is processed first
     const sortedItemParticipants = [...itemParticipants].sort((a, b) => {
@@ -240,9 +239,13 @@ export const mapPlansToLegacyPlans = (
       timeVal = p.scheduled_at ? String(p.scheduled_at).split(" • ")[1] || String(p.scheduled_at) : "";
     }
 
-    const maxSpotsVal = p.max_participants || (members.length > 0 ? members.length : 10);
+    const planSizeVal = (p as any).plan_size ?? p.max_participants ?? (members.length > 0 ? members.length : 10);
+    const maxParticipantsVal = p.max_participants ?? planSizeVal;
     const costVal = p.total_cost !== undefined ? Number(p.total_cost) : 0;
-    const coverImageVal = p.cover_image || dbItem?.cover_image_url || getPlanCover(categoryVal, subcategoryVal);
+    const rawCover = p.cover_image || dbItem?.cover_image_url;
+    const coverImageVal = (rawCover && rawCover !== "planimagedefault.png" && rawCover !== "default")
+      ? rawCover
+      : PLAN_COVER_IMAGES.default;
 
     // Dynamic split fallback for paymentAmount: find active participant cost_per_participant
     const myParticipant = participants.find(
@@ -250,10 +253,10 @@ export const mapPlansToLegacyPlans = (
     );
     const activeShareVal = myParticipant && myParticipant.cost_per_participant !== undefined && myParticipant.cost_per_participant !== null
       ? Number(myParticipant.cost_per_participant)
-      : (costVal > 0 ? Math.ceil(costVal / (maxSpotsVal > 0 ? maxSpotsVal : 1)) : 0);
+      : (costVal > 0 ? Math.ceil(costVal / (planSizeVal > 0 ? planSizeVal : 1)) : 0);
 
     const goingCount = members.filter(m => m.joinState === "JOINED").length;
-    const seatsLeftVal = Math.max(0, maxSpotsVal - goingCount);
+    const seatsLeftVal = Math.max(0, planSizeVal - goingCount);
 
     const userRatingVal = undefined;
     const userReactionVal = undefined;
@@ -267,7 +270,11 @@ export const mapPlansToLegacyPlans = (
       groupId: circleIdVal,
       hostId: hostIdVal,
       members: members,
-      capacity: maxSpotsVal,
+      capacity: planSizeVal,
+      planSize: planSizeVal,
+      plan_size: planSizeVal,
+      maxParticipants: maxParticipantsVal,
+      max_participants: maxParticipantsVal,
       date: dateVal,
       time: timeVal,
       location: p.place_name,
@@ -276,7 +283,7 @@ export const mapPlansToLegacyPlans = (
       datetime: p.scheduled_at,
       createdAt: p.created_at,
       waitlistEnabled: false,
-      joinLimit: maxSpotsVal,
+      joinLimit: planSizeVal,
       response_cutoff_hours: undefined,
       response_deadline_at: p.rsvp_deadline,
       allowParticipantInvites: p.allow_participant_invites ?? false,
@@ -289,7 +296,7 @@ export const mapPlansToLegacyPlans = (
       category: (categoryVal === "sports" ? "sports" : categoryVal === "dining" ? "restaurants" : categoryVal) as any,
       cost: costVal,
       confirmedCount: goingCount,
-      maxSpots: maxSpotsVal,
+      maxSpots: planSizeVal,
       coverImage: coverImageVal,
       creatorId: hostIdVal,
       creatorName: (members.find(m => m.isHost)?.name) || creatorFallback.full_name,

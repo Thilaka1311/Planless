@@ -29,6 +29,7 @@ interface InlineMemberEntry {
   assignedGroup?: string | null;
   waitlistPosition?: number | null;
   joinedQueueAt?: string | null;
+  joinedQueueNumber?: number | null;
   skipReason?: string | null;
 }
 
@@ -62,7 +63,19 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
   const waitlistOrderMode = plan.waitlistOrderMode || (plan as any).waitlist_order_mode || 'AUTO';
 
   const isCompletedPlan = plan.status === 'COMPLETED';
-  const maxCapacity = plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
+  const rawCap =
+    (plan as any).plan_size ??
+    (plan as any).planSize ??
+    plan.capacity ??
+    plan.maxSpots ??
+    plan.joinLimit ??
+    (plan as any).max_participants ??
+    (plan as any).maxParticipants;
+  const maxCapacity = Number(
+    rawCap !== undefined && rawCap !== null
+      ? rawCap
+      : (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8)
+  );
 
   // Helper to extract normalized final state for completed plans
   const getMemberFinalState = (m: any): string | null => {
@@ -286,22 +299,36 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
       const isHostRole = m.role === 'HOST' || m.isHost === true;
       const mId = m.userUuid || m.userId || (m as any).user_id || (m as any).id;
       const isCurrentUser = Boolean(activeUserId && mId === activeUserId);
-      let effectiveStatus = normalizeStatus(m.joinState || (m as any).rsvp_status);
+
+      const dbRow = planDbParticipants.find((pp: any) => {
+        const pId = pp.user_id || pp.userUuid || pp.id;
+        return pId && String(pId).toLowerCase() === String(mId).toLowerCase();
+      });
+
+      let effectiveStatus = normalizeStatus(dbRow?.rsvp_status || m.joinState || (m as any).rsvp_status);
       if (isCompletedPlan) {
         const finalState = getMemberFinalState(m);
         const isAttended = finalState === 'JOINED' || (finalState === null && effectiveStatus === 'JOINED');
         effectiveStatus = isAttended ? 'JOINED' : 'SKIPPED';
       }
       const isAccepted = effectiveStatus !== 'INVITED' && effectiveStatus !== 'SKIPPED';
+      const isActivelyJoined = effectiveStatus === 'JOINED' || effectiveStatus === 'WAITLISTED' || effectiveStatus === 'REJOINED' || isHostRole;
+      const joinedQueueAt = isActivelyJoined
+        ? (dbRow?.joined_queue_at || (m as any).joined_queue_at || (m as any).joinedQueueAt || (m as any).join_queue_at || null)
+        : null;
+
       return {
-        name: isCurrentUser ? 'You' : (m.name || 'Unknown'),
+        name: isCurrentUser ? 'You' : (m.name || (dbRow as any)?.name || 'Unknown'),
         avatar: m.avatar || '',
         userId: mId,
-        isHost: Boolean(isHostRole),
+        isHost: Boolean(isHostRole || dbRow?.role === 'HOST'),
         isAccepted,
-        waitlistPosition: (m as any).waitlistPosition ?? (m as any).waitlist_position ?? null,
-        joinedQueueAt: (m as any).joinedQueueAt ?? (m as any).joined_queue_at ?? (m as any).createdAt ?? (m as any).created_at ?? null,
-        skipReason: (m as any).skipReason || (m as any).skip_reason || null,
+        rsvp_status: effectiveStatus,
+        joinState: effectiveStatus,
+        waitlistPosition: dbRow?.waitlist_position ?? (m as any).waitlistPosition ?? (m as any).waitlist_position ?? null,
+        joinedQueueAt,
+        join_queue_at: joinedQueueAt,
+        skipReason: dbRow?.skip_reason || (m as any).skipReason || (m as any).skip_reason || null,
       };
     });
 
@@ -345,13 +372,12 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
       }
     } else {
-      const actualJoinedCount = (groups as any).goingJoinedCount ?? groups.going.length;
-      const isFull = actualJoinedCount >= maxCapacity;
+      const hasWaitlist = groups.waitlist.length > 0;
 
-      if (!isFull) {
+      if (!hasWaitlist) {
         t.push({ key: 'invited', label: 'Invited', count: groups.going.length });
       } else {
-        t.push({ key: 'going', label: 'Joined', count: actualJoinedCount });
+        t.push({ key: 'going', label: 'Joined', count: groups.going.length });
         t.push({ key: 'waitlist', label: 'Waitlist', count: groups.waitlist.length });
       }
 
@@ -369,20 +395,27 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
   }, [tabs, activeTab]);
 
   const activeList = groups[activeTab] || [];
-
-  const getWaitlistPositionDisplay = (person: InlineMemberEntry, idx: number): string | null => {
+  const getParticipantQueueNumberDisplay = (person: InlineMemberEntry, idx: number): string | null => {
     if (isAssignedMode) {
-      return `#${idx + 1}`;
+      if (activeTab === 'waitlist') return `#${idx + 1}`;
+      return null;
     }
 
     // Automatic mode:
-    // Only display position number if participant's RSVP status is WAITLISTED.
-    // INVITED participants in Automatic waitlist receive NO number.
-    const status = (person as any).rsvpStatus || (person as any).rsvp_status;
-    const isWaitlistedRSVP = status === 'WAITLISTED' || (person.isAccepted && status !== 'SKIPPED' && status !== 'INVITED');
+    // Joined section NEVER shows numbers.
+    if (activeTab === 'going' || activeTab === 'invited') {
+      return null;
+    }
 
-    if (isWaitlistedRSVP) {
-      return `#${idx + 1}`;
+    // Waitlist section:
+    // Only participants who actually joined and entered the queue have a waitlist position (#1, #2, ...).
+    // Invited participants below them have NO numbers.
+    if (activeTab === 'waitlist') {
+      const pos = person.waitlistPosition ?? (person as any).waitlist_position;
+      if (typeof pos === 'number') {
+        return `#${pos}`;
+      }
+      return null;
     }
 
     return null;
@@ -436,7 +469,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     const flatMaxHeight = isHostUser ? 'max-h-[calc(100dvh-480px)]' : 'max-h-[calc(100dvh-440px)]';
 
     return (
-      <div className="w-full text-left space-y-2 flex flex-col min-h-0">
+      <div className="w-full text-left space-y-2 flex flex-col flex-1 min-h-0">
         {tabs.length > 0 && (
           <div className="w-full flex items-center justify-between gap-2 flex-shrink-0">
             <div className="flex-1 flex items-center justify-center bg-[#0A0A0C]/90 border border-white/15 rounded-full overflow-hidden backdrop-blur-md shadow-inner">
@@ -475,7 +508,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
           </div>
         )}
 
-        <div className={`px-1 py-0.5 min-h-[90px] overflow-y-auto scrollbar-none pb-2 ${variant === 'flat' ? flatMaxHeight : 'max-h-[calc(100dvh-340px)]'}`}>
+        <div className="px-1 py-0.5 min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-none pb-4">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -500,9 +533,9 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                       person.isAccepted ? 'opacity-100' : 'opacity-70'
                     }`}
                   >
-                    {activeTab === 'waitlist' && (
+                    {getParticipantQueueNumberDisplay(person, idx) && (
                       <span className="text-[11px] font-bold text-white/50 w-6 min-w-[24px] inline-flex items-center shrink-0 font-sans">
-                        {getWaitlistPositionDisplay(person, idx) || ''}
+                        {getParticipantQueueNumberDisplay(person, idx)}
                       </span>
                     )}
                     <div className="relative flex-shrink-0">
@@ -762,9 +795,9 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                           person.isAccepted ? 'opacity-100' : 'opacity-70'
                         }`}
                       >
-                        {activeTab === 'waitlist' && (
+                        {getParticipantQueueNumberDisplay(person, idx) && (
                           <span className="text-[11px] font-bold text-white/50 w-6 min-w-[24px] inline-flex items-center shrink-0 font-sans">
-                            {getWaitlistPositionDisplay(person, idx) || ''}
+                            {getParticipantQueueNumberDisplay(person, idx)}
                           </span>
                         )}
                         <div className="relative flex-shrink-0">

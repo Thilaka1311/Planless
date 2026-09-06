@@ -4,6 +4,24 @@ import { Plan, UserProfile } from "../../../core/types";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { Calendar } from "lucide-react";
 import defaultAvatar from "../../../assets/default_avatar.png";
+import { useProfileStore } from "../../profile/state/ProfileContext";
+import { supabase } from "../../../../lib/supabaseClient";
+
+function isValidProfilePhoto(photo: string | null | undefined): boolean {
+  if (!photo || typeof photo !== "string") return false;
+  const trimmed = photo.trim();
+  if (
+    !trimmed ||
+    trimmed === "default" ||
+    trimmed === "planimagedefault.png" ||
+    trimmed.includes("planimagedefault") ||
+    trimmed.includes("default_avatar") ||
+    trimmed === defaultAvatar
+  ) {
+    return false;
+  }
+  return true;
+}
 
 interface ParticipantToggleBarProps {
   plan: Plan;
@@ -39,6 +57,59 @@ export const ParticipantToggleBar: React.FC<ParticipantToggleBarProps> = ({
 
   const currentUserId = userProfile.dbUuid || userProfile.user_id;
 
+  const { dbUsers, setDbUsers } = useProfileStore();
+
+  // Ensure any participant user IDs not yet in dbUsers are fetched directly from users table
+  React.useEffect(() => {
+    const memberIds = (plan.members || [])
+      .map(m => m.userUuid || m.userId)
+      .filter(Boolean) as string[];
+
+    if (memberIds.length === 0) return;
+
+    const existingIds = new Set<string>();
+    (dbUsers || []).forEach(u => {
+      if (u.id) existingIds.add(u.id);
+      if (u.user_id) existingIds.add(u.user_id);
+    });
+
+    const missingIds = memberIds.filter(id => !existingIds.has(id));
+    if (missingIds.length === 0) return;
+
+    let isMounted = true;
+    supabase
+      .from("users")
+      .select("id, public_id, full_name, profile_photo_path, bio")
+      .in("id", missingIds)
+      .then(({ data, error }) => {
+        if (error || !data || !isMounted) return;
+        setDbUsers(prev => {
+          const currentIds = new Set(prev.map(p => p.id));
+          const toAdd = data
+            .filter(u => !currentIds.has(u.id))
+            .map(u => ({
+              id: u.id,
+              user_id: u.public_id || u.id,
+              username: (u.full_name || "user").toLowerCase().replace(/\s+/g, ""),
+              full_name: u.full_name || "Participant",
+              phone_number: "",
+              profile_photo: u.profile_photo_path || "",
+              profile_photo_path: u.profile_photo_path || "",
+              bio: u.bio || "",
+              college_or_work: "",
+              created_at: new Date().toISOString(),
+              wallet_balance: 0,
+              active_status: true,
+            }));
+          return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+        });
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [plan.members, dbUsers, setDbUsers]);
+
   // Ephemeral UI state reset: collapsed is ALWAYS the default state whenever this card is not active
   React.useEffect(() => {
     if (activeCardId && activeCardId !== plan.id && activeCardId !== plan.dbUuid) {
@@ -53,16 +124,22 @@ export const ParticipantToggleBar: React.FC<ParticipantToggleBarProps> = ({
     return plan.maxSpots || plan.capacity || plan.joinLimit || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
   }, [plan.maxSpots, plan.capacity, plan.joinLimit, plan.category]);
 
-  // Derived strictly from plan.members where joinState === "JOINED"
-  const goingMembers = React.useMemo(() => {
-    const joined = plan.members.filter(m => m.joinState === "JOINED");
+  // Progress bar represents filled spots from joined members
+  const joinedCount = React.useMemo(() => {
+    return (plan.members || []).filter(m => m.joinState === "JOINED").length;
+  }, [plan.members]);
+  const progressPercent = Math.min(100, Math.round((joinedCount / maxSpots) * 100));
+
+  // Complete participant list from plan_participants (JOINED, INVITED, SKIPPED, WAITLISTED)
+  const allParticipants = React.useMemo(() => {
+    const all = plan.members || [];
 
     // Standardized ordering: Current User "You" first -> Hosts A-Z -> Participants A-Z
-    const hosts: typeof joined = [];
-    const participants: typeof joined = [];
-    let currentUserEntry: (typeof joined)[0] | null = null;
+    const hosts: typeof all = [];
+    const participants: typeof all = [];
+    let currentUserEntry: (typeof all)[0] | null = null;
 
-    for (const m of joined) {
+    for (const m of all) {
       const mId = m.userUuid || m.userId;
       if (currentUserId && mId === currentUserId) {
         currentUserEntry = m;
@@ -83,8 +160,55 @@ export const ParticipantToggleBar: React.FC<ParticipantToggleBarProps> = ({
     ];
   }, [plan.members, currentUserId]);
 
-  const currentCount = goingMembers.length;
-  const progressPercent = Math.min(100, Math.round((currentCount / maxSpots) * 100));
+  // Helper to determine if a participant has an actual profile photo in the users table
+  const participantHasPhoto = React.useCallback(
+    (person: (typeof allParticipants)[0]): boolean => {
+      const pId = person.userUuid || person.userId;
+      if (pId) {
+        const user = (dbUsers || []).find(u => u.id === pId || u.user_id === pId);
+        if (user) {
+          const userPhoto = user.profile_photo_path || user.profile_photo;
+          return isValidProfilePhoto(userPhoto);
+        }
+      }
+      return isValidProfilePhoto(person.avatar);
+    },
+    [dbUsers]
+  );
+
+  // Helper to resolve the profile photo URL/path for UserAvatar
+  const getParticipantAvatarSrc = React.useCallback(
+    (person: (typeof allParticipants)[0]): string => {
+      const pId = person.userUuid || person.userId;
+      if (pId) {
+        const user = (dbUsers || []).find(u => u.id === pId || u.user_id === pId);
+        if (user) {
+          const userPhoto = user.profile_photo_path || user.profile_photo;
+          if (isValidProfilePhoto(userPhoto)) {
+            return userPhoto!;
+          }
+        }
+      }
+      return isValidProfilePhoto(person.avatar) ? person.avatar : defaultAvatar;
+    },
+    [dbUsers]
+  );
+
+  // Prioritize participants WITH profile photos first, then WITHOUT profile photos, preserving order within each group
+  const visibleParticipants = React.useMemo(() => {
+    const withPhoto: typeof allParticipants = [];
+    const withoutPhoto: typeof allParticipants = [];
+
+    for (const person of allParticipants) {
+      if (participantHasPhoto(person)) {
+        withPhoto.push(person);
+      } else {
+        withoutPhoto.push(person);
+      }
+    }
+
+    return [...withPhoto, ...withoutPhoto].slice(0, 4);
+  }, [allParticipants, participantHasPhoto]);
 
   const handleCardClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -121,14 +245,14 @@ export const ParticipantToggleBar: React.FC<ParticipantToggleBarProps> = ({
     >
       <div className="flex flex-col text-left w-full">
         {/* Title & Date */}
-        <div className="flex flex-col text-left min-w-0 w-full">
+        <div className="flex flex-col text-left min-w-0 w-full font-sans">
           <h2 className="font-sans font-black text-[22px] text-white tracking-tight leading-none truncate mb-1.5 drop-shadow-sm">
             {planTitle || plan.title}
           </h2>
           {/* Date & Time */}
-          <div className="flex items-center gap-1.5 text-white/80 text-[11px] font-mono tracking-wide font-bold mt-0.5">
+          <div className="flex items-center gap-1.5 text-white/80 text-[11px] font-sans tracking-wide font-bold mt-0.5">
             <Calendar className="w-3.5 h-3.5 text-white/50 flex-shrink-0" strokeWidth={2.5} />
-            <span className="text-white truncate">
+            <span className="text-white truncate font-sans">
               {formattedDateAndTime}
             </span>
           </div>
@@ -171,17 +295,17 @@ export const ParticipantToggleBar: React.FC<ParticipantToggleBarProps> = ({
               className="overflow-hidden flex flex-col items-center justify-center text-center w-full"
             >
               {/* Centered Avatar Cluster (Max 4 avatars + overflow) */}
-              {goingMembers.length > 0 && (
+              {allParticipants.length > 0 && (
                 <div className="flex items-center justify-center select-none mb-3.5">
                   <div className="flex -space-x-2.5 isolate items-center justify-center">
-                    {goingMembers.slice(0, 4).map((person, idx) => {
+                    {visibleParticipants.map((person, idx) => {
                       const pId = person.userUuid || person.userId || idx;
                       const isCurrentUser = currentUserId && pId === currentUserId;
                       const nameToUse = isCurrentUser ? "You" : person.name || "Member";
                       return (
                         <div key={pId} className="relative z-10 flex-shrink-0">
                           <UserAvatar
-                            src={person.avatar || defaultAvatar}
+                            src={getParticipantAvatarSrc(person)}
                             alt={nameToUse}
                             size="w-9 h-9"
                             className="border-2 border-[#0C0C0E] rounded-full shadow-md object-cover"
@@ -189,10 +313,10 @@ export const ParticipantToggleBar: React.FC<ParticipantToggleBarProps> = ({
                         </div>
                       );
                     })}
-                    {goingMembers.length > 4 && (
+                    {allParticipants.length > 4 && (
                       <div className="relative z-10 w-9 h-9 rounded-full bg-[#1C1C20] border-2 border-[#0C0C0E] flex items-center justify-center shadow-md flex-shrink-0">
                         <span className="text-[12px] font-sans font-bold text-white leading-none">
-                          +{goingMembers.length - 4}
+                          +{allParticipants.length - 4}
                         </span>
                       </div>
                     )}

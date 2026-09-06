@@ -20,6 +20,7 @@ export function normalizeStatus(rsvpStatus: string | undefined): PlanState {
   if (upper === "SKIPPED") return "SKIPPED";
   if (upper === "WAITLISTED") return "WAITLISTED";
   if (upper === "INVITED") return "INVITED";
+  if (upper === "REJOINED") return "REJOINED";
 
   // Treat any unrecognised value as INVITED (pending/unresponded)
   return "INVITED";
@@ -59,6 +60,118 @@ export function formatSkipReason(reason?: string | null): string {
   }
 }
 
+/**
+ * Resolves the user-facing RSVP display status for a participant
+ * based strictly on their actual RSVP status (not their assigned group or contextual tab).
+ */
+export function getParticipantRsvpDisplayStatus(
+  item: {
+    rsvpStatus?: string;
+    isAccepted?: boolean;
+    isHost?: boolean;
+    leave_requested?: boolean;
+    skipReason?: string | null;
+    [key: string]: any;
+  } | null
+): string {
+  if (!item) return '';
+
+  const rawRsvp = String(
+    item.rsvpStatus ||
+    (item as any).rsvp_status ||
+    (item as any).joinState ||
+    (item as any).status ||
+    ''
+  ).trim().toUpperCase();
+
+  const isRejoined = rawRsvp === 'REJOINED';
+  const isLeaveRequested = item.leave_requested === true;
+
+  if (isRejoined) {
+    return 'Wants to rejoin this plan';
+  }
+
+  if (isLeaveRequested) {
+    return 'Wants to leave this plan';
+  }
+
+  if (rawRsvp === 'SKIPPED' || Boolean(item.skipReason || (item as any).skip_reason)) {
+    return formatSkipReason(item.skipReason || (item as any).skip_reason) || 'Skipped';
+  }
+
+  if (rawRsvp === 'DECLINED') {
+    return 'Declined';
+  }
+
+  if (rawRsvp === 'MAYBE') {
+    return 'Maybe';
+  }
+
+  if (rawRsvp === 'JOINED' || rawRsvp === 'GOING' || rawRsvp === 'ACCEPTED' || rawRsvp === 'CONFIRMED' || item.isHost) {
+    return 'Joined';
+  }
+
+  if (rawRsvp === 'WAITLISTED' || rawRsvp === 'WAITLIST') {
+    return 'Waitlist';
+  }
+
+  if (rawRsvp === 'INVITED') {
+    return 'Invited';
+  }
+
+  if (item.isAccepted) {
+    return 'Joined';
+  }
+
+  if (rawRsvp) {
+    return rawRsvp.charAt(0).toUpperCase() + rawRsvp.slice(1).toLowerCase();
+  }
+
+  return 'Invited';
+}
+
+/**
+ * Checks if a participant has an active Joined/Going RSVP status.
+ * Returns true ONLY if participant's RSVP status is Joined/Going (or host).
+ * Non-joined states (Invited, Waitlist, Declined, Skipped, etc.) return false.
+ */
+export function isJoinedRsvpParticipant(
+  item: {
+    rsvpStatus?: string;
+    isAccepted?: boolean;
+    isHost?: boolean;
+    [key: string]: any;
+  } | null
+): boolean {
+  if (!item) return false;
+  if (item.isHost) return true;
+
+  const raw = String(
+    item.rsvpStatus ||
+    (item as any).rsvp_status ||
+    (item as any).joinState ||
+    (item as any).status ||
+    ''
+  ).trim().toUpperCase();
+
+  if (raw === 'JOINED' || raw === 'GOING' || raw === 'ACCEPTED' || raw === 'CONFIRMED') {
+    return true;
+  }
+
+  if (
+    raw === 'INVITED' ||
+    raw === 'WAITLIST' ||
+    raw === 'WAITLISTED' ||
+    raw === 'SKIPPED' ||
+    raw === 'DECLINED' ||
+    raw === 'REJOINED'
+  ) {
+    return false;
+  }
+
+  return Boolean(item.isAccepted);
+}
+
 export type EffectiveParticipantState = 'GOING' | 'WAITLIST' | 'SKIPPED' | 'INVITED';
 
 /**
@@ -91,7 +204,7 @@ export function getEffectiveParticipantState(
     return 'SKIPPED';
   }
 
-  if (rawAssignedGroup === 'WAITLIST' || rawRsvpStatus === 'WAITLISTED') {
+  if (rawAssignedGroup === 'WAITLIST' || rawRsvpStatus === 'WAITLISTED' || rawRsvpStatus === 'REJOINED') {
     return 'WAITLIST';
   }
 
@@ -123,7 +236,7 @@ export function calculateParticipantBreakdown(rows: DbPlanParticipant[]): Partic
   const joined = normalized.filter(r => r.status === "JOINED").length;
   const waitlisted = normalized.filter(r => r.status === "WAITLISTED").length;
   const invited = normalized.filter(r => r.status === "INVITED").length;
-  const skipped = normalized.filter(r => r.status === "SKIPPED").length;
+  const skipped = normalized.filter(r => r.status === "SKIPPED" || r.status === "REJOINED").length;
   const passed = skipped;
   const pending = invited;
   const total = normalized.filter(r => ["JOINED", "WAITLISTED", "INVITED"].includes(r.status)).length;
@@ -296,68 +409,207 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   const cap = Math.max(0, capacity || 0);
 
   const skippedMembers: T[] = [];
+  const hostMembers: T[] = [];
   const joinedMembers: T[] = [];
   const waitlistedMembers: T[] = [];
   const unacceptedMembers: T[] = [];
+  const rejoinedMembers: T[] = [];
 
   for (const m of members) {
+    const isHostRole = m.isHost === true || m.role === 'HOST';
     const status = normalizeStatus(m.rsvp_status || m.joinState || m.rsvpStatus);
+
     if (status === 'SKIPPED') {
       skippedMembers.push(m);
+    } else if (isHostRole) {
+      hostMembers.push(m);
     } else if (status === 'JOINED') {
       joinedMembers.push(m);
     } else if (status === 'WAITLISTED') {
       waitlistedMembers.push(m);
+    } else if (status === 'REJOINED') {
+      rejoinedMembers.push(m);
     } else {
       unacceptedMembers.push(m);
     }
   }
 
-  const sortByTimestamp = (items: T[]) => {
+  // Helper to get parsed timestamp from join_queue_at without inventing timestamps
+  const getQueueTimestamp = (m: T): number | null => {
+    const raw = m.join_queue_at || m.joinQueueAt || m.joined_queue_at || m.joinedQueueAt;
+    if (!raw) return null;
+    const t = new Date(raw).getTime();
+    return isNaN(t) ? null : t;
+  };
+
+  // Helper to put "You" / active user at index 0 of an array, if present
+  const prioritizeYou = <U extends Record<string, any>>(items: U[]): U[] => {
+    const currentUser = items.find((item) => {
+      const isYou = item.name === 'You';
+      const itemUserId = String(item.userId || item.dbUuid || item.id || (item as any).user_id || '').toLowerCase();
+      const activeId = activeUserId ? String(activeUserId).toLowerCase() : '';
+      return isYou || (Boolean(activeId) && itemUserId === activeId);
+    });
+    if (!currentUser) return items;
+    const remaining = items.filter((item) => item !== currentUser);
+    return [{ ...currentUser, name: 'You' }, ...remaining];
+  };
+
+  // First-Come, First-Served (FCFS) priority comparator for determining who gets the available slots:
+  // 1. Host(s) always take highest priority in Going
+  // 2. Earlier join_queue_at = higher priority
+  // 3. Fallback: Alphabetical name ordering
+  const sortFCFS = (items: T[]) => {
     return [...items].sort((a, b) => {
-      const qA = a.joined_queue_at || a.joinedQueueAt || a.created_at || a.createdAt;
-      const qB = b.joined_queue_at || b.joinedQueueAt || b.created_at || b.createdAt;
-      const timeA = qA ? new Date(qA).getTime() : Number.MAX_SAFE_INTEGER;
-      const timeB = qB ? new Date(qB).getTime() : Number.MAX_SAFE_INTEGER;
-      if (timeA !== timeB) return timeA - timeB;
-      const nameA = a.name || a.full_name || '';
-      const nameB = b.name || b.full_name || '';
+      const aIsHost = a.isHost === true || a.role === 'HOST';
+      const bIsHost = b.isHost === true || b.role === 'HOST';
+      if (aIsHost && !bIsHost) return -1;
+      if (!aIsHost && bIsHost) return 1;
+
+      const timeA = getQueueTimestamp(a);
+      const timeB = getQueueTimestamp(b);
+
+      if (timeA !== null && timeB !== null && timeA !== timeB) {
+        return timeA - timeB;
+      }
+      if (timeA !== null && timeB === null) return -1;
+      if (timeA === null && timeB !== null) return 1;
+
+      const nameA = a.name || a.full_name || a.username || '';
+      const nameB = b.name || b.full_name || b.username || '';
       return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
     });
   };
 
   const sortAlpha = (items: T[]) => {
     return [...items].sort((a, b) => {
-      const nameA = a.name || a.full_name || '';
-      const nameB = b.name || b.full_name || '';
+      const nameA = a.name || a.full_name || a.username || '';
+      const nameB = b.name || b.full_name || b.username || '';
       return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
     });
   };
 
-  const sortedJoined = sortByTimestamp(joinedMembers);
-  const sortedWaitlist = sortByTimestamp(waitlistedMembers);
-  const sortedUnaccepted = sortAlpha(unacceptedMembers);
+  // Participants who have actively joined / accepted:
+  const allJoinedMembers = [
+    ...hostMembers,
+    ...joinedMembers,
+    ...waitlistedMembers,
+    ...rejoinedMembers,
+  ];
 
-  const isFull = cap > 0 && sortedJoined.length >= cap;
+  const joinedCount = allJoinedMembers.length;
 
-  let finalGoingRaw: T[] = [];
-  let finalWaitlistRaw: T[] = [];
+  // RULE 4: WHEN PLAN SIZE HAS NOT BEEN REACHED (cap <= 0 || joinedCount < cap)
+  // - Do NOT create a separate Waitlist section.
+  // - Everyone who has joined should appear in the Joined section.
+  // - Everyone who is still invited should appear below the Joined participants.
+  // - Joined participants are alphabetical, with "You" always first.
+  // - Invited participants are alphabetical.
+  // - NO numbers should be displayed anywhere.
+  if (cap <= 0 || joinedCount < cap) {
+    const alphaJoined = sortAlpha(allJoinedMembers).map((item) => ({
+      ...item,
+      joinedQueueNumber: null,
+      waitlistPosition: null,
+      isAccepted: true,
+    }));
 
-  if (!isFull) {
-    // Capacity NOT reached: All non-skipped participants are in Going/Invited.
-    finalGoingRaw = [...sortedJoined, ...sortedWaitlist, ...sortedUnaccepted];
-    finalWaitlistRaw = [];
-  } else {
-    // Capacity REACHED: Joined participants fill Going. Overflow participants (Waitlisted + Invited) go to Waitlist.
-    finalGoingRaw = [...sortedJoined];
-    finalWaitlistRaw = [...sortedWaitlist, ...sortedUnaccepted];
+    const alphaUnaccepted = sortAlpha(unacceptedMembers).map((item) => ({
+      ...item,
+      joinedQueueNumber: null,
+      waitlistPosition: null,
+      isAccepted: false,
+    }));
+
+    const going = [...prioritizeYou(alphaJoined), ...prioritizeYou(alphaUnaccepted)];
+
+    return {
+      going,
+      waitlist: [],
+      skipped: sortAlpha(skippedMembers),
+      goingJoinedCount: joinedCount,
+      capacity: cap,
+    };
   }
 
+  // RULE 1, 2, 3, 5: WHEN PLAN SIZE IS REACHED (joinedCount >= cap):
+  // Automatic waitlist separation becomes active.
+  //
+  // 1. Determine who gets the available slots:
+  //    - First `capacity` people by join_queue_at (FCFS) → Joined.
+  //    - Earlier join_queue_at = higher priority.
+  const sortedJoined = sortFCFS(allJoinedMembers);
+  const goingSelected = sortedJoined.slice(0, cap);
+
+  // 2. JOINED SECTION:
+  //    - The Joined section must NEVER show queue numbers.
+  //    - Do not show #1, #2, #3, etc. next to joined participants.
+  //    - Always arrange everyone in the Joined section alphabetically by participant name.
+  //    - EXCEPT: current user ("You") must always appear at the very top.
+  //    - After "You", sort all other joined participants alphabetically.
+  const goingAlphabetical = sortAlpha(goingSelected).map((item) => ({
+    ...item,
+    joinedQueueNumber: null,
+    waitlistPosition: null,
+    isAccepted: true,
+  }));
+  const finalGoing = prioritizeYou(goingAlphabetical);
+
+  // 3. WAITLIST SECTION:
+  //    - The Waitlist section is where queue numbers MUST be displayed.
+  //    - Split into two logical groups:
+  //      A. Participants who have actually joined/responded and therefore have a join_queue_at value:
+  //         - Sort them by join_queue_at ascending (earliest join = first).
+  //         - Display queue numbers #1, #2, #3, etc. based on that order.
+  //         - These numbers represent their position in the waitlist.
+  //      B. Participants who are still Invited and have NOT joined/responded (or have no valid join_queue_at):
+  //         - They have no join_queue_at.
+  //         - Do NOT assign them queue numbers.
+  //         - Put them BELOW the numbered waitlisted participants.
+  //         - Sort these invited people alphabetically.
+  const overflowJoined = sortedJoined.slice(cap);
+
+  const validJoinedWaitlist = overflowJoined.filter((item) => getQueueTimestamp(item) !== null);
+  const invalidJoinedWaitlist = overflowJoined.filter((item) => getQueueTimestamp(item) === null);
+
+  // Group A: Sort by join_queue_at ASC
+  const sortedValidWaitlist = [...validJoinedWaitlist].sort((a, b) => {
+    const tA = getQueueTimestamp(a)!;
+    const tB = getQueueTimestamp(b)!;
+    if (tA !== tB) return tA - tB;
+    const nameA = a.name || a.full_name || a.username || '';
+    const nameB = b.name || b.full_name || b.username || '';
+    return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+  });
+
+  // Assign waitlist numbers #1, #2, #3... to Group A
+  const numberedWaitlist = sortedValidWaitlist.map((item, idx) => ({
+    ...item,
+    waitlistPosition: idx + 1,
+    joinedQueueNumber: null,
+    isAccepted: true,
+  }));
+
+  // Group B: Still-invited participants & any joiner without valid join_queue_at
+  const unnumberedInvited = sortAlpha([...invalidJoinedWaitlist, ...unacceptedMembers]).map((item) => ({
+    ...item,
+    waitlistPosition: null,
+    joinedQueueNumber: null,
+    isAccepted: false,
+  }));
+
+  const finalWaitlist = [
+    ...numberedWaitlist,
+    ...unnumberedInvited,
+  ];
+
+  const goingJoinedCount = goingSelected.length;
+
   return {
-    going: sortGoingParticipants(finalGoingRaw, activeUserId),
-    waitlist: finalWaitlistRaw,
-    skipped: sortGoingParticipants(skippedMembers, activeUserId),
-    goingJoinedCount: sortedJoined.length,
+    going: finalGoing,
+    waitlist: finalWaitlist,
+    skipped: sortAlpha(skippedMembers),
+    goingJoinedCount,
     capacity: cap,
   };
 }

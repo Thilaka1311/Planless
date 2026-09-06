@@ -19,8 +19,10 @@ import { useHoldToAccept } from "../../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "../../components/HoldToAccept";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
 import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
-import { JoinPlanConfirmationBottomSheet, SkipPlanConfirmationDialog, PaidPlanLeaveConfirmationDialog, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet } from "../../../plans/components/BottomSheets";
+import { JoinPlanConfirmationBottomSheet, SkipPlanConfirmationDialog, PaidPlanLeaveConfirmationDialog, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet } from "../../../plans/components/BottomSheets";
 import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
+import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
+import { cleanPlanId } from "../../../plans/utils/planUtils";
 import { PlanChatScreen } from "../../../chats/screens/PlanChatScreen";
 import { PlanDetailsScreen as PlanBalancesScreen } from "../../../wallet/screens/PlanBalances";
 
@@ -61,8 +63,10 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     joinPlan,
     skipPlan,
     requestPaidPlanLeave,
+    requestHostLeaveWithReplacement,
     cancelPaidPlanLeaveRequest,
     rejoinPlan,
+    updatePlanDetails,
     updatePlanSettings,
     demoteHostToParticipant,
     leavePlan,
@@ -72,6 +76,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const [isJoiningDirect, setIsJoiningDirect] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
   const [showLeavePlanConfirm, setShowLeavePlanConfirm] = useState(false);
+  const [showHostLeaveReplacementSheet, setShowHostLeaveReplacementSheet] = useState(false);
+  const [isSubmittingHostReplacement, setIsSubmittingHostReplacement] = useState(false);
   const [isCostPopoverOpen, setIsCostPopoverOpen] = useState(false);
   const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(false);
   const [showCompletionFlow, setShowCompletionFlow] = useState(false);
@@ -80,7 +86,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const [showPlanBalancesScreen, setShowPlanBalancesScreen] = useState(false);
 
   const resolvedUserUuid = userProfile.dbUuid || activeUserId || "";
-  const isHost = selectedPlan ? selectedPlan.hostId === resolvedUserUuid : false;
 
   const rawDbPlan = useMemo(() => {
     if (!selectedPlan) return null;
@@ -108,7 +113,47 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     ];
   }, [selectedPlan]);
 
-  const isCreatorHost = selectedPlan ? selectedPlan.hostId === resolvedUserUuid : false;
+  const isHost = selectedPlan?.members
+    ? selectedPlan.members.some(m => (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid) && m.isHost)
+    : false;
+
+  const activeHostMembers = useMemo(() => {
+    if (!selectedPlan?.members) return [];
+    return selectedPlan.members.filter((m) => {
+      const isHostRole = (m as any).role === "HOST" || m.isHost === true;
+      const status = normalizeStatus(m.joinState || (m as any).rsvp_status);
+      return isHostRole && status === "JOINED";
+    });
+  }, [selectedPlan?.members]);
+
+  const isSoleHost = isHost && activeHostMembers.length <= 1;
+
+  const eligibleHostReplacementParticipants = useMemo(() => {
+    if (!selectedPlan?.members) return [];
+    return selectedPlan.members
+      .filter((m) => {
+        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
+        const isCurrent = Boolean(resolvedUserUuid && mId === resolvedUserUuid);
+        if (isCurrent) return false;
+
+        const isHostRole = (m as any).role === "HOST" || m.isHost === true;
+        if (isHostRole) return false;
+
+        const status = normalizeStatus(m.joinState || (m as any).rsvp_status);
+        return status === "JOINED";
+      })
+      .map((m) => {
+        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
+        return {
+          id: mId,
+          name: m.name || (m as any).full_name || "Participant",
+          avatar: m.avatar || (m as any).profile_photo_path,
+          username: m.username
+        };
+      });
+  }, [selectedPlan?.members, resolvedUserUuid]);
+
+  const isCreatorHost = isHost;
 
   const countdown = useLiveCountdown(selectedPlan?.response_deadline_at);
   const urgencyColor = useMemo(() => {
@@ -212,7 +257,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     const isCompleted = rawDbPlan.status === 'COMPLETED';
     const divisor = isCompleted
       ? Number(rawDbPlan.attended_participants ?? selectedPlan?.attended_participants ?? 0)
-      : (rawDbPlan.max_participants ? Number(rawDbPlan.max_participants) : maxSpots);
+      : (rawDbPlan.plan_size ? Number(rawDbPlan.plan_size) : (rawDbPlan.max_participants ? Number(rawDbPlan.max_participants) : maxSpots));
 
     if (total <= 0 || !divisor || divisor <= 0) return null;
     const perPerson = Math.round((total / divisor) * 100) / 100;
@@ -310,6 +355,36 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     });
   }, [selectedPlan, activeUserId, isSkipping, skipPlan, setShowLeftSuccess, onClose, showToast]);
 
+  const handleConfirmHostLeaveReplacement = useCallback(async (selectedReplacementId: string) => {
+    if (!selectedPlan || isSubmittingHostReplacement) return;
+    setIsSubmittingHostReplacement(true);
+    try {
+      const planUuid = (selectedPlan as any).dbUuid || selectedPlan.id;
+      const res = await requestHostLeaveWithReplacement(planUuid, selectedReplacementId);
+      setShowHostLeaveReplacementSheet(false);
+      
+      const replacementUser = eligibleHostReplacementParticipants.find(p => p.id === selectedReplacementId);
+      const replacementName = replacementUser?.name || "participant";
+
+      if (res?.leave_requested) {
+        showToast(`✓ Promoted ${replacementName} to host & sent leave request`);
+      } else {
+        showToast(`✓ Promoted ${replacementName} to host & left the plan`);
+      }
+      
+      if (onLeavePlan) {
+        onLeavePlan();
+      } else {
+        onClose();
+      }
+    } catch (err: any) {
+      console.error("[HomePlansPreviewScreen] Host replacement leave failed:", err);
+      showToast(`Failed to leave plan: ${err.message || "Unknown error"}`);
+    } finally {
+      setIsSubmittingHostReplacement(false);
+    }
+  }, [selectedPlan, isSubmittingHostReplacement, requestHostLeaveWithReplacement, eligibleHostReplacementParticipants, onLeavePlan, onClose, showToast]);
+
   const handleSkip = useCallback(async () => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
     if (myParticipantRecord?.leave_requested) {
@@ -320,11 +395,15 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     const isActuallyJoined = myParticipantRecord?.rsvp_status === "JOINED";
     
     if (isActuallyJoined) {
-      setShowLeavePlanConfirm(true);
+      if (isSoleHost) {
+        setShowHostLeaveReplacementSheet(true);
+      } else {
+        setShowLeavePlanConfirm(true);
+      }
     } else {
       setShowSkipConfirmation(true);
     }
-  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord]);
+  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, isSoleHost]);
 
   if (!selectedPlan) return null;
 
@@ -340,6 +419,16 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         }}
         onDemoteHost={async (userId) => {
           await demoteHostToParticipant(selectedPlan.id, userId);
+        }}
+        onEditTitle={async (newTitle) => {
+          await updatePlanDetails(selectedPlan.id, { title: newTitle });
+        }}
+        onEditCoverImage={async (newCoverUrl, blob) => {
+          const targetPlanId = cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
+          if (blob) {
+            await uploadPlanImage(targetPlanId, blob);
+          }
+          await updatePlanDetails(targetPlanId, { cover_image: `${targetPlanId}.webp`, skipDbWrite: true });
         }}
         onLeavePlan={async () => {
           try {
@@ -372,94 +461,96 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       onPointerCancel={cancelHolding}
       className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left select-none"
     >
-      <div id="immersive-plan-scroll-container" className="flex-1 overflow-y-auto scrollbar-none pb-28">
-        <div id="immersive-plan-hero-wrapper" className="w-full">
-          <div
-            id="immersive-plan-hero-container"
-            className="relative w-full h-[280px] flex flex-col justify-end overflow-visible flex-shrink-0 rounded-b-[2.5rem] border-b border-white/10"
-          >
-            {/* Poster Cover Image */}
-            <DiscoveryImages
-              id="immersive-plan-hero-image"
-              src={selectedPlan.coverImage || getPlanCover(selectedPlan.category, (selectedPlan as any).subcategory || (selectedPlan as any).sports_type)}
-              category={selectedPlan.category}
-              alt={selectedPlan.title}
-              className="absolute inset-0 w-full h-full object-cover filter brightness-[0.75]"
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 pointer-events-none z-10" />
+      {/* 1. FIXED TOP CONTENT */}
+      <div id="immersive-plan-hero-wrapper" className="w-full flex-shrink-0 relative z-20 pb-[78px]">
+        <div
+          id="immersive-plan-hero-container"
+          className="relative w-full h-[280px] flex flex-col justify-end overflow-visible flex-shrink-0 rounded-b-[2.5rem] border-b border-white/10"
+        >
+          {/* Poster Cover Image */}
+          <DiscoveryImages
+            id="immersive-plan-hero-image"
+            src={selectedPlan.coverImage}
+            planId={selectedPlan.dbUuid || selectedPlan.id}
+            category={selectedPlan.category}
+            subcategory={(selectedPlan as any).subcategory || (selectedPlan as any).sports_type}
+            screen="Home Plans Preview"
+            alt={selectedPlan.title}
+            className="absolute inset-0 w-full h-full object-cover filter brightness-[0.75]"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 pointer-events-none z-10" />
 
-            {/* Shared Hero Header - Participant Role Strictly Enforced */}
-            <HeroHeader
-              title={selectedPlan.title}
-              creatorName={selectedPlan.creatorName}
-              creatorAvatar={selectedPlan.creatorAvatar}
-              hosts={allHosts}
-              viewerId={resolvedUserUuid}
-              onClose={onClose}
-              isHost={false}
-            />
+          {/* Shared Hero Header - Participant Role Strictly Enforced */}
+          <HeroHeader
+            title={selectedPlan.title}
+            creatorName={selectedPlan.creatorName}
+            creatorAvatar={selectedPlan.creatorAvatar}
+            hosts={allHosts}
+            viewerId={resolvedUserUuid}
+            onClose={onClose}
+            isHost={false}
+          />
 
-            {/* Integrated Glass Details Card Repositioned */}
-            <div className="absolute left-6 right-6 bottom-0 translate-y-1/2 z-20">
-              <div className="w-full bg-black/15 backdrop-blur-3xl border border-white/[0.06] shadow-lg rounded-2xl relative">
-                <div className="flex flex-col p-4.5 gap-y-3.5 text-left">
-                  {/* 1. Date & Time */}
+          {/* Integrated Glass Details Card Repositioned */}
+          <div className="absolute left-6 right-6 bottom-0 translate-y-1/2 z-20">
+            <div className="w-full bg-black/15 backdrop-blur-3xl border border-white/[0.06] shadow-lg rounded-2xl relative">
+              <div className="flex flex-col p-4.5 gap-y-3.5 text-left">
+                {/* 1. Date & Time */}
+                <div className="flex items-center gap-3 p-1.5 -m-1.5 rounded-xl">
+                  <CalendarDays className="w-4.5 h-4.5 text-white/70 flex-shrink-0" />
+                  <span className="text-[13px] font-semibold text-white/95 leading-none">
+                    {formatPlanDate(selectedPlan.datetime || selectedPlan.createdAt)}
+                  </span>
+                </div>
+
+                {/* 2. Location (Row 2) if location present */}
+                {selectedPlan.location && (
                   <div className="flex items-center gap-3 p-1.5 -m-1.5 rounded-xl">
-                    <CalendarDays className="w-4.5 h-4.5 text-white/70 flex-shrink-0" />
-                    <span className="text-[13px] font-semibold text-white/95 leading-none">
-                      {formatPlanDate(selectedPlan.datetime || selectedPlan.createdAt)}
+                    <MapPin className="w-4.5 h-4.5 text-[#FF5A1F] flex-shrink-0" />
+                    <span className="text-[13px] font-semibold text-white/95 leading-none truncate">
+                      {selectedPlan.location}
                     </span>
                   </div>
+                )}
 
-                  {/* 2. Location (Row 2) if location present */}
-                  {selectedPlan.location && (
-                    <div className="flex items-center gap-3 p-1.5 -m-1.5 rounded-xl">
-                      <MapPin className="w-4.5 h-4.5 text-[#FF5A1F] flex-shrink-0" />
-                      <span className="text-[13px] font-semibold text-white/95 leading-none truncate">
-                        {selectedPlan.location}
-                      </span>
-                    </div>
-                  )}
+                {/* 3. RSVP & Cost Row (Row 3) */}
+                <div className="flex items-center justify-between text-white/50 text-[11px] font-medium leading-none pt-1">
+                  <div className="flex items-center gap-2 text-left">
+                    <Hourglass className="w-3.5 h-3.5 flex-shrink-0" style={{ color: urgencyColor }} />
+                    <span style={{ color: urgencyColor }}>{rsvp.text}</span>
+                  </div>
 
-                  {/* 3. RSVP & Cost Row (Row 3) */}
-                  <div className="flex items-center justify-between text-white/50 text-[11px] font-medium leading-none pt-1">
-                    <div className="flex items-center gap-2 text-left">
-                      <Hourglass className="w-3.5 h-3.5 flex-shrink-0" style={{ color: urgencyColor }} />
-                      <span style={{ color: urgencyColor }}>{rsvp.text}</span>
-                    </div>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setIsCostPopoverOpen((prev) => !prev)}
+                      className="flex items-center gap-2 hover:bg-white/[0.06] active:bg-white/10 transition p-1.5 -m-1.5 rounded-xl cursor-pointer text-right text-white/90 font-semibold"
+                    >
+                      <span>{hasCost && costText ? costText : "Free"}</span>
+                    </button>
 
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setIsCostPopoverOpen((prev) => !prev)}
-                        className="flex items-center gap-2 hover:bg-white/[0.06] active:bg-white/10 transition p-1.5 -m-1.5 rounded-xl cursor-pointer text-right text-white/90 font-semibold"
-                      >
-                        <span>{hasCost && costText ? costText : "Free"}</span>
-                      </button>
-
-                      <CostBreakdownPopover
-                        totalCost={rawDbPlan?.total_cost}
-                        maxParticipants={rawDbPlan?.max_participants}
-                        isOpen={isCostPopoverOpen}
-                        onClose={() => setIsCostPopoverOpen(false)}
-                        isHost={false}
-                        position="above"
-                        align="right"
-                      />
-                    </div>
+                    <CostBreakdownPopover
+                      totalCost={rawDbPlan?.total_cost}
+                      maxParticipants={rawDbPlan?.max_participants}
+                      isOpen={isCostPopoverOpen}
+                      onClose={() => setIsCostPopoverOpen(false)}
+                      isHost={false}
+                      position="above"
+                      align="right"
+                    />
                   </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Scroll Content: Inline Participant View exclusively */}
-        <div id="immersive-plan-scroll-content" className="px-6 pt-[78px] space-y-5">
-          {selectedPlan && (
-            <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} />
-          )}
-        </div>
+      {/* 2. SCROLLABLE PARTICIPANT SECTION ONLY */}
+      <div id="immersive-plan-scroll-content" className="no-hold px-6 flex-1 min-h-0 flex flex-col overflow-hidden">
+        {selectedPlan && (
+          <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} variant="flat" />
+        )}
       </div>
 
 
@@ -639,6 +730,14 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
           handleConfirmSkip();
         }}
         onClose={() => setShowLeavePlanConfirm(false)}
+      />
+
+      <MakeAnotherParticipantHostBottomSheet
+        isOpen={showHostLeaveReplacementSheet}
+        eligibleParticipants={eligibleHostReplacementParticipants}
+        isSubmitting={isSubmittingHostReplacement}
+        onConfirm={handleConfirmHostLeaveReplacement}
+        onClose={() => setShowHostLeaveReplacementSheet(false)}
       />
 
       <PaidPlanLeaveConfirmationDialog

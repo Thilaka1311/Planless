@@ -86,18 +86,135 @@ const PREFIX_TO_BUCKET: Record<string, string> = {
  */
 import defaultAvatarSrc from "../../assets/default_avatar.png";
 import placeholderCoverSrc from "../../assets/placeholder.png";
+import defaultPlanCoverSrc from "../../assets/planimagedefault.png";
 
 const PLACEHOLDER_REGISTRY: Record<ImageType, string> = {
   [ImageType.Avatar]: defaultAvatarSrc,
   [ImageType.DiscoveryCover]: placeholderCoverSrc,
-  [ImageType.PlanCover]: placeholderCoverSrc,
-  [ImageType.Unknown]: placeholderCoverSrc,
+  [ImageType.PlanCover]: defaultPlanCoverSrc,
+  [ImageType.Unknown]: defaultPlanCoverSrc,
 };
 
 // ─── URL cache ────────────────────────────────────────────────────────────────
 
 /** Memoises resolved public URLs so repeated calls are synchronous after first resolution. */
 const urlCache = new Map<string, string>();
+
+/** In-memory version registry for cache-busting after image updates */
+const imageVersions = new Map<string, number>();
+
+/**
+ * Canonical plan-to-image cache mapping.
+ * Maps planId (and storagePath) -> active resolved cover image ("planimagedefault.png" or custom key).
+ */
+const planImageCache = new Map<string, string>();
+
+/**
+ * Get currently cached image name for a plan.
+ */
+export function getPlanCachedImage(planId?: string): string | undefined {
+  if (!planId) return undefined;
+  const cleanId = planId.trim().replace(/\.webp$/i, "").replace(/^plan-images\//, "").split("/")[0];
+  return planImageCache.get(cleanId) || planImageCache.get(`${cleanId}.webp`);
+}
+
+/**
+ * Update the plan's cached image mapping.
+ */
+export function setPlanCachedImage(planId: string, imagePath: string): void {
+  const cleanId = planId.trim().replace(/\.webp$/i, "").replace(/^plan-images\//, "").split("/")[0];
+  planImageCache.set(cleanId, imagePath);
+  planImageCache.set(`${cleanId}.webp`, imagePath);
+  planImageCache.set(`plan-images/${cleanId}.webp`, imagePath);
+  planImageCache.set(imagePath, imagePath);
+  if (imagePath.startsWith("plan-images/")) {
+    planImageCache.set(imagePath.slice("plan-images/".length), imagePath);
+  }
+}
+
+/**
+ * Evict old plan image and synchronously update cache/state to planimagedefault.png.
+ */
+export function evictPlanImage(planId: string): void {
+  const cleanId = planId.trim().replace(/\.webp$/i, "").replace(/^plan-images\//, "").split("/")[0];
+  const storagePath = `${cleanId}.webp`;
+
+  // 1. Remove all possible old discriminator cache keys in urlCache and populate with default asset
+  for (const t of [ImageType.PlanCover, ImageType.DiscoveryCover, ImageType.Avatar, ImageType.Unknown]) {
+    urlCache.delete(`${t}:${storagePath}`);
+    urlCache.delete(`${t}:${cleanId}`);
+    urlCache.delete(`${t}:plan-images/${storagePath}`);
+    for (const key of Array.from(urlCache.keys())) {
+      if (key.includes(cleanId)) {
+        urlCache.delete(key);
+      }
+    }
+    urlCache.set(`${t}:${storagePath}`, defaultPlanCoverSrc);
+    urlCache.set(`${t}:${cleanId}`, defaultPlanCoverSrc);
+    urlCache.set(`${t}:plan-images/${storagePath}`, defaultPlanCoverSrc);
+    urlCache.set(`${t}:planimagedefault.png`, defaultPlanCoverSrc);
+  }
+
+  // 2. Clear old imageVersions for this plan
+  for (const key of Array.from(imageVersions.keys())) {
+    if (key.includes(cleanId)) {
+      imageVersions.delete(key);
+    }
+  }
+
+  // 3. Mark planImageCache as strictly planimagedefault.png
+  setPlanCachedImage(cleanId, "planimagedefault.png");
+
+  // 4. Invalidate browser Cache API if available
+  if (typeof window !== "undefined" && "caches" in window) {
+    try {
+      window.caches.keys().then((keys) => {
+        keys.forEach((key) => {
+          window.caches.open(key).then((cache) => {
+            cache.delete(storagePath);
+            cache.delete(`plan-images/${storagePath}`);
+          });
+        });
+      });
+    } catch {
+      // Ignore in non-browser environments
+    }
+  }
+
+  // 5. Notify all active listeners
+  cacheListeners.forEach((listener) => {
+    try {
+      listener(storagePath, 0);
+      listener("planimagedefault.png", 0);
+      listener(cleanId, 0);
+    } catch {
+      // silent
+    }
+  });
+}
+
+type ImageCacheListener = (path: string, version: number) => void;
+const cacheListeners = new Set<ImageCacheListener>();
+
+/**
+ * Subscribe to image cache updates (called when an image is evicted/updated).
+ */
+export function subscribeToImageCache(listener: ImageCacheListener): () => void {
+  cacheListeners.add(listener);
+  return () => {
+    cacheListeners.delete(listener);
+  };
+}
+
+/**
+ * Get current version number for a storage path.
+ */
+export function getImageVersion(storagePath?: string): number | undefined {
+  if (!storagePath) return undefined;
+  const raw = storagePath.trim();
+  const fileName = raw.split("/").pop();
+  return imageVersions.get(raw) || (fileName ? imageVersions.get(fileName) : undefined);
+}
 
 // ─── Core resolver ────────────────────────────────────────────────────────────
 
@@ -107,6 +224,7 @@ const urlCache = new Map<string, string>();
  * @param storagePath  The raw value stored in the database column.
  *                     Accepted formats:
  *                       - null / undefined / ""    → returns placeholder
+ *                       - "planimagedefault.png"   → returns bundled planimagedefault.png
  *                       - "https://..."            → returned as-is
  *                       - "data:..."               → returned as-is
  *                       - "/assets/..."            → returned as-is
@@ -117,41 +235,68 @@ const urlCache = new Map<string, string>();
  *                     (auto-detect). Pass an explicit ImageType for best performance.
  * @returns            A URL string safe to pass directly to an <img src=>.
  */
-export function resolveImage(
+export interface ResolvedImageDetails {
+  bucket: string;
+  objectKey: string;
+  url: string;
+}
+
+/**
+ * Resolve full details (bucket, objectKey, url) for a stored image path.
+ */
+export function resolveImageDetails(
   storagePath: string | null | undefined,
   imageType: ImageType = ImageType.Unknown
-): string {
+): ResolvedImageDetails {
   const placeholder = PLACEHOLDER_REGISTRY[imageType];
 
-  // ── 1. Empty / missing path → placeholder ─────────────────────────────────
-  if (!storagePath || !storagePath.trim()) {
-    return placeholder;
+  // ── 1. Empty / missing / default plan image path → local asset ───────────────────
+  if (
+    !storagePath ||
+    !storagePath.trim() ||
+    storagePath.trim() === "default" ||
+    storagePath.trim() === "planimagedefault.png" ||
+    storagePath.trim().includes("planimagedefault")
+  ) {
+    return { bucket: "none", objectKey: "planimagedefault.png", url: defaultPlanCoverSrc };
   }
 
   const raw = storagePath.trim();
+  const cleanKey = raw.replace(/\.webp$/i, "").replace(/^plan-images\//, "");
 
-  // ── 2. Already a full URL, data URI, or local asset → passthrough ─────────
+  // Check if planImageCache has mapped this plan or path to planimagedefault.png
+  if (
+    planImageCache.get(raw) === "planimagedefault.png" ||
+    planImageCache.get(cleanKey) === "planimagedefault.png" ||
+    planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.png"
+  ) {
+    return { bucket: "none", objectKey: "planimagedefault.png", url: defaultPlanCoverSrc };
+  }
+
+  // ── 2. Already a full URL, blob URL, data URI, or local asset → passthrough ─────────
   if (
     raw.startsWith("http://") ||
     raw.startsWith("https://") ||
+    raw.startsWith("blob:") ||
     raw.startsWith("data:") ||
     raw.startsWith("/assets/") ||
     raw.startsWith("/")
   ) {
-    return raw;
+    return { bucket: "none", objectKey: raw, url: raw };
   }
 
-  // ── 3. Cache hit ──────────────────────────────────────────────────────────
-  const cacheKey = `${imageType}:${raw}`;
-  if (urlCache.has(cacheKey)) {
-    return urlCache.get(cacheKey)!;
-  }
-
-  // ── 4. Determine bucket ───────────────────────────────────────────────────
+  // ── 3. Determine bucket ───────────────────────────────────────────────────
   let bucket: string;
   let objectKey: string;
 
-  if (imageType !== ImageType.Unknown) {
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/i.test(raw) ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/plancoverimage\d+\.webp$/i.test(raw) ||
+    raw.startsWith("plan-images/")
+  ) {
+    bucket = "plan-images";
+    objectKey = raw.startsWith("plan-images/") ? raw.slice("plan-images/".length) : raw;
+  } else if (imageType !== ImageType.Unknown) {
     // Caller knows the type — use the registry directly.
     bucket = BUCKET_REGISTRY[imageType];
 
@@ -175,12 +320,12 @@ export function resolveImage(
         objectKey = raw.slice(slashIdx + 1);
       } else {
         // Single segment with no slash — cannot determine bucket; return placeholder
-        return placeholder;
+        return { bucket: "none", objectKey: raw, url: placeholder };
       }
     }
   }
 
-  // ── 4.5 Rewrite extensions for discovery images to .webp ──────────────────
+  // ── 4. Rewrite extensions for discovery images to .webp ──────────────────
   if (bucket === "discovery-images" && !objectKey.toLowerCase().endsWith(".webp")) {
     const extIdx = objectKey.lastIndexOf(".");
     if (extIdx !== -1) {
@@ -192,10 +337,51 @@ export function resolveImage(
 
   // ── 5. Generate public URL ─────────────────────────────────────────────────
   const { data } = supabase.storage.from(bucket).getPublicUrl(objectKey);
-  const resolved = data.publicUrl || placeholder;
+  let resolved = data.publicUrl || placeholder;
 
-  urlCache.set(cacheKey, resolved);
-  return resolved;
+  if (resolved && resolved.startsWith("http")) {
+    const version = imageVersions.get(raw) || imageVersions.get(objectKey);
+    if (version) {
+      resolved = `${resolved}?v=${version}`;
+    }
+  }
+
+  return { bucket, objectKey, url: resolved };
+}
+
+/**
+ * Resolve a stored image path into a renderable public URL.
+ */
+export function resolveImage(
+  storagePath: string | null | undefined,
+  imageType: ImageType = ImageType.Unknown
+): string {
+  if (!storagePath || !storagePath.trim()) {
+    return PLACEHOLDER_REGISTRY[imageType];
+  }
+
+  const raw = storagePath.trim();
+  const cleanKey = raw.replace(/\.webp$/i, "").replace(/^plan-images\//, "");
+
+  if (
+    raw === "planimagedefault.png" ||
+    raw === "default" ||
+    raw.includes("planimagedefault") ||
+    planImageCache.get(raw) === "planimagedefault.png" ||
+    planImageCache.get(cleanKey) === "planimagedefault.png" ||
+    planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.png"
+  ) {
+    return defaultPlanCoverSrc;
+  }
+
+  const cacheKey = `${imageType}:${raw}`;
+  if (urlCache.has(cacheKey)) {
+    return urlCache.get(cacheKey)!;
+  }
+
+  const details = resolveImageDetails(raw, imageType);
+  urlCache.set(cacheKey, details.url);
+  return details.url;
 }
 
 /**
@@ -211,9 +397,47 @@ export function evictImageCache(
 ): void {
   if (!storagePath) {
     urlCache.clear();
+    imageVersions.clear();
+    planImageCache.clear();
     return;
   }
-  urlCache.delete(`${imageType}:${storagePath.trim()}`);
+  const raw = storagePath.trim();
+  const fileName = raw.split("/").pop();
+
+  // Clear all possible discriminator cache keys for this path
+  for (const t of [ImageType.PlanCover, ImageType.DiscoveryCover, ImageType.Avatar, ImageType.Unknown, imageType]) {
+    urlCache.delete(`${t}:${raw}`);
+    if (raw.startsWith("plan-images/")) {
+      urlCache.delete(`${t}:${raw.slice("plan-images/".length)}`);
+    } else {
+      urlCache.delete(`${t}:plan-images/${raw}`);
+    }
+    if (fileName) {
+      urlCache.delete(`${t}:${fileName}`);
+      urlCache.delete(`${t}:plan-images/${fileName}`);
+    }
+  }
+
+  const now = Date.now();
+  imageVersions.set(raw, now);
+  if (raw.startsWith("plan-images/")) {
+    imageVersions.set(raw.slice("plan-images/".length), now);
+  } else {
+    imageVersions.set(`plan-images/${raw}`, now);
+  }
+  if (fileName) {
+    imageVersions.set(fileName, now);
+    imageVersions.set(`plan-images/${fileName}`, now);
+  }
+
+  // Notify all subscribed UI components immediately so they re-render with new version
+  cacheListeners.forEach(listener => {
+    try {
+      listener(storagePath || "", now);
+    } catch {
+      // silent
+    }
+  });
 }
 
 /**

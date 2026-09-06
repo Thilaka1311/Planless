@@ -131,6 +131,19 @@ function AppContent({
       if (existingProfile) {
         dbProfile = existingProfile;
       } else {
+        // Double-check that the auth user actually exists on the server before inserting public profile
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError || !userData?.user) {
+          console.warn("[App Startup] Session references a non-existent auth user on the server (stale session):", userError?.message);
+          await supabase.auth.signOut().catch(() => {});
+          localStorage.removeItem(localStorageKey);
+          currentSessionRef.current = null;
+          lastInitializedUserIdRef.current = null;
+          setUserProfile(null);
+          setAppState("unauthenticated");
+          return;
+        }
+
         // Retrieve sequential public ID from the database RPC safely
         const { data: publicId, error: rpcError } = await supabase.rpc("generate_user_public_id");
         if (rpcError) {
@@ -153,6 +166,18 @@ function AppContent({
             .single();
 
           if (insertError) {
+            // Foreign key violation (23503) on users_id_fkey means authUser.id does not exist in auth.users
+            if (insertError.code === "23503") {
+              console.warn("[App Startup] Foreign key violation (23503) on users_id_fkey: auth user not found in auth.users. Clearing stale session.");
+              await supabase.auth.signOut().catch(() => {});
+              localStorage.removeItem(localStorageKey);
+              currentSessionRef.current = null;
+              lastInitializedUserIdRef.current = null;
+              setUserProfile(null);
+              setAppState("unauthenticated");
+              return;
+            }
+
             console.error("[App Startup] Failed to create user profile row:", insertError);
             setAppState("startupError");
             return;
@@ -305,13 +330,22 @@ function AppContent({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleRetry}
-            className="w-full py-3.5 px-6 rounded-xl bg-[#ff5e3a] hover:bg-[#e05230] text-white font-semibold text-sm transition-all shadow-lg shadow-[#ff5e3a]/25 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Retry
-          </button>
+          <div className="w-full flex flex-col space-y-2">
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="w-full py-3.5 px-6 rounded-xl bg-[#ff5e3a] hover:bg-[#e05230] text-white font-semibold text-sm transition-all shadow-lg shadow-[#ff5e3a]/25 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={handleLogoutReset}
+              className="w-full py-3 px-6 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-medium text-sm transition-all border border-zinc-800 active:scale-[0.98]"
+            >
+              Sign In with Another Account
+            </button>
+          </div>
         </div>
       </div>
     );

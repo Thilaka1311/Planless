@@ -1,12 +1,15 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { UserProfile, Plan } from "../../../core/types";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { PlansDetailsScreen } from "../../plans/screens/PlansScreen/PlansPreview/PlansPreviewScreen";
+import { pickImageFromGallery } from "../../../shared/utils/imageUtils";
+import { PlanImageEditorModal } from "../components/PlanImageEditorModal";
 
 interface CreatePlanReviewProps {
   form: any;
   selectedCategory: string;
   selectedSubcategory: string | null;
+  onExit?: () => void;
   onBack: () => void;
   onEditDate?: () => void;
   onEditParticipants?: () => void;
@@ -19,6 +22,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
   form,
   selectedCategory,
   selectedSubcategory,
+  onExit,
   onBack,
   onEditDate,
   onEditParticipants,
@@ -26,6 +30,20 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
   onSubmit,
   isSubmitting,
 }) => {
+  const [editorImageFile, setEditorImageFile] = useState<File | Blob | string | null>(null);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+
+  const handlePickCoverImage = async () => {
+    try {
+      const file = await pickImageFromGallery();
+      if (!file) return;
+      setEditorImageFile(file);
+      setIsEditorOpen(true);
+    } catch (err: any) {
+      console.error("[CreatePlanReview] Error picking cover image:", err);
+    }
+  };
+
   const totalInvited = (form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0);
   const capacity = form.totalCapacity !== undefined ? form.totalCapacity : (totalInvited || 2);
   const isAssignedMode = form.waitlistMode === 'assigned';
@@ -177,14 +195,17 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
       response_deadline_at: computedDeadlineIso,
       isDeadlineConfigured: isDeadlineConfigured,
       location: resolvedLocation,
-      cost: isCostConfigured ? (form.costAmount || 0) : undefined,
-      paymentAmount: isCostConfigured ? (form.costAmount || 0) : undefined,
-      total_cost: isCostConfigured ? (form.costAmount || 0) : undefined,
+      cost: isCostConfigured ? Number(form.costAmount || 0) : undefined,
+      paymentAmount: isCostConfigured ? Number(form.costAmount || 0) : undefined,
+      total_cost: isCostConfigured ? Number(form.costAmount || 0) : undefined,
       isCostConfigured: isCostConfigured,
       capacity: capacity,
       joinLimit: capacity,
       maxSpots: capacity,
-      maxParticipants: capacity,
+      plan_size: capacity,
+      planSize: capacity,
+      maxParticipants: Math.max(capacity || 2, allMembers.length || 2),
+      max_participants: Math.max(capacity || 2, allMembers.length || 2),
       waitlistEnabled: form.waitlistEnabled ?? true,
       participantFiltering: isAssignedMode ? 'ASSIGNED' : 'AUTOMATIC',
       participant_filtering: isAssignedMode ? 'ASSIGNED' : 'AUTOMATIC',
@@ -214,38 +235,55 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
   };
 
   return (
-    <PlansDetailsScreen
-      createMode={true}
-      plan={syntheticPlan}
-      userProfile={userProfile}
-      activeUserId={userProfile.dbUuid || (userProfile as any)?.id}
-      onClose={onBack}
-      onBack={onBack}
-      onEditParticipants={onEditParticipants}
-      onAddParticipants={onAddParticipants}
-      onEditTitle={(newTitle) => form.setLocalTitle(newTitle)}
-      onAdjustDate={(eventDate, rsvpDate) => {
-        form.setEventDateTime(eventDate);
-        if (rsvpDate) {
-          form.setCustomDeadline(rsvpDate);
-          form.setRsvpDeadline('Custom');
-        }
-        form.setIsDateManuallySet(true);
-      }}
-      onAdjustCost={(newCost) => {
-        form.setCostAmount(newCost);
-        form.setIsCostManuallySet(true);
-      }}
-      onAdjustLocation={(loc) => {
-        form.setLocalLocation(loc.place_name || loc.place_address || '');
-        if (loc.place_id) form.setPlaceId(loc.place_id);
-        if (loc.place_address) form.setPlaceAddress(loc.place_address);
-        if (loc.latitude) form.setLatitude(loc.latitude);
-        if (loc.longitude) form.setLongitude(loc.longitude);
-      }}
-      onAdjustCapacity={(newCap) => form.setTotalCapacity(newCap)}
-      onSubmit={onSubmit}
-      isSubmitting={isSubmitting}
-    />
+    <>
+      <PlansDetailsScreen
+        createMode={true}
+        plan={syntheticPlan}
+        userProfile={userProfile}
+        activeUserId={userProfile.dbUuid || (userProfile as any)?.id}
+        onClose={onExit || onBack}
+        onBack={onExit || onBack}
+        onEditParticipants={onEditParticipants}
+        onAddParticipants={onAddParticipants}
+        onEditTitle={(newTitle) => form.setLocalTitle(newTitle)}
+        onEditCoverImage={handlePickCoverImage}
+        onAdjustDate={(eventDate, rsvpDate) => {
+          form.setEventDateTime(eventDate);
+          if (rsvpDate) {
+            form.setCustomDeadline(rsvpDate);
+            form.setRsvpDeadline('Custom');
+          }
+          form.setIsDateManuallySet(true);
+        }}
+        onAdjustCost={(newCost) => {
+          form.setCostAmount(newCost);
+          form.setIsCostManuallySet(true);
+        }}
+        onAdjustLocation={(loc) => {
+          form.setLocalLocation(loc.place_name || loc.place_address || '');
+          if (loc.place_id) form.setPlaceId(loc.place_id);
+          if (loc.place_address) form.setPlaceAddress(loc.place_address);
+          if (loc.latitude) form.setLatitude(loc.latitude);
+          if (loc.longitude) form.setLongitude(loc.longitude);
+        }}
+        onAdjustCapacity={(newCap) => form.setTotalCapacity(newCap)}
+        onSubmit={onSubmit}
+        isSubmitting={isSubmitting}
+      />
+
+      <PlanImageEditorModal
+        imageSrc={editorImageFile}
+        isOpen={isEditorOpen}
+        onClose={() => {
+          setIsEditorOpen(false);
+          setEditorImageFile(null);
+        }}
+        onSave={({ previewUrl, blob }) => {
+          form.setCustomCoverImage(previewUrl, blob);
+          setIsEditorOpen(false);
+          setEditorImageFile(null);
+        }}
+      />
+    </>
   );
 };

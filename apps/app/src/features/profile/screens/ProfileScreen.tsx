@@ -7,7 +7,6 @@ import {
   Bell,
   Lock,
   CreditCard,
-  Wallet,
   LogOut,
   Check,
   X,
@@ -118,14 +117,6 @@ export const ProfileScreen = ({
       label: 'Privacy',
       icon: <Lock className="w-4.5 h-4.5 text-zinc-400" />,
       onClick: () => setActiveSheet('privacy')
-    },
-    {
-      id: 'wallet',
-      label: 'Wallet',
-      icon: <Wallet className="w-4.5 h-4.5 text-zinc-400" />,
-      onClick: () => {
-        setShowDepositModal(true);
-      }
     },
     {
       id: 'logout',
