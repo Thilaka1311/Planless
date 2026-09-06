@@ -114,6 +114,9 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     };
   }, [isHostSelected, userProfile?.dbUuid, userProfile?.name, userProfile?.avatar, userProfile?.profile_photo]);
 
+  const isConfigured = Boolean(isCapacityConfigured && capacity !== undefined);
+  const totalInvitedCount = (hostItem ? 1 : 0) + selectedFriends.length;
+
   const [internalGoingList, setInternalGoingList] = useState<Friend[]>(() => {
     if (mode !== 'wizard') return [];
     const savedDraft = getSavedDraftParticipants();
@@ -239,9 +242,6 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   });
 
   const isInitializedRef = React.useRef(false);
-
-  const totalInvitedCount = (hostItem ? 1 : 0) + selectedFriends.length;
-  const isConfigured = Boolean(isCapacityConfigured && capacity !== undefined);
 
   const persistParticipantState = React.useCallback(
     (going: Friend[], wait: Friend[]) => {
