@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from './types';
-import { formatSkipReason } from '../../../../lib/participantStatus';
+import { formatSkipReason, getParticipantRsvpDisplayStatus, isJoinedRsvpParticipant } from '../../../../lib/participantStatus';
 
 interface ParticipantActionSheetProps {
   selectedItem: Friend | null;
@@ -103,13 +103,7 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 16, fontWeight: 600 }}>{selectedItem.name}</span>
             <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)' }}>
-              {sheetType === 'going'
-                ? 'Going'
-                : sheetType === 'waitlist'
-                ? 'Waitlist'
-                : sheetType === 'skipped'
-                ? (formatSkipReason(selectedItem.skipReason) || 'Skipped')
-                : 'Invited'}
+              {getParticipantRsvpDisplayStatus(selectedItem)}
             </span>
           </div>
         </div>
@@ -134,8 +128,8 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
               </button>
             )}
 
-            {/* Make Host — only when participant has accepted (rsvpStatus === 'JOINED') and not in waitlist/skipped */}
-            {onPromoteHost && sheetType !== 'waitlist' && sheetType !== 'skipped' && selectedItem.rsvpStatus === 'JOINED' && !selectedItem.isHost && (
+            {/* Make Host — only when participant has accepted (rsvpStatus === 'JOINED') */}
+            {onPromoteHost && isJoinedRsvpParticipant(selectedItem) && !selectedItem.isHost && (
               <button
                 onClick={() => {
                   executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));

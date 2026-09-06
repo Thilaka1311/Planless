@@ -7,9 +7,12 @@ export interface PlanSizeBottomsheetProps {
   capacity?: number;
   invitedCount?: number;
   joinedCount?: number;
+  waitlistedCount?: number;
   minCapacity?: number;
   maxCapacity?: number;
   onCapacityChange: (newCapacity: number) => void | Promise<void>;
+  onIncrement?: () => void;
+  onDecrement?: () => void;
   onSave?: () => void;
   onClose: () => void;
   onAddParticipants?: () => void;
@@ -22,14 +25,20 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   capacity,
   invitedCount,
   joinedCount,
+  waitlistedCount,
   minCapacity = 2,
   maxCapacity = 50,
   onCapacityChange,
+  onIncrement,
+  onDecrement,
   onSave,
   onClose,
   onAddParticipants,
 }) => {
-  const effectiveMaxCapacity = Math.max(minCapacity, maxCapacity);
+  const effectiveMaxCapacity =
+    invitedCount !== undefined
+      ? Math.max(minCapacity, Math.min(invitedCount, maxCapacity))
+      : Math.max(minCapacity, maxCapacity);
   const initialValidCapacity = Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity || minCapacity));
 
   const [draftCapacity, setDraftCapacity] = useState<number>(initialValidCapacity);
@@ -41,7 +50,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   const draftCapacityRef = useRef<number>(initialValidCapacity);
   const hasCommittedRef = useRef(false);
 
-  // Sync draftCapacity and originalCapacityRef ONLY when sheet transitions from closed to open
+  // Sync draftCapacity when capacity prop changes or sheet opens
   useEffect(() => {
     if (isOpen && !prevIsOpenRef.current) {
       const valid = Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity ?? minCapacity));
@@ -50,9 +59,13 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
       originalCapacityRef.current = valid;
       hasCommittedRef.current = false;
       setShowInviteHint(false);
+    } else if (isOpen && (onIncrement || onDecrement) && capacity !== undefined) {
+      const valid = Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity));
+      setDraftCapacity(valid);
+      draftCapacityRef.current = valid;
     } else if (!isOpen && prevIsOpenRef.current) {
       // In case sheet was closed from external state without handleClose having been called
-      if (!hasCommittedRef.current) {
+      if (!hasCommittedRef.current && !onIncrement && !onDecrement) {
         hasCommittedRef.current = true;
         const finalVal = draftCapacityRef.current;
         const originalVal = originalCapacityRef.current;
@@ -70,13 +83,16 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
       }
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen, capacity, effectiveMaxCapacity, minCapacity, onCapacityChange, onSave]);
+  }, [isOpen, capacity, effectiveMaxCapacity, minCapacity, onCapacityChange, onSave, onIncrement, onDecrement]);
 
   const currentCapacity = Math.max(minCapacity, Math.min(effectiveMaxCapacity, draftCapacity));
 
-  // Purely LOCAL state change - NO database call while sheet is open
   const handleDecrement = () => {
     setShowInviteHint(false);
+    if (onDecrement) {
+      onDecrement();
+      return;
+    }
     if (currentCapacity > minCapacity) {
       const nextVal = currentCapacity - 1;
       setDraftCapacity(nextVal);
@@ -84,20 +100,24 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
     }
   };
 
-  // Purely LOCAL state change - NO database call while sheet is open
   const handleIncrement = () => {
     if (currentCapacity >= effectiveMaxCapacity) {
       setShowInviteHint(true);
       return;
     }
     setShowInviteHint(false);
+    if (onIncrement) {
+      onIncrement();
+      return;
+    }
     const nextVal = currentCapacity + 1;
     setDraftCapacity(nextVal);
     draftCapacityRef.current = nextVal;
   };
 
-  // Commit exactly once when closing, and only if value actually changed
+  // Commit exactly once when closing, and only if value actually changed (when not using onIncrement/onDecrement)
   const commitChangeIfDifferent = () => {
+    if (onIncrement || onDecrement) return;
     if (hasCommittedRef.current) return;
     hasCommittedRef.current = true;
     const finalVal = draftCapacityRef.current;
@@ -127,11 +147,21 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   };
 
   const isCapacityReached = joinedCount !== undefined ? joinedCount >= currentCapacity : true;
-  const waitlistedCount = isCapacityReached && invitedCount !== undefined ? Math.max(0, invitedCount - currentCapacity) : 0;
+  const effectiveWaitlistedCount =
+    waitlistedCount !== undefined
+      ? waitlistedCount
+      : isCapacityReached && invitedCount !== undefined
+      ? Math.max(0, invitedCount - currentCapacity)
+      : 0;
+  const effectiveGoingCount =
+    joinedCount !== undefined
+      ? joinedCount
+      : Math.min(currentCapacity, invitedCount ?? currentCapacity);
+
   const capacitySummary =
-    waitlistedCount > 0
-      ? `${currentCapacity} going • ${waitlistedCount} waitlisted`
-      : `${currentCapacity} going`;
+    effectiveWaitlistedCount > 0
+      ? `${effectiveGoingCount} going • ${effectiveWaitlistedCount} waitlisted`
+      : `${effectiveGoingCount} going`;
 
   return (
     <AnimatePresence>

@@ -917,11 +917,20 @@ export function usePlanParticipants({
       throw new Error("Unauthorized: Only a Plan Host can manage or remove participants.");
     }
 
-    // Inspect if target participant requested leave
+    // Inspect if target participant requested leave and their RSVP status
     const targetParticipant = dbPlanParticipants.find(
       pp => (pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedParticipantUuid || pp.user_id === participantUserUuid)
     );
+    const targetMember = matchedPlan?.members?.find(
+      (m: any) => {
+        const mId = m.userId || m.userUuid || m.user_id || m.id || m.dbUuid;
+        return mId === resolvedParticipantUuid || mId === participantUserUuid;
+      }
+    );
     const isTargetLeaveRequested = Boolean(targetParticipant?.leave_requested === true);
+    const rawTargetStatus = targetParticipant?.rsvp_status || targetMember?.rsvp_status || targetMember?.joinState;
+    const targetStatus = normalizeStatus(rawTargetStatus);
+    const isTargetInvited = targetStatus === 'INVITED';
 
     // Automatic waitlist plan-size evaluation:
     const matchedDbPlan = dbPlans.find(p => p.id === planUuid || p.id === planId || (p as any).dbUuid === planUuid);
@@ -983,21 +992,30 @@ export function usePlanParticipants({
       ? Math.max(2, targetCapacity, remainingInvitedCount)
       : Math.max(currentMaxParticipants, remainingInvitedCount);
 
-    // Optimistic state update: set target participant as SKIPPED immediately
-    setDbPlanParticipants(prev => prev.map(pp => {
-      if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedParticipantUuid || pp.user_id === participantUserUuid)) {
-        return {
-          ...pp,
-          rsvp_status: "SKIPPED" as const,
-          assigned_group: null,
-          waitlist_position: null,
-          leave_requested: false,
-          leave_requested_at: null,
-          skip_reason: isTargetLeaveRequested ? "LEFT" : "REMOVED"
-        };
-      }
-      return pp;
-    }));
+    // Optimistic state update:
+    // If participant is still INVITED, remove them entirely from local state.
+    // If participant has interacted (e.g. JOINED, WAITLISTED), preserve existing transition to SKIPPED.
+    if (isTargetInvited) {
+      setDbPlanParticipants(prev => prev.filter(pp =>
+        !((pp.plan_id === planUuid || pp.plan_id === planId) &&
+          (pp.user_id === resolvedParticipantUuid || pp.user_id === participantUserUuid))
+      ));
+    } else {
+      setDbPlanParticipants(prev => prev.map(pp => {
+        if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedParticipantUuid || pp.user_id === participantUserUuid)) {
+          return {
+            ...pp,
+            rsvp_status: "SKIPPED" as const,
+            assigned_group: null,
+            waitlist_position: null,
+            leave_requested: false,
+            leave_requested_at: null,
+            skip_reason: isTargetLeaveRequested ? "LEFT" : "REMOVED"
+          };
+        }
+        return pp;
+      }));
+    }
 
     // Optimistic plan size & max_participants update: update immediately in local state
     if (setDbPlans && (shouldDecreasePlanSize || targetMaxParticipants !== currentMaxParticipants)) {

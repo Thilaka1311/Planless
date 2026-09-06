@@ -162,7 +162,14 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
     }
 
     // LOCAL_DEFAULT (cover_image absent, deleted, or planimagedefault.png)
-    const defaultAsset = cleanedPath && (cleanedPath.startsWith("/assets/") || cleanedPath.startsWith("/"))
+    const defaultAsset = cleanedPath && (
+      cleanedPath.startsWith("/assets/") ||
+      cleanedPath.startsWith("/") ||
+      cleanedPath.startsWith("blob:") ||
+      cleanedPath.startsWith("data:") ||
+      cleanedPath.startsWith("http://") ||
+      cleanedPath.startsWith("https://")
+    )
       ? cleanedPath
       : PLAN_COVER_IMAGES.default;
     return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };

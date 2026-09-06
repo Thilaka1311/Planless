@@ -955,45 +955,52 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const allPlanMembers = useMemo(() => {
     const seenMemberIds = new Set<string>();
     const list: any[] = [];
+    const currentPlanId = plan.id || plan.dbUuid;
+
+    const planDbRows = (dbPlanParticipants || []).filter(
+      (pp: any) => !currentPlanId || pp.plan_id === currentPlanId
+    );
+    const hasDbParticipants = planDbRows.length > 0;
 
     // 1. Members already mapped in plan.members
     members.forEach((m) => {
-      const mId = m.userId || m.userUuid || m.user_id || m.id;
+      const mId = m.userId || m.userUuid || m.user_id || m.id || m.dbUuid;
       if (!mId || seenMemberIds.has(mId)) return;
+      // If DB participants are loaded for this plan, verify this member is still present in dbPlanParticipants
+      if (hasDbParticipants && !planDbRows.some((pp: any) => pp.user_id === mId)) {
+        return;
+      }
       seenMemberIds.add(mId);
       list.push(m);
     });
 
     // 2. Optimistic additions from dbPlanParticipants that haven't been written to plan.members yet
-    const currentPlanId = plan.id || plan.dbUuid;
-    (dbPlanParticipants || []).forEach((pp: any) => {
-      if (!currentPlanId || pp.plan_id === currentPlanId) {
-        const uId = pp.user_id;
-        if (uId && !seenMemberIds.has(uId)) {
-          seenMemberIds.add(uId);
-          const foundCandidate = candidateUsers.find((u: any) => u.id === uId);
-          const foundFriend = (AVAILABLE_FRIENDS || []).find((f: any) => f.id === uId);
-          const foundStoreFriend = (friends || []).find((f: any) => (f.id === uId || (f as any).dbUuid === uId));
-          const foundFetched = (fetchedFriends || []).find((f: any) => (f.id === uId || (f as any).dbUuid === uId));
+    planDbRows.forEach((pp: any) => {
+      const uId = pp.user_id;
+      if (uId && !seenMemberIds.has(uId)) {
+        seenMemberIds.add(uId);
+        const foundCandidate = candidateUsers.find((u: any) => u.id === uId);
+        const foundFriend = (AVAILABLE_FRIENDS || []).find((f: any) => f.id === uId);
+        const foundStoreFriend = (friends || []).find((f: any) => (f.id === uId || (f as any).dbUuid === uId));
+        const foundFetched = (fetchedFriends || []).find((f: any) => (f.id === uId || (f as any).dbUuid === uId));
 
-          const name = pp.user_profile?.full_name || foundCandidate?.full_name || (foundFriend as any)?.name || (foundStoreFriend as any)?.name || (foundFetched as any)?.name || "Participant";
-          const avatar = pp.user_profile?.profile_photo || (foundCandidate as any)?.profile_photo || (foundFriend as any)?.avatar || (foundStoreFriend as any)?.avatar || (foundFetched as any)?.avatar || "";
+        const name = pp.user_profile?.full_name || foundCandidate?.full_name || (foundFriend as any)?.name || (foundStoreFriend as any)?.name || (foundFetched as any)?.name || "Participant";
+        const avatar = pp.user_profile?.profile_photo || (foundCandidate as any)?.profile_photo || (foundFriend as any)?.avatar || (foundStoreFriend as any)?.avatar || (foundFetched as any)?.avatar || "";
 
-          list.push({
-            userId: uId,
-            userUuid: uId,
-            name,
-            avatar,
-            role: pp.role || 'PARTICIPANT',
-            isHost: pp.role === 'HOST',
-            joinState: normalizeStatus(pp.rsvp_status),
-            assignedGroup: pp.assigned_group || null,
-            waitlistPosition: pp.waitlist_position ?? null,
-            joinedAt: pp.responded_at || pp.created_at,
-            created_at: pp.created_at,
-            updated_at: pp.updated_at,
-          });
-        }
+        list.push({
+          userId: uId,
+          userUuid: uId,
+          name,
+          avatar,
+          role: pp.role || 'PARTICIPANT',
+          isHost: pp.role === 'HOST',
+          joinState: normalizeStatus(pp.rsvp_status),
+          assignedGroup: pp.assigned_group || null,
+          waitlistPosition: pp.waitlist_position ?? null,
+          joinedAt: pp.responded_at || pp.created_at,
+          created_at: pp.created_at,
+          updated_at: pp.updated_at,
+        });
       }
     });
 
@@ -1557,7 +1564,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         (m: any) => (m.userId || m.userUuid || m.user_id || m.id) === targetId
       );
 
-      const targetStatus = normalizeStatus((friend as any).joinState || (friend as any).rsvp_status || memberRecord?.joinState || memberRecord?.rsvp_status || 'JOINED');
+      const targetStatus = normalizeStatus(friend.rsvpStatus || (friend as any).rsvp_status || (friend as any).joinState || memberRecord?.rsvp_status || memberRecord?.joinState || 'INVITED');
       const targetRole = memberRecord?.role || (friend.isHost ? 'HOST' : 'PARTICIPANT');
 
       const isAlreadyHost = friend.isHost || targetRole === 'HOST';

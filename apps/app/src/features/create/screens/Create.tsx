@@ -24,6 +24,7 @@ import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import defaultPlanCover from "../../../assets/planimagedefault.png";
 import { uploadPlanImage } from "../../../shared/utils/imageUtils";
+import { clearDraftParticipants, clearCreatePlanDraft } from "../utils/draftParticipantStorage";
 
 
 interface CreatePlanScreenProps {
@@ -269,8 +270,13 @@ export const CreatePlanScreen = ({
     // Formatting Standard: Saturday, Jun 27 • 7:30 PM
     const timeToUse = formatDateTimeStandard(planEventDate);
     const planId = `p_${Date.now()}`;
-    const hasCustomImage = form.customCoverImage && form.customCoverImage.startsWith("data:");
-    const coverUrl = hasCustomImage
+    const isLocalCustomImage = Boolean(
+      form.customCoverImage &&
+      (form.customCoverImage.startsWith("data:") ||
+        form.customCoverImage.startsWith("blob:") ||
+        form.customCoverImage === "custom_draft_blob")
+    );
+    const coverUrl = isLocalCustomImage
       ? getCategoryImage(selectedCategory, selectedSubcategory)
       : (form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory));
 
@@ -370,6 +376,8 @@ export const CreatePlanScreen = ({
 
       setPostedPlanUuid(dbPlanRow?.id || null);
       setCreatePhase("confirmation");
+      clearDraftParticipants();
+      clearCreatePlanDraft();
       form.setIsSubmitting(false);
       showToast("✨ Plan created successfully!");
     } catch (err: any) {
@@ -711,7 +719,7 @@ export const CreatePlanScreen = ({
         form.resetForm();
         form.setLocalTitle("");
         form.setLocalLocation("");
-        form.setCustomCoverImage(defaultPlanCover);
+        form.setCustomCoverImage(null, null);
         form.setCostAmount(0);
         form.setIsCostManuallySet(false);
         form.setIsDateManuallySet(false);

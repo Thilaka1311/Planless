@@ -43,6 +43,7 @@ export interface SharedParticipantScreenProps {
   isHostUser?: boolean;
   onBack: () => void;
   onContinue?: (going: Friend[], waitlist: Friend[]) => void;
+  onParticipantsChange?: (going: Friend[], waitlist: Friend[]) => void;
   onClose?: () => void;
   onAddFriends?: (targetTab?: ParticipantTab) => void;
   onAdjustCapacity?: (newCapacity: number) => void;
@@ -61,6 +62,7 @@ export interface SharedParticipantScreenProps {
   onPlanSizeEditingChange?: (isEditing: boolean) => void;
   isHostSelected?: boolean;
   selectedFriends?: Friend[];
+  priorityGuestIds?: string[];
   externalGoingList?: Friend[];
   externalWaitlist?: Friend[];
   externalInvitedList?: Friend[];

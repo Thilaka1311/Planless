@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from '../shared/types';
-import { formatSkipReason, getEffectiveParticipantState } from '../../../../lib/participantStatus';
+import { formatSkipReason, getEffectiveParticipantState, getParticipantRsvpDisplayStatus, isJoinedRsvpParticipant } from '../../../../lib/participantStatus';
 
 interface AssignedParticipantActionsProps {
   selectedItem: Friend | null;
@@ -9,6 +9,7 @@ interface AssignedParticipantActionsProps {
   showConfirmRemove: boolean;
   isHostUser: boolean;
   userProfile?: any;
+  mode?: 'wizard' | 'editor';
   goingCount?: number;
   waitlistCount?: number;
   onClose: () => void;
@@ -34,6 +35,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
   showConfirmRemove,
   isHostUser,
   userProfile,
+  mode,
   goingCount,
   waitlistCount,
   onClose,
@@ -58,7 +60,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
 
   if (!selectedItem || !sheetType) return null;
 
-  const canMoveToWaitlist = (goingCount === undefined || goingCount > 2) || (waitlistCount !== undefined && waitlistCount > 0);
+  const canMoveToWaitlist = mode === 'wizard' || (goingCount === undefined || goingCount > 2) || (waitlistCount !== undefined && waitlistCount > 0);
 
   const executeActionWithImmediateDismiss = (actionFn: () => Promise<void> | void) => {
     if (isActionProcessingRef.current) return;
@@ -131,17 +133,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 16, fontWeight: 600 }}>{selectedItem.name}</span>
             <span style={{ fontSize: 12, color: (isLeaveRequested || isRejoined) ? '#FFFFFF' : 'rgba(255, 255, 255, 0.4)', fontWeight: 400 }}>
-              {isRejoined
-                ? 'Wants to rejoin this plan'
-                : isLeaveRequested
-                ? 'Wants to leave this plan'
-                : isSkipped
-                ? skipLabel
-                : sheetType === 'going'
-                ? 'Joined'
-                : sheetType === 'waitlist'
-                ? 'Waitlist'
-                : 'Invited'}
+              {getParticipantRsvpDisplayStatus(selectedItem)}
             </span>
           </div>
         </div>
@@ -388,7 +380,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                     </button>
                   )}
 
-                  {onPromoteHost && effectiveState === 'GOING' && !selectedItem.isHost && (
+                  {onPromoteHost && isJoinedRsvpParticipant(selectedItem) && !selectedItem.isHost && (
                     <button
                       onClick={() => {
                         executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));

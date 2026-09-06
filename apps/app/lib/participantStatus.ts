@@ -60,6 +60,118 @@ export function formatSkipReason(reason?: string | null): string {
   }
 }
 
+/**
+ * Resolves the user-facing RSVP display status for a participant
+ * based strictly on their actual RSVP status (not their assigned group or contextual tab).
+ */
+export function getParticipantRsvpDisplayStatus(
+  item: {
+    rsvpStatus?: string;
+    isAccepted?: boolean;
+    isHost?: boolean;
+    leave_requested?: boolean;
+    skipReason?: string | null;
+    [key: string]: any;
+  } | null
+): string {
+  if (!item) return '';
+
+  const rawRsvp = String(
+    item.rsvpStatus ||
+    (item as any).rsvp_status ||
+    (item as any).joinState ||
+    (item as any).status ||
+    ''
+  ).trim().toUpperCase();
+
+  const isRejoined = rawRsvp === 'REJOINED';
+  const isLeaveRequested = item.leave_requested === true;
+
+  if (isRejoined) {
+    return 'Wants to rejoin this plan';
+  }
+
+  if (isLeaveRequested) {
+    return 'Wants to leave this plan';
+  }
+
+  if (rawRsvp === 'SKIPPED' || Boolean(item.skipReason || (item as any).skip_reason)) {
+    return formatSkipReason(item.skipReason || (item as any).skip_reason) || 'Skipped';
+  }
+
+  if (rawRsvp === 'DECLINED') {
+    return 'Declined';
+  }
+
+  if (rawRsvp === 'MAYBE') {
+    return 'Maybe';
+  }
+
+  if (rawRsvp === 'JOINED' || rawRsvp === 'GOING' || rawRsvp === 'ACCEPTED' || rawRsvp === 'CONFIRMED' || item.isHost) {
+    return 'Joined';
+  }
+
+  if (rawRsvp === 'WAITLISTED' || rawRsvp === 'WAITLIST') {
+    return 'Waitlist';
+  }
+
+  if (rawRsvp === 'INVITED') {
+    return 'Invited';
+  }
+
+  if (item.isAccepted) {
+    return 'Joined';
+  }
+
+  if (rawRsvp) {
+    return rawRsvp.charAt(0).toUpperCase() + rawRsvp.slice(1).toLowerCase();
+  }
+
+  return 'Invited';
+}
+
+/**
+ * Checks if a participant has an active Joined/Going RSVP status.
+ * Returns true ONLY if participant's RSVP status is Joined/Going (or host).
+ * Non-joined states (Invited, Waitlist, Declined, Skipped, etc.) return false.
+ */
+export function isJoinedRsvpParticipant(
+  item: {
+    rsvpStatus?: string;
+    isAccepted?: boolean;
+    isHost?: boolean;
+    [key: string]: any;
+  } | null
+): boolean {
+  if (!item) return false;
+  if (item.isHost) return true;
+
+  const raw = String(
+    item.rsvpStatus ||
+    (item as any).rsvp_status ||
+    (item as any).joinState ||
+    (item as any).status ||
+    ''
+  ).trim().toUpperCase();
+
+  if (raw === 'JOINED' || raw === 'GOING' || raw === 'ACCEPTED' || raw === 'CONFIRMED') {
+    return true;
+  }
+
+  if (
+    raw === 'INVITED' ||
+    raw === 'WAITLIST' ||
+    raw === 'WAITLISTED' ||
+    raw === 'SKIPPED' ||
+    raw === 'DECLINED' ||
+    raw === 'REJOINED'
+  ) {
+    return false;
+  }
+
+  return Boolean(item.isAccepted);
+}
+
 export type EffectiveParticipantState = 'GOING' | 'WAITLIST' | 'SKIPPED' | 'INVITED';
 
 /**

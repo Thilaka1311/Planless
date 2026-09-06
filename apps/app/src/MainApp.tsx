@@ -35,6 +35,12 @@ import { HostedPlansScreen } from "./features/plans/screens/PlansScreen/HostedPl
 import { PastPlans } from "./features/profile/screens/PastPlans";
 import { ChatsScreen } from "./features/chats/screens/ChatsScreen";
 import { PlanChatScreen } from "./features/chats/screens/PlanChatScreen";
+import {
+  parseCurrentRoute,
+  navigateToRoute,
+  listenToNavigation,
+} from "./features/navigation/appRouter";
+import { getSavedCreatePlanDraft } from "./features/create/utils/draftParticipantStorage";
 
 interface MainAppProps {
   userProfile: UserProfile;
@@ -50,15 +56,34 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const { walletBalance, transactions, dbTransactions, setDbTransactions, refreshTransactions } = useWalletStore();
   const { friends } = useFriendshipStore();
 
+  const initialRoute = React.useMemo(() => parseCurrentRoute(), []);
+
   // --- Core Navigation Tab state ---
   const [activeTab, setActiveTab] = useState<any>(() => {
+    if (initialRoute.tab) return initialRoute.tab;
     const saved = localStorage.getItem("planless_active_tab");
     return saved === "wallet" ? "home" : (saved as any) || "home";
   });
-  const [childrenWantBottomNavHidden, setChildrenWantBottomNavHidden] = useState(false);
+  // Determine whether the initial route should be a full-screen flow without bottom nav
+  const isFullScreenRoute = React.useCallback((route: typeof initialRoute): boolean => {
+    if (route.selectedPlanId) return true;
+    if (route.selectedChatPlanId) return true;
+    if (route.tab === "create") {
+      const draft = getSavedCreatePlanDraft();
+      const phase = route.createPhase || (draft?.createPhase !== "confirmation" ? draft?.createPhase : undefined);
+      // In Create flow: category screen has bottom nav; wizard screens (who, who-actually, when, review, confirmation) do not
+      if (phase && phase !== "category") return true;
+    }
+    return false;
+  }, []);
+
+  const [childrenWantBottomNavHidden, setChildrenWantBottomNavHidden] = useState(() => {
+    return isFullScreenRoute(initialRoute);
+  });
 
   // --- Shared Overlays & Interactive States ---
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(() => {
+    if (initialRoute.selectedPlanId) return initialRoute.selectedPlanId;
     return localStorage.getItem("planless_selected_plan_id");
   });
   const [selectedPlanSource, setSelectedPlanSource] = useState<"list" | "chat" | "deep_link" | string>("list");
@@ -67,9 +92,43 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const { showToast } = useToast();
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
 
+  const prevTabRef = useRef(activeTab);
   React.useEffect(() => {
-    setChildrenWantBottomNavHidden(false);
+    if (prevTabRef.current !== activeTab) {
+      prevTabRef.current = activeTab;
+      setChildrenWantBottomNavHidden(false);
+    }
   }, [activeTab]);
+
+  // Synchronize route and URL with activeTab and selectedPlanId
+  const isFirstRouteSync = React.useRef(true);
+  React.useEffect(() => {
+    localStorage.setItem("planless_active_tab", activeTab);
+    if (activeTab !== "create") {
+      const isInitial = isFirstRouteSync.current;
+      isFirstRouteSync.current = false;
+      if (selectedPlanId) {
+        localStorage.setItem("planless_selected_plan_id", selectedPlanId);
+        navigateToRoute({ tab: activeTab, selectedPlanId }, { replace: isInitial });
+      } else {
+        localStorage.removeItem("planless_selected_plan_id");
+        navigateToRoute({ tab: activeTab }, { replace: isInitial });
+      }
+    }
+  }, [activeTab, selectedPlanId]);
+
+  // Listen for external / popstate route changes
+  React.useEffect(() => {
+    const unsubscribe = listenToNavigation((route) => {
+      if (route.tab && route.tab !== activeTab) {
+        setActiveTab(route.tab);
+      }
+      if (route.selectedPlanId !== undefined && route.selectedPlanId !== selectedPlanId) {
+        setSelectedPlanId(route.selectedPlanId);
+      }
+    });
+    return unsubscribe;
+  }, [activeTab, selectedPlanId]);
 
   // Snooze and Auto-Pass overrides
   const [interestedPlanIds, setInterestedPlanIds] = useState<string[]>([]);
@@ -393,6 +452,8 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
 
   const shouldShowBottomNav =
     !selectedPlan &&
+    !selectedPlanId &&
+    !selectedChatPlanId &&
     !childrenWantBottomNavHidden;
 
   return (
@@ -509,12 +570,13 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       </main>
 
       {/* ---------------- ACTIVE DETAILED OVERLAY POPUP (PLAN DETAILS) ---------------- */}
-      {selectedPlanId && isInitialLoadComplete && (
+      {selectedPlanId && (
         <DetailedPlanModal
           planId={selectedPlanId}
           activeTab={selectedPlanSource === "chat" ? "chat" : activeTab}
           onClose={() => {
             setSelectedPlanId(null);
+            localStorage.removeItem("planless_selected_plan_id");
             if (selectedPlanSource === "chat" && selectedChatPlanId) {
               // Stay in same Plan Chat screen when returning from Plan Preview
               setSelectedPlanSource("list");
@@ -526,6 +588,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           activeUserId={activeUserId}
           onOpenChat={(planId) => {
             setSelectedPlanId(null);
+            localStorage.removeItem("planless_selected_plan_id");
             setSelectedChatPlanId(planId);
           }}
           setShowPaymentSuccess={setShowPaymentSuccessId}
@@ -533,9 +596,11 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           setShowLeftSuccess={setShowLeftSuccessId}
           onLeavePlan={() => {
             setSelectedPlanId(null);
+            localStorage.removeItem("planless_selected_plan_id");
           }}
           onPlanCancelled={() => {
             setSelectedPlanId(null);
+            localStorage.removeItem("planless_selected_plan_id");
             setShowCancelConfirmation(true);
           }}
           onNavigateToCircle={(circleId) => {

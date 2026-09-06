@@ -3009,18 +3009,25 @@ BEGIN
 
   PERFORM set_config('app.system_op', 'true', true);
 
-  -- Transition target participant
-  UPDATE public.plan_participants
-     SET rsvp_status       = 'SKIPPED'::rsvp_status,
-         skip_reason       = v_skip_reason,
-         assigned_group    = NULL,
-         waitlist_position = NULL,
-         role              = 'PARTICIPANT'::participant_role,
-         leave_requested   = FALSE,
-         leave_requested_at= NULL,
-         responded_at      = now(),
-         updated_at        = now()
-   WHERE plan_id = p_plan_id AND user_id = p_target_user_id;
+  -- Transition target participant:
+  -- If participant is still INVITED, delete their plan_participants row completely.
+  -- Otherwise (e.g. JOINED, WAITLISTED), mark as SKIPPED with appropriate skip_reason.
+  IF v_target_status = 'INVITED'::rsvp_status THEN
+    DELETE FROM public.plan_participants
+     WHERE plan_id = p_plan_id AND user_id = p_target_user_id;
+  ELSE
+    UPDATE public.plan_participants
+       SET rsvp_status       = 'SKIPPED'::rsvp_status,
+           skip_reason       = v_skip_reason,
+           assigned_group    = NULL,
+           waitlist_position = NULL,
+           role              = 'PARTICIPANT'::participant_role,
+           leave_requested   = FALSE,
+           leave_requested_at= NULL,
+           responded_at      = now(),
+           updated_at        = now()
+     WHERE plan_id = p_plan_id AND user_id = p_target_user_id;
+  END IF;
 
   -- If this was a leave request, resolve the pending activity if present
   IF v_target_leave_requested = TRUE THEN
@@ -3051,7 +3058,7 @@ BEGIN
     'success',          true,
     'plan_id',          p_plan_id,
     'user_id',          p_target_user_id,
-    'skip_reason',      v_skip_reason,
+    'skip_reason',      CASE WHEN v_target_status = 'INVITED'::rsvp_status THEN NULL ELSE v_skip_reason END,
     'promoted_user_id', NULL,
     'promoted_count',   v_promoted_count
   );

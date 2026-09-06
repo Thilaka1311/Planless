@@ -130,6 +130,13 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
 
   const isConfigured = Boolean(isCapacityConfigured && capacity !== undefined);
   const isFull = (capacity ?? 0) > 0 && actualJoinedCount >= (capacity ?? 0);
+  const totalInvitedCount = (hostItem ? 1 : 0) + selectedFriends.length;
+
+  useEffect(() => {
+    if (mode === 'wizard' && totalInvitedCount > 0 && capacity !== undefined && capacity > totalInvitedCount) {
+      onAdjustCapacity?.(totalInvitedCount);
+    }
+  }, [mode, capacity, totalInvitedCount, onAdjustCapacity]);
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     if (isCompletedPlan) {
@@ -292,7 +299,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         {(activeTab === 'going' || activeTab === 'invited') && (
           <GoingSection
             goingList={displayGoing}
-            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, (item.rsvpStatus === 'INVITED' || item.isAccepted === false) ? 'invited' : 'going') : undefined}
+            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, mode === 'wizard' ? 'invited' : ((item.rsvpStatus === 'INVITED' || item.isAccepted === false) ? 'invited' : 'going')) : undefined}
             showIndex={false}
           />
         )}
@@ -363,13 +370,13 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       {mode === 'wizard' && (
         <EditCapacityBottomSheet
           isOpen={isCapacitySheetOpen}
-          capacity={capacity}
-          invitedCount={(hostItem ? 1 : 0) + selectedFriends.length}
+          capacity={Math.min(capacity ?? totalInvitedCount, totalInvitedCount)}
+          invitedCount={totalInvitedCount}
           minCapacity={2}
-          maxCapacity={50}
+          maxCapacity={totalInvitedCount}
           onCapacityChange={(newCap) => {
             if (onAdjustCapacity) {
-              onAdjustCapacity(newCap);
+              onAdjustCapacity(Math.min(newCap, totalInvitedCount));
             }
           }}
           onAddParticipants={() => {

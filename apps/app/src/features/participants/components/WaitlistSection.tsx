@@ -48,9 +48,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
         >
           {waitlist.map((item, idx) => {
             const itemKey = item.dbUuid || item.id;
-            const itemIndex = typeof item.waitlistPosition === 'number'
-              ? item.waitlistPosition
-              : (reorderable ? idx + indexOffset : undefined);
+            const itemIndex = idx + indexOffset;
             const shouldShowIndex = Boolean(showIndex && itemIndex !== undefined);
 
             return (
@@ -87,14 +85,13 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
         </Reorder.Group>
       ) : (
         waitlist.map((item, idx) => {
-          const itemIndex = typeof item.waitlistPosition === 'number'
-            ? item.waitlistPosition
-            : (reorderable ? idx + indexOffset : undefined);
+          const itemKey = item.dbUuid || item.id;
+          const itemIndex = idx + indexOffset;
           const shouldShowIndex = Boolean(showIndex && itemIndex !== undefined);
 
           return (
             <StackingFriends
-              key={item.dbUuid || item.id}
+              key={itemKey}
               item={item}
               index={itemIndex}
               showIndex={shouldShowIndex}

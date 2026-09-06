@@ -22,6 +22,17 @@ import { DiscardPlanBottomSheet } from "../../plans/components/BottomSheets";
 import { supabase } from "../../../../lib/supabaseClient";
 import defaultPlanCover from "../../../assets/planimagedefault.png";
 import { uploadPlanImage } from "../../../shared/utils/imageUtils";
+import {
+  getSavedCreatePlanDraft,
+  saveCreatePlanDraft,
+  clearCreatePlanDraft,
+} from "../utils/draftParticipantStorage";
+import {
+  parseCurrentRoute,
+  navigateToRoute,
+  listenToNavigation,
+  CreatePhase,
+} from "../../navigation/appRouter";
 
 interface CreateMVPProps {
   setActiveTab: (tab: "home" | "plans" | "create" | "circles" | "wallet" | "profile") => void;
@@ -38,21 +49,65 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
   const { showToast } = useToast();
   const { createPlan } = usePlansStore();
 
+  const initialRoute = React.useMemo(() => parseCurrentRoute(), []);
+  const initialDraft = React.useMemo(() => getSavedCreatePlanDraft(), []);
+
   // Flow: 'category' -> 'who' -> 'who-actually' -> 'review' -> 'confirmation'
-  const [createPhase, setCreatePhase] = useState<"category" | "who" | "who-actually" | "when" | "review" | "confirmation">("category");
-  const [selectedCategory, setSelectedCategory] = useState<"sports" | "movies" | "dining" | "custom">("custom");
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+  const [createPhase, setCreatePhase] = useState<CreatePhase>(() => {
+    if (initialRoute.tab === "create" && initialRoute.createPhase) {
+      return initialRoute.createPhase;
+    }
+    if (initialDraft?.createPhase && initialDraft.createPhase !== "confirmation") {
+      return initialDraft.createPhase;
+    }
+    return "category";
+  });
+  const [selectedCategory, setSelectedCategory] = useState<"sports" | "movies" | "dining" | "custom">(() => {
+    return initialDraft?.selectedCategory || "custom";
+  });
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(() => {
+    return initialDraft?.selectedSubcategory || null;
+  });
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [postedPlanUuid, setPostedPlanUuid] = useState<string | null>(null);
   const [isCopying, setIsCopying] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [cameFromReview, setCameFromReview] = useState(false);
-  const [returnToWhoActually, setReturnToWhoActually] = useState(false);
-  const [returnToPlanSizeSheet, setReturnToPlanSizeSheet] = useState(false);
+  const [cameFromReview, setCameFromReview] = useState(() => Boolean(initialDraft?.cameFromReview));
+  const [returnToWhoActually, setReturnToWhoActually] = useState(() => Boolean(initialDraft?.returnToWhoActually));
+  const [returnToPlanSizeSheet, setReturnToPlanSizeSheet] = useState(() => Boolean(initialDraft?.returnToPlanSizeSheet));
 
   // Form hook
   const form = useCreatePlanForm();
+
+  const transitionToPhase = (nextPhase: CreatePhase) => {
+    setCreatePhase(nextPhase);
+    navigateToRoute({ tab: "create", createPhase: nextPhase });
+    saveCreatePlanDraft({ createPhase: nextPhase });
+  };
+
+  // Sync draft and URL whenever navigation state changes
+  useEffect(() => {
+    navigateToRoute({ tab: "create", createPhase }, { replace: true });
+    saveCreatePlanDraft({
+      createPhase,
+      selectedCategory,
+      selectedSubcategory,
+      cameFromReview,
+      returnToWhoActually,
+      returnToPlanSizeSheet,
+    });
+  }, [createPhase, selectedCategory, selectedSubcategory, cameFromReview, returnToWhoActually, returnToPlanSizeSheet]);
+
+  // Listen to browser Back / Forward buttons
+  useEffect(() => {
+    const unsubscribe = listenToNavigation((route) => {
+      if (route.tab === "create" && route.createPhase && route.createPhase !== createPhase) {
+        setCreatePhase(route.createPhase);
+      }
+    });
+    return unsubscribe;
+  }, [createPhase]);
 
   // Toggle bottom navigation: visible on category screen, hidden during the creation wizard
   useEffect(() => {
@@ -75,15 +130,22 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
     form.resetForm();
     form.setLocalTitle("");
     form.setLocalLocation("");
-    form.setCustomCoverImage(coverImage);
+    form.setCustomCoverImage(null, null);
     form.setCostAmount(0);
     form.setIsCostManuallySet(false);
     form.setIsDateManuallySet(false);
     form.setTotalCapacity(undefined);
     form.setQuickNote("");
 
+    saveCreatePlanDraft({
+      selectedCategory: category,
+      selectedSubcategory: null,
+      customCoverImage: null,
+      createPhase: "who",
+    });
+
     // Immediately transition to Who Is Coming
-    setCreatePhase("who");
+    transitionToPhase("who");
   };
 
   const handleCopyInviteLink = async () => {
@@ -113,7 +175,8 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
     setPostedPlanUuid(null);
     setReturnToPlanSizeSheet(false);
     setReturnToWhoActually(false);
-    setCreatePhase("category");
+    clearCreatePlanDraft();
+    transitionToPhase("category");
   };
 
   const handleHostPlanSubmit = async () => {
@@ -157,8 +220,13 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
     }
 
     const planId = `p_${Date.now()}`;
-    const hasCustomImage = form.customCoverImage && form.customCoverImage.startsWith("data:");
-    const coverUrl = hasCustomImage
+    const isLocalCustomImage = Boolean(
+      form.customCoverImage &&
+      (form.customCoverImage.startsWith("data:") ||
+        form.customCoverImage.startsWith("blob:") ||
+        form.customCoverImage === "custom_draft_blob")
+    );
+    const coverUrl = isLocalCustomImage
       ? getCategoryImage(selectedCategory, selectedSubcategory)
       : (form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory));
 
@@ -251,7 +319,8 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
       }
 
       setPostedPlanUuid(dbPlanRow?.id || null);
-      setCreatePhase("confirmation");
+      clearCreatePlanDraft();
+      transitionToPhase("confirmation");
       form.setIsSubmitting(false);
       showToast("✨ Plan created successfully!");
     } catch (err: any) {
@@ -281,17 +350,17 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
           onBack={() => {
             if (returnToWhoActually) {
               setReturnToWhoActually(false);
-              setCreatePhase("who-actually");
+              transitionToPhase("who-actually");
             } else if (cameFromReview) {
               setCameFromReview(false);
-              setCreatePhase("review");
+              transitionToPhase("review");
             } else {
-              setCreatePhase("category");
+              transitionToPhase("category");
             }
           }}
           onContinue={() => {
             setReturnToWhoActually(false);
-            setCreatePhase("who-actually");
+            transitionToPhase("who-actually");
           }}
           selectedCategory={selectedCategory}
           selectedSubcategory={selectedSubcategory}
@@ -320,19 +389,19 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
           onBack={() => {
             if (cameFromReview) {
               setCameFromReview(false);
-              setCreatePhase("review");
+              transitionToPhase("review");
             } else {
-              setCreatePhase("who");
+              transitionToPhase("who");
             }
           }}
           onContinue={() => {
             setCameFromReview(false);
-            setCreatePhase("review");
+            transitionToPhase("review");
           }}
           onAddFriends={() => {
             setReturnToWhoActually(true);
             setReturnToPlanSizeSheet(true);
-            setCreatePhase("who");
+            transitionToPhase("who");
           }}
           initialOpenPlanSizeSheet={returnToPlanSizeSheet}
           onPlanSizeSheetDismissed={() => setReturnToPlanSizeSheet(false)}
@@ -353,16 +422,16 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
           onBack={() => setShowCancelConfirm(true)}
           onEditDate={() => {
             setCameFromReview(true);
-            setCreatePhase("when");
+            transitionToPhase("when");
           }}
           onEditParticipants={() => {
             setCameFromReview(true);
-            setCreatePhase("who-actually");
+            transitionToPhase("who-actually");
           }}
           onAddParticipants={() => {
             setReturnToWhoActually(true);
             setReturnToPlanSizeSheet(true);
-            setCreatePhase("who");
+            transitionToPhase("who");
           }}
           onSubmit={handleHostPlanSubmit}
           isSubmitting={form.isSubmitting}
@@ -390,10 +459,10 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
           coverImage={form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory)}
           title={form.localTitle || "New Activity"}
           onBack={() => {
-            setCreatePhase("review");
+            transitionToPhase("review");
           }}
           onContinue={() => {
-            setCreatePhase("review");
+            transitionToPhase("review");
           }}
           selectedCategory={selectedCategory}
           selectedSubcategory={selectedSubcategory}
@@ -541,6 +610,7 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
             onClick={() => {
               handleResetAll();
               if (setPlansFilter) setPlansFilter("JOINED");
+              navigateToRoute({ tab: "plans" });
               setActiveTab("plans");
             }}
             className="w-full bg-transparent border border-white/10 text-zinc-400 hover:text-white hover:border-white/20 py-4 rounded-2xl font-bold text-[11px] tracking-widest uppercase flex items-center justify-center transition-colors cursor-pointer select-none"
