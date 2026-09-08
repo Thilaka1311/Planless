@@ -112,7 +112,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({
           description={
             <>
               You have joined all active spontaneous plans! Head to the{" "}
-              <span className="text-white font-semibold cursor-pointer">Circles</span> or{" "}
               <span className="text-white font-semibold cursor-pointer">Plans</span> tab to view and
               coordinate.
             </>

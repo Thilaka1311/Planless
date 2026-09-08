@@ -2,13 +2,11 @@ import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Check, Link, CheckCircle } from "lucide-react";
 import { usePlansStore } from "../../plans/state/PlansContext";
-import { useCirclesStore } from "../../circles/state/CirclesContext";
 import { getOrCreatePlanInvite, buildInviteUrl } from "../../plans/services/planInviteService";
 
 // Hooks & utils
 import { useCreatePlanForm } from "../hooks/useCreatePlanForm";
 import { getCategoryImage } from "../utils/constants";
-import { useToast } from "../../../shared/contexts/ToastContext";
 import { formatDateTimeStandard } from "../../../shared/components/NativeDateTimeField";
 
 // Sub-components
@@ -21,7 +19,7 @@ import { DiscardPlanBottomSheet } from "../../plans/components/BottomSheets";
 
 import { supabase } from "../../../../lib/supabaseClient";
 import defaultPlanCover from "../../../assets/planimagedefault.png";
-import { uploadPlanImage } from "../../../shared/utils/imageUtils";
+import { uploadPlanImage, uploadPlanCardImage } from "../../../shared/utils/imageUtils";
 import {
   getSavedCreatePlanDraft,
   saveCreatePlanDraft,
@@ -35,10 +33,9 @@ import {
 } from "../../navigation/appRouter";
 
 interface CreateMVPProps {
-  setActiveTab: (tab: "home" | "plans" | "create" | "circles" | "wallet" | "profile") => void;
+  setActiveTab: (tab: "home" | "plans" | "create" | "wallet" | "profile") => void;
   onToggleBottomNav?: (hidden: boolean) => void;
   setPlansFilter?: (filter: "JOINED" | "WAITLISTED" | "SKIPPED") => void;
-  setSelectedCircle?: (circle: any) => void;
 }
 
 export const CreateMVP: React.FC<CreateMVPProps> = ({
@@ -46,7 +43,6 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
   onToggleBottomNav,
   setPlansFilter,
 }) => {
-  const { showToast } = useToast();
   const { createPlan } = usePlansStore();
 
   const initialRoute = React.useMemo(() => parseCurrentRoute(), []);
@@ -159,11 +155,9 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
       const url = buildInviteUrl(invite.invite_token);
       await navigator.clipboard.writeText(url);
       setIsCopied(true);
-      showToast("Invite link copied!");
       setTimeout(() => setIsCopied(false), 3000);
     } catch (err) {
       console.error("[CreateMVP] Copy invite failed:", err);
-      showToast("Failed to copy invite link");
     } finally {
       setIsCopying(false);
     }
@@ -185,30 +179,27 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
 
     const hostUuid = form.userProfile?.dbUuid || form.userProfile?.user_id || form.activeUserId;
     if (!hostUuid) {
-      showToast("User profile session is not active. Onboard first.");
       form.setIsSubmitting(false);
       return;
     }
 
     const titleToUse = form.localTitle ? form.localTitle.trim() : "";
     if (!titleToUse || titleToUse === "Set a title" || titleToUse === "Enter Title") {
-      showToast("Please set a title for your plan");
       form.setIsSubmitting(false);
       return;
     }
 
     const isDateSet = Boolean(form.isDateManuallySet && form.eventDateTime);
+    const rawLocation = (form.localLocation || form.placeAddress || "").trim();
+    const isLocationSet = Boolean(
+      rawLocation &&
+      rawLocation !== "Add a location" &&
+      rawLocation !== "Add venue" &&
+      rawLocation !== "Search for a place…"
+    );
     const isCostSet = Boolean(form.isCostManuallySet && form.costAmount !== undefined && form.costAmount !== null);
 
-    if (!isDateSet && !isCostSet) {
-      form.setIsSubmitting(false);
-      return;
-    }
-    if (!isDateSet) {
-      form.setIsSubmitting(false);
-      return;
-    }
-    if (!isCostSet) {
+    if (!isDateSet || !isLocationSet) {
       form.setIsSubmitting(false);
       return;
     }
@@ -221,19 +212,24 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
 
     const planId = `p_${Date.now()}`;
     const isLocalCustomImage = Boolean(
+      form.customOriginalImage &&
+      (form.customOriginalImage.startsWith('data:') ||
+        form.customOriginalImage.startsWith('blob:') ||
+        form.customOriginalImage === 'custom_draft_blob')
+    ) || Boolean(
       form.customCoverImage &&
-      (form.customCoverImage.startsWith("data:") ||
-        form.customCoverImage.startsWith("blob:") ||
-        form.customCoverImage === "custom_draft_blob")
+      (form.customCoverImage.startsWith('data:') ||
+        form.customCoverImage.startsWith('blob:') ||
+        form.customCoverImage === 'custom_draft_blob')
     );
     const coverUrl = isLocalCustomImage
       ? getCategoryImage(selectedCategory, selectedSubcategory)
-      : (form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory));
+      : (form.customOriginalImage || form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory));
 
     let hoursOffset = 0;
     let isPlanStart = false;
 
-    if (!form.rsvpDeadline) {
+    if (!form.rsvpDeadline || form.rsvpDeadline === "Plan start" || form.rsvpDeadline === "Plan Start") {
       isPlanStart = true;
     } else if (form.rsvpDeadline.includes("1 Hour") || form.rsvpDeadline.includes("1 hour")) {
       hoursOffset = 1;
@@ -247,14 +243,22 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
       hoursOffset = 24;
     }
 
+    const isExplicitNoDeadline = form.rsvpDeadline === "No deadline" || form.rsvpDeadline === "-";
+    const hasDeadline = !isExplicitNoDeadline;
     let deadlineDate = new Date(planEventDate);
-    if (form.rsvpDeadline === "Custom" && form.customDeadline) {
-      deadlineDate = new Date(form.customDeadline);
-    } else if (!isPlanStart) {
-      deadlineDate.setHours(deadlineDate.getHours() - hoursOffset);
+    if (hasDeadline) {
+      if (form.rsvpDeadline === "Custom" && form.customDeadline) {
+        deadlineDate = new Date(form.customDeadline);
+      } else if (!isPlanStart) {
+        deadlineDate.setHours(deadlineDate.getHours() - hoursOffset);
+      }
+      if (deadlineDate.getTime() < now.getTime()) {
+        form.setIsSubmitting(false);
+        return;
+      }
     }
 
-    if (deadlineDate.getTime() <= now.getTime() - 60000 || deadlineDate.getTime() > planEventDate.getTime()) {
+    if (deadlineDate.getTime() > planEventDate.getTime()) {
       deadlineDate = new Date(planEventDate);
     }
 
@@ -302,7 +306,6 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
     try {
       const { dbPlanRow } = await createPlan(
         newDbPlan,
-        [],
         form.selectedFriends || [],
         form.userProfile,
         titleToUse,
@@ -310,11 +313,27 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
         form.priorityGuestIds || []
       );
 
-      if (form.customCoverBlob && dbPlanRow?.id) {
+      // Upload original image → cover_image
+      if (form.customOriginalBlob && dbPlanRow?.id) {
+        try {
+          await uploadPlanImage(dbPlanRow.id, form.customOriginalBlob);
+        } catch (uploadErr) {
+          console.error('[CreateMVP] Failed to upload original plan cover image:', uploadErr);
+        }
+      } else if (form.customCoverBlob && dbPlanRow?.id) {
         try {
           await uploadPlanImage(dbPlanRow.id, form.customCoverBlob);
         } catch (uploadErr) {
-          console.error("[CreateMVP] Failed to upload/update plan cover image:", uploadErr);
+          console.error('[CreateMVP] Failed to upload plan cover image (fallback):', uploadErr);
+        }
+      }
+
+      // Upload cropped portrait → cover_card_image
+      if (form.customCoverBlob && form.customOriginalBlob && dbPlanRow?.id) {
+        try {
+          await uploadPlanCardImage(dbPlanRow.id, form.customCoverBlob);
+        } catch (uploadErr) {
+          console.error('[CreateMVP] Failed to upload plan card image:', uploadErr);
         }
       }
 
@@ -322,11 +341,9 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
       clearCreatePlanDraft();
       transitionToPhase("confirmation");
       form.setIsSubmitting(false);
-      showToast("✨ Plan created successfully!");
     } catch (err: any) {
       console.error("[CreateMVP] Error creating plan:", err);
       form.setIsSubmitting(false);
-      showToast(`Failed to create plan: ${err.message || "Unknown error"}`);
     }
   };
 
@@ -456,7 +473,7 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
       <div className="flex-1 flex flex-col relative h-full bg-[#000000] overflow-hidden text-left">
         <WhenIsPlanScreen
           form={form}
-          coverImage={form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory)}
+          coverImage={form.customOriginalImage || form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory)}
           title={form.localTitle || "New Activity"}
           onBack={() => {
             transitionToPhase("review");

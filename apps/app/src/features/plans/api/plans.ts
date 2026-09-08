@@ -1,6 +1,17 @@
 import { supabase } from "../../../../lib/supabaseClient";
 
+export async function syncOverduePlansRPC(): Promise<void> {
+  try {
+    await (supabase.rpc as any)("sync_overdue_plans");
+  } catch (err) {
+    console.warn("[syncOverduePlansRPC] Non-blocking sync failed:", err);
+  }
+}
+
 export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]> {
+  // Sync overdue plans so database statuses are up-to-date
+  await syncOverduePlansRPC();
+
   // Phase 1: Fetch all plan IDs where user is a participant or host
   const { data: partData, error: partError } = await supabase
     .from("plan_participants")

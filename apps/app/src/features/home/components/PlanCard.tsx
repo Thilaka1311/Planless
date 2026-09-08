@@ -4,7 +4,7 @@ import { UserProfile, Plan, NotificationItem } from "../../../core/types";
 import { useHoldToAccept } from "../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "./HoldToAccept";
 import { usePlansStore } from "../../plans/state/PlansContext";
-import { useToast } from "../../../shared/contexts/ToastContext";
+import { getHeroMetadataCostText } from "../../plans/components/HeroMetadataCard";
 import { useLivePlan } from "../../plans/hooks/useLivePlan";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { ParticipantToggleBar } from "./PlanDetailsCard";
@@ -54,11 +54,7 @@ function PlanCategoryIcon({ plan }: { plan: any }) {
 }
 
 
-export const rsvpUrgencyStyles = {
-  minutes: { border: 'rgba(239, 68, 68, 0.55)', icon: '#ef4444' },  // red-500
-  hours: { border: 'rgba(234, 179, 8, 0.55)', icon: '#eab308' },  // yellow-500
-  days: { border: 'rgba(34, 197, 94, 0.55)', icon: '#22c55e' },  // green-500
-};
+export { rsvpUrgencyStyles } from '../../plans/utils/rsvpFormatter';
 
 export function useLiveCountdown(deadlineStr: string | null | undefined) {
   const [tick, setTick] = React.useState(0);
@@ -84,7 +80,7 @@ export function useLiveCountdown(deadlineStr: string | null | undefined) {
 
 function RespondByBadge({ deadline, onClick }: { deadline: string | null | undefined; onClick?: (e: React.MouseEvent) => void }) {
   const rsvp = useRSVPDeadline(deadline);
-  if (rsvp.state === 'expired') return null;
+  if (rsvp.state === 'expired' || rsvp.state === 'none') return null;
 
   return (
     <div
@@ -104,7 +100,7 @@ function RespondByBadge({ deadline, onClick }: { deadline: string | null | undef
         strokeWidth={2.5}
         style={{ color: rsvp.color }}
       />
-      <span className="text-[12px] font-semibold text-white tracking-wide leading-none">
+      <span className="text-[12px] font-semibold tracking-wide leading-none" style={{ color: rsvp.color }}>
         {rsvp.text}
       </span>
     </div>
@@ -275,8 +271,13 @@ export const PlanCard: React.FC<PlanCardProps> = ({
 }) => {
 
   const plan = useLivePlan(planId);
-  const { showToast } = useToast();
+  const { dbPlans } = usePlansStore();
   if (!plan) return null;
+
+  const costText = React.useMemo(() => {
+    const rawDbPlan = dbPlans?.find((p) => p.id === plan.id || (plan.dbUuid && p.id === plan.dbUuid));
+    return getHeroMetadataCostText(rawDbPlan, plan);
+  }, [plan, dbPlans]);
   const myMemberEntry = plan.members.find(m =>
     m.userId === userProfile.user_id ||
     (userProfile.dbUuid && m.userUuid === userProfile.dbUuid)
@@ -427,8 +428,9 @@ export const PlanCard: React.FC<PlanCardProps> = ({
   }, [categoryStr]);
 
   const coverToUse = React.useMemo(() => {
-    return plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory || (plan as any).sports_type);
-  }, [plan.coverImage, plan.category, (plan as any).subcategory, (plan as any).sports_type]);
+    // Prefer the explicit Home Card crop; fall back to the original cover image, then category default
+    return (plan as any).cardCoverImage || plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory || (plan as any).sports_type);
+  }, [(plan as any).cardCoverImage, plan.coverImage, plan.category, (plan as any).subcategory, (plan as any).sports_type]);
 
   const maxSpots = React.useMemo(() => {
     return plan.maxSpots || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
@@ -439,8 +441,6 @@ export const PlanCard: React.FC<PlanCardProps> = ({
   }, [plan.members]);
 
   const isFull = currentCount >= maxSpots;
-
-  const groupName = plan.circleName || "Custom Plan";
 
   const cardRef = React.useRef<HTMLDivElement>(null);
 
@@ -491,7 +491,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({
   const planParticipants = React.useMemo(() => {
     const { going, waitlist, delivered, skipped } = getParticipantStatusList();
 
-    const sortAlphabetically = (list: typeof going) => {
+    const sortAlphabetically = <T extends { name: string }>(list: T[]) => {
       return [...list].sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
       );
@@ -564,15 +564,6 @@ export const PlanCard: React.FC<PlanCardProps> = ({
           >
             <PlanCategoryIcon plan={plan} />
           </div>
-          {/* Group badge next to icon if present */}
-          {groupName && groupName !== "Custom Plan" && (
-            <div
-              className="bg-black/55 backdrop-blur-md px-4 rounded-full text-[11px] font-sans font-black text-white tracking-[0.16em] flex items-center justify-center select-none pointer-events-auto border border-white/[0.08] shadow-2xl"
-              style={{ height: '36px' }}
-            >
-              {groupName}
-            </div>
-          )}
           {/* Category popover */}
           <AnimatePresence>
             {activePopover === 'category' && (() => {
@@ -643,6 +634,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({
           isHolding={isHolding}
           isFull={isFull}
           formattedDateAndTime={formattedDateAndTime}
+          costText={costText}
         />
 
         {isSuccess && (

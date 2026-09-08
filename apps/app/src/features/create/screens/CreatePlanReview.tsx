@@ -146,14 +146,15 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
 
     const isDateConfigured = Boolean(form.isDateManuallySet && form.eventDateTime);
     const isCostConfigured = Boolean(form.isCostManuallySet && form.costAmount !== undefined && form.costAmount !== null);
-    const hasDeadline = Boolean(form.rsvpDeadline && form.rsvpDeadline !== 'No deadline');
+    const isExplicitNoDeadline = form.rsvpDeadline === 'No deadline' || form.rsvpDeadline === '-';
+    const hasDeadline = Boolean(isDateConfigured && !isExplicitNoDeadline);
     const isDeadlineConfigured = Boolean(isDateConfigured && hasDeadline);
 
     let hoursOffset = 0;
     let isPlanStart = false;
 
-    if (!form.rsvpDeadline) {
-      isPlanStart = false;
+    if (!form.rsvpDeadline || form.rsvpDeadline === 'Plan start' || form.rsvpDeadline === 'Plan Start') {
+      isPlanStart = true;
     } else if (form.rsvpDeadline.includes('1 Hour') || form.rsvpDeadline.includes('1 hour')) {
       hoursOffset = 1;
     } else if (form.rsvpDeadline.includes('3 Hour') || form.rsvpDeadline.includes('3 hour')) {
@@ -218,7 +219,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
       creatorId: hostId,
       creatorName: hostName,
       creatorAvatar: hostAvatar,
-      coverImage: form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory || undefined),
+      coverImage: form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory || undefined),
       members: allMembers as any,
       joinedUsers: [],
       confirmedCount: allMembers.length,
@@ -251,7 +252,14 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
           form.setEventDateTime(eventDate);
           if (rsvpDate) {
             form.setCustomDeadline(rsvpDate);
-            form.setRsvpDeadline('Custom');
+            if (eventDate && rsvpDate.getTime() === eventDate.getTime()) {
+              form.setRsvpDeadline(null);
+            } else {
+              form.setRsvpDeadline('Custom');
+            }
+          } else {
+            form.setRsvpDeadline(null);
+            form.setCustomDeadline(eventDate);
           }
           form.setIsDateManuallySet(true);
         }}
@@ -278,8 +286,8 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
           setIsEditorOpen(false);
           setEditorImageFile(null);
         }}
-        onSave={({ previewUrl, blob }) => {
-          form.setCustomCoverImage(previewUrl, blob);
+        onSave={({ previewUrl, blob, originalBlob, originalPreviewUrl }) => {
+          form.setCustomPlanImages(originalBlob, originalPreviewUrl, blob, previewUrl);
           setIsEditorOpen(false);
           setEditorImageFile(null);
         }}

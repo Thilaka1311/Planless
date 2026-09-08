@@ -4,7 +4,6 @@ import { UserMinus, UserPlus, UserCheck, Users, X } from "lucide-react";
 import { supabase } from "../../../../lib/supabaseClient";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { useFriendshipStore } from "../state/FriendshipContext";
-import { useToast } from "../../../shared/contexts/ToastContext";
 
 interface FriendProfileViewerBottomSheetProps {
   friendUserId: string | null;
@@ -33,7 +32,6 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
     rejectFriendRequest,
     removeFriend,
   } = useFriendshipStore();
-  const { showToast } = useToast();
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [profile, setProfile] = useState<FriendProfileData | null>(null);
@@ -103,7 +101,6 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
 
         if (error) {
           console.error("Error fetching friend profile:", error.message);
-          showToast("Failed to load friend profile.");
         } else if (data) {
           setProfile(data as unknown as FriendProfileData);
         }
@@ -124,20 +121,16 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
     try {
       if (relationship.type === "ACCEPTED" && relationship.friendshipId) {
         await removeFriend(relationship.friendshipId);
-        showToast(`Removed ${profile?.full_name || "friend"} from your friends.`);
       } else if (relationship.type === "PENDING_OUTGOING" && relationship.friendshipId) {
         await rejectFriendRequest(relationship.friendshipId);
-        showToast(`Cancelled friend request to ${profile?.full_name || "User"}.`);
       } else if (relationship.type === "PENDING_INCOMING" && relationship.friendshipId) {
         await acceptFriendRequest(relationship.friendshipId);
-        showToast(`Accepted ${profile?.full_name || "User"}'s friend request!`);
       } else if (relationship.type === "NONE") {
         await sendFriendRequest(friendUserId);
-        showToast(`Sent friend request to ${profile?.full_name || "User"}!`);
       }
       onClose();
     } catch (err: any) {
-      showToast(err.message || "Action failed.");
+      console.error("[FriendProfileViewer] Action failed:", err);
     } finally {
       setActionLoading(false);
     }
@@ -148,10 +141,9 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
     setActionLoading(true);
     try {
       await rejectFriendRequest(relationship.friendshipId);
-      showToast(`Declined ${profile?.full_name || "User"}'s friend request.`);
       onClose();
     } catch (err: any) {
-      showToast(err.message || "Failed to decline request.");
+      console.error("[FriendProfileViewer] Failed to decline request:", err);
     } finally {
       setActionLoading(false);
     }

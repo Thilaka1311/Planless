@@ -23,7 +23,6 @@ import {
 import { motion } from "motion/react";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
-import { useToast } from "../../../shared/contexts/ToastContext";
 import { supabase } from "../../../../lib/supabaseClient";
 import { DbPlanActivity, PlanActivityType } from "../../../core/types";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
@@ -117,12 +116,14 @@ const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }>
     case "capacity_collapsed":
       iconNode = <UsersRound className="w-4 h-4 text-blue-400 flex-shrink-0" />;
       break;
+    case "participant_invites_toggled":
     case "participant_invite_others":
       iconNode = <UserPlus className="w-4 h-4 text-blue-400 flex-shrink-0" />;
       break;
     case "host_transferred":
       iconNode = <Crown className="w-4 h-4 text-amber-300 flex-shrink-0" />;
       break;
+    case "plan_datetime_changed":
     case "date_changed":
       iconNode = <Calendar className="w-4 h-4 text-white flex-shrink-0" />;
       break;
@@ -130,6 +131,7 @@ const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }>
       iconNode = <Clock className="w-4 h-4 text-blue-400 flex-shrink-0" />;
       break;
     case "location_changed":
+    case "plan_location_changed":
       iconNode = <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />;
       break;
     case "title_changed":
@@ -183,6 +185,10 @@ const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }>
     case "leave_requested":
       iconNode = <UserX className="w-4 h-4 text-amber-400 flex-shrink-0" />;
       break;
+    case "participant_skipped":
+    case "invitation_declined":
+      iconNode = <UserX className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
+      break;
 
     default:
       iconNode = <Activity className="w-4 h-4 text-zinc-400 flex-shrink-0" />;
@@ -216,6 +222,127 @@ const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }>
 
   return iconNode;
 };
+
+/**
+ * Formats a Google Maps location into a concise display string for Activity cards:
+ * "<Primary Place Name> · <Locality/Area>"
+ * or simply "<Primary Place Name>" if no locality is available.
+ */
+function formatActivityLocation(
+  rawLocation?: string | null,
+  rawAddress?: string | null
+): string {
+  if (!rawLocation || !rawLocation.trim()) {
+    return "Location removed";
+  }
+
+  const trimmedLoc = rawLocation.trim();
+
+  // If already formatted with middle dot, return as is
+  if (trimmedLoc.includes(" · ")) {
+    return trimmedLoc;
+  }
+
+  const genericGeoWords = new Set([
+    "india", "usa", "united states", "uk", "united kingdom", "australia", "canada",
+    "karnataka", "maharashtra", "delhi", "tamil nadu", "telangana", "kerala",
+    "bengaluru", "bangalore", "mumbai", "new delhi", "chennai", "hyderabad", "kolkata", "pune"
+  ]);
+
+  const isPostalOrAdmin = (s: string) => {
+    if (/\b\d{5,6}\b/.test(s)) return true;
+    const lower = s.toLowerCase();
+    for (const geo of genericGeoWords) {
+      if (lower === geo || lower.startsWith(geo + " ") || lower.endsWith(" " + geo)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const isLikelyStreet = (s: string) => {
+    const lower = s.toLowerCase();
+    return /\b(road|rd|street|st|lane|ln|cross|main rd|ave|avenue|blvd|boulevard|highway|floor|block [a-z0-9]+)\b/i.test(lower) ||
+      /^\d+([a-z]{2})?\s+(main|cross|road|street|stage|phase)/i.test(lower);
+  };
+
+  const isStreetNumberOrPureDigits = (s: string) => /^[#\d\-/]+$/.test(s.trim());
+
+  const isValidLocality = (candidate?: string | null) => {
+    if (!candidate) return false;
+    const c = candidate.trim();
+    if (!c || c.length < 2 || c.length > 35) return false;
+    const lower = c.toLowerCase();
+    if (genericGeoWords.has(lower)) return false;
+    if (isPostalOrAdmin(c)) return false;
+    if (isStreetNumberOrPureDigits(c)) return false;
+    return true;
+  };
+
+  let primaryName = trimmedLoc;
+  let extractedLocality: string | null = null;
+
+  // Check for dash/pipe separator (surrounded by spaces)
+  const dashParts = trimmedLoc.split(/\s+[-–—|]\s+/);
+  if (dashParts.length > 1) {
+    primaryName = dashParts[0].trim();
+
+    // Walk backwards through remaining dash parts / comma parts to find locality
+    // E.g. "Paris Panini - Gourmet Sandwiches & Wraps, Indiranagar"
+    const remainingParts: string[] = [];
+    for (let i = 1; i < dashParts.length; i++) {
+      if (dashParts[i].includes(",")) {
+        remainingParts.push(...dashParts[i].split(",").map((p) => p.trim()));
+      } else {
+        remainingParts.push(dashParts[i].trim());
+      }
+    }
+
+    for (let i = remainingParts.length - 1; i >= 0; i--) {
+      const p = remainingParts[i];
+      if (isValidLocality(p) && !isLikelyStreet(p)) {
+        extractedLocality = p;
+        break;
+      }
+    }
+  } else if (trimmedLoc.includes(",")) {
+    // E.g. "Toit, Indiranagar" or "Glen's Bakehouse, Lavelle Road"
+    const commaParts = trimmedLoc.split(",").map((p) => p.trim());
+    primaryName = commaParts[0].trim();
+    for (let i = commaParts.length - 1; i >= 1; i--) {
+      const p = commaParts[i];
+      if (isValidLocality(p) && !isLikelyStreet(p)) {
+        extractedLocality = p;
+        break;
+      }
+    }
+  }
+
+  // If locality not found yet, try extracting from rawAddress
+  if (!extractedLocality && rawAddress && rawAddress.trim()) {
+    const addrParts = rawAddress.split(",").map((p) => p.trim()).filter(Boolean);
+    for (let i = addrParts.length - 1; i >= 0; i--) {
+      const p = addrParts[i];
+      if (isValidLocality(p) && !isLikelyStreet(p)) {
+        extractedLocality = p;
+        break;
+      }
+    }
+  }
+
+  // Clean primaryName (remove trailing commas, dashes)
+  primaryName = primaryName.replace(/[,–—|-]+$/, "").trim();
+
+  // If we found a locality and it's not already in primaryName
+  if (
+    extractedLocality &&
+    !primaryName.toLowerCase().includes(extractedLocality.toLowerCase())
+  ) {
+    return `${primaryName} · ${extractedLocality}`;
+  }
+
+  return primaryName;
+}
 
 const ActivityRow: React.FC<{
   event: ActivityEvent;
@@ -348,7 +475,7 @@ const ActivityRow: React.FC<{
                 <h4 className="text-[14px] font-semibold text-white/95 leading-snug whitespace-nowrap overflow-hidden truncate">
                   {event.primaryTitle}
                 </h4>
-                <p className="text-[12.5px] text-zinc-300 leading-snug mt-0.5 break-words">
+                <p className="text-[12.5px] text-zinc-300 leading-snug mt-0.5 whitespace-nowrap overflow-hidden truncate">
                   {event.secondaryDescription}
                 </p>
               </div>
@@ -382,8 +509,8 @@ const ActivityRow: React.FC<{
               {event.primaryTitle}
             </h4>
 
-            {/* Secondary Description: Action / Details - Multi-line */}
-            <p className="text-[12.5px] font-sans text-zinc-300 leading-snug mt-0.5 break-words">
+            {/* Secondary Description: Action / Details - Single Line with Truncation */}
+            <p className="text-[12.5px] font-sans text-zinc-300 leading-snug mt-0.5 whitespace-nowrap overflow-hidden truncate">
               {event.secondaryDescription}
             </p>
           </div>
@@ -403,7 +530,6 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
 }) => {
   const { plans, dbPlanParticipants, resolvePaidPlanLeaveRequest } = usePlansStore();
   const { userProfile, activeUserId, dbUsers } = useProfileStore();
-  const { showToast } = useToast();
 
   const plan = useMemo(() => {
     if (!planId) return undefined;
@@ -420,12 +546,10 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
     if (!plan || !resolvePaidPlanLeaveRequest) return;
     try {
       await resolvePaidPlanLeaveRequest(plan.id, targetUserId, 'KEEP_PAYMENT');
-      showToast("Leave request resolved (Payment kept)");
     } catch (err) {
       console.error("[handleKeepPayment] Failed:", err);
-      showToast("Failed to resolve leave request");
     }
-  }, [plan, resolvePaidPlanLeaveRequest, showToast]);
+  }, [plan, resolvePaidPlanLeaveRequest]);
 
   const targetPlanTitle = propPlanTitle || plan?.title || "Plan Activity";
   const targetPlanId = plan?.dbUuid || plan?.id || planId || "";
@@ -534,6 +658,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       const actorDetails = act.actor_id ? resolveUserDetails(act.actor_id, false) : { name: "" };
       const targetDetails = act.target_user_id ? resolveUserDetails(act.target_user_id, true) : { name: "" };
       const meta = act.metadata || {};
+      const effectiveType = (meta.change_type as string) || (meta.activity_type as string) || (act.activity_type as string);
 
       let primaryTitle = "";
       let secondaryDescription = "";
@@ -544,7 +669,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
       let accentEdgeColor: string | undefined = undefined;
       let isDisabled: boolean | undefined = undefined;
 
-      switch (act.activity_type as string) {
+      switch (effectiveType) {
         case "plan_created":
           primaryTitle = planName;
           secondaryDescription = actorDetails.name ? `Plan created by ${actorDetails.name}` : "Plan created";
@@ -712,6 +837,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           isUserEvent = true;
           userAvatarSrc = targetDetails.avatar;
           break;
+        case "participant_skipped":
         case "invitation_declined":
           primaryTitle = targetDetails.name || actorDetails.name || "Someone";
           secondaryDescription = "Declined the invitation";
@@ -747,6 +873,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           break;
         }
 
+        case "participant_invites_toggled":
         case "participant_invite_others": {
           const actorName = meta.performed_by_name || actorDetails.name;
           const isEnabled = meta.enabled !== false; // Default to true if not explicitly false (backward-compatible)
@@ -781,6 +908,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
           primaryTitle = planName;
           secondaryDescription = actorDetails.name ? `Description changed by ${actorDetails.name}` : "Description changed";
           break;
+        case "plan_datetime_changed":
         case "date_changed":
           primaryTitle = "Plan Date";
           secondaryDescription = meta.old_date && meta.new_date
@@ -800,13 +928,19 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
             : "Plan time changed";
           break;
         case "location_changed":
-          primaryTitle = planName;
-          secondaryDescription = meta.old_location && meta.new_location
-            ? `Location changed\n${meta.old_location} → ${meta.new_location}`
-            : meta.new_location
-            ? `Location changed\n${meta.new_location}`
-            : "Location changed";
+        case "plan_location_changed": {
+          primaryTitle = "Location changed";
+          const rawLoc = meta.new_location ?? meta.location ?? meta.place_name;
+          const resolvedLoc = typeof rawLoc === "string"
+            ? rawLoc.trim()
+            : (rawLoc?.place_name || rawLoc?.name || "");
+          const fallbackLoc = resolvedLoc || (plan as any)?.place_name || plan?.location || "";
+          const rawAddress = meta.place_address ?? meta.address ?? (plan as any)?.place_address ?? null;
+          secondaryDescription = fallbackLoc
+            ? formatActivityLocation(String(fallbackLoc), rawAddress)
+            : "Location removed";
           break;
+        }
         case "host_transferred":
           primaryTitle = "Host";
           secondaryDescription = actorDetails.name && targetDetails.name
@@ -838,7 +972,7 @@ export const ActivityTimelineScreen: React.FC<ActivityTimelineScreenProps> = ({
 
       return {
         id: act.id,
-        type: act.activity_type,
+        type: (effectiveType as any) || act.activity_type,
         primaryTitle,
         secondaryDescription,
         isUserEvent,

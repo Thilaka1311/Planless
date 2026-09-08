@@ -37,9 +37,9 @@ export const TimeRSVPCard: React.FC<TimeRSVPCardProps> = ({
             {costText}
           </div>
         )}
-        <div className="flex items-center gap-1.5 text-[11px] font-medium leading-none" style={{ color: rsvp.color }}>
+        <div className="flex items-center gap-1.5 text-[11px] font-medium leading-none">
           <Hourglass className="w-3.5 h-3.5 flex-shrink-0" style={{ color: rsvp.color }} />
-          <span className="truncate">
+          <span className="truncate" style={{ color: rsvp.color }}>
             {rsvp.text}
           </span>
         </div>

@@ -6,7 +6,6 @@ import {
   adminUploadImage,
   SUBCATEGORY_MAP,
 } from "../services/discoveryAdminService";
-import { useToast } from "../../../shared/contexts/ToastContext";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { LocationAutocompleteInput } from "../../../shared/components/LocationAutocompleteInput";
 
@@ -29,8 +28,6 @@ export const EditCard: React.FC<EditCardProps> = ({
   onClose,
   onSaved,
 }) => {
-  const { showToast } = useToast();
-
   // Initialise form data from every field in the config
   const buildInitialData = () => {
     const init: Record<string, any> = {};
@@ -57,9 +54,8 @@ export const EditCard: React.FC<EditCardProps> = ({
       const subcategory = formData.subcategory || item.subcategory || "general";
       const storagePath = await adminUploadImage(file, config.category, subcategory, item.id);
       set(fieldName, storagePath);
-      showToast("Image replaced.");
     } catch (err: any) {
-      showToast(err.message || "Upload failed.");
+      // error handled silently
     } finally {
       setUploadingImage(false);
     }
@@ -74,11 +70,9 @@ export const EditCard: React.FC<EditCardProps> = ({
     setSaving(true);
     try {
       await adminUpdateItem(item.id, formData, config, token);
-      showToast("Card updated.");
       onSaved();
     } catch (err: any) {
       console.error("[EditCard] Save request failed:", err);
-      showToast(err.message || "Failed to save.");
     } finally {
       setSaving(false);
     }

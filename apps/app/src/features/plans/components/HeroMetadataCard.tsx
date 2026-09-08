@@ -21,6 +21,37 @@ interface HeroMetadataCardProps {
   location: string;
 }
 
+/**
+ * Canonical helper for the Hero Metadata Card's cost-per-person calculation and formatting.
+ * Single source of truth used across Hero Metadata Card, Home Plans Preview, and HoldToAccept overlay.
+ */
+export function getHeroMetadataCostText(
+  rawDbPlan?: any | null,
+  plan?: any | null,
+  fallbackSpots?: number
+): string | null {
+  if (!rawDbPlan && !plan) return null;
+  const total = Number(rawDbPlan?.total_cost ?? plan?.total_cost ?? plan?.cost ?? 0);
+  if (total <= 0) return null;
+
+  const isCompleted = rawDbPlan?.status === 'COMPLETED' || plan?.status === 'COMPLETED';
+  const divisor = isCompleted
+    ? Number(rawDbPlan?.attended_participants ?? plan?.attended_participants ?? 0)
+    : (rawDbPlan?.plan_size
+        ? Number(rawDbPlan.plan_size)
+        : (plan?.plan_size
+            ? Number(plan.plan_size)
+            : (rawDbPlan?.max_participants
+                ? Number(rawDbPlan.max_participants)
+                : (plan?.max_participants
+                    ? Number(plan.max_participants)
+                    : (fallbackSpots || plan?.maxSpots || 8)))));
+
+  if (divisor <= 0) return null;
+  const perPerson = Math.round((total / divisor) * 100) / 100;
+  return `₹${perPerson} / person`;
+}
+
 export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
   datetime,
   createdAt,
@@ -44,7 +75,13 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
     window.open(url, "_blank");
   };
 
-  const rsvp = useRSVPDeadline(responseDeadlineAt);
+  const effectiveRsvpIso = responseDeadlineAt || datetime;
+  const isPlanStartRSVP = Boolean(
+    datetime &&
+    (!responseDeadlineAt || Math.abs(new Date(responseDeadlineAt).getTime() - new Date(datetime).getTime()) < 60000)
+  );
+  const rsvp = useRSVPDeadline(effectiveRsvpIso);
+  const rsvpDisplayText = isPlanStartRSVP && datetime ? formatPlanDate(datetime) : rsvp.text;
   const displayPlanSize = planSize || maxParticipants;
 
   return (
@@ -99,17 +136,17 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
               className="flex items-center gap-1.5 text-[11px] text-white/50 font-medium pl-6 leading-none cursor-pointer hover:underline text-left"
             >
               <IndianRupee className="w-3.5 h-3.5 text-zinc-500 opacity-60 flex-shrink-0" />
-              <span>Set a cost</span>
+              <span>Free</span>
             </button>
           </div>
         )}
-        <div className="flex flex-col gap-1" style={{ color: rsvp.color }}>
+        <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2 text-[11px] font-semibold leading-none">
             <Hourglass className="w-4 h-4 flex-shrink-0" style={{ color: rsvp.color }} />
-            <span>RSVP</span>
+            <span className="text-white">RSVP</span>
           </div>
           <span className="pl-6 text-[10.5px] font-medium leading-tight" style={{ color: rsvp.color }}>
-            {rsvp.text}
+            {rsvpDisplayText}
           </span>
         </div>
       </div>

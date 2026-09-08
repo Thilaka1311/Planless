@@ -1,5 +1,9 @@
 /**
  * imageUtils.ts — Client-side gallery picking, WebP conversion, and Supabase Storage uploads for plans.
+ *
+ * Dual-image model:
+ *   cover_image      → original full image → Plan Preview / Hero
+ *   cover_card_image → 9:16 portrait crop  → Home Plan Card
  */
 
 import { supabase } from "../../../lib/supabaseClient";
@@ -288,6 +292,78 @@ export async function replacePlanImage(
 }
 
 export const uploadPlanImage = replacePlanImage;
+export const uploadOriginalPlanImage = replacePlanImage;
+
+/**
+ * Uploads the cropped 9:16 portrait blob for the Home Plan Card.
+ * Stores the result in plans.cover_card_image.
+ * Does NOT touch cover_image (the original full image).
+ */
+export async function uploadPlanCardImage(
+  rawPlanId: string,
+  cardBlob: Blob
+): Promise<{ success: boolean; path: string }> {
+  if (!rawPlanId) throw new Error('Missing planId for card image upload');
+  if (!cardBlob) throw new Error('No blob provided for card image upload');
+
+  const planId = cleanPlanId(rawPlanId).trim();
+
+  // Determine the next sequential card image number
+  const { data: fileList } = await supabase.storage.from('plan-images').list(planId);
+  let maxNum = 0;
+  if (fileList && fileList.length > 0) {
+    for (const file of fileList) {
+      const match = file.name.match(/^plancardimage(\d+)\.webp$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    }
+  }
+  let nextNum = maxNum + 1;
+  let storagePath = `${planId}/plancardimage${nextNum}.webp`;
+  let fullDbPath = `plan-images/${storagePath}`;
+  let uploadSuccess = false;
+  let attempts = 0;
+
+  while (!uploadSuccess && attempts < 3) {
+    attempts++;
+    storagePath = `${planId}/plancardimage${nextNum}.webp`;
+    fullDbPath = `plan-images/${storagePath}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('plan-images')
+      .upload(storagePath, cardBlob, {
+        contentType: 'image/webp',
+        upsert: false,
+        cacheControl: '3600',
+      });
+
+    if (!uploadError) {
+      uploadSuccess = true;
+      break;
+    }
+
+    // Conflict — increment and retry
+    nextNum = nextNum + 1;
+  }
+
+  if (!uploadSuccess) {
+    throw new Error('Failed to upload plan card image after 3 attempts');
+  }
+
+  // Update database cover_card_image
+  const { error: updateDbError } = await supabase
+    .from('plans')
+    .update({ cover_card_image: fullDbPath, updated_at: new Date().toISOString() } as any)
+    .eq('id', planId);
+
+  if (updateDbError) {
+    throw new Error(`Failed to update cover_card_image in DB: ${updateDbError.message}`);
+  }
+
+  return { success: true, path: fullDbPath };
+}
 
 /**
  * Deletes the active custom plan image:
@@ -308,11 +384,11 @@ export async function deleteCustomPlanImage(
 
   const planId = cleanPlanId(rawPlanId).trim();
 
-  // 1. Update database reference to null
+  // 1. Update both image columns to null atomically
   const { error: dbError } = await supabase
-    .from("plans")
-    .update({ cover_image: null, updated_at: new Date().toISOString() })
-    .eq("id", planId);
+    .from('plans')
+    .update({ cover_image: null, cover_card_image: null, updated_at: new Date().toISOString() } as any)
+    .eq('id', planId);
 
   if (dbError) {
     throw new Error(`[DELETE PLAN IMAGE FAILED]: ${dbError.message}`);

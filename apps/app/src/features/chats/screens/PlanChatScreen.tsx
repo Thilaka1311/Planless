@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
-import { ArrowLeft, SendHorizontal, MessageSquare, ChevronDown, CheckCheck, Check, BanknoteArrowUp } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { ArrowLeft, SendHorizontal, MessageSquare, ChevronDown, CheckCheck, Check } from "lucide-react";
+import { motion } from "motion/react";
 import { Plan } from "../../../core/types";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
@@ -15,7 +15,6 @@ import { uploadPlanImage } from "../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../plans/utils/planUtils";
 import { PlanParticipantManagementWrapper } from "../../plans/screens/PlansScreen/PlansPreview/PlanParticipantManagementWrapper";
 import { PlanDetailsScreen } from "../../wallet/screens/PlanBalances";
-import { ActivityTimelineScreen } from "./ActivityTimelineScreen";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { useHorizontalPager } from "../hooks/useHorizontalPager";
 import { useChatCache, ChatMessage } from "../hooks/useChatCache";
@@ -31,7 +30,6 @@ interface PlanChatScreenProps {
 const PAGE_NAMES: Record<number, string> = {
   0: "Participants",
   1: "Chat",
-  2: "Activity",
 };
 
 export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
@@ -116,7 +114,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     pagerProps,
   } = useHorizontalPager({
     initialPage: 1,
-    totalPages: 3,
+    totalPages: 2,
     keyboardOpen,
     disabled: isEditingPlanSize || isBottomSheetOpen,
   });
@@ -516,7 +514,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             currentPage={currentPage}
             onSelectPage={(pageIdx) => { if (!isBottomSheetOpen) goToPage(pageIdx); }}
             onOpenParticipants={() => { if (!isBottomSheetOpen) goToPage(0); }}
-            onOpenActivity={() => { if (!isBottomSheetOpen) goToPage(2); }}
             onOpenExpenses={() => { if (!isBottomSheetOpen) setShowBalancesScreen(true); }}
             onEditTitle={!isCancelled && !isBottomSheetOpen ? async (newTitle) => {
               try {
@@ -539,10 +536,10 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         <motion.div
           {...pagerProps}
           style={{ x: pageX, touchAction: "pan-y" }}
-          className="flex h-full w-[300%]"
+          className="flex h-full w-[200%]"
         >
           {/* PAGE 0: PARTICIPANTS */}
-          <div className="w-1/3 h-full overflow-hidden flex flex-col flex-shrink-0">
+          <div className="w-1/2 h-full overflow-hidden flex flex-col flex-shrink-0">
             {plan && (
               <PlanParticipantManagementWrapper
                 plan={plan}
@@ -561,7 +558,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 onDemoteFromHost={(pId, uId) => demoteHostToParticipant(pId, uId)}
                 onUpdatePlanCapacity={(pId, capacity) => updatePlanDetails(pId, { plan_size: capacity })}
                 onCancelPlan={(pId) => cancelPlan(pId)}
-                onAddParticipants={(pId, userIds, circleIds, assignedGroup) =>
+                onAddParticipants={(pId, userIds, assignedGroup) =>
                   addParticipantsToPlan({
                     planId: pId,
                     inviteeUuids: userIds,
@@ -580,7 +577,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   return removeAndReplaceWithWaitlist(pId, removeId, promoteId);
                 }}
                 onReorderWaitlist={(pId, orderedUuids) => reorderWaitlist(pId, orderedUuids)}
-                onOpenActivity={() => { if (!isBottomSheetOpen) goToPage(2); }}
+
                 onPlanSizeEditingChange={setIsEditingPlanSize}
                 onBottomSheetStateChange={setIsBottomSheetOpen}
                 replaceTargetUserId={replaceTargetUserId}
@@ -592,7 +589,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
 
           {/* PAGE 1: CHAT (DEFAULT) */}
           <div
-            className="w-1/3 h-full overflow-hidden flex flex-col justify-between flex-shrink-0 relative"
+            className="w-1/2 h-full overflow-hidden flex flex-col justify-between flex-shrink-0 relative"
             style={{
               height: keyboardOpen && viewportHeight ? `${viewportHeight - 96}px` : "100%",
             }}
@@ -940,56 +937,19 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 </div>
 
                 <button
-                  type={inputText.trim() ? "submit" : "button"}
-                  disabled={Boolean(inputText.trim()) && sending}
-                  onClick={inputText.trim() ? undefined : () => setShowAddCostSheet(true)}
+                  type="submit"
+                  disabled={!inputText.trim() || sending}
                   onMouseDown={(e) => {
                     if (inputText.trim()) e.preventDefault();
                   }}
-                  title={inputText.trim() ? "Send Message" : "Add Cost"}
-                  aria-label={inputText.trim() ? "Send Message" : "Add Cost"}
-                  className="w-[46px] h-[46px] rounded-full bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-95 text-white flex items-center justify-center disabled:opacity-30 disabled:active:scale-100 transition-all cursor-pointer flex-shrink-0 shadow-lg shadow-[#FF6B2C]/30 border border-white/10 relative overflow-hidden"
+                  title="Send Message"
+                  aria-label="Send Message"
+                  className="w-[46px] h-[46px] rounded-full bg-[#FF6B2C] hover:bg-[#e05a1f] active:scale-95 text-white flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none disabled:active:scale-100 disabled:shadow-none transition-all cursor-pointer flex-shrink-0 shadow-lg shadow-[#FF6B2C]/30 border border-white/10 relative overflow-hidden"
                 >
-                  <AnimatePresence mode="wait" initial={false}>
-                    {inputText.trim() ? (
-                      <motion.div
-                        key="send"
-                        initial={{ opacity: 0, scale: 0.65, rotate: -20 }}
-                        animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                        exit={{ opacity: 0, scale: 0.65, rotate: 20 }}
-                        transition={{ duration: 0.15, ease: "easeOut" }}
-                        className="flex items-center justify-center"
-                      >
-                        <SendHorizontal className="w-5 h-5 text-white stroke-[2.2]" />
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="add-cost"
-                        initial={{ opacity: 0, scale: 0.65, rotate: 20 }}
-                        animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                        exit={{ opacity: 0, scale: 0.65, rotate: -20 }}
-                        transition={{ duration: 0.15, ease: "easeOut" }}
-                        className="flex items-center justify-center"
-                      >
-                        <BanknoteArrowUp className="w-5.5 h-5.5 stroke-[2.2] text-white" />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  <SendHorizontal className="w-5 h-5 text-white stroke-[2.2]" />
                 </button>
               </form>
             )}
-          </div>
-
-          {/* PAGE 2: ACTIVITY */}
-          <div className="w-1/3 h-full overflow-hidden flex flex-col flex-shrink-0">
-            <ActivityTimelineScreen
-              planId={planId}
-              planTitle={plan?.title || "Plan Activity"}
-              onBack={() => goToPage(1)}
-              embedded={true}
-              dragX={pageX}
-              onOpenReplacePicker={handleOpenReplacePicker}
-            />
           </div>
         </motion.div>
       </div>
@@ -1013,6 +973,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         <PlanSettingsScreen
           plan={plan}
           userProfile={userProfile || ({ id: currentUserId, dbUuid: currentUserId, name: "You" } as any)}
+          isPlanSettingsForParticipant={!isHost}
           mode={isHost ? "host" : "participant"}
           isCreatorHost={isHost}
           onBack={() => setShowSettingsScreen(false)}

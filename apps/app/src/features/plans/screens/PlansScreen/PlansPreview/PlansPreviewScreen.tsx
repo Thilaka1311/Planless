@@ -29,7 +29,6 @@ import {
 import { UserProfile, Plan } from "../../../../../core/types";
 import { usePlansStore } from "../../../state/PlansContext";
 import { useLivePlan } from "../../../hooks/useLivePlan";
-import { useToast } from "../../../../../shared/contexts/ToastContext";
 import { supabase } from "../../../../../../lib/supabaseClient";
 import { normalizeStatus, checkHasValidWaitlistReplacement } from "../../../../../../lib/participantStatus";
 import { getPlanCover } from "../../../config/planCoverImages";
@@ -66,6 +65,7 @@ import {
   EarlyCompletePlanConfirmationBottomSheet,
   RestorePlanBottomSheet,
   EditDateTimeBottomSheet,
+  getDateTimeValidationError,
   EditDetailsBottomSheet,
   JoinPlanConfirmationBottomSheet,
   SkipPlanConfirmationDialog,
@@ -244,7 +244,7 @@ function ActionButtons({
               Leave Plan
             </button>
           )}
-          {isHost && selectedPlan.status === "LIVE" && (
+          {isHost && (selectedPlan.status === "LIVE" || selectedPlan.status === "OVERDUE") && (
             <button
               id="immersive-complete-plan-btn"
               type="button"
@@ -292,6 +292,8 @@ interface InlineLocationEditorProps {
   onSelectPlace: (place: SelectedPlaceInfo) => void;
   onCancel: () => void;
   onRemoveLocation?: () => void;
+  hasError?: boolean;
+  validationShakeKey?: number;
 }
 
 function InlineLocationEditor({
@@ -306,6 +308,8 @@ function InlineLocationEditor({
   onSelectPlace,
   onCancel,
   onRemoveLocation,
+  hasError = false,
+  validationShakeKey = 0,
 }: InlineLocationEditorProps) {
   const isPristine = locationQuery === currentLocation;
   const { suggestions, isLoading, clearSuggestions, getPlaceDetails } = useGooglePlacesAutocomplete(
@@ -343,7 +347,7 @@ function InlineLocationEditor({
     <div className="relative">
       {/* ── Saving / Loader Mode ── */}
       {isSaving && (
-        <div className="flex w-full items-center gap-3 p-1.5 -m-1.5 rounded-xl">
+        <div className="flex w-full h-8 items-center gap-3 p-1.5 -m-1.5 rounded-xl">
           <MapPin className="w-4 h-4 text-zinc-500 flex-shrink-0 animate-pulse" />
           <div className="h-3.5 w-36 bg-white/[0.08] rounded animate-pulse" />
         </div>
@@ -355,18 +359,30 @@ function InlineLocationEditor({
           type="button"
           disabled={!isHost}
           onClick={onStartEditing}
-          className="flex w-full items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
+          className="flex w-full h-8 items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
         >
           <MapPin className={`w-4 h-4 flex-shrink-0 ${currentLocation ? "text-red-500" : "text-zinc-500 opacity-60"}`} />
-          <span className={`text-[13px] font-sans tracking-wide truncate ${currentLocation ? "text-white font-semibold" : "text-white/40 font-medium"}`}>
-            {currentLocation || "Add a location"}
-          </span>
+          <div className="flex items-center gap-1.5 truncate">
+            <span className={`text-[13px] font-sans tracking-wide truncate ${currentLocation ? "text-white font-semibold" : "text-white/40 font-medium"}`}>
+              {currentLocation || "Add a location"}
+            </span>
+            {hasError && !currentLocation && (
+              <motion.span
+                key={validationShakeKey}
+                animate={validationShakeKey > 0 ? { x: [0, -4, 4, -3, 3, -1, 1, 0] } : {}}
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+                className="inline-flex items-center justify-center flex-shrink-0"
+              >
+                <AlertCircle className="w-3.5 h-3.5 text-[#FF6B2C] opacity-100 flex-shrink-0" />
+              </motion.span>
+            )}
+          </div>
         </button>
       )}
 
       {/* ── Edit Row (input mode) ── */}
       {isEditing && (
-        <div className="flex items-center gap-3 p-1.5 -m-1.5">
+        <div className="flex w-full h-8 items-center gap-3 p-1.5 -m-1.5 rounded-xl">
           <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />
           <input
             ref={inputRef}
@@ -380,29 +396,8 @@ function InlineLocationEditor({
               }
             }}
             placeholder={currentLocation || "Search for a place…"}
-            className="flex-1 bg-transparent text-[13px] font-sans font-semibold text-white/95 leading-none placeholder:text-white/30 focus:outline-none min-w-0"
+            className="flex-1 bg-transparent text-[13px] font-sans font-semibold tracking-wide text-white placeholder:text-white/30 focus:outline-none min-w-0"
           />
-          {currentLocation ? (
-            <button
-              type="button"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                onRemoveLocation?.();
-              }}
-              className="text-zinc-500 hover:text-zinc-300 transition text-xs px-2 cursor-pointer flex-shrink-0"
-              aria-label="Remove Location"
-            >
-              ✕
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="text-zinc-500 hover:text-zinc-300 transition text-xs px-2 cursor-pointer flex-shrink-0"
-            >
-              ✕
-            </button>
-          )}
         </div>
       )}
 
@@ -467,7 +462,6 @@ export interface PlansDetailsScreenProps {
   onBack?: () => void;
   userProfile: UserProfile;
   activeUserId?: string;
-  onNavigateToCircle?: (circleId: string) => void;
   setShowPaymentSuccess?: (planId: string | null) => void;
   setShowWaitlistSuccess?: (planId: string | null) => void;
   setShowLeftSuccess?: (planId: string | null) => void;
@@ -495,7 +489,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   onBack,
   userProfile,
   activeUserId,
-  onNavigateToCircle,
   setShowPaymentSuccess,
   setShowWaitlistSuccess,
   setShowLeftSuccess,
@@ -514,7 +507,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   onSubmit,
   isSubmitting = false,
 }) => {
-  const { showToast } = useToast();
   const {
     dbPlans,
     dbPlanTeamAssignments,
@@ -560,6 +552,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [showDitchConfirm, setShowDitchConfirm] = useState(false);
   const [isDitching, setIsDitching] = useState(false);
   const [isManagingCompletedParticipants, setIsManagingCompletedParticipants] = useState(false);
+  const [validationShakeKey, setValidationShakeKey] = useState(0);
+  const [hasAttemptedCreate, setHasAttemptedCreate] = useState(false);
 
   // Bottom Sheet local editing states
   const [isEditingDateTimeSheetOpen, setIsEditingDateTimeSheetOpen] = useState(false);
@@ -571,7 +565,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const resolveInitialRsvpOption = (planDate: Date, rsvpDate: Date | null): string | null => {
     if (!rsvpDate) return null;
     const diffHours = (planDate.getTime() - rsvpDate.getTime()) / (1000 * 60 * 60);
-    if (diffHours <= 0) return null;
+    if (diffHours <= 0.1) return null;
     if (diffHours <= 2) return "< 1 Hour";
     if (diffHours <= 18) return "< 12 Hours";
     return "< 24 Hours";
@@ -582,37 +576,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [editTotalCostInput, setEditTotalCostInput] = useState<string>("");
 
   const [isEditingCapacitySheetOpen, setIsEditingCapacitySheetOpen] = useState(false);
-  const [createValidationError, setCreateValidationError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if ((selectedPlan as any)?.isDateConfigured && (selectedPlan as any)?.isCostConfigured) {
-      setCreateValidationError(null);
-    }
-  }, [(selectedPlan as any)?.isDateConfigured, (selectedPlan as any)?.isCostConfigured]);
-
-  // Auto-dismiss bottom validation message after 3 seconds or on tapping anywhere
-  useEffect(() => {
-    if (!createValidationError) return;
-
-    const timer = setTimeout(() => {
-      setCreateValidationError(null);
-    }, 3000);
-
-    const handleTapAnywhere = (e: PointerEvent | MouseEvent | TouchEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && target.closest("#create-plan-submit-btn")) {
-        return;
-      }
-      setCreateValidationError(null);
-    };
-
-    window.addEventListener("pointerdown", handleTapAnywhere, { capture: true });
-
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("pointerdown", handleTapAnywhere, { capture: true });
-    };
-  }, [createValidationError]);
 
   const [isEditingDetailsSheetOpen, setIsEditingDetailsSheetOpen] = useState(false);
   const [tempTitle, setTempTitle] = useState("");
@@ -665,7 +628,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     if (hasConfiguredDate) {
       const rawDateVal = (selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt;
       const planDate = new Date(rawDateVal);
-      const planRSVP = selectedPlan.response_deadline_at ? new Date(selectedPlan.response_deadline_at) : null;
+      const rawRsvp = (selectedPlan as any).rsvp_deadline || selectedPlan.response_deadline_at;
+      const planRSVP = rawRsvp ? new Date(rawRsvp) : null;
       if (!isNaN(planDate.getTime())) {
         d = getLocalDateString(planDate);
         t = getLocalTimeString(planDate);
@@ -680,6 +644,22 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   };
 
   const handleCloseDateTimeSheet = async () => {
+    const isLiveEditing = !createMode;
+    const currentSavedRsvpDeadline = (selectedPlan as any)?.rsvp_deadline || selectedPlan?.response_deadline_at;
+    const effectiveMinDate = getLocalDateString(new Date());
+
+    const validationError = getDateTimeValidationError(
+      tempDate,
+      tempTime,
+      tempRSVPOption,
+      isLiveEditing,
+      currentSavedRsvpDeadline,
+      effectiveMinDate
+    );
+    if (validationError) {
+      return;
+    }
+
     setIsEditingDateTimeSheetOpen(false);
     const initial = initialDateTimeRef.current;
     const hasChanged = tempDate !== initial.date || tempTime !== initial.time || tempRSVPOption !== initial.rsvpOption;
@@ -691,7 +671,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       return;
     }
 
-    const eventDateTime = new Date(`${tempDate}T${tempTime}`);
+    const [year, month, day] = tempDate.split('-').map(Number);
+    const [hour, minute] = tempTime.split(':').map(Number);
+    const eventDateTime = new Date(year, month - 1, day, hour, minute, 0, 0);
     if (isNaN(eventDateTime.getTime())) {
       return;
     }
@@ -711,20 +693,17 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       if (onAdjustDate) {
         onAdjustDate(eventDateTime, rsvpDateTime);
       }
-      showToast("✓ Date & RSVP updated");
       return;
     }
 
     try {
-      const updates = {
+      const updates: any = {
         scheduled_at: eventDateTime.toISOString(),
         rsvp_deadline: rsvpDateTime.toISOString(),
       };
       await updatePlanDetails(selectedPlan.id, updates);
-      showToast("✓ Date & RSVP updated");
     } catch (err: any) {
       console.error("Failed to update date & time:", err);
-      showToast("Unable to update. Please try again.");
     }
   };
 
@@ -743,12 +722,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
   const handleSaveDetails = async () => {
     if (!tempTitle.trim()) {
-      showToast("Please enter a plan title.");
       return;
     }
     const cap = tempCapacity === "" ? undefined : Number(tempCapacity);
     if (cap !== undefined && (isNaN(cap) || cap < 1)) {
-      showToast("Capacity must be at least 1.");
       return;
     }
 
@@ -770,11 +747,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       }
 
       await updatePlanDetails(selectedPlan.id, updates);
-      showToast("✓ Plan details updated");
       setIsEditingDetailsSheetOpen(false);
     } catch (err: any) {
       console.error("Failed to update plan details:", err);
-      showToast("Unable to update. Please try again.");
     } finally {
       setIsSavingDetails(false);
     }
@@ -805,7 +780,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           maxParticipants: currentMaxParticipants,
           rawError: err,
         });
-        showToast(err?.message || "Failed to update plan size");
         throw err;
       }
     }
@@ -819,7 +793,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       if (onAdjustLocation) {
         onAdjustLocation({ place_name: null, place_address: null, place_id: null, latitude: null, longitude: null });
       }
-      showToast("✓ Location removed");
       setIsSavingLocation(false);
       return;
     }
@@ -834,10 +807,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         updated_at: new Date().toISOString(),
       };
       await updatePlanDetails(selectedPlan.id, updates);
-      showToast("✓ Location removed");
     } catch (err: any) {
       console.error("Failed to remove location:", err);
-      showToast("Unable to remove location. Please try again.");
     } finally {
       setIsSavingLocation(false);
     }
@@ -853,7 +824,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       if (onAdjustLocation) {
         onAdjustLocation(place);
       }
-      showToast("✓ Location updated");
       setIsSavingLocation(false);
       return;
     }
@@ -870,10 +840,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       if (place.longitude !== null) updates.longitude = place.longitude;
 
       await updatePlanDetails(selectedPlan.id, updates);
-      showToast("✓ Location updated");
     } catch (err: any) {
       console.error("Failed to update location:", err);
-      showToast("Unable to update. Please try again.");
     } finally {
       setIsSavingLocation(false);
     }
@@ -943,8 +911,37 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(false);
   const [showPlanBalancesScreen, setShowPlanBalancesScreen] = useState(false);
   const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
-  const rsvp = useRSVPDeadline(selectedPlan?.response_deadline_at);
+  const planStartIso = (selectedPlan as any)?.scheduled_at || selectedPlan?.datetime || selectedPlan?.time || selectedPlan?.createdAt;
+  const rawRsvpDeadline = (selectedPlan as any)?.rsvp_deadline || selectedPlan?.response_deadline_at;
+  const effectiveRsvpIso = rawRsvpDeadline || planStartIso || null;
+
+  const isPlanStartRSVP = Boolean(
+    planStartIso &&
+    (!rawRsvpDeadline || Math.abs(new Date(rawRsvpDeadline).getTime() - new Date(planStartIso).getTime()) < 60000)
+  );
+
+  const rsvp = useRSVPDeadline(effectiveRsvpIso);
   const urgencyColor = rsvp.color;
+
+  const isRsvpExpired = Boolean(
+    effectiveRsvpIso &&
+    (rsvp.state === "expired" || new Date(effectiveRsvpIso).getTime() < Date.now())
+  );
+  const showValidationErrors = Boolean(createMode && hasAttemptedCreate);
+  const isValidationTriggeredExpired = Boolean(showValidationErrors && isRsvpExpired);
+  const effectiveUrgencyColor = isValidationTriggeredExpired
+    ? rsvpUrgencyStyles.minutes.icon
+    : urgencyColor;
+
+  const rsvpDisplayText = useMemo(() => {
+    if (!effectiveRsvpIso) {
+      return "-";
+    }
+    if (isPlanStartRSVP) {
+      return formatPlanDate(effectiveRsvpIso);
+    }
+    return rsvp.text;
+  }, [effectiveRsvpIso, isPlanStartRSVP, rsvp.text]);
 
   const planUuid = selectedPlan ? ((selectedPlan as any).dbUuid || selectedPlan.id) : "";
   const resolvedUserUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId || "";
@@ -971,6 +968,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
   const isCancelled = Boolean((selectedPlan?.status || "").toUpperCase() === "CANCELLED");
   const isCompleted = Boolean((selectedPlan?.status || "").toUpperCase() === "COMPLETED");
+  const isOverdue = Boolean((selectedPlan?.status || "").toUpperCase() === "OVERDUE");
+  const isLive = Boolean((selectedPlan?.status || "").toUpperCase() === "LIVE");
 
   const isCreatorHost = isHost;
 
@@ -1093,7 +1092,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   }, [selectedPlan, activeUserId, userProfile.dbUuid]);
 
   const responseDeadlineText = useMemo(() => {
-    if (!selectedPlan) return "No deadline";
+    if (!selectedPlan) return "-";
     return selectedPlan.response_deadline_at
       ? new Date(selectedPlan.response_deadline_at).toLocaleString("en-US", {
         weekday: "short",
@@ -1103,7 +1102,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         minute: "2-digit",
         hour12: false,
       })
-      : "No deadline";
+      : "-";
   }, [selectedPlan]);
 
   const rawDbPlan = useMemo(() => {
@@ -1358,7 +1357,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     setShowParticipantAddPicker(false);
     setParticipantAddSearchQuery("");
     setParticipantAddSelectedFriendIds([]);
-    showToast("✓ Invitations sent");
 
     try {
       await addParticipantsToPlan({
@@ -1369,7 +1367,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       });
     } catch (err: any) {
       console.error("[handleParticipantAddConfirm] Error adding participants:", err);
-      showToast(err?.message || "Failed to add participants");
     } finally {
       setIsSubmittingParticipantInvites(false);
     }
@@ -1402,30 +1399,26 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     setIsCancellingLeaveRequest(true);
     try {
       await cancelPaidPlanLeaveRequest(selectedPlan.id);
-      showToast("Leave request cancelled");
       setShowCancelLeaveRequestConfirmation(false);
     } catch (err) {
       console.error("[handleConfirmCancelLeaveRequest] Failed:", err);
-      showToast("Failed to cancel leave request");
     } finally {
       setIsCancellingLeaveRequest(false);
     }
-  }, [selectedPlan, activeUserId, isCancellingLeaveRequest, cancelPaidPlanLeaveRequest, showToast]);
+  }, [selectedPlan, activeUserId, isCancellingLeaveRequest, cancelPaidPlanLeaveRequest]);
 
   const handleConfirmPaidLeaveRequest = useCallback(async () => {
     if (!selectedPlan || !activeUserId || isSubmittingPaidLeave) return;
     setIsSubmittingPaidLeave(true);
     try {
       await requestPaidPlanLeave(selectedPlan.id);
-      showToast("Leave request sent to host");
       setShowPaidLeaveConfirmation(false);
     } catch (err: any) {
       console.error("[handleConfirmPaidLeaveRequest] Failed:", err);
-      showToast(err?.message || "Failed to send leave request");
     } finally {
       setIsSubmittingPaidLeave(false);
     }
-  }, [selectedPlan, activeUserId, isSubmittingPaidLeave, requestPaidPlanLeave, showToast]);
+  }, [selectedPlan, activeUserId, isSubmittingPaidLeave, requestPaidPlanLeave]);
 
   const handleConfirmSkip = useCallback(() => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
@@ -1444,9 +1437,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     // Perform DB skip asynchronously in background without blocking visual confirmation overlay
     skipPlan(planToSkip.id, activeUserId).catch((err) => {
       console.error("[handleSkip] Background skip failed:", err);
-      showToast("Failed to sync skip status with database.");
     });
-  }, [selectedPlan, activeUserId, isSkipping, onLeavePlan, onClose, skipPlan, setShowLeftSuccess, showToast]);
+  }, [selectedPlan, activeUserId, isSkipping, onLeavePlan, onClose, skipPlan, setShowLeftSuccess]);
 
   const handleConfirmHostLeaveReplacement = useCallback(async (selectedReplacementId: string) => {
     if (!selectedPlan || isSubmittingHostReplacement) return;
@@ -1458,12 +1450,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       
       const replacementUser = eligibleHostReplacementParticipants.find(p => p.id === selectedReplacementId);
       const replacementName = replacementUser?.name || "participant";
-
-      if (res?.leave_requested) {
-        showToast(`✓ Promoted ${replacementName} to host & sent leave request`);
-      } else {
-        showToast(`✓ Promoted ${replacementName} to host & left the plan`);
-      }
       
       if (onLeavePlan) {
         onLeavePlan();
@@ -1472,11 +1458,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       }
     } catch (err: any) {
       console.error("[PlansPreviewScreen] Host replacement leave failed:", err);
-      showToast(`Failed to leave plan: ${err.message || "Unknown error"}`);
     } finally {
       setIsSubmittingHostReplacement(false);
     }
-  }, [selectedPlan, isSubmittingHostReplacement, requestHostLeaveWithReplacement, eligibleHostReplacementParticipants, onLeavePlan, onClose, showToast]);
+  }, [selectedPlan, isSubmittingHostReplacement, requestHostLeaveWithReplacement, eligibleHostReplacementParticipants, onLeavePlan, onClose]);
 
   const handleSkip = useCallback(async () => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
@@ -1502,7 +1487,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     if (!selectedPlan || !activeUserId || isRejoining) return;
     const planToJoin = selectedPlan;
     if (isFull) {
-      showToast("Added to Waitlist");
       if (setShowWaitlistSuccess) {
         setShowWaitlistSuccess(planToJoin.id);
       }
@@ -1516,9 +1500,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     // Perform DB rejoin asynchronously in background without blocking visual confirmation overlay
     rejoinPlan(planToJoin.id, userProfile).catch((err) => {
       console.error("[handleRejoin] Background rejoin failed:", err);
-      showToast("Failed to sync rejoin status with database.");
     });
-  }, [selectedPlan, activeUserId, isRejoining, userProfile, isFull, rejoinPlan, setShowWaitlistSuccess, setShowPaymentSuccess, onClose, showToast]);
+  }, [selectedPlan, activeUserId, isRejoining, userProfile, isFull, rejoinPlan, setShowWaitlistSuccess, setShowPaymentSuccess, onClose]);
 
   const [showJoinConfirmation, setShowJoinConfirmation] = useState(false);
 
@@ -1528,7 +1511,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     setShowJoinConfirmation(false);
 
     if (isFull) {
-      showToast("Added to Waitlist");
       if (setShowWaitlistSuccess) {
         setShowWaitlistSuccess(planToJoin.id);
       }
@@ -1542,9 +1524,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     // Perform DB join asynchronously in background without blocking UI overlay
     joinPlan(planToJoin.id, userProfile).catch((err) => {
       console.error("[handleJoinDirect] Background join failed:", err);
-      showToast("Failed to sync join status with database.");
     });
-  }, [selectedPlan, isJoiningDirect, userProfile, isFull, joinPlan, setShowWaitlistSuccess, setShowPaymentSuccess, onClose, showToast]);
+  }, [selectedPlan, isJoiningDirect, userProfile, isFull, joinPlan, setShowWaitlistSuccess, setShowPaymentSuccess, onClose]);
 
   const handleJoinDirect = useCallback(() => {
     if (!selectedPlan || isJoiningDirect) return;
@@ -1556,7 +1537,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     setIsLeaving(true);
     try {
       await skipPlan(selectedPlan.id, activeUserId);
-      showToast("You left the plan.");
       setShowLeavePlanConfirm(false);
       if (onLeavePlan) {
         onLeavePlan();
@@ -1564,18 +1544,17 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onClose();
       }
     } catch (err) {
-      showToast("Failed to skip plan");
+      console.error("[handleSkipConfirm] Failed:", err);
     } finally {
       setIsLeaving(false);
     }
-  }, [selectedPlan, activeUserId, isLeaving, skipPlan, onLeavePlan, onClose, showToast]);
+  }, [selectedPlan, activeUserId, isLeaving, skipPlan, onLeavePlan, onClose]);
 
   const handleDitchConfirm = useCallback(async () => {
     if (!selectedPlan || isDitching) return;
     setIsDitching(true);
     try {
       await cancelPlan(selectedPlan.id);
-      showToast("Plan cancelled.");
       setShowDitchConfirm(false);
       setShowLeavePlanConfirm(false);
       if (onPlanCancelled) {
@@ -1586,41 +1565,39 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onClose();
       }
     } catch (err) {
-      showToast("Failed to ditch plan");
+      console.error("[handleDitchConfirm] Failed:", err);
     } finally {
       setIsDitching(false);
     }
-  }, [selectedPlan, isDitching, cancelPlan, onPlanCancelled, onLeavePlan, onClose, showToast]);
+  }, [selectedPlan, isDitching, cancelPlan, onPlanCancelled, onLeavePlan, onClose]);
 
   const handleChangeHostConfirm = useCallback(async () => {
     if (!selectedPlan || !selectedNewHost || isChangingHost || !activeUserId) return;
     setIsChangingHost(true);
     try {
       await changePlanHost(selectedPlan.id, selectedNewHost.userId, activeUserId);
-      showToast(`Ownership transferred to ${selectedNewHost.name}`);
       setSelectedNewHost(null);
       setShowChangeHostList(false);
       onClose();
     } catch (err) {
-      showToast("Failed to transfer ownership");
+      console.error("[handleChangeHostConfirm] Failed:", err);
     } finally {
       setIsChangingHost(false);
     }
-  }, [selectedPlan, selectedNewHost, isChangingHost, activeUserId, changePlanHost, onClose, showToast]);
+  }, [selectedPlan, selectedNewHost, isChangingHost, activeUserId, changePlanHost, onClose]);
 
   const handleRemoveParticipant = useCallback(async (userId: string, name: string) => {
     if (!selectedPlan) return;
     try {
       setIsRemoving(true);
       await removeParticipant(selectedPlan.id, userId);
-      showToast(`✓ Removed ${name} from plan`);
       setUserToRemove(null);
     } catch (err: any) {
-      showToast(`Error removing: ${err.message || err}`);
+      console.error("[handleRemoveParticipant] Error removing:", err);
     } finally {
       setIsRemoving(false);
     }
-  }, [selectedPlan, removeParticipant, showToast]);
+  }, [selectedPlan, removeParticipant]);
 
   if (!selectedPlan) return null;
 
@@ -1630,6 +1607,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         plan={selectedPlan}
         userProfile={userProfile}
         isCreatorHost={isCreatorHost}
+        isPlanSettingsForParticipant={!isHost}
         onBack={() => setShowPlanSettingsScreen(false)}
         onUpdateSettings={async (newSettings) => {
           await updatePlanSettings(selectedPlan.id, newSettings);
@@ -1665,6 +1643,26 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
   const isFixedViewportView = !isCancelled;
   const isLiveHostView = isHost && !isCancelled && !isCompleted;
+
+  const isTitleSet = Boolean(
+    selectedPlan?.title &&
+    selectedPlan.title.trim() &&
+    selectedPlan.title.trim() !== "Set a title" &&
+    selectedPlan.title.trim() !== "Enter Title"
+  );
+  const isDateSet = Boolean((selectedPlan as any)?.isDateConfigured);
+  const isLocationSet = Boolean(
+    selectedPlan?.location &&
+    selectedPlan.location.trim() &&
+    selectedPlan.location.trim() !== "Add a location" &&
+    selectedPlan.location.trim() !== "Add venue" &&
+    selectedPlan.location.trim() !== "Search for a place…"
+  );
+  const isCreateDisabled =
+    !isTitleSet ||
+    !isDateSet ||
+    !isLocationSet ||
+    isRsvpExpired;
 
   return (
     <motion.div
@@ -1715,6 +1713,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               isHost={isHost && !isCancelled && !isCompleted}
               onEditTitle={createMode ? onEditTitle : undefined}
               onEditCoverImage={createMode ? onEditCoverImage : undefined}
+              titleError={showValidationErrors && !isTitleSet}
+              validationShakeKey={validationShakeKey}
               onOpenChat={
                 createMode
                   ? undefined
@@ -1738,7 +1738,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   }
               }
               onOpenSettings={
-                createMode || !isHost || isCancelled || isCompleted
+                createMode || isCancelled || isCompleted
                   ? undefined
                   : () => setShowPlanSettingsScreen(true)
               }
@@ -1761,153 +1761,177 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               <div className="w-full bg-black/15 backdrop-blur-3xl border border-white/[0.06] shadow-lg rounded-2xl relative">
                 <div className="p-4 space-y-2.5">
                   {/* 1. Date & Time Row (Row 1) */}
-                  <div className="w-full flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      disabled={!isHost || isCancelled || isCompleted}
-                      onClick={openDateTimeSheet}
-                      className="flex-1 min-w-0 flex items-center gap-3 text-left hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
-                    >
-                      <CalendarClock className={`w-4 h-4 flex-shrink-0 ${createMode && !(selectedPlan as any).isDateConfigured ? "text-zinc-500 opacity-60" : "text-emerald-400"}`} />
-                      <span className={`text-[13px] font-sans tracking-wide truncate ${createMode && !(selectedPlan as any).isDateConfigured ? "text-white/40 font-medium" : "text-white font-semibold"}`}>
-                        {createMode && !(selectedPlan as any).isDateConfigured
-                          ? "Set a date"
-                          : formatPlanDate((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)}
-                      </span>
-                    </button>
-
-                    {/* Plan Size Indicator (Right side of Date & Time row / above Free) */}
-                    {Boolean(currentPlanSize) && (
+                  <div>
+                    <div className="w-full flex items-center justify-between gap-3">
                       <button
                         type="button"
-                        id="hero_plan_size_btn"
-                        data-testid="hero_plan_size_indicator"
-                        disabled={isCancelled || isCompleted}
-                        onClick={() => {
-                          if (isCancelled || isCompleted) return;
-                          setIsEditingCapacitySheetOpen(true);
-                        }}
-                        className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+                        disabled={!isHost || isCancelled || isCompleted}
+                        onClick={openDateTimeSheet}
+                        className="flex-1 min-w-0 flex items-center gap-3 text-left hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
                       >
-                        <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
-                        <span>{currentPlanSize}</span>
+                        <CalendarClock className={`w-4 h-4 flex-shrink-0 ${createMode && !isDateSet ? "text-zinc-500 opacity-60" : "text-emerald-400"}`} />
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span className={`text-[13px] font-sans tracking-wide truncate ${createMode && !isDateSet ? "text-white/40 font-medium" : "text-white font-semibold"}`}>
+                            {createMode && !isDateSet
+                              ? "Set a date"
+                              : formatPlanDate((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)}
+                          </span>
+                          {showValidationErrors && !isDateSet && (
+                            <motion.span
+                              key={validationShakeKey}
+                              animate={validationShakeKey > 0 ? { x: [0, -4, 4, -3, 3, -1, 1, 0] } : {}}
+                              transition={{ duration: 0.35, ease: "easeInOut" }}
+                              className="inline-flex items-center justify-center flex-shrink-0"
+                            >
+                              <AlertCircle className="w-3.5 h-3.5 text-[#FF6B2C] opacity-100 flex-shrink-0" />
+                            </motion.span>
+                          )}
+                        </div>
                       </button>
-                    )}
+
+                      {/* Plan Size Indicator (Right side of Date & Time row / above Free) */}
+                      {Boolean(currentPlanSize) && (
+                        <button
+                          type="button"
+                          id="hero_plan_size_btn"
+                          data-testid="hero_plan_size_indicator"
+                          disabled={isCancelled || isCompleted}
+                          onClick={() => {
+                            if (isCancelled || isCompleted) return;
+                            setIsEditingCapacitySheetOpen(true);
+                          }}
+                          className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+                        >
+                          <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
+                          <span>{currentPlanSize}</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* 2. Location (Row 2) – inline autocomplete */}
-                  <InlineLocationEditor
-                    isHost={isHost && !isCancelled && !isCompleted}
-                    currentLocation={selectedPlan.location || ""}
-                    isEditing={isEditingLocationInline}
-                    isSaving={isSavingLocation}
-                    locationQuery={locationQuery}
-                    inputRef={locationInputRef}
-                    onStartEditing={() => {
-                      if (isHost && !isCancelled && !isCompleted) {
-                        setLocationQuery(selectedPlan.location || "");
-                        setIsEditingLocationInline(true);
-                        setTimeout(() => {
-                          if (locationInputRef.current) {
-                            locationInputRef.current.focus();
-                            locationInputRef.current.select();
-                          }
-                        }, 50);
-                      } else if (selectedPlan.location) {
-                        const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedPlan.location)}`;
-                        window.open(url, "_blank");
-                      }
-                    }}
-                    onQueryChange={setLocationQuery}
-                    onSelectPlace={handleSelectLocationPlace}
-                    onCancel={() => {
-                      setIsEditingLocationInline(false);
-                      setLocationQuery("");
-                      if (locationInputRef.current) locationInputRef.current.blur();
-                    }}
-                    onRemoveLocation={handleRemoveLocation}
-                  />
+                  <div>
+                    <InlineLocationEditor
+                      isHost={isHost && !isCancelled && !isCompleted}
+                      currentLocation={selectedPlan.location || ""}
+                      isEditing={isEditingLocationInline}
+                      isSaving={isSavingLocation}
+                      locationQuery={locationQuery}
+                      inputRef={locationInputRef}
+                      hasError={showValidationErrors && !isLocationSet}
+                      validationShakeKey={validationShakeKey}
+                      onStartEditing={() => {
+                        if (isHost && !isCancelled && !isCompleted) {
+                          setLocationQuery(selectedPlan.location || "");
+                          setIsEditingLocationInline(true);
+                          setTimeout(() => {
+                            if (locationInputRef.current) {
+                              locationInputRef.current.focus();
+                              locationInputRef.current.select();
+                            }
+                          }, 50);
+                        } else if (selectedPlan.location) {
+                          const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedPlan.location)}`;
+                          window.open(url, "_blank");
+                        }
+                      }}
+                      onQueryChange={setLocationQuery}
+                      onSelectPlace={handleSelectLocationPlace}
+                      onCancel={() => {
+                        setIsEditingLocationInline(false);
+                        setLocationQuery("");
+                        if (locationInputRef.current) locationInputRef.current.blur();
+                      }}
+                      onRemoveLocation={handleRemoveLocation}
+                    />
+                  </div>
 
                   {/* 3. Cost Row (Row 3) */}
-                  <div className={`w-full flex items-center text-white/50 text-[11px] font-medium leading-none ${isCompleted ? "justify-start" : "justify-between"}`}>
-                    {!isCompleted && (
-                      <button
-                        type="button"
-                        disabled={!isHost || isCancelled}
-                        onClick={openDateTimeSheet}
-                        className="flex items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
-                      >
-                        <Hourglass className="w-4 h-4 flex-shrink-0" style={{ color: urgencyColor }} />
-                        <span style={{ color: urgencyColor }}>
-                          {rsvp.text}
-                        </span>
-                      </button>
-                    )}
+                  <div>
+                    <div className={`w-full flex items-center text-white/50 text-[11px] font-medium leading-none ${isCompleted ? "justify-start" : "justify-between"}`}>
+                      {!isCompleted && (
+                        <button
+                          type="button"
+                          disabled={!isHost || isCancelled}
+                          onClick={openDateTimeSheet}
+                          className="flex items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
+                        >
+                          <Hourglass className="w-4 h-4 flex-shrink-0" style={{ color: effectiveUrgencyColor }} />
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-medium leading-none" style={{ color: effectiveUrgencyColor }}>
+                              {rsvpDisplayText}
+                            </span>
+                            {showValidationErrors && isRsvpExpired && (
+                              <motion.span
+                                key={validationShakeKey}
+                                animate={validationShakeKey > 0 ? { x: [0, -4, 4, -3, 3, -1, 1, 0] } : {}}
+                                transition={{ duration: 0.35, ease: "easeInOut" }}
+                                className="inline-flex items-center justify-center flex-shrink-0"
+                              >
+                                <AlertCircle className="w-3.5 h-3.5 text-[#ef4444] opacity-100 flex-shrink-0" />
+                              </motion.span>
+                            )}
+                          </div>
+                        </button>
+                      )}
 
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (createMode) {
-                            setEditTotalCostInput(hasCost && currentTotalCost > 0 ? String(currentTotalCost) : "");
-                            setIsEditingCostSheetOpen(true);
-                          } else {
-                            setIsCostPopoverOpen((prev) => !prev);
-                          }
-                        }}
-                        className={`flex items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer ${isCompleted ? "text-left" : "text-right font-semibold"}`}
-                      >
-                        {isCompleted ? (
-                          <>
-                            <IndianRupee className="w-4.5 h-4.5 text-emerald-400 flex-shrink-0" />
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (createMode) {
+                              setEditTotalCostInput(hasCost && currentTotalCost > 0 ? String(currentTotalCost) : "");
+                              setIsEditingCostSheetOpen(true);
+                            } else {
+                              setIsCostPopoverOpen((prev) => !prev);
+                            }
+                          }}
+                          className={`flex items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer ${isCompleted ? "text-left" : "text-right font-semibold"}`}
+                        >
+                          {isCompleted ? (
+                            <>
+                              <IndianRupee className="w-4.5 h-4.5 text-emerald-400 flex-shrink-0" />
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-white text-[13px] font-semibold tracking-wide">
+                                  {hasCost && costText && costText !== "Free" ? costText.replace(/^₹\s*/, '') : "Free"}
+                                </span>
+                                <span className="text-[#8E8E93] text-[11px] font-normal font-sans">per person</span>
+                              </div>
+                            </>
+                          ) : (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-white text-[13px] font-semibold tracking-wide">
+                              <IndianRupee
+                                className={`w-4 h-4 flex-shrink-0 ${
+                                  hasCost && costText && costText !== "Free"
+                                    ? "text-emerald-400"
+                                    : "text-zinc-500 opacity-60"
+                                }`}
+                              />
+                              <span className="font-sans tracking-tight text-[13.5px] text-white/90 font-semibold">
                                 {hasCost && costText && costText !== "Free" ? costText.replace(/^₹\s*/, '') : "Free"}
                               </span>
-                              <span className="text-[#8E8E93] text-[11px] font-normal font-sans">per person</span>
                             </div>
-                          </>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
-                            <IndianRupee
-                              className={`w-4 h-4 flex-shrink-0 ${
-                                hasCost && costText && costText !== "Free"
-                                  ? "text-emerald-400"
-                                  : "text-zinc-500 opacity-60"
-                              }`}
-                            />
-                            <span
-                              className={`font-sans tracking-tight text-[13.5px] ${
-                                createMode && !(selectedPlan as any).isCostConfigured && !hasCost
-                                  ? "text-white/40 font-medium"
-                                  : "text-white/90 font-semibold"
-                              }`}
-                            >
-                              {createMode && !(selectedPlan as any).isCostConfigured && !hasCost
-                                ? "Set a cost"
-                                : (hasCost && costText && costText !== "Free" ? costText.replace(/^₹\s*/, '') : "Free")}
-                            </span>
-                          </div>
-                        )}
-                      </button>
+                          )}
+                        </button>
 
-                      <CostBreakdownPopover
-                        totalCost={createMode ? (selectedPlan as any).total_cost : rawDbPlan?.total_cost}
-                        maxParticipants={currentPlanSize}
-                        attendedParticipants={rawDbPlan?.attended_participants ?? selectedPlan?.attended_participants}
-                        isCompleted={isCompleted}
-                        isOpen={isCostPopoverOpen}
-                        onClose={() => setIsCostPopoverOpen(false)}
-                        isHost={isHost && !isCancelled && !isCompleted}
-                        onEditCost={() => {
-                          if (isCancelled || isCompleted) return;
-                          const currentCost = createMode ? (selectedPlan as any).total_cost : rawDbPlan?.total_cost;
-                          setEditTotalCostInput(currentCost && Number(currentCost) > 0 ? String(currentCost) : "");
-                          setIsEditingCostSheetOpen(true);
-                        }}
-                        position="above"
-                        align="right"
-                      />
+                        <CostBreakdownPopover
+                          totalCost={createMode ? (selectedPlan as any).total_cost : rawDbPlan?.total_cost}
+                          maxParticipants={currentPlanSize}
+                          attendedParticipants={rawDbPlan?.attended_participants ?? selectedPlan?.attended_participants}
+                          isCompleted={isCompleted}
+                          isOpen={isCostPopoverOpen}
+                          onClose={() => setIsCostPopoverOpen(false)}
+                          isHost={isHost && !isCancelled && !isCompleted}
+                          onEditCost={() => {
+                            if (isCancelled || isCompleted) return;
+                            const currentCost = createMode ? (selectedPlan as any).total_cost : rawDbPlan?.total_cost;
+                            setEditTotalCostInput(currentCost && Number(currentCost) > 0 ? String(currentCost) : "");
+                            setIsEditingCostSheetOpen(true);
+                          }}
+                          position="above"
+                          align="right"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1938,7 +1962,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     : isCompleted
                       ? !isManagementExpired
                         ? () => setShowAttendanceSheet(true)
-                        : () => showToast("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.")
+                        : () => {}
                       : () => setShowParticipantManagement(true)
                 }
                 className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
@@ -1965,30 +1989,13 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           )}
 
           {createMode ? (() => {
-            const isDateSet = Boolean((selectedPlan as any)?.isDateConfigured);
-            const isCostSet = Boolean((selectedPlan as any)?.isCostConfigured);
-            const isCreateDisabled = !isDateSet || !isCostSet;
-
             const handleCreatePlanClick = () => {
               if (isSubmitting) return;
-
-              if (!isDateSet && !isCostSet) {
-                const msg = "Set a date and cost to create your plan.";
-                setCreateValidationError(msg);
+              setHasAttemptedCreate(true);
+              if (isCreateDisabled) {
+                setValidationShakeKey((prev) => prev + 1);
                 return;
               }
-              if (!isDateSet) {
-                const msg = "Set a date to create your plan.";
-                setCreateValidationError(msg);
-                return;
-              }
-              if (!isCostSet) {
-                const msg = "Set a cost to create your plan.";
-                setCreateValidationError(msg);
-                return;
-              }
-
-              setCreateValidationError(null);
               onSubmit?.();
             };
 
@@ -1997,31 +2004,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
                 className="fixed bottom-0 left-0 right-0 px-6 pt-2 pb-4 bg-gradient-to-t from-black via-black/90 to-transparent z-40"
               >
-                <AnimatePresence>
-                  {createValidationError && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 4, scale: 0.96 }}
-                      transition={{ duration: 0.18, ease: "easeOut" }}
-                      className="mb-2.5 w-full flex items-center justify-center pointer-events-none"
-                    >
-                      <div className="bg-[#18181D]/95 border border-[#FF6B2C]/40 text-[#FF854C] px-4 py-2 rounded-2xl text-[12.5px] font-sans font-semibold shadow-2xl backdrop-blur-xl flex items-center gap-2 text-center">
-                        <AlertCircle className="w-4 h-4 flex-shrink-0 text-[#FF6B2C]" />
-                        <span>{createValidationError}</span>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
                 <button
                   type="button"
                   id="create-plan-submit-btn"
                   disabled={isSubmitting}
+                  aria-disabled={isCreateDisabled}
                   onClick={handleCreatePlanClick}
                   style={{ borderRadius: 9999 }}
                   className={`w-full py-3 font-sans font-bold text-[14.5px] rounded-full transition-all flex items-center justify-center gap-2 cursor-pointer ${isCreateDisabled || isSubmitting
-                      ? "bg-[#FF6B2C]/40 text-white/40 shadow-none active:scale-[0.98]"
+                      ? "bg-[#FF6B2C]/40 text-white/40 shadow-none cursor-not-allowed active:scale-100"
                       : "bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white shadow-lg"
                     }`}
                 >
@@ -2040,7 +2031,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 isCompleted && isHost
                   ? !isManagementExpired
                     ? () => setShowAttendanceSheet(true)
-                    : () => showToast("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.")
+                    : undefined
                   : isCompleted
                     ? undefined
                     : isHost && isCancelled
@@ -2131,11 +2122,12 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               onUpdatePlanCapacity={(planId, capacity, opts) =>
                 updatePlanDetails(planId, {
                   plan_size: capacity,
+                  max_participants: capacity,
                   ...(opts?.totalCost !== undefined ? { total_cost: opts.totalCost } : {}),
                 })
               }
               onCancelPlan={(planId) => cancelPlan(planId)}
-              onAddParticipants={(planId, userIds, circleIds, assignedGroup) => addParticipantsToPlan({
+              onAddParticipants={(planId, userIds, assignedGroup) => addParticipantsToPlan({
                 planId,
                 inviteeUuids: userIds,
                 userProfile,
@@ -2324,10 +2316,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           setShowCancelPlanConfirm(false);
           try {
             await cancelPlan(selectedPlan.id);
-            showToast("✓ Plan cancelled");
             onClose();
           } catch (err: any) {
-            showToast("Failed to cancel plan");
+            console.error("Failed to cancel plan:", err);
           }
         }}
         onMarkAsComplete={() => {
@@ -2367,17 +2358,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               onConfirm={async (attendanceInput, expenseMode, usersToAdd, usersToRemove) => {
                 if (selectedPlan?.status === 'COMPLETED') {
                   if (isManagementExpired) {
-                    showToast("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.");
                     setShowAttendanceSheet(false);
                     return;
                   }
                   setIsManagingCompletedParticipants(true);
                   try {
                     await manageCompletedPlanParticipants(selectedPlan.id, usersToAdd || [], usersToRemove || [], expenseMode);
-                    showToast("✓ Participants updated");
                     setShowAttendanceSheet(false);
                   } catch (err: any) {
-                    showToast(err.message || "Failed to update participants");
+                    console.error("Failed to update participants:", err);
                   } finally {
                     setIsManagingCompletedParticipants(false);
                   }
@@ -2391,11 +2380,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     const isEarly = !isNaN(planScheduledDate.getTime()) && now.getTime() < planScheduledDate.getTime();
 
                     await completePlan(selectedPlan.id, attendanceInput, { isEarly, expenseMode });
-                    showToast("✓ Plan completed");
                     setShowAttendanceSheet(false);
                     onClose();
                   } catch (err: any) {
-                    showToast("Failed to complete plan");
+                    console.error("Failed to complete plan:", err);
                   } finally {
                     setIsEndingPlan(false);
                   }
@@ -2427,11 +2415,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           setIsRestoring(true);
           try {
             await updatePlanDetails(selectedPlan.id, { status: "LIVE" });
-            showToast("✓ Plan restored");
             setShowRestorePlanConfirm(false);
           } catch (err: any) {
             console.error("Failed to restore plan:", err);
-            showToast("Failed to restore plan");
           } finally {
             setIsRestoring(false);
           }
@@ -2445,6 +2431,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         tempDate={tempDate}
         tempTime={tempTime}
         tempRSVPOption={tempRSVPOption}
+        minDate={getLocalDateString(new Date())}
+        isLiveEditing={!createMode}
+        currentSavedRsvpDeadline={(selectedPlan as any)?.rsvp_deadline || selectedPlan?.response_deadline_at}
         onTempDateChange={setTempDate}
         onTempTimeChange={setTempTime}
         onTempRSVPOptionChange={setTempRSVPOption}
@@ -2466,14 +2455,12 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 if (onAdjustCost) {
                   onAdjustCost(parsedCost);
                 }
-                showToast(parsedCost > 0 ? "✓ Cost updated" : "✓ Plan updated to Free");
                 return;
               }
               try {
                 await updatePlanDetails(selectedPlan.id, { total_cost: parsedCost });
-                showToast(parsedCost > 0 ? "✓ Cost updated" : "✓ Plan updated to Free");
-              } catch {
-                showToast("Failed to update cost");
+              } catch (err) {
+                console.error("Failed to update cost:", err);
               }
             }}
             onClose={() => setIsEditingCostSheetOpen(false)}

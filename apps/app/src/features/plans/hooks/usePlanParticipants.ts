@@ -25,7 +25,6 @@ export interface UsePlanParticipantsProps {
   insertSystemMessage: (planUuid: string, content: string, actorUuid: string | null) => Promise<void>;
   refreshPlans: (targetTables?: string[]) => Promise<void>;
   unassignTeam: (planUuid: string, userUuid: string) => Promise<void>;
-  dbCircleMembers?: any[];
 }
 
 export interface AddParticipantsOptions {
@@ -33,7 +32,6 @@ export interface AddParticipantsOptions {
   inviteeUuids: string[];
   userProfile?: any;
   planTitle?: string;
-  inviteeCircleMap?: Record<string, string | null>;
   assignedGroup?: 'GOING' | 'WAITLIST' | null;
 }
 
@@ -47,8 +45,7 @@ export function usePlanParticipants({
   setDbPlanParticipants,
   insertSystemMessage,
   refreshPlans,
-  unassignTeam,
-  dbCircleMembers
+  unassignTeam
 }: UsePlanParticipantsProps) {
 
   const resolveUserUuid = useCallback((uId: string) => {
@@ -363,7 +360,6 @@ export function usePlanParticipants({
       }
 
       const dbPlan = dbPlans.find(p => p.id === planUuid || p.public_id === planUuid);
-      const circleId = null;
 
       const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
       const isAssigned = filteringMode === 'ASSIGNED';
@@ -412,8 +408,7 @@ export function usePlanParticipants({
         rsvp_status: targetDbState as any,
         waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
         responded_at: new Date().toISOString(),
-        skip_reason: existingSr,
-        circle_id: circleId
+        skip_reason: existingSr
       } : {
         plan_id: planUuid,
         user_id: userUuid,
@@ -421,8 +416,7 @@ export function usePlanParticipants({
         rsvp_status: targetDbState as any,
         waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
         responded_at: new Date().toISOString(),
-        skip_reason: null,
-        circle_id: circleId
+        skip_reason: null
       };
 
       applyParticipantOptimisticUpdate(planUuid, userUuid, optimisticRecord as any);
@@ -436,7 +430,6 @@ export function usePlanParticipants({
               waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
               responded_at: new Date().toISOString(),
               skip_reason: existingSr,
-              circle_id: circleId,
               updated_at: new Date().toISOString()
             })
             .eq("plan_id", planUuid)
@@ -456,8 +449,7 @@ export function usePlanParticipants({
           waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
           role: "PARTICIPANT" as const,
           responded_at: new Date().toISOString(),
-          skip_reason: null,
-          circle_id: circleId
+          skip_reason: null
         };
 
         try {
@@ -673,7 +665,7 @@ export function usePlanParticipants({
 
     try {
       const res = await api.requestHostLeaveWithReplacementRPC(planUuid, targetUuid);
-      await refreshPlans(["plan_participants", "plans", "plan_activity", "wallet_expenses", "wallet_expense_participants"]);
+      await refreshPlans(["plan_participants", "plans", "wallet_expenses", "wallet_expense_participants"]);
       return res;
     } catch (rpcError) {
       console.error("[PlansContext requestHostLeaveWithReplacement] RPC failed:", rpcError);
@@ -710,7 +702,7 @@ export function usePlanParticipants({
 
     try {
       const res = await api.stopHostingWithReplacementRPC(planUuid, targetUuid);
-      await refreshPlans(["plan_participants", "plans", "plan_activity"]);
+      await refreshPlans(["plan_participants", "plans"]);
       return res;
     } catch (rpcError) {
       console.error("[PlansContext stopHostingWithReplacement] RPC failed:", rpcError);
@@ -1095,7 +1087,6 @@ export function usePlanParticipants({
       inviteeUuids,
       userProfile,
       planTitle,
-      inviteeCircleMap,
       assignedGroup,
     } = options;
 
@@ -1105,7 +1096,6 @@ export function usePlanParticipants({
     if (!planUuid || inviteeUuids.length === 0) return;
 
     const dbPlan = dbPlans.find(p => p.id === planUuid || p.public_id === planUuid);
-    const circleId = null;
     const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
     const effectiveAssignedGroup = filteringMode === 'ASSIGNED' ? (assignedGroup || 'GOING') : null;
 
@@ -1212,7 +1202,8 @@ export function usePlanParticipants({
       // 2. Persist via trusted SECURITY DEFINER RPC (which also enforces max_participants >= total_invited in Postgres)
       await api.inviteParticipantsRPC(planUuid, inviteeUuids, effectiveAssignedGroup);
 
-      // Insert plan_activity entries for each added participant
+      // Insert plan_activity entries for each added participant (temporarily disabled)
+      /*
       if (userId) {
         const actorUser = dbUsers.find(u => u.id === userId);
         const actorName = actorUser?.full_name || (actorUser as any)?.name || "Host";
@@ -1249,6 +1240,7 @@ export function usePlanParticipants({
             .then();
         }
       }
+      */
 
       // 3. Ensure contiguous renumbering 1..N
       await renumberWaitlistPositions(planUuid);
@@ -1667,7 +1659,8 @@ export function usePlanParticipants({
         throw rpcError;
       }
 
-      // 4. Insert exactly ONE plan_activity record
+      // 4. Insert exactly ONE plan_activity record (temporarily disabled)
+      /*
       if (userId) {
         const outgoingUser = dbUsers.find(u => u.id === resolvedGoingUuid || u.id === goingParticipantUserUuid);
         const incomingUser = dbUsers.find(u => u.id === resolvedWaitlistUuid || u.id === waitlistParticipantUserUuid);
@@ -1707,6 +1700,7 @@ export function usePlanParticipants({
           console.warn("[swapParticipants] Activity log failed (non-fatal):", activityErr);
         }
       }
+      */
 
       renumberWaitlistPositions(planUuid).catch(() => {});
       // Recalculate wallet splits: a swap changes who is in Going
@@ -1802,6 +1796,8 @@ export function usePlanParticipants({
         const promotedAvatar = (promotedUser as any)?.avatar_url || (promotedUser as any)?.profile_photo || null;
         const actorName      = actorUser?.full_name    || (actorUser    as any)?.name || 'Host';
 
+        // Activity log (temporarily disabled)
+        /*
         const { error: activityErr } = await (supabase as any)
           .from('plan_activity')
           .insert({
@@ -1829,6 +1825,7 @@ export function usePlanParticipants({
         if (activityErr) {
           console.warn('[removeAndReplaceWithWaitlist] Activity log failed (non-fatal):', activityErr);
         }
+        */
       }
 
       renumberWaitlistPositions(planUuid).catch(() => {});
@@ -1997,9 +1994,8 @@ export function usePlanParticipants({
       throw rpcError;
     }
 
-    // Refresh local state and invalidate in-memory activity cache
-    invalidatePlanCache(planUuid, 'activities');
-    refreshPlans(['plan_participants', 'plan_activity', 'wallet_expenses', 'wallet_expense_participants']);
+    // Refresh local state
+    refreshPlans(['plan_participants', 'wallet_expenses', 'wallet_expense_participants']);
     return rpcResult;
   }, [plans, resolveUserUuid, refreshPlans]);
 
@@ -2055,8 +2051,7 @@ export function usePlanParticipants({
       throw rpcError;
     }
 
-    invalidatePlanCache(planUuid, 'activities');
-    await refreshPlans(['plan_participants', 'plan_activity', 'wallet_expenses', 'wallet_expense_participants']);
+    await refreshPlans(['plan_participants', 'wallet_expenses', 'wallet_expense_participants']);
     return rpcResult;
   }, [plans, resolveUserUuid, dbPlanParticipants, refreshPlans]);
 
@@ -2087,8 +2082,7 @@ export function usePlanParticipants({
       throw rpcError;
     }
 
-    invalidatePlanCache(planUuid, 'activities');
-    await refreshPlans(['plans', 'plan_participants', 'plan_activity', 'wallet_expenses', 'wallet_expense_participants']);
+    await refreshPlans(['plans', 'plan_participants', 'wallet_expenses', 'wallet_expense_participants']);
     return rpcResult;
   }, [plans, resolveUserUuid, refreshPlans]);
 

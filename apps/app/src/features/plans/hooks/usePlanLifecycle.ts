@@ -17,8 +17,6 @@ export interface PlanLifecycleDeps {
   dbPlans: DbPlan[];
   dbPlanParticipants: DbPlanParticipant[];
   dbPlanOutcomes: DbPlanOutcome[];
-  dbCircles: any[];
-  dbCircleMembers: any[];
   dbUsers: User[];
   userId: string;
 
@@ -40,8 +38,6 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     plans,
     dbPlans,
     dbPlanParticipants,
-    dbCircles,
-    dbCircleMembers,
     dbUsers,
     userId,
     setDbPlans,
@@ -245,6 +241,20 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       }
     }
 
+    if (planUpdate.scheduled_at !== undefined) {
+      const currentPlan = (plans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid)
+        || (dbPlans || []).find(p => p.id === planUuid);
+      const curStatus = (currentPlan?.status || "").toUpperCase();
+      const newSchedTime = new Date(planUpdate.scheduled_at).getTime();
+      if (!isNaN(newSchedTime)) {
+        if (curStatus === "LIVE" && newSchedTime < Date.now()) {
+          planUpdate.status = "OVERDUE";
+        } else if (curStatus === "OVERDUE" && newSchedTime > Date.now()) {
+          planUpdate.status = "LIVE";
+        }
+      }
+    }
+
     if (planUpdate.plan_size !== undefined) {
       const currentPlan = (plans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid)
         || (dbPlans || []).find(p => p.id === planUuid);
@@ -387,7 +397,7 @@ new = ${planUpdate.cover_image}`);
       console.error("[updatePlanDetails] recalculateWalletExpenses failed:", err)
     );
     return rebalanceResult;
-  }, [plans, dbPlans, dbPlanParticipants, dbCircleMembers, userId, resolveUserUuid, cleanPlanId]);
+  }, [plans, dbPlans, dbPlanParticipants, userId, resolveUserUuid, cleanPlanId]);
 
   // ─── completePlan ────────────────────────────────────────────────────────────
 

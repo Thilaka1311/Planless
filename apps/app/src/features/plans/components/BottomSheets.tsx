@@ -23,6 +23,19 @@ function formatTimeFriendly(timeStr: string): string {
   return `${formattedHours}:${formattedMinutes}`;
 }
 
+export function getTodayDateString(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function getCurrentTimeString(d: Date = new Date()): string {
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 // ----------------------------------------------------------------------
 // 0. DISCARD / EXIT PLAN BOTTOM SHEET
 // ----------------------------------------------------------------------
@@ -1018,11 +1031,157 @@ export const RestorePlanBottomSheet: React.FC<RestorePlanBottomSheetProps> = ({
 // ----------------------------------------------------------------------
 // 3. EDIT DATE & TIME BOTTOM SHEET
 // ----------------------------------------------------------------------
+export function getRSVPValidationError(
+  tempDate: string,
+  tempTime: string,
+  tempRSVPOption: string | null,
+  isLiveEditing: boolean = false,
+  currentSavedRsvpDeadline?: string | null
+): string | null {
+  if (!tempDate || !tempTime) {
+    return null;
+  }
+
+  const [year, month, day] = tempDate.split('-').map(Number);
+  const [hour, minute] = tempTime.split(':').map(Number);
+
+  if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(minute)) {
+    return null;
+  }
+
+  const planDateTime = new Date(year, month - 1, day, hour, minute, 0, 0);
+
+  let rsvpDateTime: Date;
+  if (tempRSVPOption === '< 1 Hour') {
+    rsvpDateTime = new Date(planDateTime.getTime() - 1 * 60 * 60 * 1000);
+  } else if (tempRSVPOption === '< 12 Hours') {
+    rsvpDateTime = new Date(planDateTime.getTime() - 12 * 60 * 60 * 1000);
+  } else if (tempRSVPOption === '< 24 Hours') {
+    rsvpDateTime = new Date(planDateTime.getTime() - 24 * 60 * 60 * 1000);
+  } else {
+    // Implicit "Plan Start" when tempRSVPOption is null
+    rsvpDateTime = new Date(planDateTime.getTime());
+  }
+
+  if (isLiveEditing) {
+    // When editing an already live plan:
+    // The RSVP deadline cannot be moved backwards earlier than the currently saved RSVP deadline.
+    // If no offset option is selected, the implicit Plan Start deadline is checked against current saved RSVP deadline.
+    // If an offset option is selected, it also cannot resolve earlier than the current saved RSVP deadline.
+    if (currentSavedRsvpDeadline) {
+      const savedDeadline = new Date(currentSavedRsvpDeadline);
+      if (!isNaN(savedDeadline.getTime())) {
+        if (rsvpDateTime.getTime() < savedDeadline.getTime() - 59000) {
+          return 'RSVP deadline cannot be earlier than current deadline.';
+        }
+      }
+    }
+    return null;
+  }
+
+  // Create Plan validation (initial flow):
+  if (!tempRSVPOption) {
+    return null;
+  }
+
+  const now = new Date();
+  if (rsvpDateTime.getTime() <= now.getTime()) {
+    return 'RSVP deadline cannot be in the past.';
+  }
+
+  return null;
+}
+
+export function getPlanDateTimeValidationError(
+  tempDate: string,
+  tempTime: string,
+  isLiveEditing: boolean = false,
+  minDate?: string
+): string | null {
+  if (!tempDate || !tempTime) {
+    return null;
+  }
+
+  const [year, month, day] = tempDate.split('-').map(Number);
+  const [hour, minute] = tempTime.split(':').map(Number);
+
+  if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(minute)) {
+    return null;
+  }
+
+  const effectiveMin = minDate || getTodayDateString();
+  if (tempDate < effectiveMin) {
+    return 'Plan date cannot be in the past.';
+  }
+
+  // When editing an already live/posted plan, clock time is NOT rejected as in the past:
+  // User can change the time freely for any valid calendar date (today or future).
+  if (isLiveEditing) {
+    return null;
+  }
+
+  const planDateTime = new Date(year, month - 1, day, hour, minute, 0, 0);
+  const now = new Date();
+
+  if (planDateTime.getTime() <= now.getTime()) {
+    return 'Plan time cannot be in the past.';
+  }
+
+  return null;
+}
+
+export function getDateTimeValidationError(
+  tempDate: string,
+  tempTime: string,
+  tempRSVPOption: string | null,
+  isLiveEditing: boolean = false,
+  currentSavedRsvpDeadline?: string | null,
+  minDate?: string
+): { type: 'dateTime' | 'rsvp'; message: string } | null {
+  const dateTimeError = getPlanDateTimeValidationError(tempDate, tempTime, isLiveEditing, minDate);
+  if (dateTimeError) {
+    return {
+      type: 'dateTime',
+      message: dateTimeError,
+    };
+  }
+  const rsvpError = getRSVPValidationError(tempDate, tempTime, tempRSVPOption, isLiveEditing, currentSavedRsvpDeadline);
+  if (rsvpError) {
+    return {
+      type: 'rsvp',
+      message: rsvpError,
+    };
+  }
+  return null;
+}
+
+export interface DateTimeValidationErrors {
+  dateTimeError: string | null;
+  rsvpError: string | null;
+}
+
+export function getDateTimeValidationErrors(
+  tempDate: string,
+  tempTime: string,
+  tempRSVPOption: string | null,
+  isLiveEditing: boolean = false,
+  currentSavedRsvpDeadline?: string | null,
+  minDate?: string
+): DateTimeValidationErrors {
+  return {
+    dateTimeError: getPlanDateTimeValidationError(tempDate, tempTime, isLiveEditing, minDate),
+    rsvpError: getRSVPValidationError(tempDate, tempTime, tempRSVPOption, isLiveEditing, currentSavedRsvpDeadline),
+  };
+}
+
 interface EditDateTimeBottomSheetProps {
   isOpen: boolean;
   tempDate: string;
   tempTime: string;
   tempRSVPOption: string | null;
+  minDate?: string;
+  isLiveEditing?: boolean;
+  currentSavedRsvpDeadline?: string | null;
   onTempDateChange: (val: string) => void;
   onTempTimeChange: (val: string) => void;
   onTempRSVPOptionChange: (val: string | null) => void;
@@ -1034,18 +1193,73 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
   tempDate,
   tempTime,
   tempRSVPOption,
+  minDate,
+  isLiveEditing = false,
+  currentSavedRsvpDeadline,
   onTempDateChange,
   onTempTimeChange,
   onTempRSVPOptionChange,
   onClose,
 }) => {
   const [isRSVPExpanded, setIsRSVPExpanded] = useState(false);
+  const [, setTick] = useState(0);
+
+  const effectiveMinDate = minDate ?? getTodayDateString();
+
+  const dateTimeError = getPlanDateTimeValidationError(tempDate, tempTime, isLiveEditing, effectiveMinDate);
+  const rsvpError = getRSVPValidationError(tempDate, tempTime, tempRSVPOption, isLiveEditing, currentSavedRsvpDeadline);
+  const isInvalid = Boolean(dateTimeError || rsvpError);
 
   useEffect(() => {
     if (isOpen) {
-      setIsRSVPExpanded(false);
+      if (rsvpError) {
+        setIsRSVPExpanded(true);
+      } else {
+        setIsRSVPExpanded(false);
+      }
+      const interval = setInterval(() => {
+        setTick((t) => t + 1);
+      }, 10000);
+      return () => clearInterval(interval);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (rsvpError) {
+      setIsRSVPExpanded(true);
+    }
+  }, [rsvpError]);
+
+  const handleDateChange = (newDate: string) => {
+    if (effectiveMinDate && newDate && newDate < effectiveMinDate) {
+      return;
+    }
+    onTempDateChange(newDate);
+  };
+
+  const handleTimeChange = (newTime: string) => {
+    onTempTimeChange(newTime);
+  };
+
+  const handleClose = (e?: React.SyntheticEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const currentError = getDateTimeValidationError(
+      tempDate,
+      tempTime,
+      tempRSVPOption,
+      isLiveEditing,
+      currentSavedRsvpDeadline,
+      effectiveMinDate
+    );
+    if (currentError) {
+      // Block dismissal completely before sheet starts moving.
+      return;
+    }
+    onClose();
+  };
 
   return (
     <AnimatePresence>
@@ -1055,7 +1269,7 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={handleClose}
             className="fixed inset-0 bg-black/60 z-60 pointer-events-auto"
           />
           <motion.div
@@ -1091,12 +1305,14 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* 1. Date & Time Card */}
               <div style={{ background: "rgba(255, 255, 255, 0.05)", borderRadius: 12, overflow: "hidden" }}>
                 <div style={{ position: "relative", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
                   <input
                     type="date"
+                    min={effectiveMinDate}
                     value={tempDate}
-                    onChange={(e) => onTempDateChange(e.target.value)}
+                    onChange={(e) => handleDateChange(e.target.value)}
                     style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 10 }}
                   />
                   <span style={{ fontSize: 14, fontWeight: 500, color: "#FFFFFF" }}>Date</span>
@@ -1112,7 +1328,7 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                   <input
                     type="time"
                     value={tempTime}
-                    onChange={(e) => onTempTimeChange(e.target.value)}
+                    onChange={(e) => handleTimeChange(e.target.value)}
                     style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 10 }}
                   />
                   <span style={{ fontSize: 14, fontWeight: 500, color: "#FFFFFF" }}>Time</span>
@@ -1125,6 +1341,28 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                 </div>
               </div>
 
+              {/* Inline Date & Time Error */}
+              {dateTimeError && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    marginTop: -6,
+                    paddingLeft: 4,
+                    color: "#EF4444",
+                    fontSize: 12,
+                    fontWeight: 500,
+                    fontFamily: "Inter, sans-serif",
+                    lineHeight: 1.2,
+                  }}
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-[#EF4444] flex-shrink-0" style={{ opacity: 1 }} />
+                  <span>{dateTimeError}</span>
+                </div>
+              )}
+
+              {/* 2. RSVP Deadline Card and Inline Error */}
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255, 255, 255, 0.3)", letterSpacing: "0.05em", textAlign: "left", paddingLeft: 4 }}>
                   RSVP Deadline
@@ -1134,7 +1372,7 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                     background: "rgba(255, 255, 255, 0.05)",
                     borderRadius: 12,
                     overflow: "hidden",
-                    height: isRSVPExpanded ? 220 : 48,
+                    height: isRSVPExpanded ? 218 : 48,
                     transition: "height 0.28s cubic-bezier(0.4, 0, 0.2, 1)",
                     willChange: "height",
                     transform: "translate3d(0, 0, 0)",
@@ -1143,7 +1381,12 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                 >
                   <button
                     type="button"
-                    onClick={() => setIsRSVPExpanded((prev) => !prev)}
+                    onClick={() => {
+                      if (rsvpError) {
+                        return;
+                      }
+                      setIsRSVPExpanded((prev) => !prev);
+                    }}
                     style={{
                       width: "100%",
                       height: 48,
@@ -1184,69 +1427,119 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                     }}
                   >
                     <div style={{ borderTop: "1px solid rgba(255, 255, 255, 0.04)", marginBottom: 6 }} />
-                    {['< 1 Hour', '< 12 Hours', '< 24 Hours'].map((opt) => {
-                      const isSelected = tempRSVPOption === opt;
-                      return (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={() => onTempRSVPOptionChange(isSelected ? null : opt)}
-                          style={{
-                            width: "100%",
-                            height: 38,
-                            borderRadius: 8,
-                            border: "none",
-                            background: isSelected ? "rgba(255, 255, 255, 0.08)" : "transparent",
-                            color: isSelected ? "#FFFFFF" : "#A1A1AA",
-                            fontSize: 13,
-                            fontFamily: "Inter, sans-serif",
-                            fontWeight: 500,
-                            display: "flex",
-                            alignItems: "center",
-                            padding: "0 10px",
-                            gap: 12,
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                          }}
-                        >
-                          <div
+                    {(() => {
+                      const getCandidateRsvpDate = (opt: string): Date | null => {
+                        if (!tempDate || !tempTime) return null;
+                        const [year, month, day] = tempDate.split('-').map(Number);
+                        const [hour, minute] = tempTime.split(':').map(Number);
+                        if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(minute)) return null;
+                        const planDateTime = new Date(year, month - 1, day, hour, minute, 0, 0);
+                        if (opt === '< 1 Hour') return new Date(planDateTime.getTime() - 1 * 60 * 60 * 1000);
+                        if (opt === '< 12 Hours') return new Date(planDateTime.getTime() - 12 * 60 * 60 * 1000);
+                        if (opt === '< 24 Hours') return new Date(planDateTime.getTime() - 24 * 60 * 60 * 1000);
+                        return planDateTime;
+                      };
+
+                      const savedDeadline = currentSavedRsvpDeadline ? new Date(currentSavedRsvpDeadline) : null;
+                      const rsvpOptions = ['< 1 Hour', '< 12 Hours', '< 24 Hours'];
+
+                      return rsvpOptions.map((opt) => {
+                        const isSelected = tempRSVPOption === opt;
+                        const optCandidate = getCandidateRsvpDate(opt);
+                        const isOptDisabled = Boolean(
+                          isLiveEditing &&
+                          savedDeadline &&
+                          !isNaN(savedDeadline.getTime()) &&
+                          optCandidate &&
+                          optCandidate.getTime() < savedDeadline.getTime() - 59000
+                        );
+
+                        return (
+                          <button
+                            key={opt}
+                            type="button"
+                            disabled={isOptDisabled}
+                            onClick={() => {
+                              if (isOptDisabled) return;
+                              onTempRSVPOptionChange(isSelected ? null : opt);
+                            }}
                             style={{
-                              width: 14,
-                              height: 14,
-                              borderRadius: "50%",
-                              border: isSelected ? "2px solid #FFFFFF" : "2px solid #71717A",
+                              width: "100%",
+                              height: 38,
+                              borderRadius: 8,
+                              border: "none",
+                              background: isSelected ? "rgba(255, 255, 255, 0.08)" : "transparent",
+                              color: isSelected ? "#FFFFFF" : isOptDisabled ? "#52525B" : "#A1A1AA",
+                              fontSize: 13,
+                              fontFamily: "Inter, sans-serif",
+                              fontWeight: 500,
                               display: "flex",
                               alignItems: "center",
-                              justifyContent: "center",
-                              background: "transparent",
+                              padding: "0 10px",
+                              gap: 12,
+                              cursor: isOptDisabled ? "not-allowed" : "pointer",
+                              opacity: isOptDisabled ? 0.35 : 1,
                               transition: "all 0.15s ease",
-                              flexShrink: 0,
                             }}
                           >
-                            {isSelected && (
-                              <div
-                                style={{
-                                  width: 6,
-                                  height: 6,
-                                  borderRadius: "50%",
-                                  background: "#FFFFFF",
-                                }}
-                              />
-                            )}
-                          </div>
-                          <span>{opt}</span>
-                        </button>
-                      );
-                    })}
+                            <div
+                              style={{
+                                width: 14,
+                                height: 14,
+                                borderRadius: "50%",
+                                border: isSelected ? "2px solid #FFFFFF" : "2px solid #71717A",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                background: "transparent",
+                                transition: "all 0.15s ease",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {isSelected && (
+                                <div
+                                  style={{
+                                    width: 6,
+                                    height: 6,
+                                    borderRadius: "50%",
+                                    background: "#FFFFFF",
+                                  }}
+                                />
+                              )}
+                            </div>
+                            <span>{opt}</span>
+                          </button>
+                        );
+                      });
+                    })()}
 
-                    <div style={{ paddingTop: 8, marginTop: 4, borderTop: "1px solid rgba(255, 255, 255, 0.04)", textAlign: "center" }}>
-                      <p style={{ margin: 0, fontSize: 10.5, color: "rgba(255, 255, 255, 0.4)", fontFamily: "Inter, sans-serif", lineHeight: 1.2 }}>
-                        {(() => {
-                          if (!tempRSVPOption) return "Friends can respond until the plan starts.";
-                          const clean = tempRSVPOption.replace('<', '').trim().toLowerCase();
-                          return `Friends can respond until ${clean} before the plan starts.`;
-                        })()}
-                      </p>
+                    <div style={{ paddingTop: 8, marginTop: 4, borderTop: "1px solid rgba(255, 255, 255, 0.04)", minHeight: 20, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {rsvpError ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 6,
+                            color: "#EF4444",
+                            fontSize: 11,
+                            fontWeight: 500,
+                            fontFamily: "Inter, sans-serif",
+                            lineHeight: 1.2,
+                          }}
+                        >
+                          <AlertCircle className="w-3.5 h-3.5 text-[#EF4444] flex-shrink-0" style={{ opacity: 1 }} />
+                          <span>{rsvpError}</span>
+                        </div>
+                      ) : (
+                        <p style={{ margin: 0, fontSize: 10.5, color: "rgba(255, 255, 255, 0.4)", fontFamily: "Inter, sans-serif", lineHeight: 1.2, textAlign: "center" }}>
+                          {(() => {
+                            if (!tempRSVPOption) return "Friends can respond until the plan starts.";
+                            const clean = tempRSVPOption.replace('<', '').trim().toLowerCase();
+                            return `Friends can respond until ${clean} before the plan starts.`;
+                          })()}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1256,7 +1549,7 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
             <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleClose}
                 style={{
                   background: "none",
                   border: "none",

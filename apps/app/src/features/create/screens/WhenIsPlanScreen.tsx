@@ -936,8 +936,8 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
           setIsEditorOpen(false);
           setEditorImageFile(null);
         }}
-        onSave={({ previewUrl, blob }) => {
-          form.setCustomCoverImage(previewUrl, blob);
+        onSave={({ previewUrl, blob, originalBlob, originalPreviewUrl }) => {
+          form.setCustomPlanImages(originalBlob, originalPreviewUrl, blob, previewUrl);
           setIsEditorOpen(false);
           setEditorImageFile(null);
         }}

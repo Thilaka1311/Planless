@@ -39,7 +39,6 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
     dbWalletPaidTransactions,
     dbWalletSettlements,
     dbPlansLocal,
-    dbCirclesLocal,
     dbPlanParticipantsLocal,
     dbUsersLocal,
     loading,
@@ -61,12 +60,11 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
       dbWalletTransactions,
       mergedUsers,
       dbPlansLocal,
-      dbCirclesLocal,
       dbPlanParticipantsLocal,
       dbWalletPaidTransactions,
       dbWalletSettlements
     );
-  }, [activeUserUuid, dbWalletTransactions, mergedUsers, dbPlansLocal, dbCirclesLocal, dbPlanParticipantsLocal, dbWalletPaidTransactions, dbWalletSettlements]);
+  }, [activeUserUuid, dbWalletTransactions, mergedUsers, dbPlansLocal, dbPlanParticipantsLocal, dbWalletPaidTransactions, dbWalletSettlements]);
 
   // Unified list of all person relationships (active unsettled + settled)
   const visibleRelationships = useMemo(() => {

@@ -1,6 +1,5 @@
 import { supabase } from "../../../../lib/supabaseClient";
 import { normalizeFriendshipUsers } from "../utils/normalize";
-import { DbCircleMember } from "../../../core/types";
 
 export interface Friendship {
   id: string;
@@ -302,87 +301,6 @@ export async function getRelationship(currentUserId: string, otherUserId: string
   }
 
   return "NO_RELATIONSHIP";
-}
-
-/**
- * Automatically generates accepted friendships for all members belonging to the same circles.
- */
-export async function generateCircleFriendshipsDirect(insertedMembers: DbCircleMember[]): Promise<void> {
-  try {
-    if (insertedMembers.length === 0) return;
-
-    const circleIds = [...new Set(insertedMembers.map(m => m.circle_id))];
-    if (circleIds.length === 0) return;
-
-    const { data: allMembersData, error: membersError } = await supabase
-      .from("circle_members")
-      .select("*");
-
-    if (membersError || !allMembersData) {
-      console.error("[Friendships Service] Failed to fetch circle members:", membersError);
-      return;
-    }
-
-    const { data: existingFriendships, error: friendshipsError } = await supabase
-      .from("friendships")
-      .select("*");
-
-    if (friendshipsError || !existingFriendships) {
-      console.error("[Friendships Service] Failed to fetch existing friendships:", friendshipsError);
-      return;
-    }
-
-    const circleMembers = allMembersData.filter(m => circleIds.includes(m.circle_id));
-
-    const membersByCircle: Record<string, string[]> = {};
-    circleMembers.forEach(m => {
-      if (m.circle_id && m.user_id) {
-        if (!membersByCircle[m.circle_id]) {
-          membersByCircle[m.circle_id] = [];
-        }
-        membersByCircle[m.circle_id].push(m.user_id);
-      }
-    });
-
-    const newFriendshipsMap = new Map<string, { user_1_id: string; user_2_id: string; requested_by: string; status: 'ACCEPTED' }>();
-
-    Object.values(membersByCircle).forEach(userIds => {
-      const uniqueUserIds = [...new Set(userIds)];
-      for (let i = 0; i < uniqueUserIds.length; i++) {
-        for (let j = i + 1; j < uniqueUserIds.length; j++) {
-          const u1 = uniqueUserIds[i];
-          const u2 = uniqueUserIds[j];
-          if (u1 === u2) continue;
-
-          const normalized = normalizeFriendshipUsers(u1, u2);
-          const key = `${normalized.user_1_id}_${normalized.user_2_id}`;
-
-          newFriendshipsMap.set(key, {
-            user_1_id: normalized.user_1_id,
-            user_2_id: normalized.user_2_id,
-            requested_by: normalized.user_1_id,
-            status: "ACCEPTED"
-          });
-        }
-      }
-    });
-
-    const friendshipsToInsert = Array.from(newFriendshipsMap.values()).filter(f => {
-      return !existingFriendships.some(ef => ef.user_1_id === f.user_1_id && ef.user_2_id === f.user_2_id);
-    });
-
-    if (friendshipsToInsert.length > 0) {
-      const { error: insertError } = await supabase
-        .from("friendships")
-        .insert(friendshipsToInsert);
-
-      if (insertError) {
-        console.error("[Friendships Service] Error inserting friendships:", insertError);
-      }
-    }
-  } catch (err) {
-    console.error("[Friendships Service] Failed to generate circle friendships:", err);
-  }
 }
 
 /**

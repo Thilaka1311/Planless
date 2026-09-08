@@ -1,10 +1,10 @@
 /**
- * mappers.ts — Convert raw DB rows into the UI Plan/Circle/Transaction models.
+ * mappers.ts — Convert raw DB rows into the UI Plan/Transaction models.
  */
 
 import {
-  Plan, Circle, Transaction, User, NotificationItem,
-  DbCircle, DbCircleMember, DbPlan, DbPlanParticipant, DbTransaction
+  Plan, Transaction, User, NotificationItem,
+  DbPlan, DbPlanParticipant, DbTransaction
 } from "../src/core/types";
 import { normalizeStatus } from "./participantStatus";
 import { getPlanCover, PLAN_COVER_IMAGES } from "../src/features/plans/config/planCoverImages";
@@ -38,8 +38,7 @@ export const mapPlansToLegacyPlans = (
   plansList: DbPlan[],
   participants: DbPlanParticipant[],
   usersList: User[],
-  activeUserId: string = "",
-  circlesList: DbCircle[] = []
+  activeUserId: string = ""
 ): Plan[] => {
   const activeUserObj = usersList.find(u => u.user_id === activeUserId || (u as any).id === activeUserId);
   const activeUuid = activeUserObj ? (activeUserObj as any).id : activeUserId;
@@ -74,9 +73,6 @@ export const mapPlansToLegacyPlans = (
   const isUsersHydrating = usersList.length <= 1;
 
   return plansList.map(p => {
-    // Resolve circle name - circle_id is legacy in V2 schema
-    const circleIdVal = null;
-    const circleNameVal = "Custom Plan";
     const itemParticipants = participants.filter(pp => pp.plan_id === p.id);
 
     const hostParticipant = itemParticipants.find(pp => pp.role === "HOST" && pp.rsvp_status === "JOINED") 
@@ -262,12 +258,21 @@ export const mapPlansToLegacyPlans = (
     const userReactionVal = undefined;
     const isHappenedVal = p.status === "COMPLETED";
 
+    // Automatic transition to OVERDUE if scheduled_at has passed and plan is LIVE
+    let effectiveStatus = p.status;
+    if (effectiveStatus === "LIVE" && p.scheduled_at) {
+      const scheduledTime = new Date(p.scheduled_at).getTime();
+      if (!isNaN(scheduledTime) && scheduledTime < Date.now()) {
+        effectiveStatus = "OVERDUE" as any;
+      }
+    }
+
     return {
       id: p.id,
       dbUuid: p.id,
       publicId: p.public_id,
       title: p.title,
-      groupId: circleIdVal,
+      groupId: null,
       hostId: hostIdVal,
       members: members,
       capacity: planSizeVal,
@@ -279,7 +284,7 @@ export const mapPlansToLegacyPlans = (
       time: timeVal,
       location: p.place_name,
       paymentAmount: activeShareVal,
-      status: p.status as any,
+      status: effectiveStatus as any,
       datetime: p.scheduled_at,
       createdAt: p.created_at,
       waitlistEnabled: false,
@@ -295,9 +300,12 @@ export const mapPlansToLegacyPlans = (
       // UI Legacy Properties
       category: (categoryVal === "sports" ? "sports" : categoryVal === "dining" ? "restaurants" : categoryVal) as any,
       cost: costVal,
+      total_cost: costVal,
+      totalCost: costVal,
       confirmedCount: goingCount,
       maxSpots: planSizeVal,
       coverImage: coverImageVal,
+      cardCoverImage: (p as any).cover_card_image || null,
       creatorId: hostIdVal,
       creatorName: (members.find(m => m.isHost)?.name) || creatorFallback.full_name,
       creatorAvatar: (members.find(m => m.isHost)?.avatar) || creatorFallback.profile_photo,
@@ -317,63 +325,6 @@ export const mapPlansToLegacyPlans = (
 
       // Restaurant Plan fields
       interestedUsers: [],
-    };
-  });
-};
-
-// Helper to map legacy Circles component expectations
-export const mapCirclesToLegacyCircles = (
-  circlesList: DbCircle[],
-  members: DbCircleMember[],
-  usersList: User[]
-): Circle[] => {
-  return circlesList.map(c => {
-    const circlePublicId = c.circle_id || (c as any).public_id || c.id;
-    const circleUuid = c.id || (c as any).dbUuid || c.circle_id;
-
-    const circleMemberRecords = members.filter(cm => cm.circle_id === circlePublicId || cm.circle_id === circleUuid);
-    const membersList = circleMemberRecords.map(cmr => {
-      const u = usersList.find(usr => (usr as any).id === cmr.user_id || usr.user_id === cmr.user_id);
-      if (!u) return null;
-      return {
-        userId: (u as any).id || u.user_id,
-        name: u.full_name,
-        phone: u.phone_number,
-        avatar: (u as any).profile_photo_path || u.profile_photo || defaultAvatar,
-        autoJoinPlans: !!cmr.auto_join_enabled,
-        auto_join_enabled: !!cmr.auto_join_enabled,
-        role: (() => {
-          const r = String(cmr.role).toLowerCase();
-          if (r === "creator_admin" || r === "host" || r === "admin") return "admin";
-          return "member";
-        })()
-      };
-    }).filter(Boolean) as any[];
-
-    return {
-      id: circlePublicId,
-      dbUuid: circleUuid,
-      name: c.name,
-      membersCount: membersList.length,
-      avatars: membersList.slice(0, 5).map(m => m.avatar),
-      groupImage: c.cover_image,
-      lastSpontaneousActivity: c.category === "football" ? "7-a-side booked: TODAY 8:00 PM" : "Late-night chats",
-      description: c.description,
-      type: c.category === "football" ? "Sports Match Crew" : "Spontaneous Hangout Circle",
-      location: c.location_anchor,
-      format: c.privacy === "private" ? "Spontaneous Private Crew" : "Public Community",
-      playersOnField: membersList.length,
-      timeWindow: "Flexible hours",
-      membersList: membersList,
-      allow_member_edit: !!c.allow_member_edit,
-      allow_member_host: !!c.allow_member_host,
-      allow_member_invite: !!c.allow_member_invite,
-      allow_auto_join: !!c.allow_auto_join,
-      plan_creation_permission: (c as any).plan_creation_permission || "ANYONE",
-      add_members_permission: (c as any).add_members_permission || "ANYONE",
-      edit_info_permission: (c as any).edit_info_permission || "HOSTS_ONLY",
-      remove_members_permission: (c as any).remove_members_permission || "HOSTS_ONLY",
-      manage_roles_permission: (c as any).manage_roles_permission || "HOSTS_ONLY"
     };
   });
 };

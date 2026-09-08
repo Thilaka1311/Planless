@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare } from "lucide-react";
+import { ChevronLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
@@ -54,6 +54,8 @@ interface HeroHeaderProps {
   onOpenExpenses?: () => void;
   currentPage?: number;
   onSelectPage?: (pageIndex: number) => void;
+  titleError?: boolean | string | null;
+  validationShakeKey?: number;
 }
 
 export const HeroHeader: React.FC<HeroHeaderProps> = ({
@@ -80,6 +82,8 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   onOpenExpenses,
   currentPage,
   onSelectPage,
+  titleError,
+  validationShakeKey = 0,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
@@ -225,7 +229,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
             </div>
           </div>
 
-          {/* 3-Way Navigation Tab Bar (Participants | Chat | Activity) */}
+          {/* 2-Way Navigation Tab Bar (Participants | Chat) */}
           {onSelectPage !== undefined && (
             <div className="relative w-full flex items-center border-t border-white/10 mt-2.5 pt-0.5 pb-0.5">
               <button
@@ -246,23 +250,14 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               >
                 Chat
               </button>
-              <button
-                type="button"
-                onClick={() => onSelectPage(2)}
-                className={`flex-1 py-1.5 text-center text-xs sm:text-sm transition-colors cursor-pointer select-none ${
-                  currentPage === 2 ? "font-bold text-white" : "font-medium text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                Activity
-              </button>
 
               {/* Animated Active Orange Indicator Line */}
               <motion.div
                 className="absolute bottom-0 h-[2.5px] bg-[#FF6B2C] rounded-full"
                 initial={false}
                 animate={{
-                  left: `${((currentPage ?? 1) * 100) / 3}%`,
-                  width: `${100 / 3}%`,
+                  left: `${(currentPage ?? 1) * 50}%`,
+                  width: "50%",
                 }}
                 transition={{ type: "spring", stiffness: 450, damping: 35 }}
               />
@@ -449,17 +444,21 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                   setIsEditingTitle(true);
                 }
               }}
-              className={`text-[17px] font-bold tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full line-clamp-2 break-words ${
+              className={`text-[17px] font-bold tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full inline-flex items-center justify-center gap-1.5 ${
                 isHost && onEditTitle ? "cursor-pointer pointer-events-auto hover:opacity-90 active:opacity-75" : ""
               } ${!title || title === "Set a title" || title === "Enter Title" ? "text-white/60 font-semibold" : "text-white"}`}
-              style={{
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              }}
             >
-              {title && title !== "Enter Title" ? title : "Set a title"}
+              <span className="truncate max-w-full">{title && title !== "Enter Title" ? title : "Set a title"}</span>
+              {Boolean(titleError) && (!title || title === "Set a title" || title === "Enter Title") && (
+                <motion.span
+                  key={validationShakeKey}
+                  animate={validationShakeKey > 0 ? { x: [0, -4, 4, -3, 3, -1, 1, 0] } : {}}
+                  transition={{ duration: 0.35, ease: "easeInOut" }}
+                  className="inline-flex items-center justify-center flex-shrink-0"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-[#FF6B2C] opacity-100 flex-shrink-0" />
+                </motion.span>
+              )}
             </h1>
           )}
         </div>

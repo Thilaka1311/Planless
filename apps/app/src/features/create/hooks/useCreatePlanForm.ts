@@ -64,10 +64,13 @@ export function useCreatePlanForm() {
     () => initialDraft?.customCoverImage || null
   );
   const [customCoverBlob, setCustomCoverBlob] = useState<Blob | null>(null);
+  // Original (full) image state — used in Plan Preview / Hero
+  const [customOriginalImage, setCustomOriginalImage] = useState<string | null>(null);
+  const [customOriginalBlob, setCustomOriginalBlob] = useState<Blob | null>(null);
 
   const handleSetCustomCover = useCallback((previewUrl: string | null, blob?: Blob | null) => {
     setCustomCoverImage((prev) => {
-      if (prev && prev.startsWith("blob:") && prev !== previewUrl) {
+      if (prev && prev.startsWith('blob:') && prev !== previewUrl) {
         URL.revokeObjectURL(prev);
       }
       return previewUrl;
@@ -77,6 +80,38 @@ export function useCreatePlanForm() {
     if (blob) {
       saveDraftCoverBlob(blob).catch(() => {});
     } else if (previewUrl === null) {
+      clearDraftCoverBlob().catch(() => {});
+    }
+  }, []);
+
+  /**
+   * Sets both the original image (for Plan Preview) and the cropped image (for Home Card)
+   * in a single atomic call. This is the primary setter used by PlanImageEditorModal.onSave.
+   */
+  const setCustomPlanImages = useCallback((
+    originalBlob: Blob | null,
+    originalPreviewUrl: string | null,
+    cropBlob: Blob | null,
+    cropPreviewUrl: string | null
+  ) => {
+    // Original image — Plan Preview / Hero
+    setCustomOriginalImage((prev) => {
+      if (prev && prev.startsWith('blob:') && prev !== originalPreviewUrl) URL.revokeObjectURL(prev);
+      return originalPreviewUrl;
+    });
+    setCustomOriginalBlob(originalBlob);
+
+    // Cropped image — Home Plan Card
+    setCustomCoverImage((prev) => {
+      if (prev && prev.startsWith('blob:') && prev !== cropPreviewUrl) URL.revokeObjectURL(prev);
+      return cropPreviewUrl;
+    });
+    setCustomCoverBlob(cropBlob);
+
+    // Persist original blob for draft restoration
+    if (originalBlob) {
+      saveDraftCoverBlob(originalBlob).catch(() => {});
+    } else if (originalPreviewUrl === null && cropPreviewUrl === null) {
       clearDraftCoverBlob().catch(() => {});
     }
   }, []);
@@ -308,6 +343,8 @@ export function useCreatePlanForm() {
     setIsCostManuallySet(false);
     setQuickNote('');
     handleSetCustomCover(null, null);
+    setCustomOriginalImage(null);
+    setCustomOriginalBlob(null);
     clearDraftCoverBlob().catch(() => {});
     setIsHostSelected(true);
     setPriorityGuestIds([]);
@@ -355,6 +392,8 @@ export function useCreatePlanForm() {
     isSubmitting, setIsSubmitting,
     customCoverImage, setCustomCoverImage: handleSetCustomCover,
     customCoverBlob,
+    customOriginalImage, customOriginalBlob,
+    setCustomPlanImages,
     isHostSelected, setIsHostSelected,
     priorityGuestIds, setPriorityGuestIds,
     placeId, setPlaceId,

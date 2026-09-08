@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, ReactNode, useCallback, use
 import { Plan, PlanMember, DbPlan, DbPlanParticipant, DbPlanOutcome, User, DbMemory, DbMemoryResult } from "../../../core/types";
 import { DbPlanTeamAssignment } from "../../../../lib/db";
 import { useProfileStore } from "../../profile/state/ProfileContext";
-import { useCirclesStore } from "../../circles/state/CirclesContext";
 import { usePlanTeams } from "../hooks/usePlanTeams";
 import { usePlanParticipants, AddParticipantsOptions } from "../hooks/usePlanParticipants";
 import { usePlanLifecycle } from "../hooks/usePlanLifecycle";
@@ -77,7 +76,6 @@ interface PlansContextType {
   submitMvp: (memoryId: string, voterUuid: string, mvpUuid: string) => Promise<void>;
   createPlan: (
     newDbPlan: any,
-    selectedCircles: string[],
     selectedFriends: any[],
     userProfile: any,
     titleToUse: string,
@@ -125,16 +123,10 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const { activeUserUuid: userId, dbUsers, setDbUsers } = useProfileStore();
 
-  const { dbCircles, dbCircleMembers } = useCirclesStore();
-
   const dbPlansRef = React.useRef(dbPlans);
   dbPlansRef.current = dbPlans;
   const dbPlanParticipantsRef = React.useRef(dbPlanParticipants);
   dbPlanParticipantsRef.current = dbPlanParticipants;
-  const dbCirclesRef = React.useRef(dbCircles);
-  dbCirclesRef.current = dbCircles;
-  const dbCircleMembersRef = React.useRef(dbCircleMembers);
-  dbCircleMembersRef.current = dbCircleMembers;
 
   // ── Refresh coordinator states ──
   const isRefreshingRef = React.useRef(false);
@@ -216,6 +208,9 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         joinedPlans.forEach((p: any) => {
           const { plan_participants, ...planFields } = p;
+          if (planFields.status === 'LIVE' && planFields.scheduled_at && new Date(planFields.scheduled_at).getTime() < Date.now()) {
+            planFields.status = 'OVERDUE';
+          }
           plansList.push(planFields);
 
           if (plan_participants) {
@@ -299,6 +294,29 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       window.removeEventListener("online", triggerRecovery);
     };
   }, [refreshPlans]);
+
+  // Periodic check for plans transitioning to OVERDUE while the app is active
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const hasOverdueTransition = dbPlansRef.current.some(
+        p => p.status === "LIVE" && p.scheduled_at && new Date(p.scheduled_at).getTime() < now
+      );
+      if (hasOverdueTransition) {
+        setDbPlans(prev =>
+          prev.map(p => {
+            if (p.status === "LIVE" && p.scheduled_at && new Date(p.scheduled_at).getTime() < now) {
+              return { ...p, status: "OVERDUE" };
+            }
+            return p;
+          })
+        );
+        api.syncOverduePlansRPC();
+      }
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Realtime subscription
   useEffect(() => {
@@ -477,13 +495,11 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Consolidated Derived plans mapping pipeline — pure projection, no effect needed
   const plans = useMemo(() => {
-    const mapped = mapPlansToLegacyPlans(dbPlans, dbPlanParticipants, planUsers, userId, dbCircles);
+    const mapped = mapPlansToLegacyPlans(dbPlans, dbPlanParticipants, planUsers, userId);
     return mapped;
-  }, [dbPlans, dbPlanParticipants, planUsers, userId, dbCircles]);
+  }, [dbPlans, dbPlanParticipants, planUsers, userId]);
 
   const insertSystemMessage = async (planUuid: string, content: string, actorUuid: string | null) => {
-    // circle_messages is deprecated in V2, and chat_messages does not store system messages.
-
     return;
   };
 
@@ -531,8 +547,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setDbPlanParticipants,
     insertSystemMessage,
     refreshPlans: (targetTables) => refreshPlans(targetTables, "plan_participant_mutation"),
-    unassignTeam,
-    dbCircleMembers
+    unassignTeam
   });
   const waitlistPlan = async (rawPlanId: string, userProfile: any) => {
     const planId = cleanPlanId(rawPlanId);
@@ -550,9 +565,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!userUuid || !isUuid(userUuid)) {
       console.error(`[PlansContext] Cannot pass plan: user UUID is missing or invalid:`, userUuid);
       return;
-    } const existingBefore = dbPlanParticipants.find(p => p.plan_id === planUuid && p.user_id === userUuid);
-
-
+    }
+    const existingBefore = dbPlanParticipants.find(p => p.plan_id === planUuid && p.user_id === userUuid);
 
     // 2. Database Persistence
     if (planUuid && userUuid) {
@@ -575,8 +589,6 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await refreshPlans(undefined, "pass_plan_mutation");
       }
     }
-
-
     // 3. Sync state from DB (handled by realtime)
   };
 
@@ -592,8 +604,6 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     dbPlans,
     dbPlanParticipants,
     dbPlanOutcomes,
-    dbCircles,
-    dbCircleMembers,
     dbUsers: planUsers,
     userId,
     setDbPlans,
@@ -748,13 +758,33 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const createPlan = async (
     newDbPlan: any,
-    selectedCircles: string[],
-    selectedFriends: any[],
-    userProfile: any,
-    titleToUse: string,
-    isHostSelected = true,
+    friendsOrCircles: any[],
+    friendsOrProfile: any,
+    profileOrTitle: any,
+    titleOrIsHost?: any,
+    isHostOrPriority?: any,
     priorityGuestIds: string[] = []
   ) => {
+    let selectedFriends: any[];
+    let userProfile: any;
+    let titleToUse: string;
+    let isHostSelected = true;
+    let effectivePriorityGuestIds: string[] = priorityGuestIds;
+
+    if (Array.isArray(friendsOrProfile)) {
+      selectedFriends = friendsOrProfile;
+      userProfile = profileOrTitle;
+      titleToUse = titleOrIsHost;
+      isHostSelected = isHostOrPriority !== undefined ? Boolean(isHostOrPriority) : true;
+      effectivePriorityGuestIds = Array.isArray(priorityGuestIds) ? priorityGuestIds : [];
+    } else {
+      selectedFriends = friendsOrCircles;
+      userProfile = friendsOrProfile;
+      titleToUse = profileOrTitle;
+      isHostSelected = titleOrIsHost !== undefined ? Boolean(titleOrIsHost) : true;
+      effectivePriorityGuestIds = Array.isArray(isHostOrPriority) ? isHostOrPriority : [];
+    }
+
     const dbPlanRow = await api.createPlan(newDbPlan);
     const insertedPlanUuid = dbPlanRow?.id;
 
@@ -772,40 +802,15 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const inviteeUuids: string[] = [];
     const uniqueInviteeUuids = new Set<string>();
-    const inviteeToCircleMap = new Map<string, string | null>();
-
-    if (selectedCircles.length > 0) {
-      const circleUuids = selectedCircles.map((cid) => {
-        const c = dbCirclesRef.current.find((x: any) => x.circle_id === cid || x.id === cid);
-        return c?.id || cid;
-      });
-      const targetMembers = dbCircleMembersRef.current.filter((m: any) => circleUuids.includes(m.circle_id));
-      targetMembers.forEach((m: any) => {
-        if (m.user_id && m.user_id !== userProfile.dbUuid) {
-          uniqueInviteeUuids.add(m.user_id);
-          inviteeToCircleMap.set(m.user_id, m.circle_id);
-        }
-      });
-    }
 
     if (selectedFriends.length > 0) {
       selectedFriends.forEach((friendObj) => {
         const friendUuid = friendObj.dbUuid || friendObj.id || null;
         if (friendUuid && friendUuid !== userProfile.dbUuid) {
           uniqueInviteeUuids.add(friendUuid);
-          if (!inviteeToCircleMap.has(friendUuid)) {
-            inviteeToCircleMap.set(friendUuid, null);
-          }
         }
       });
     }
-
-    const getParticipantCircleId = (inviteeUuid: string) => {
-      const matchedMember = dbCircleMembersRef.current.find(
-        (m: any) => m.user_id === inviteeUuid
-      );
-      return matchedMember?.circle_id || null;
-    };
 
     const isAssignedMode = newDbPlan?.participant_filtering === 'ASSIGNED';
 
@@ -827,7 +832,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (fUuid) friendAssignmentMap.set(fUuid, 'GOING');
         });
       } else {
-        const priorityIds: string[] = priorityGuestIds || [];
+        const priorityIds: string[] = effectivePriorityGuestIds || [];
         const goingCapacityForFriends = Math.max(0, planCapacity - hostOffset);
 
         let currentWaitlistPos = 1;
@@ -865,22 +870,11 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         rsvp_status: "JOINED",
         assigned_group: isAssignedMode ? "GOING" : null,
         responded_at: hostJoinedAt,
-        circle_id: getParticipantCircleId(userProfile.dbUuid || userProfile.id || userId)
       });
     }
 
-    const autoJoinedUuids = new Set<string>();
     uniqueInviteeUuids.forEach((inviteeUuid) => {
       inviteeUuids.push(inviteeUuid);
-      let shouldAutoJoin = false;
-      const cId = getParticipantCircleId(inviteeUuid);
-      if (cId) {
-        const circleObj = dbCirclesRef.current.find((c: any) => c.id === cId);
-        if (circleObj?.allow_auto_join) {
-          shouldAutoJoin = true;
-          autoJoinedUuids.add(inviteeUuid);
-        }
-      }
 
       const assignedGroup = isAssignedMode
         ? (friendAssignmentMap.get(inviteeUuid) || "GOING")
@@ -894,11 +888,10 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         plan_id: insertedPlanUuid,
         user_id: inviteeUuid,
         role: "PARTICIPANT",
-        rsvp_status: shouldAutoJoin ? "JOINED" : "INVITED",
+        rsvp_status: "INVITED",
         assigned_group: assignedGroup,
         waitlist_position: waitlistPos,
-        responded_at: shouldAutoJoin ? new Date().toISOString() : null,
-        circle_id: cId
+        responded_at: null,
       });
     });
 
@@ -916,7 +909,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       dbPartRow = partResultData?.[0];
     }
 
-    // Insert plan_created activity log
+    // Insert plan_created activity log (temporarily disabled)
+    /*
     try {
       await supabase.from("plan_activity").insert({
         plan_id: insertedPlanUuid,
@@ -933,6 +927,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (actErr) {
       console.error("[createPlan] Failed to insert plan_activity:", actErr);
     }
+    */
 
     if (userProfile.dbUuid) {
       await syncUserStats(userProfile.dbUuid, "create_plan");
@@ -1171,7 +1166,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         prev.map(p => (p.id === planUuid ? { ...p, ...dbPayload } : p))
       );
 
-      // 3. Log activity when setting is toggled ON or OFF
+      // 3. Log activity when setting is toggled ON or OFF (temporarily disabled)
+      /*
       if (isToggleChanged && userId) {
         const actorUser = dbUsers.find(u => u.id === userId);
         const actorName = actorUser?.full_name || (actorUser as any)?.name || "Host";
@@ -1189,6 +1185,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
           });
       }
+      */
     },
     [plans, userId, dbUsers]
   );

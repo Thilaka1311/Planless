@@ -1,6 +1,6 @@
 import { 
-  User, DbCircle, DbCircleMember, DbPlan, DbPlanParticipant, DbTransaction,
-  NotificationItem, UserProfile, Plan, Circle, Transaction 
+  User, DbPlan, DbPlanParticipant, DbTransaction,
+  NotificationItem, UserProfile, Plan, Transaction 
 } from "../../core/types";
 
 // Generates an elegant SVG initials avatar with consistent flat-gradient highlights 
@@ -207,72 +207,7 @@ export const initialUserProfile = {
 };
 
 // ----------------------------------------------------
-// 2. CIRCLES TABLE
-// ----------------------------------------------------
-export const initialCircles: DbCircle[] = [
-  {
-    circle_id: "C001",
-    name: "Navkis Matchday",
-    description: "Football Group based out of New Bel Road. Format: 7v7, 14 players on field.",
-    category: "football",
-    created_by: "U002", // Keval
-    cover_image: "/navkis_matchday.png",
-    location_anchor: "New Bel Road",
-    privacy: "private",
-    created_at: "2026-05-15T17:00:00Z"
-  },
-  {
-    circle_id: "C002",
-    name: "Midnight Masala",
-    description: "Friends who make spontaneous plans including dinners, drives, cafés, and beach hangouts.",
-    category: "sunset",
-    created_by: "U005", // Rahul
-    cover_image: "https://images.unsplash.com/photo-1518063319789-7217e6706b04?auto=format&fit=crop&q=80&w=600",
-    location_anchor: "Marina Beach Breeze Point",
-    privacy: "private",
-    created_at: "2026-05-16T18:30:00Z"
-  },
-  {
-    circle_id: "C003",
-    name: "Jobis",
-    description: "Close friend group for hanging out, cafés, late-night waffles, and spontaneous chill meetups.",
-    category: "cafe",
-    created_by: "U004", // Guhan
-    cover_image: "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=600",
-    location_anchor: "Glen's Bakehouse New Bel Road",
-    privacy: "private",
-    created_at: "2026-05-17T11:00:00Z"
-  }
-];
-
-// ----------------------------------------------------
-// 3. CIRCLE_MEMBERS TABLE (Stores relationships connecting users to circles)
-// ----------------------------------------------------
-export const initialCircleMembers: DbCircleMember[] = [
-  // C001 Navkis Members
-  // C001 Navkis Members
-  { circle_member_id: "CM001", circle_id: "C001", user_id: "U002", role: "admin", joined_at: "2026-05-15T17:05:00Z" } as any, // Keval
-  { circle_member_id: "CM002", circle_id: "C001", user_id: "U003", role: "member", joined_at: "2026-05-15T17:10:00Z" } as any, // Medhaj
-  { circle_member_id: "CM003", circle_id: "C001", user_id: "U001", role: "member", joined_at: "2026-05-15T17:15:00Z" } as any, // Thilaka (You)
-  { circle_member_id: "CM004", circle_id: "C001", user_id: "U012", role: "member", joined_at: "2026-05-15T17:20:00Z" } as any, // Renjith
-  
-  // C002 Midnight Masala Members
-  { circle_member_id: "CM101", circle_id: "C002", user_id: "U005", role: "admin", joined_at: "2026-05-16T18:35:00Z" } as any, // Rahul
-  { circle_member_id: "CM102", circle_id: "C002", user_id: "U001", role: "member", joined_at: "2026-05-16T18:40:00Z" } as any, // Thilaka
-  { circle_member_id: "CM103", circle_id: "C002", user_id: "U007", role: "member", joined_at: "2026-05-16T18:42:00Z" } as any, // Raghavan
-  { circle_member_id: "CM104", circle_id: "C002", user_id: "U008", role: "member", joined_at: "2026-05-16T18:45:00Z" } as any, // Pratyush
-  { circle_member_id: "CM105", circle_id: "C002", user_id: "U009", role: "member", joined_at: "2026-05-16T18:50:00Z" } as any, // Neelesh
-  
-  // C003 Jobis Members
-  { circle_member_id: "CM201", circle_id: "C003", user_id: "U004", role: "admin", joined_at: "2026-05-17T11:05:00Z" } as any, // Guhan
-  { circle_member_id: "CM202", circle_id: "C003", user_id: "U001", role: "member", joined_at: "2026-05-17T11:10:00Z" } as any, // Thilaka
-  { circle_member_id: "CM203", circle_id: "C003", user_id: "U010", role: "member", joined_at: "2026-05-17T11:12:00Z" } as any, // Ravi
-  { circle_member_id: "CM204", circle_id: "C003", user_id: "U006", role: "member", joined_at: "2026-05-17T11:15:00Z" } as any, // Sudeshna
-  { circle_member_id: "CM205", circle_id: "C003", user_id: "U011", role: "member", joined_at: "2026-05-17T11:20:00Z" } as any  // Vinod
-];
-
-// ----------------------------------------------------
-// 4. PLANS TABLE (Central focal point)
+// 2. PLANS TABLE (Central focal point)
 // ----------------------------------------------------
 export const initialPlans: DbPlan[] = [
   {

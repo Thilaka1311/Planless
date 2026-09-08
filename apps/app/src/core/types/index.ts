@@ -26,38 +26,13 @@ export interface User {
 }
 
 
-// 2. CIRCLES TABLE
-export interface DbCircle {
-  id?: string; // UUID primary key
-  circle_id: string;
-  name: string;
-  description: string;
-  category: string;
-  created_by: string; // user_id U001 etc.
-  cover_image: string;
-  location_anchor: string;
-  privacy: "public" | "private";
-  allow_member_edit?: boolean;
-  allow_member_host?: boolean;
-  allow_member_invite?: boolean;
-  allow_auto_join?: boolean;
-  created_at: string;
-}
-
-// 3. CIRCLE_MEMBERS TABLE (Relationship table connecting users to circles)
-export interface DbCircleMember {
-  circle_id: string;
-  user_id: string;
-  role: "admin" | "member";
-  auto_join_enabled?: boolean;
-  joined_at: string;
-}
-
-// 4. PLANS TABLE (The central focus object of everything in Planless)
+// 2. PLANS TABLE (The central focus object of everything in Planless)
 export interface DbPlan {
   id: string;
   plan_id?: string;
   public_id: string;
+  host_id?: string;
+  created_by?: string;
   discovery_item_id?: string | null;
   discovery_items?: { category: string; subcategory: string | null } | null;
   category?: string;
@@ -74,11 +49,10 @@ export interface DbPlan {
   attended_participants?: number;
   attendedParticipants?: number;
   total_cost: number;
-  status: 'LIVE' | 'COMPLETED' | 'CANCELLED';
+  status: 'LIVE' | 'OVERDUE' | 'COMPLETED' | 'CANCELLED';
   cover_image?: string | null;
   created_at: string;
   updated_at: string;
-  circle_id?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   allow_participant_invites?: boolean;
@@ -100,7 +74,6 @@ export interface DbPlanParticipant {
   assigned_group?: 'GOING' | 'WAITLIST' | null;
   waitlist_position?: number | null;
   cost_per_participant?: number | null;
-  circle_id?: string | null;
   leave_requested?: boolean;
   leave_requested_at?: string | null;
   created_at?: string;
@@ -302,7 +275,7 @@ export interface Plan {
   paymentAmount: number;
   totalCost?: number;
   total_cost?: number;
-  status: "LIVE" | "COMPLETED" | "CANCELLED" | "PENDING" | "BOOKING_READY" | "CONFIRMED" | "SLOT_UNAVAILABLE";
+  status: "LIVE" | "OVERDUE" | "COMPLETED" | "CANCELLED" | "PENDING" | "BOOKING_READY" | "CONFIRMED" | "SLOT_UNAVAILABLE";
   datetime?: string;
   scheduled_at?: string;
   createdAt: string;
@@ -322,6 +295,8 @@ export interface Plan {
   confirmedCount: number;
   maxSpots?: number;
   coverImage: string;
+  /** Cropped 9:16 portrait image for the Home Plan Card. Falls back to coverImage when absent. */
+  cardCoverImage?: string | null;
   creatorId: string;
   creatorName: string;
   creatorAvatar: string;
@@ -337,9 +312,6 @@ export interface Plan {
   isHappened?: boolean;
   isActive?: boolean;
   reminderNotificationSent?: boolean;
-  circleId?: string | null;
-  circleName?: string | null;
-  isCircleHydrating?: boolean;
   response_cutoff_hours?: number;
   response_deadline_at?: string;
   allowParticipantInvites?: boolean;
@@ -366,30 +338,7 @@ export interface Plan {
   foodReaction?: string;
 }
 
-export interface Circle {
-  id: string;
-  dbUuid?: string;
-  name: string;
-  category?: string;
-  membersCount: number;
-  avatars: string[];
-  groupImage?: string;
-  lastSpontaneousActivity: string;
-  description: string;
-  type: string;
-  location: string;
-  format: string;
-  playersOnField: number;
-  timeWindow: string;
-  membersList: {
-    id?: string;
-    userId?: string;
-    name: string;
-    phone: string;
-    avatar: string;
-    role?: string;
-  }[];
-}
+
 
 export interface Transaction {
   id: string;
@@ -450,16 +399,5 @@ export interface ActivityVenue {
   venue_cost: number;
 }
 
-export interface ChatMessage {
-  id: string;
-  circleId: string;
-  sender: {
-    id: string;
-    name: string;
-    avatar: string;
-  } | null;
-  content: string;
-  createdAt: string;
-  isOwn: boolean;
-}
+
 

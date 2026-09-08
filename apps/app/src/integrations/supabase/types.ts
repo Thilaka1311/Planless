@@ -7,10 +7,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -527,7 +547,6 @@ export type Database = {
           assigned_group:
             | Database["public"]["Enums"]["assigned_group_enum"]
             | null
-          circle_id: string | null
           cost_per_participant: number | null
           created_at: string
           delivery_status: string
@@ -551,7 +570,6 @@ export type Database = {
           assigned_group?:
             | Database["public"]["Enums"]["assigned_group_enum"]
             | null
-          circle_id?: string | null
           cost_per_participant?: number | null
           created_at?: string
           delivery_status?: string
@@ -575,7 +593,6 @@ export type Database = {
           assigned_group?:
             | Database["public"]["Enums"]["assigned_group_enum"]
             | null
-          circle_id?: string | null
           cost_per_participant?: number | null
           created_at?: string
           delivery_status?: string
@@ -659,6 +676,7 @@ export type Database = {
           allow_participant_invites: boolean
           attended_participants: number
           category: string
+          cover_card_image: string | null
           cover_image: string | null
           created_at: string
           discovery_item_id: string | null
@@ -670,6 +688,7 @@ export type Database = {
           place_address: string
           place_id: string | null
           place_name: string
+          plan_size: number | null
           public_id: string
           rsvp_deadline: string
           scheduled_at: string
@@ -684,6 +703,7 @@ export type Database = {
           allow_participant_invites?: boolean
           attended_participants?: number
           category?: string
+          cover_card_image?: string | null
           cover_image?: string | null
           created_at?: string
           discovery_item_id?: string | null
@@ -695,6 +715,7 @@ export type Database = {
           place_address: string
           place_id?: string | null
           place_name: string
+          plan_size?: number | null
           public_id: string
           rsvp_deadline: string
           scheduled_at: string
@@ -709,6 +730,7 @@ export type Database = {
           allow_participant_invites?: boolean
           attended_participants?: number
           category?: string
+          cover_card_image?: string | null
           cover_image?: string | null
           created_at?: string
           discovery_item_id?: string | null
@@ -720,6 +742,7 @@ export type Database = {
           place_address?: string
           place_id?: string | null
           place_name?: string
+          plan_size?: number | null
           public_id?: string
           rsvp_deadline?: string
           scheduled_at?: string
@@ -1123,25 +1146,24 @@ export type Database = {
         }
         Returns: string
       }
-      invite_participants:
-        | {
-            Args: { p_invitee_user_ids: string[]; p_plan_id: string }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_assigned_group?: Database["public"]["Enums"]["assigned_group_enum"]
-              p_invitee_user_ids: string[]
-              p_plan_id: string
-            }
-            Returns: Json
-          }
+      invite_participants: {
+        Args: {
+          p_assigned_group?: Database["public"]["Enums"]["assigned_group_enum"]
+          p_invitee_user_ids: string[]
+          p_plan_id: string
+        }
+        Returns: Json
+      }
       is_expense_participant: {
         Args: { p_expense_id: string; p_user_id: string }
         Returns: boolean
       }
       is_plan_host: {
         Args: { p_plan_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_plan_image_host: {
+        Args: { object_name: string; user_id: string }
         Returns: boolean
       }
       is_wallet_expense_participant: {
@@ -1187,6 +1209,7 @@ export type Database = {
         Args: { p_plan_id: string }
         Returns: undefined
       }
+      rejoin_plan: { Args: { p_plan_id: string }; Returns: Json }
       remove_and_replace_participant: {
         Args: {
           p_plan_id: string
@@ -1224,12 +1247,24 @@ export type Database = {
         }
         Returns: Json
       }
+      request_host_leave_with_replacement: {
+        Args: { p_plan_id: string; p_replacement_user_id: string }
+        Returns: Json
+      }
       request_paid_plan_leave: { Args: { p_plan_id: string }; Returns: Json }
       resolve_paid_plan_leave_request: {
         Args: {
           p_plan_id: string
           p_replacement_user_id?: string
           p_resolution: string
+          p_target_user_id: string
+        }
+        Returns: Json
+      }
+      resolve_rejoined_participant: {
+        Args: {
+          p_decision: string
+          p_plan_id: string
           p_target_user_id: string
         }
         Returns: Json
@@ -1242,6 +1277,10 @@ export type Database = {
         Args: { p_debtor_id: string }
         Returns: Json
       }
+      stop_hosting_with_replacement: {
+        Args: { p_plan_id: string; p_replacement_user_id: string }
+        Returns: Json
+      }
       swap_plan_participants: {
         Args: {
           p_going_user_id: string
@@ -1252,14 +1291,6 @@ export type Database = {
       }
       switch_to_automatic_waitlist_mode: {
         Args: { p_plan_id: string; p_promoted_user_ids?: string[] }
-        Returns: undefined
-      }
-      transfer_circle_ownership: {
-        Args: {
-          p_circle_id: string
-          p_new_host_id: string
-          p_old_host_id: string
-        }
         Returns: undefined
       }
       update_cost_expense: {
@@ -1306,7 +1337,6 @@ export type Database = {
         | "OTHER"
       assigned_group_enum: "GOING" | "WAITLIST"
       attendance_status: "ATTENDED" | "DID_NOT_ATTEND"
-      circle_role: "creator_admin" | "admin" | "member"
       completion_status: "PENDING" | "SUBMITTED" | "VERIFIED"
       discovery_category:
         | "SPORTS"
@@ -1348,7 +1378,7 @@ export type Database = {
         | "participants_swapped"
         | "plan_changed"
         | "host_promoted"
-      plan_status: "LIVE" | "COMPLETED" | "CANCELLED"
+      plan_status: "LIVE" | "OVERDUE" | "COMPLETED" | "CANCELLED"
       rsvp_status: "INVITED" | "JOINED" | "SKIPPED" | "WAITLISTED" | "REJOINED"
       skip_reason: "LEFT" | "REMOVED" | "REPLACED" | "PAYMENT_KEPT" | "SKIPPED"
       system_message_type:
@@ -1495,6 +1525,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       activity_category: [
@@ -1527,7 +1560,6 @@ export const Constants = {
       ],
       assigned_group_enum: ["GOING", "WAITLIST"],
       attendance_status: ["ATTENDED", "DID_NOT_ATTEND"],
-      circle_role: ["creator_admin", "admin", "member"],
       completion_status: ["PENDING", "SUBMITTED", "VERIFIED"],
       discovery_category: [
         "SPORTS",
@@ -1572,7 +1604,7 @@ export const Constants = {
         "plan_changed",
         "host_promoted",
       ],
-      plan_status: ["LIVE", "COMPLETED", "CANCELLED"],
+      plan_status: ["LIVE", "OVERDUE", "COMPLETED", "CANCELLED"],
       rsvp_status: ["INVITED", "JOINED", "SKIPPED", "WAITLISTED", "REJOINED"],
       skip_reason: ["LEFT", "REMOVED", "REPLACED", "PAYMENT_KEPT", "SKIPPED"],
       system_message_type: [
@@ -1598,3 +1630,4 @@ export const Constants = {
     },
   },
 } as const
+
