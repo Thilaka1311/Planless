@@ -14,7 +14,14 @@ interface PlanImageEditorModalProps {
   imageSrc: string | File | Blob | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (result: { previewUrl: string; blob: Blob; width: number; height: number }) => Promise<void> | void;
+  onSave: (result: {
+    previewUrl: string;         // Cropped 9:16 portrait preview URL (Home Card)
+    blob: Blob;                 // Cropped 9:16 portrait blob → cover_card_image
+    originalBlob: Blob | null;  // Original unmodified image blob → cover_image
+    originalPreviewUrl: string; // Original image preview URL → Plan Preview / Hero
+    width: number;
+    height: number;
+  }) => Promise<void> | void;
 }
 
 export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
@@ -164,7 +171,6 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
       }
     } else if (
       imageSrc instanceof Blob ||
-      imageSrc instanceof File ||
       (typeof imageSrc === "object" && imageSrc !== null)
     ) {
       // If source changed to a different File/Blob, revoke the old one and create new
@@ -434,26 +440,44 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
       canvas.toBlob(
         async (blob) => {
           if (!blob) {
-            console.error("[PlanImageEditorModal] Failed to generate WebP blob");
+            console.error('[PlanImageEditorModal] Failed to generate WebP blob');
             setIsSaving(false);
             return;
           }
 
           const previewUrl = URL.createObjectURL(blob);
+
+          // Capture original image blob for the Plan Preview / Hero (cover_image)
+          const capturedSrc = imageSrc;
+          let originalBlob: Blob | null = null;
+          let originalPreviewUrl = '';
+          if (capturedSrc instanceof Blob) {
+            // File extends Blob, so this covers both File and Blob
+            originalBlob = capturedSrc;
+            originalPreviewUrl = URL.createObjectURL(capturedSrc);
+          } else if (typeof capturedSrc === 'string') {
+            // For string URLs (e.g. editing existing remote image), original blob unavailable
+            // The caller already has the cover_image path — pass null so caller skips re-upload
+            originalBlob = null;
+            originalPreviewUrl = capturedSrc;
+          }
+
           try {
             await onSave({
               previewUrl,
               blob,
+              originalBlob,
+              originalPreviewUrl,
               width: outputWidth,
               height: outputHeight,
             });
           } catch (saveErr) {
-            console.error("[PlanImageEditorModal] onSave error:", saveErr);
+            console.error('[PlanImageEditorModal] onSave error:', saveErr);
           } finally {
             setIsSaving(false);
           }
         },
-        "image/webp",
+        'image/webp',
         0.88
       );
     } catch (err) {
@@ -486,7 +510,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
         </button>
 
         <h1 className="text-[16px] font-semibold text-white tracking-tight">
-          Edit Plan Image
+          Crop for Home Card
         </h1>
 
         <button
@@ -564,7 +588,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
       {/* ── BOTTOM CONTROLS ── */}
       <div className="w-full flex flex-col items-center justify-center px-6 pt-2 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] z-30 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
         <p className="text-[12px] text-white/50 mb-3 tracking-wide select-none">
-          Pinch or drag to position photo for Home screen
+          Position how this photo appears on your Home card
         </p>
 
         {/* Zoom Slider */}

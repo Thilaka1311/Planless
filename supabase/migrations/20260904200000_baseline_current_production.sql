@@ -115,16 +115,6 @@ CREATE TYPE "public"."attendance_status" AS ENUM (
 ALTER TYPE "public"."attendance_status" OWNER TO "postgres";
 
 
-CREATE TYPE "public"."circle_role" AS ENUM (
-    'creator_admin',
-    'admin',
-    'member'
-);
-
-
-ALTER TYPE "public"."circle_role" OWNER TO "postgres";
-
-
 CREATE TYPE "public"."completion_status" AS ENUM (
     'PENDING',
     'SUBMITTED',
@@ -618,21 +608,6 @@ $$;
 
 
 ALTER FUNCTION "public"."cancel_plan"("p_plan_id" "uuid") OWNER TO "postgres";
-
-
-CREATE OR REPLACE FUNCTION "public"."check_circle_host_invariant"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
-    AS $$
-DECLARE host_count INTEGER; current_circle_id UUID;
-BEGIN
-    IF TG_OP = 'DELETE' THEN current_circle_id := OLD.circle_id; ELSE current_circle_id := NEW.circle_id; END IF;
-    SELECT COUNT(*) INTO host_count FROM circle_members WHERE circle_id = current_circle_id AND role = 'creator_admin';
-    IF host_count <> 1 THEN RAISE EXCEPTION 'Constraint Violation: Circle % must have exactly one Creator Admin. Found %.', current_circle_id, host_count; END IF;
-    RETURN NULL;
-END; $$;
-
-
-ALTER FUNCTION "public"."check_circle_host_invariant"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."complete_plan"("p_plan_id" "uuid", "p_attendance_input" "jsonb") RETURNS "jsonb"
@@ -1280,23 +1255,6 @@ $$;
 
 
 ALTER FUNCTION "public"."enforce_plan_participants_completion_lifecycle"() OWNER TO "postgres";
-
-
-CREATE OR REPLACE FUNCTION "public"."generate_circle_public_id"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
-    AS $_$
-DECLARE max_id INT; next_id INT;
-BEGIN
-  IF NEW.public_id IS NULL OR NEW.public_id = '' OR NEW.public_id LIKE 'c_%' OR NEW.public_id LIKE '__temp__%' THEN
-    SELECT COALESCE(MAX(SUBSTRING(public_id FROM '^C([0-9]+)$')::INT), 0) INTO max_id FROM circles WHERE public_id ~ '^C[0-9]{6}$';
-    next_id := max_id + 1;
-    NEW.public_id := 'C' || LPAD(next_id::TEXT, 6, '0');
-  END IF;
-  RETURN NEW;
-END; $_$;
-
-
-ALTER FUNCTION "public"."generate_circle_public_id"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."generate_discovery_public_id"() RETURNS "text"
@@ -4338,19 +4296,6 @@ $$;
 ALTER FUNCTION "public"."sync_plan_participant_cost_share"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."transfer_circle_ownership"("p_circle_id" "uuid", "p_old_host_id" "uuid", "p_new_host_id" "uuid") RETURNS "void"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    AS $$
-BEGIN
-    UPDATE circle_members SET role = 'admin'::circle_role WHERE circle_id = p_circle_id AND user_id = p_old_host_id;
-    UPDATE circle_members SET role = 'creator_admin'::circle_role WHERE circle_id = p_circle_id AND user_id = p_new_host_id;
-    UPDATE circles SET created_by = p_new_host_id WHERE id = p_circle_id;
-END; $$;
-
-
-ALTER FUNCTION "public"."transfer_circle_ownership"("p_circle_id" "uuid", "p_old_host_id" "uuid", "p_new_host_id" "uuid") OWNER TO "postgres";
-
-
 CREATE OR REPLACE FUNCTION "public"."trg_auto_promote_on_vacancy"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5011,7 +4956,6 @@ CREATE TABLE IF NOT EXISTS "public"."plan_participants" (
     "delivery_status" character varying DEFAULT 'DELIVERED'::character varying NOT NULL,
     "skip_reason" "public"."skip_reason",
     "cost_per_participant" numeric(10,2),
-    "circle_id" "uuid",
     "joined_queue_at" timestamp with time zone DEFAULT "now"(),
     "assigned_group" "public"."assigned_group_enum",
     "waitlist_position" integer,
@@ -6370,10 +6314,6 @@ GRANT ALL ON FUNCTION "public"."cancel_plan"("p_plan_id" "uuid") TO "service_rol
 
 
 
-GRANT ALL ON FUNCTION "public"."check_circle_host_invariant"() TO "anon";
-GRANT ALL ON FUNCTION "public"."check_circle_host_invariant"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."check_circle_host_invariant"() TO "service_role";
-
 
 
 GRANT ALL ON FUNCTION "public"."complete_plan"("p_plan_id" "uuid", "p_attendance_input" "jsonb") TO "anon";
@@ -6417,10 +6357,6 @@ GRANT ALL ON FUNCTION "public"."enforce_plan_participants_completion_lifecycle"(
 GRANT ALL ON FUNCTION "public"."enforce_plan_participants_completion_lifecycle"() TO "service_role";
 
 
-
-GRANT ALL ON FUNCTION "public"."generate_circle_public_id"() TO "anon";
-GRANT ALL ON FUNCTION "public"."generate_circle_public_id"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."generate_circle_public_id"() TO "service_role";
 
 
 
@@ -6681,10 +6617,6 @@ GRANT ALL ON FUNCTION "public"."sync_plan_participant_cost_share"() TO "authenti
 GRANT ALL ON FUNCTION "public"."sync_plan_participant_cost_share"() TO "service_role";
 
 
-
-GRANT ALL ON FUNCTION "public"."transfer_circle_ownership"("p_circle_id" "uuid", "p_old_host_id" "uuid", "p_new_host_id" "uuid") TO "anon";
-GRANT ALL ON FUNCTION "public"."transfer_circle_ownership"("p_circle_id" "uuid", "p_old_host_id" "uuid", "p_new_host_id" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."transfer_circle_ownership"("p_circle_id" "uuid", "p_old_host_id" "uuid", "p_new_host_id" "uuid") TO "service_role";
 
 
 

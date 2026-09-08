@@ -1,4 +1,4 @@
-export type AppTab = 'home' | 'plans' | 'create' | 'chats' | 'circles' | 'wallet' | 'profile';
+export type AppTab = 'home' | 'plans' | 'create' | 'chats' | 'wallet' | 'profile';
 export type CreatePhase = 'category' | 'who' | 'who-actually' | 'when' | 'review' | 'confirmation';
 
 export interface AppRoute {
@@ -6,7 +6,6 @@ export interface AppRoute {
   createPhase?: CreatePhase;
   selectedPlanId?: string | null;
   selectedChatPlanId?: string | null;
-  selectedCircleId?: string | null;
 }
 
 /**
@@ -56,11 +55,7 @@ export function parseCurrentRoute(): AppRoute {
     return { tab: 'chats', selectedChatPlanId: chatPlanId };
   }
 
-  // Circles: /circles, /circles/:id
-  if (primary === 'circles' || primary === 'circle') {
-    const circleId = parts[1] || null;
-    return { tab: 'circles', selectedCircleId: circleId };
-  }
+
 
   // Wallet: /wallet
   if (primary === 'wallet') {
@@ -99,10 +94,7 @@ export function getRoutePath(route: AppRoute): string {
     return '/chats';
   }
 
-  if (route.tab === 'circles') {
-    if (route.selectedCircleId) return `/circles/${encodeURIComponent(route.selectedCircleId)}`;
-    return '/circles';
-  }
+
 
   if (route.tab === 'wallet') return '/wallet';
   if (route.tab === 'profile') return '/profile';

@@ -61,8 +61,8 @@ export const CreateCategoryScreen: React.FC<CreateCategoryScreenProps> = ({
       )}
 
       {/* ── Section Instruction ── */}
-      <div className="shrink-0 px-4 pt-2 pb-2 text-center">
-        <p className="text-[18px] text-zinc-400 font-medium font-sans leading-snug tracking-tight text-center">
+      <div className="shrink-0 px-4 pt-2 pb-2 text-left">
+        <p className="text-[18px] text-zinc-400 font-medium font-sans leading-snug tracking-tight text-left">
           Choose a category.
         </p>
       </div>

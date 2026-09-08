@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { X, Trophy, Camera, Check, Award, ArrowRight, ArrowLeft, Star } from "lucide-react";
 import { Plan, UserProfile } from "../../core/types";
-import { useToast } from "../contexts/ToastContext";
 import { usePlansStore } from "../../features/plans/state/PlansContext";
 import { useProfileStore } from "../../features/profile/state/ProfileContext";
 import { supabase } from "../../../lib/supabaseClient";
@@ -17,7 +16,6 @@ interface PlanCompletionModalProps {
 export default function PlanCompletionModal({ plan, onClose, onPublish, activeUserId }: PlanCompletionModalProps) {
   const { submitStats, submitMvp, completePlan } = usePlansStore();
   const { dbUsers } = useProfileStore();
-  const { showToast } = useToast();
 
   const goingMembers = plan.members.filter(m => m.joinState === "JOINED");
 
@@ -136,14 +134,19 @@ export default function PlanCompletionModal({ plan, onClose, onPublish, activeUs
       }
 
       // 4. Complete Plan
-      await completePlan(planUuid);
+      const attendanceInput = (plan.members || [])
+        .filter((m: any) => m.joinState === "JOINED" || (m as any).rsvp_status === "JOINED")
+        .map((m: any) => ({
+          user_id: m.userId || m.userUuid || (m as any).user_id || m.id,
+          attendance: "ATTENDED" as const,
+        }));
 
-      showToast("🎉 Memory published successfully!");
+      await completePlan(planUuid, attendanceInput);
+
       onPublish();
     } catch (err: any) {
       console.error("[MEMORY RESULT ERROR]", err);
       console.error("Failed to complete flow:", err);
-      showToast(err.message || "Failed to publish memory.");
     } finally {
       setIsSubmitting(false);
     }

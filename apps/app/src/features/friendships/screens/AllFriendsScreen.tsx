@@ -2,7 +2,6 @@ import React, { useState, useMemo } from "react";
 import { ArrowLeft, Search, MoreVertical, Trash2, User, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
-import { useToast } from "../../../shared/contexts/ToastContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 
 interface AllFriendsScreenProps {
@@ -11,7 +10,6 @@ interface AllFriendsScreenProps {
 }
 
 export const AllFriendsScreen: React.FC<AllFriendsScreenProps> = ({ onBack, onZoomPhoto }) => {
-  const { showToast } = useToast();
   const { friends, removeFriend, loading } = useFriendshipStore();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -42,9 +40,8 @@ export const AllFriendsScreen: React.FC<AllFriendsScreenProps> = ({ onBack, onZo
     if (!friendToRemove) return;
     try {
       await removeFriend(friendToRemove.id);
-      showToast(`Removed ${friendToRemove.name} from friends.`);
     } catch (err: any) {
-      showToast(err.message || "Failed to remove friend.");
+      console.error("[handleRemoveFriend] Error:", err);
     } finally {
       setFriendToRemove(null);
     }
@@ -161,7 +158,6 @@ export const AllFriendsScreen: React.FC<AllFriendsScreenProps> = ({ onBack, onZo
                           <button
                             onClick={(e) => {
                               handleSettleAction(e);
-                              showToast(`Viewing profile of ${item.friend?.full_name || "friend"}...`);
                             }}
                             className="w-full px-4 py-3 text-left font-sans font-semibold text-[11px] text-zinc-200 hover:bg-white/[0.02] transition cursor-pointer flex items-center gap-2"
                           >

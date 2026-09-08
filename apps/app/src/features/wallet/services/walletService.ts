@@ -20,8 +20,6 @@ export interface ExpenseBreakdown {
   planTitle: string;
   expenseTitle?: string;
   planCover?: string;
-  circleId: string;
-  circleName: string;
   date: string;
   createdAt?: string;
   updatedAt?: string;
@@ -249,7 +247,6 @@ export const calculateWalletSummary = (
   dbWalletExpenses: any[],
   dbUsers: any[],
   dbPlans: any[],
-  dbCircles: any[],
   dbPlanParticipants: any[],
   _dbTransactions: any[] = [],
   dbWalletSettlements: any[] = []
@@ -432,8 +429,6 @@ export const calculateWalletSummary = (
             planTitle: actualPlanTitle,
             expenseTitle: expenseTitle,
             planCover,
-            circleId: "",
-            circleName: "Group",
             date: dateStr,
             createdAt: exp.created_at || exp.date || dateStr,
             updatedAt: ptUpdatedAt || exp.updated_at || exp.created_at || dateStr,
@@ -460,8 +455,6 @@ export const calculateWalletSummary = (
             planTitle: actualPlanTitle,
             expenseTitle: expenseTitle,
             planCover,
-            circleId: "",
-            circleName: "Group",
             date: dateStr,
             createdAt: exp.created_at || exp.date || dateStr,
             updatedAt: ptUpdatedAt || exp.updated_at || exp.created_at || dateStr,

@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { ArrowLeft, Check, UserCheck, X, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
-import { useToast } from "../../../shared/contexts/ToastContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { FriendProfileViewerBottomSheet } from "../components/FriendProfileViewerBottomSheet";
 
@@ -12,7 +11,6 @@ interface FriendRequestsScreenProps {
 }
 
 export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBack, onZoomPhoto }) => {
-  const { showToast } = useToast();
   const {
     incomingRequests,
     outgoingRequests,
@@ -28,27 +26,24 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
   const handleAccept = async (friendshipId: string, name: string) => {
     try {
       await acceptFriendRequest(friendshipId);
-      showToast(`Accepted ${name}'s friend request!`);
     } catch (err: any) {
-      showToast(err.message || "Failed to accept request.");
+      console.error("[handleAccept] Error:", err);
     }
   };
 
   const handleReject = async (friendshipId: string, name: string) => {
     try {
       await rejectFriendRequest(friendshipId);
-      showToast(`Declined ${name}'s friend request.`);
     } catch (err: any) {
-      showToast(err.message || "Failed to decline request.");
+      console.error("[handleReject] Error:", err);
     }
   };
 
   const handleCancelSentRequest = async (friendshipId: string, name: string) => {
     try {
       await rejectFriendRequest(friendshipId);
-      showToast(`Cancelled friend request to ${name}.`);
     } catch (err: any) {
-      showToast(err.message || "Failed to cancel request.");
+      console.error("[handleCancelSentRequest] Error:", err);
     }
   };
 

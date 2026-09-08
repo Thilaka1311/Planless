@@ -3,9 +3,7 @@ import { ArrowLeft, ArrowRight, MessageSquare, Check, Sparkles } from "lucide-re
 import { motion, AnimatePresence } from "motion/react";
 import { Plan, UserProfile } from "../../core/types";
 import { usePlansStore } from "../../features/plans/state/PlansContext";
-import { useChatStore } from "../../features/chat/state/ChatContext";
 import { useLivePlan } from "../../features/plans/hooks/useLivePlan";
-import { useToast } from "../contexts/ToastContext";
 import { UserAvatar } from "../../IMGfromDB/UserAvatar";
 
 interface TeamOrganizerModalProps {
@@ -50,10 +48,20 @@ function TeamOrganizerModalContent({
   activeUserId,
   onClose,
 }: TeamOrganizerModalContentProps) {
-  const { showToast } = useToast();
   const { dbPlanTeamAssignments, getTeamAssignments, assignTeam, unassignTeam, removeParticipant } = usePlansStore();
   const planUuid = plan.dbUuid || plan.id;
-  const { setActiveRoom, messages, sendMessage } = useChatStore();
+  const [messages, setMessages] = useState<{ id: string; senderId: string; senderName?: string; sender?: { avatar?: string; name?: string }; content: string; timestamp: string; isOwn?: boolean; type?: string }[]>([]);
+  const sendMessage = async (text: string) => {
+    setMessages(prev => [...prev, {
+      id: `msg_${Date.now()}`,
+      senderId: (userProfile as any).dbUuid || (userProfile as any).id || "",
+      senderName: userProfile.name || "Me",
+      sender: { avatar: userProfile.avatar, name: userProfile.name || "Me" },
+      content: text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isOwn: true
+    }]);
+  };
 
   const [loading, setLoading] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
@@ -65,14 +73,9 @@ function TeamOrganizerModalContent({
   const [draftAssignments, setDraftAssignments] = useState<Record<string, "A" | "B" | null>>({});
   const [savingTeams, setSavingTeams] = useState(false);
 
-  // Setup chat room focus on mount
+  // Setup team assignments on mount
   useEffect(() => {
     getTeamAssignments(planUuid).finally(() => setLoading(false));
-    setActiveRoom(plan.groupId, planUuid);
-    return () => {
-      setActiveRoom(null, null);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planUuid]);
 
   // Load backend assignments into draft state when loaded or database state updates
@@ -128,7 +131,6 @@ function TeamOrganizerModalContent({
     });
 
     setDraftAssignments(newTeams);
-    showToast("✓ Automatically distributed players evenly between Team A and Team B");
   };
 
   const handleSaveTeams = async () => {
@@ -148,9 +150,8 @@ function TeamOrganizerModalContent({
           }
         }
       }
-      showToast("✓ Team drafts locked successfully");
     } catch (err) {
-      showToast("Failed to lock teams");
+      // error handled silently
     } finally {
       setSavingTeams(false);
     }
@@ -188,11 +189,9 @@ function TeamOrganizerModalContent({
     // Standard host removal protection
     const isPlanHost = userId === plan.hostId;
     if (isPlanHost) {
-      showToast("Cannot remove the current host of the plan");
       return;
     }
     if (!isHost) {
-      showToast("Only the host can remove participants");
       return;
     }
     setUserToRemove({ userId, name });
@@ -520,7 +519,6 @@ function TeamOrganizerModalContent({
                   onClick={() => {
                     setDraftAssignments(prev => ({ ...prev, [activeActionsUser.userUuid]: "A" }));
                     setActiveActionsUser(null);
-                    showToast(`Moved ${activeActionsUser.name} to Team A`);
                   }}
                   className="py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-xs font-mono font-bold uppercase tracking-wider hover:bg-emerald-500/20 active:scale-95 transition-all cursor-pointer"
                 >
@@ -530,7 +528,6 @@ function TeamOrganizerModalContent({
                   onClick={() => {
                     setDraftAssignments(prev => ({ ...prev, [activeActionsUser.userUuid]: "B" }));
                     setActiveActionsUser(null);
-                    showToast(`Moved ${activeActionsUser.name} to Team B`);
                   }}
                   className="py-3 rounded-xl bg-purple-500/10 border border-purple-500/25 text-purple-400 text-xs font-mono font-bold uppercase tracking-wider hover:bg-purple-500/20 active:scale-95 transition-all cursor-pointer"
                 >
@@ -540,7 +537,6 @@ function TeamOrganizerModalContent({
                   onClick={() => {
                     setDraftAssignments(prev => ({ ...prev, [activeActionsUser.userUuid]: null }));
                     setActiveActionsUser(null);
-                    showToast(`Unassigned ${activeActionsUser.name}`);
                   }}
                   className="py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-350 text-xs font-mono font-bold uppercase tracking-wider hover:bg-zinc-800 transition-all cursor-pointer"
                 >
@@ -586,10 +582,9 @@ function TeamOrganizerModalContent({
                   try {
                     setIsRemoving(true);
                     await removeParticipant(plan.id, userToRemove.userId);
-                    showToast(`✓ Removed ${userToRemove.name} from plan`);
                     setUserToRemove(null);
                   } catch (err: any) {
-                    showToast(`Error removing: ${err.message || err}`);
+                    // error handled silently
                   } finally {
                     setIsRemoving(false);
                   }

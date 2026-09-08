@@ -4,7 +4,6 @@ import { CalendarDays, Hourglass, MapPin, MessageCircle, Receipt } from "lucide-
 import { UserProfile, Plan } from "../../../../core/types";
 import { usePlansStore } from "../../../plans/state/PlansContext";
 import { useLivePlan } from "../../../plans/hooks/useLivePlan";
-import { useToast } from "../../../../shared/contexts/ToastContext";
 import { getPlanCover } from "../../../plans/config/planCoverImages";
 import { formatPlanDate } from "../../../../../lib/mappers";
 import { supabase } from "../../../../../lib/supabaseClient";
@@ -13,6 +12,7 @@ import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
 import { HeroHeader } from "../../../plans/components/HeroHeader";
 import { InlineParticipantView } from "../../../plans/components/InlineParticipantView";
 import { CostBreakdownPopover } from "../../../plans/components/CostBreakdownPopover";
+import { getHeroMetadataCostText } from "../../../plans/components/HeroMetadataCard";
 import { useRSVPDeadline } from "../../../plans/utils/rsvpFormatter";
 import { useLiveCountdown, rsvpUrgencyStyles } from "../../components/PlanCard";
 import { useHoldToAccept } from "../../hooks/useHoldForStatus";
@@ -31,7 +31,6 @@ export interface PlansPreviewScreenProps {
   onClose: () => void;
   userProfile: UserProfile;
   activeUserId?: string;
-  onNavigateToCircle?: (circleId: string) => void;
   onEditPlan?: (planId: string) => void;
   setShowPaymentSuccess?: (planId: string | null) => void;
   setShowWaitlistSuccess?: (planId: string | null) => void;
@@ -47,7 +46,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   onClose,
   userProfile,
   activeUserId,
-  onNavigateToCircle,
   setShowPaymentSuccess,
   setShowWaitlistSuccess,
   setShowLeftSuccess,
@@ -56,7 +54,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   onOpenChat,
   onOpenExpenses,
 }) => {
-  const { showToast } = useToast();
   const {
     dbPlans,
     dbPlanParticipants,
@@ -155,14 +152,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
   const isCreatorHost = isHost;
 
-  const countdown = useLiveCountdown(selectedPlan?.response_deadline_at);
-  const urgencyColor = useMemo(() => {
-    if (!selectedPlan?.response_deadline_at) return "#71717a";
-    if (!countdown) return "#ef4444";
-    return rsvpUrgencyStyles[countdown.urgency].icon;
-  }, [selectedPlan?.response_deadline_at, countdown]);
-
   const rsvp = useRSVPDeadline(selectedPlan?.response_deadline_at);
+  const urgencyColor = rsvp.color;
 
   const maxSpots = useMemo(() => {
     if (!selectedPlan) return 8;
@@ -252,17 +243,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
   const hasCost = rawDbPlan && rawDbPlan.total_cost && Number(rawDbPlan.total_cost) > 0;
   const costText = useMemo(() => {
-    if (!hasCost || !rawDbPlan) return null;
-    const total = Number(rawDbPlan.total_cost);
-    const isCompleted = rawDbPlan.status === 'COMPLETED';
-    const divisor = isCompleted
-      ? Number(rawDbPlan.attended_participants ?? selectedPlan?.attended_participants ?? 0)
-      : (rawDbPlan.plan_size ? Number(rawDbPlan.plan_size) : (rawDbPlan.max_participants ? Number(rawDbPlan.max_participants) : maxSpots));
-
-    if (total <= 0 || !divisor || divisor <= 0) return null;
-    const perPerson = Math.round((total / divisor) * 100) / 100;
-    return `₹${perPerson} / person`;
-  }, [hasCost, rawDbPlan, maxSpots, selectedPlan]);
+    return getHeroMetadataCostText(rawDbPlan, selectedPlan, maxSpots);
+  }, [rawDbPlan, selectedPlan, maxSpots]);
 
   const [showJoinConfirmation, setShowJoinConfirmation] = useState(false);
 
@@ -272,7 +254,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     setShowJoinConfirmation(false);
 
     if (isFull) {
-      showToast("Added to Waitlist");
       if (setShowWaitlistSuccess) setShowWaitlistSuccess(planToJoin.id);
     } else {
       if (setShowPaymentSuccess) setShowPaymentSuccess(planToJoin.id);
@@ -286,9 +267,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
     joinOp.catch((err) => {
       console.error("[handleJoinDirect] Background join failed:", err);
-      showToast("Failed to sync join status with database.");
     });
-  }, [selectedPlan, isJoiningDirect, alreadySkipped, activeUserId, userProfile, isFull, rejoinPlan, joinPlan, setShowWaitlistSuccess, setShowPaymentSuccess, onClose, showToast]);
+  }, [selectedPlan, isJoiningDirect, alreadySkipped, activeUserId, userProfile, isFull, rejoinPlan, joinPlan, setShowWaitlistSuccess, setShowPaymentSuccess, onClose]);
 
   const handleJoinDirect = useCallback(() => {
     if (!selectedPlan || isJoiningDirect) return;
@@ -313,30 +293,26 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     setIsCancellingLeaveRequest(true);
     try {
       await cancelPaidPlanLeaveRequest(selectedPlan.id);
-      showToast("Leave request cancelled");
       setShowCancelLeaveRequestConfirmation(false);
     } catch (err) {
       console.error("[handleConfirmCancelLeaveRequest] Failed:", err);
-      showToast("Failed to cancel leave request");
     } finally {
       setIsCancellingLeaveRequest(false);
     }
-  }, [selectedPlan, activeUserId, isCancellingLeaveRequest, cancelPaidPlanLeaveRequest, showToast]);
+  }, [selectedPlan, activeUserId, isCancellingLeaveRequest, cancelPaidPlanLeaveRequest]);
 
   const handleConfirmPaidLeaveRequest = useCallback(async () => {
     if (!selectedPlan || !activeUserId || isSubmittingPaidLeave) return;
     setIsSubmittingPaidLeave(true);
     try {
       await requestPaidPlanLeave(selectedPlan.id);
-      showToast("Leave request sent to host");
       setShowPaidLeaveConfirmation(false);
     } catch (err) {
       console.error("[handleConfirmPaidLeaveRequest] Failed:", err);
-      showToast("Failed to send leave request");
     } finally {
       setIsSubmittingPaidLeave(false);
     }
-  }, [selectedPlan, activeUserId, isSubmittingPaidLeave, requestPaidPlanLeave, showToast]);
+  }, [selectedPlan, activeUserId, isSubmittingPaidLeave, requestPaidPlanLeave]);
 
   const handleConfirmSkip = useCallback(() => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
@@ -351,9 +327,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     // Perform DB skip asynchronously in background without blocking visual confirmation overlay
     skipPlan(planToSkip.id, activeUserId).catch((err) => {
       console.error("[handleSkip] Background skip failed:", err);
-      showToast("Failed to sync skip status with database.");
     });
-  }, [selectedPlan, activeUserId, isSkipping, skipPlan, setShowLeftSuccess, onClose, showToast]);
+  }, [selectedPlan, activeUserId, isSkipping, skipPlan, setShowLeftSuccess, onClose]);
 
   const handleConfirmHostLeaveReplacement = useCallback(async (selectedReplacementId: string) => {
     if (!selectedPlan || isSubmittingHostReplacement) return;
@@ -364,13 +339,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       setShowHostLeaveReplacementSheet(false);
       
       const replacementUser = eligibleHostReplacementParticipants.find(p => p.id === selectedReplacementId);
-      const replacementName = replacementUser?.name || "participant";
-
-      if (res?.leave_requested) {
-        showToast(`✓ Promoted ${replacementName} to host & sent leave request`);
-      } else {
-        showToast(`✓ Promoted ${replacementName} to host & left the plan`);
-      }
       
       if (onLeavePlan) {
         onLeavePlan();
@@ -379,11 +347,10 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       }
     } catch (err: any) {
       console.error("[HomePlansPreviewScreen] Host replacement leave failed:", err);
-      showToast(`Failed to leave plan: ${err.message || "Unknown error"}`);
     } finally {
       setIsSubmittingHostReplacement(false);
     }
-  }, [selectedPlan, isSubmittingHostReplacement, requestHostLeaveWithReplacement, eligibleHostReplacementParticipants, onLeavePlan, onClose, showToast]);
+  }, [selectedPlan, isSubmittingHostReplacement, requestHostLeaveWithReplacement, eligibleHostReplacementParticipants, onLeavePlan, onClose]);
 
   const handleSkip = useCallback(async () => {
     if (!selectedPlan || !activeUserId || isSkipping) return;
@@ -413,6 +380,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         plan={selectedPlan}
         userProfile={userProfile}
         isCreatorHost={isCreatorHost}
+        isPlanSettingsForParticipant={!isCreatorHost}
         onBack={() => setShowPlanSettingsScreen(false)}
         onUpdateSettings={async (newSettings) => {
           await updatePlanSettings(selectedPlan.id, newSettings);
@@ -599,6 +567,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
           isHolding={isHolding}
           isFull={isFull}
           formattedDateAndTime={formattedDateAndTime}
+          costText={hasCost && costText ? costText : null}
         />
 
         {isSuccess && (

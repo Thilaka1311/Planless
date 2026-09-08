@@ -49,12 +49,9 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
       id="figma_coordinate_header"
       className={`h-14 shrink-0 bg-[#050505] flex items-center justify-between px-6 z-30 select-none relative ${className}`}
     >
-      {/* Left Column: Layout Balance Spacer */}
-      <div className="flex-1 flex items-center justify-start z-10" />
-
-      {/* Center Column: Title */}
-      <div className="flex-shrink-0 flex items-center justify-center z-10">
-        <h1 className="text-stone-100 font-sans font-bold text-xl tracking-tight leading-none text-center">
+      {/* Left Column: Title */}
+      <div className="flex-1 flex items-center justify-start z-10 min-w-0">
+        <h1 className="text-stone-100 font-sans font-bold text-xl tracking-tight leading-none text-left truncate">
           {title}
         </h1>
       </div>

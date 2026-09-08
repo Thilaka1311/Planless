@@ -1,8 +1,12 @@
 import React, { useMemo } from "react";
 import { motion } from "motion/react";
+import { MapPin } from "lucide-react";
 import { Plan } from "../../../core/types";
 import { useLivePlan } from "../../plans/hooks/useLivePlan";
 import { usePlansStore } from "../../plans/state/PlansContext";
+import { useProfileStore } from "../../profile/state/ProfileContext";
+import { getHeroMetadataCostText } from "../../plans/components/HeroMetadataCard";
+import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 
 interface HoldToAcceptOverlayProps {
   planId: string;
@@ -10,6 +14,7 @@ interface HoldToAcceptOverlayProps {
   isHolding: boolean;
   isFull: boolean;
   formattedDateAndTime: string;
+  costText?: string | null;
 }
 
 export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
@@ -18,25 +23,65 @@ export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
   isHolding,
   isFull,
   formattedDateAndTime,
+  costText: propCostText,
 }) => {
   const plan = useLivePlan(planId);
   const { dbPlans } = usePlansStore();
+  const { dbUsers } = useProfileStore();
 
   const costText = useMemo(() => {
+    if (propCostText !== undefined) {
+      return propCostText;
+    }
+    const rawDbPlan = dbPlans.find((p) => p.id === plan?.id || (plan?.dbUuid && p.id === plan.dbUuid));
+    return getHeroMetadataCostText(rawDbPlan, plan);
+  }, [propCostText, plan, dbPlans]);
+
+  const hostMember = useMemo(() => {
     if (!plan) return null;
-    const rawDbPlan = dbPlans.find((p) => p.id === plan.id || (plan.dbUuid && p.id === plan.dbUuid));
-    if (!rawDbPlan || !rawDbPlan.total_cost || Number(rawDbPlan.total_cost) <= 0) return null;
+    return (
+      plan.members?.find((m) => m.isHost || (m as any).role === "HOST") ||
+      plan.members?.find((m) => (m.userUuid || m.userId) === plan.hostId || (m.userUuid || m.userId) === plan.creatorId) ||
+      null
+    );
+  }, [plan]);
 
-    const total = Number(rawDbPlan.total_cost);
-    const isCompleted = rawDbPlan.status === 'COMPLETED' || plan.status === 'COMPLETED';
-    const divisor = isCompleted
-      ? Number(rawDbPlan.attended_participants ?? plan.attended_participants ?? 0)
-      : (rawDbPlan.max_participants ? Number(rawDbPlan.max_participants) : (plan.maxSpots || 8));
+  const hostUser = useMemo(() => {
+    if (!dbUsers || (!plan && !hostMember)) return null;
+    const targetId = plan?.hostId || plan?.creatorId || hostMember?.userUuid || hostMember?.userId;
+    if (!targetId) return null;
+    return (
+      dbUsers.find(
+        (u) =>
+          u.id === targetId ||
+          u.user_id === targetId ||
+          (hostMember?.userUuid && u.id === hostMember.userUuid) ||
+          (hostMember?.userId && (u.user_id === hostMember.userId || u.id === hostMember.userId))
+      ) || null
+    );
+  }, [plan, hostMember, dbUsers]);
 
-    if (total <= 0 || !divisor || divisor <= 0) return null;
-    const perPerson = Math.round((total / divisor) * 100) / 100;
-    return `₹${perPerson} / person`;
-  }, [plan, dbPlans]);
+  const hostAvatar = useMemo(() => {
+    return (
+      hostMember?.avatar ||
+      hostMember?.profile_photo ||
+      plan?.creatorAvatar ||
+      hostUser?.profile_photo ||
+      (hostUser as any)?.avatar ||
+      null
+    );
+  }, [hostMember, plan, hostUser]);
+
+  const hostName = useMemo(() => {
+    return (
+      hostMember?.name ||
+      hostMember?.displayName ||
+      plan?.creatorName ||
+      hostUser?.full_name ||
+      (hostUser as any)?.name ||
+      "Host"
+    );
+  }, [hostMember, plan, hostUser]);
 
   if (!isHolding || !plan) return null;
 
@@ -102,17 +147,31 @@ export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
           
           {/* 2. Venue details (Medium emphasis, immediately scannable location cue) */}
           {plan.location && (
-            <span className="text-[14.5px] font-sans font-extrabold text-white mt-2.5 block tracking-tight">
-              📍 {plan.location}
-            </span>
+            <div className="flex items-center justify-center gap-1.5 mt-2.5">
+              <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />
+              <span className="text-[14.5px] font-sans font-extrabold text-white tracking-tight">
+                {plan.location}
+              </span>
+            </div>
           )}
           
-          {/* 3. Host details (Subtle metadata) */}
-          <span className="text-[12.5px] font-sans text-zinc-400 mt-1.5 block">
-            Hosted by <strong className="font-bold text-zinc-100">{plan.creatorName || "Host"}</strong>
-          </span>
+          {/* 3. Host details (Subtle metadata with host avatar) */}
+          <div className="flex flex-col items-center mt-3">
+            <UserAvatar
+              src={hostAvatar}
+              alt={hostName}
+              size="w-10 h-10"
+              className="border border-white/20 shadow-md mb-1.5"
+            />
+            <span className="text-[11.5px] font-sans text-zinc-400 block leading-tight">
+              Hosted by
+            </span>
+            <span className="text-[13px] font-sans font-bold text-zinc-100 block leading-tight mt-0.5">
+              {hostName}
+            </span>
+          </div>
 
-          {/* 4. Dynamic Cost per person (Supporting metadata) */}
+          {/* 4. Dynamic Cost per person (Supporting metadata from Hero Metadata Card) */}
           {costText && (
             <span className="text-[13.5px] font-sans font-semibold text-white/90 mt-2 block tracking-tight">
               {costText}

@@ -8,7 +8,6 @@ interface WalletState {
   dbWalletPaidTransactions: any[];
   dbWalletSettlements: any[];
   dbPlansLocal: any[];
-  dbCirclesLocal: any[];
   dbPlanParticipantsLocal: any[];
   dbUsersLocal: any[];
   loading: boolean;
@@ -41,7 +40,6 @@ export const WalletProvider = ({
   const [dbWalletPaidTransactions, setDbWalletPaidTransactions] = useState<any[]>([]);
   const [dbWalletSettlements, setDbWalletSettlements] = useState<any[]>([]);
   const [dbPlansLocal, setDbPlansLocal] = useState<any[]>([]);
-  const [dbCirclesLocal, setDbCirclesLocal] = useState<any[]>([]);
   const [dbPlanParticipantsLocal, setDbPlanParticipantsLocal] = useState<any[]>([]);
   const [dbUsersLocal, setDbUsersLocal] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -239,7 +237,6 @@ export const WalletProvider = ({
       setDbUsersLocal(users || []);
       setDbPlansLocal(plans || []);
       setDbPlanParticipantsLocal(participants || []);
-      setDbCirclesLocal([]);
     } catch (err: any) {
       console.error("[Wallet ERROR] Exception loading wallet data:", err);
       setError(err.message || "Failed to load wallet data");
@@ -311,7 +308,6 @@ export const WalletProvider = ({
     dbWalletPaidTransactions,
     dbWalletSettlements,
     dbPlansLocal,
-    dbCirclesLocal,
     dbPlanParticipantsLocal,
     dbUsersLocal,
     loading,
@@ -319,7 +315,7 @@ export const WalletProvider = ({
     refreshTransactions,
     updateExpenseInStore,
   }), [
-    dbWalletTransactions, dbWalletPaidTransactions, dbWalletSettlements, dbPlansLocal, dbCirclesLocal, dbPlanParticipantsLocal, dbUsersLocal, loading, error, refreshTransactions, updateExpenseInStore
+    dbWalletTransactions, dbWalletPaidTransactions, dbWalletSettlements, dbPlansLocal, dbPlanParticipantsLocal, dbUsersLocal, loading, error, refreshTransactions, updateExpenseInStore
   ]);
 
   return (

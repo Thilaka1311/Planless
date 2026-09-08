@@ -2,7 +2,6 @@ import React, { useState, useMemo } from "react";
 import { ArrowLeft, Search, UserPlus, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
-import { useToast } from "../../../shared/contexts/ToastContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { FriendProfileViewerBottomSheet } from "../components/FriendProfileViewerBottomSheet";
 
@@ -17,7 +16,6 @@ export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
   discoverableUsers,
   onAddFriend,
 }) => {
-  const { showToast } = useToast();
   const { outgoingRequests, rejectFriendRequest } = useFriendshipStore();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -27,9 +25,8 @@ export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
   const handleCancelRequest = async (friendshipId: string, name: string) => {
     try {
       await rejectFriendRequest(friendshipId);
-      showToast(`Cancelled friend request to ${name}.`);
     } catch (err: any) {
-      showToast(err.message || "Failed to cancel request.");
+      console.error("[handleCancelRequest] Error:", err);
     }
   };
 

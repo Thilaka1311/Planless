@@ -1,20 +1,16 @@
 import React, { useState, useRef } from "react";
-import { useToast } from "./shared/contexts/ToastContext";
 import { supabase } from "../lib/supabaseClient";
 import {
   Bell, Users, Plus, Home, Calendar, X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { UserProfile, Plan, Circle, Transaction, DbCircle, DbCircleMember, DbPlan, DbPlanParticipant, DbTransaction, DbPlanOutcome, NotificationItem } from "./core/types";
-import { getInitialsAvatar, mapCirclesToLegacyCircles, mapTransactionsToLegacy } from "../lib/mappers";
-import { insertCircle, insertCircleMembers, syncUserStats, insertTransaction } from "../lib/db";
+import { UserProfile, Plan, Transaction, DbPlan, DbPlanParticipant, DbTransaction, DbPlanOutcome, NotificationItem } from "./core/types";
+import { getInitialsAvatar, mapTransactionsToLegacy } from "../lib/mappers";
+import { syncUserStats, insertTransaction } from "../lib/db";
 import { usePlansStore } from "./features/plans/state/PlansContext";
 import { useProfileStore } from "./features/profile/state/ProfileContext";
 import { useWalletStore } from "./features/wallet/state/WalletContext";
-import { useCirclesStore } from "./features/circles/state/CirclesContext";
 import { useFriendshipStore } from "./features/friendships/state/FriendshipContext";
-import { CirclesScreen } from "./features/circles/screens/CirclesScreen";
-import { CreateNewCircleButton } from "./features/circles/components/CreateNewCircleButton";
 import { WalletScreen } from "./features/wallet/screens/WalletScreen";
 import { HomeScreen } from "./features/home/screens/HomeScreen";
 import { PlansScreen } from "./features/plans/screens/PlansScreen/PlansScreen";
@@ -51,9 +47,7 @@ interface MainAppProps {
 export default function MainApp({ userProfile, onLogout, activeUserId }: MainAppProps) {
   // --- Decoupled Context Stores ---
   const { plans, dbPlans, setDbPlans, dbPlanParticipants, setDbPlanParticipants, dbPlanOutcomes, setDbPlanOutcomes, dbPlanTeamAssignments, setDbPlanTeamAssignments, joinPlan, waitlistPlan, passPlan, submitReview, submitStats, submitMvp, updatePlanDetails, cancelPlan, getHomeFeedPlans, dbMemories, dbMemoryResults } = usePlansStore();
-  const { dbUsers, setDbUsers, updateProfile, activeUserUuid } = useProfileStore();
-  const { circles, setCircles, dbCircles, setDbCircles, dbCircleMembers, setDbCircleMembers, createCircle } = useCirclesStore();
-  const { walletBalance, transactions, dbTransactions, setDbTransactions, refreshTransactions } = useWalletStore();
+  const { dbUsers, setDbUsers, updateProfile, activeUserUuid } = useProfileStore();  const { walletBalance, transactions, dbTransactions, setDbTransactions, refreshTransactions } = useWalletStore();
   const { friends } = useFriendshipStore();
 
   const initialRoute = React.useMemo(() => parseCurrentRoute(), []);
@@ -69,10 +63,8 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
     if (route.selectedPlanId) return true;
     if (route.selectedChatPlanId) return true;
     if (route.tab === "create") {
-      const draft = getSavedCreatePlanDraft();
-      const phase = route.createPhase || (draft?.createPhase !== "confirmation" ? draft?.createPhase : undefined);
       // In Create flow: category screen has bottom nav; wizard screens (who, who-actually, when, review, confirmation) do not
-      if (phase && phase !== "category") return true;
+      if (route.createPhase && route.createPhase !== "category") return true;
     }
     return false;
   }, []);
@@ -83,14 +75,27 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
 
   // --- Shared Overlays & Interactive States ---
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(() => {
-    if (initialRoute.selectedPlanId) return initialRoute.selectedPlanId;
-    return localStorage.getItem("planless_selected_plan_id");
+    return initialRoute.selectedPlanId || null;
   });
   const [selectedPlanSource, setSelectedPlanSource] = useState<"list" | "chat" | "deep_link" | string>("list");
+  const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(() => {
+    return initialRoute.selectedChatPlanId || null;
+  });
+
+  // Clean up any stale selected plan id in localStorage on root routes
+  React.useEffect(() => {
+    if (!initialRoute.selectedPlanId) {
+      localStorage.removeItem("planless_selected_plan_id");
+    }
+  }, [initialRoute.selectedPlanId]);
 
   const [isTrackerExpanded, setIsTrackerExpanded] = useState(false);
-  const { showToast } = useToast();
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+
+  const handleTabChange = React.useCallback((tab: any) => {
+    setChildrenWantBottomNavHidden(false);
+    setActiveTab(tab);
+  }, []);
 
   const prevTabRef = useRef(activeTab);
   React.useEffect(() => {
@@ -123,12 +128,33 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       if (route.tab && route.tab !== activeTab) {
         setActiveTab(route.tab);
       }
-      if (route.selectedPlanId !== undefined && route.selectedPlanId !== selectedPlanId) {
-        setSelectedPlanId(route.selectedPlanId);
+
+      // Synchronize selectedPlanId with route
+      const targetPlanId = (route.tab === "plans" || route.tab === "home") ? (route.selectedPlanId || null) : null;
+      if (targetPlanId !== selectedPlanId) {
+        setSelectedPlanId(targetPlanId);
+      }
+
+      // Synchronize selectedChatPlanId with route
+      const targetChatId = route.tab === "chats" ? (route.selectedChatPlanId || null) : null;
+      if (targetChatId !== selectedChatPlanId) {
+        setSelectedChatPlanId(targetChatId);
+      }
+
+      // If returning to a main/root route, reset childrenWantBottomNavHidden immediately
+      const isRoot =
+        route.tab === "home" ||
+        (route.tab === "plans" && !route.selectedPlanId) ||
+        (route.tab === "chats" && !route.selectedChatPlanId) ||
+        (route.tab === "create" && (!route.createPhase || route.createPhase === "category")) ||
+        route.tab === "profile";
+
+      if (isRoot) {
+        setChildrenWantBottomNavHidden(false);
       }
     });
     return unsubscribe;
-  }, [activeTab, selectedPlanId]);
+  }, [activeTab, selectedPlanId, selectedChatPlanId]);
 
   // Snooze and Auto-Pass overrides
   const [interestedPlanIds, setInterestedPlanIds] = useState<string[]>([]);
@@ -150,7 +176,6 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const [showPlansSearchScreen, setShowPlansSearchScreen] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
-  const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
 
   // Reset sub-screens when changing tabs
   React.useEffect(() => {
@@ -158,16 +183,10 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       setShowHostedPlansScreen(false);
       setShowPastPlansScreen(false);
     }
-    if (activeTab !== "chats" && activeTab !== "circles") {
+    if (activeTab !== "chats") {
       setSelectedChatPlanId(null);
     }
   }, [activeTab]);
-
-  // Circle Navigation helpers
-  const [circleCreateStep, setCircleCreateStep] = useState<"members" | "details" | null>(null);
-  const [selectedCircle, setSelectedCircle] = useState<Circle | null>(null);
-  const [expandedCircleIds, setExpandedCircleIds] = useState<string[]>([]);
-  const [isInvitingFriends, setIsInvitingFriends] = useState(false);
 
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
 
@@ -177,9 +196,9 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   const showPaymentSuccess = useLivePlan(showPaymentSuccessId);
   const showWaitlistSuccess = useLivePlan(showWaitlistSuccessId);
 
-  const homeFeedRef = useRef<HTMLDivElement>(null);
+  const [isNewPlanModalOpen, setIsNewPlanModalOpen] = useState(false);
 
-  // triggerToast removed — use showToast from ToastContext directly
+  const homeFeedRef = useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -300,7 +319,6 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
   // Snooze swipe vertical snooze actions
   const handleSnoozePlan = (planId: string) => {
     setSnoozedPlanIds(prev => [...prev, planId]);
-    showToast("Snoozed: We'll show this plan again later");
   };
 
   // Write state changes to localStorage
@@ -315,37 +333,6 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       localStorage.removeItem("planless_selected_plan_id");
     }
   }, [selectedPlanId, isInitialLoadComplete]);
-
-  React.useEffect(() => {
-    if (selectedCircle) {
-      localStorage.setItem("planless_selected_circle_id", selectedCircle.id);
-    } else if (isInitialLoadComplete) {
-      localStorage.removeItem("planless_selected_circle_id");
-    }
-  }, [selectedCircle, isInitialLoadComplete]);
-
-
-
-
-
-  React.useEffect(() => {
-    const savedId = localStorage.getItem("planless_selected_circle_id");
-    if (selectedCircle) {
-      const fresh = circles.find(c => c.id === selectedCircle.id || c.dbUuid === selectedCircle.dbUuid);
-      if (fresh && fresh !== selectedCircle) {
-        setSelectedCircle(fresh);
-      }
-    } else if (savedId && circles.length > 0) {
-      const fresh = circles.find(c => c.id === savedId || c.dbUuid === savedId);
-      if (fresh) {
-        setSelectedCircle(fresh);
-      }
-    }
-  }, [circles]);
-
-
-
-
 
 
 
@@ -368,7 +355,6 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
     e.preventDefault();
     const amountNum = parseFloat(depositAmount);
     if (isNaN(amountNum) || amountNum <= 0) {
-      showToast("Enter a valid amount to deposit");
       return;
     }
 
@@ -391,37 +377,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
 
     setDepositAmount("");
     setShowDepositModal(false);
-    showToast(`💰 Added ₹${amountNum} successfully!`);
   };
-
-  // Buddy groups creation
-  const handleCreateCircle = (
-    name: string,
-    description: string,
-    image: string | null,
-    memberIds: string[]  // short user_id values e.g. "U002"
-  ) => {
-    if (!name.trim()) {
-      showToast("Give your circle a name!");
-      return;
-    }
-
-    const circleCover = image || getInitialsAvatar(name);
-
-    // Call store function using the hook result destructured at top of MainApp
-    const store = { createCircle }; // createCircle is destructured from useCirclesStore at top of MainApp
-    createCircle(name, description, circleCover, memberIds, activeUserId, dbUsers);
-
-    showToast(`👥 Circle "${name}" created!`);
-  };
-
-
-
-
-  // Syncing countdown timers
-  const upcomingCirclePlans = React.useMemo(() => {
-    return plans.filter(p => !p.isHappened && p.status !== "CANCELLED");
-  }, [plans]);
 
   // Resolve current user's UUID
   const meUserObj = React.useMemo(() => {
@@ -450,11 +406,32 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
     return [];
   }, []);
 
+  // Guard against stale child state leaking onto root routes
+  const isChildHidingBottomNav = React.useMemo(() => {
+    if (activeTab === "home" || activeTab === "plans" || activeTab === "chats") {
+      // Root tabs never inherit child hidden state
+      return false;
+    }
+    if (activeTab === "create") {
+      // In create flow: root category screen (/create) must always show bottom nav
+      const currentRoute = parseCurrentRoute();
+      if (currentRoute.tab === "create" && (!currentRoute.createPhase || currentRoute.createPhase === "category")) {
+        return false;
+      }
+      return childrenWantBottomNavHidden;
+    }
+    // Profile, wallet can request hiding for sub-sheets/sub-screens
+    return childrenWantBottomNavHidden;
+  }, [activeTab, childrenWantBottomNavHidden]);
+
   const shouldShowBottomNav =
     !selectedPlan &&
     !selectedPlanId &&
     !selectedChatPlanId &&
-    !childrenWantBottomNavHidden;
+    !showPlansSearchScreen &&
+    !showHostedPlansScreen &&
+    !showPastPlansScreen &&
+    !isChildHidingBottomNav;
 
   return (
     <div className="w-full h-full bg-[#050505] flex flex-col justify-between relative overflow-hidden select-none">
@@ -463,7 +440,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       {activeTab === "home" && (
         <HomeHeader
           userProfile={userProfile}
-          setActiveTab={setActiveTab}
+          setActiveTab={handleTabChange}
           pendingMemoryCount={pendingMemoryCount}
         />
       )}
@@ -471,7 +448,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       {activeTab === "plans" && (
         <HomeHeader
           userProfile={userProfile}
-          setActiveTab={setActiveTab}
+          setActiveTab={handleTabChange}
           pendingMemoryCount={pendingMemoryCount}
           showSearch={true}
           onToggleSearch={() => setShowPlansSearchScreen(true)}
@@ -483,8 +460,6 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           hideNotificationsIcon={true}
         />
       )}
-
-      {/* Toast is now rendered by ToastProvider in App.tsx */}
 
       {/* ---------------- MAIN APP SCREEN FRAME BODY ---------------- */}
       <main
@@ -512,7 +487,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
             handleWaitlistPlan={(planId) => waitlistPlan(planId, userProfile)}
             homeFeedRef={homeFeedRef}
             selectedPlanId={selectedPlanId}
-            onNavigateToCreate={() => setActiveTab("create")}
+            onNavigateToCreate={() => handleTabChange("create")}
           />
         )}
 
@@ -530,19 +505,19 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
         {/* TAB 3: SPONTANEOUS CREATOR - INSTANT PRODUCTIVITY AESTHETICS */}
         {activeTab === "create" && (
           <CreateMVP
-            setActiveTab={setActiveTab}
+            setActiveTab={handleTabChange}
             onToggleBottomNav={setChildrenWantBottomNavHidden}
             setPlansFilter={setPlansFilter}
-            setSelectedCircle={setSelectedCircle}
           />
         )}
 
         {/* TAB 4: CHATS — PLAN CONVERSATIONS */}
-        {(activeTab === "chats" || activeTab === "circles") && (
+        {activeTab === "chats" && (
           <ChatsScreen
-            setActiveTab={setActiveTab}
+            setActiveTab={handleTabChange}
             onSelectChatPlan={(planId) => {
               setSelectedChatPlanId(planId);
+              navigateToRoute({ tab: "chats", selectedChatPlanId: planId });
             }}
             onScroll={setPlansScrollY}
           />
@@ -551,7 +526,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
         {/* TAB: WALLET */}
         {activeTab === "wallet" && (
           <WalletScreen
-            setActiveTab={setActiveTab}
+            setActiveTab={handleTabChange}
             setSelectedPlanId={setSelectedPlanId}
             onToggleBottomNav={setChildrenWantBottomNavHidden}
           />
@@ -603,18 +578,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
             localStorage.removeItem("planless_selected_plan_id");
             setShowCancelConfirmation(true);
           }}
-          onNavigateToCircle={(circleId) => {
-            const circleObj = dbCircles.find(c => c.circle_id === circleId || c.id === circleId);
-            if (circleObj) {
-              const legacyCircles = mapCirclesToLegacyCircles(dbCircles, dbCircleMembers, dbUsers);
-              const legacyCircle = legacyCircles.find(c => c.id === circleId || c.dbUuid === circleId);
-              if (legacyCircle) {
-                setSelectedCircle(legacyCircle);
-              }
-            }
-            setActiveTab("circles");
-          }}
-        />
+          />
       )}
 
 
@@ -671,7 +635,10 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       {selectedChatPlanId && (
         <PlanChatScreen
           planId={selectedChatPlanId}
-          onBack={() => setSelectedChatPlanId(null)}
+          onBack={() => {
+            setSelectedChatPlanId(null);
+            navigateToRoute({ tab: "chats" });
+          }}
           onOpenPlanDetails={() => {
             const planId = selectedChatPlanId;
             setSelectedPlanSource("chat");
@@ -711,7 +678,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
           setShowWaitlistSuccessId(null);
           setShowLeftSuccessId(null);
         }}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleTabChange}
         setPlansFilter={setPlansFilter}
       />
 
@@ -721,16 +688,11 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       {shouldShowBottomNav && (
         <NavigationFooter
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={handleTabChange}
           homeBadgeCount={homeBadgeCount}
         />
       )}
 
-      {activeTab === "circles" && !circleCreateStep && !selectedCircle && (
-        <div className="absolute bottom-[84px] right-4 z-50 animate-fade-in">
-          <CreateNewCircleButton onClick={() => setCircleCreateStep("members")} />
-        </div>
-      )}
 
       {/* ---------------- PLAN CANCELLED CONFIRMATION OVERLAY ---------------- */}
       <AnimatePresence>
@@ -807,7 +769,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
                 type="button"
                 onClick={() => {
                   setShowCancelConfirmation(false);
-                  setActiveTab('home');
+                  handleTabChange('home');
                 }}
                 className="w-full bg-[#FF6B2C] text-[#050505] py-4 rounded-2xl font-black text-[11px] tracking-widest uppercase flex items-center justify-center gap-2 cursor-pointer select-none"
                 style={{ boxShadow: '0 8px 28px rgba(255,107,44,0.2)' }}
@@ -823,7 +785,7 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
                 onClick={() => {
                   setShowCancelConfirmation(false);
                   setPlansFilter('hosted');
-                  setActiveTab('plans');
+                  handleTabChange('plans');
                 }}
                 className="w-full bg-transparent border border-white/10 text-zinc-400 hover:text-white hover:border-white/20 py-4 rounded-2xl font-bold text-[11px] tracking-widest uppercase flex items-center justify-center transition-colors cursor-pointer select-none"
                 whileTap={{ scale: 0.97 }}

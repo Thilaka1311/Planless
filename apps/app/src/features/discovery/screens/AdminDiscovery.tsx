@@ -9,7 +9,6 @@ import {
   adminUploadImage,
   SUBCATEGORY_MAP,
 } from "../services/discoveryAdminService";
-import { useToast } from "../../../shared/contexts/ToastContext";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { LocationAutocompleteInput } from "../../../shared/components/LocationAutocompleteInput";
 
@@ -36,7 +35,6 @@ export const AdminContextSheet: React.FC<AdminContextSheetProps> = ({
   onAdd,
   onDeleted,
 }) => {
-  const { showToast } = useToast();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -44,11 +42,9 @@ export const AdminContextSheet: React.FC<AdminContextSheetProps> = ({
     setDeleting(true);
     try {
       await adminDeleteItem(item.id, token);
-      showToast("Card removed.");
       onDeleted();
     } catch (e: any) {
       console.error("[AdminContextSheet] Deletion request failed:", e);
-      showToast(e.message || "Failed to remove card.");
     } finally {
       setDeleting(false);
     }
@@ -199,7 +195,6 @@ export interface AdminDrawerProps {
 }
 
 export const AdminDrawer: React.FC<AdminDrawerProps> = ({ config, token, onClose, onMutated }) => {
-  const { showToast } = useToast();
   const [itemUuid] = useState(() => {
     if (typeof window !== "undefined" && window.crypto && window.crypto.randomUUID) {
       return window.crypto.randomUUID();
@@ -229,9 +224,8 @@ export const AdminDrawer: React.FC<AdminDrawerProps> = ({ config, token, onClose
       const subcategory = formData.subcategory || "general";
       const storagePath = await adminUploadImage(file, config.category, subcategory, itemUuid);
       set(fieldName, storagePath);
-      showToast("Image uploaded.");
     } catch (e: any) {
-      showToast(e.message || "Upload failed.");
+      // error handled silently
     } finally {
       setUploadingImage(false);
     }
@@ -242,10 +236,9 @@ export const AdminDrawer: React.FC<AdminDrawerProps> = ({ config, token, onClose
     setLoading(true);
     try {
       await adminCreateItem({ ...formData, id: itemUuid }, config, token);
-      showToast("Card created.");
       onMutated();
     } catch (e: any) {
-      showToast(e.message || "Failed to create card.");
+      // error handled silently
     } finally {
       setLoading(false);
     }

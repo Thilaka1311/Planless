@@ -1,4 +1,3 @@
-import { generateCircleFriendshipsDirect } from "../src/features/friendships/services/friendshipService";
 import { supabase } from "./supabaseClient";
 
 export interface DbUser {
@@ -29,7 +28,7 @@ export interface DbPlan {
   max_participants: number | null;
   plan_size?: number | null;
   total_cost: number;
-  status: 'LIVE' | 'COMPLETED' | 'CANCELLED';
+  status: 'LIVE' | 'OVERDUE' | 'COMPLETED' | 'CANCELLED';
   cover_image?: string | null;
   created_at: string;
   updated_at: string;
@@ -48,7 +47,6 @@ export interface DbParticipant {
   responded_at: string | null;
   created_at: string;
   updated_at: string;
-  circle_id?: string | null;
 }
 
 export interface DbFriendship {
@@ -62,44 +60,11 @@ export interface DbFriendship {
   responded_at?: string | null;
 }
 
-export interface DbCircle {
-  id: string;           // UUID primary key
-  circle_id: string;    // text public ID
-  name: string;
-  description: string;
-  category: string;
-  created_by: string;   // UUID -> users.id
-  cover_image: string;
-  location_anchor: string;
-  privacy: "public" | "private";
-  created_at: string;
-}
-
-export interface DbCircleMember {
-  id: string;           // UUID primary key
-  circle_id: string;    // UUID -> circles.id
-  user_id: string;      // UUID -> users.id
-  role: "admin" | "member";
-  joined_at: string;
-}
-
 export interface DbUserStats {
   user_id: string;      // UUID -> users.id (primary key)
   plans_created: number;
   plans_joined: number;
-  circles_joined: number;
   memories_uploaded: number;
-}
-
-
-
-
-export interface DbCircleMessage {
-  id: string;
-  circle_id: string;
-  sender_id: string | null;
-  message: string;
-  created_at: string;
 }
 
 export interface DbTransaction {
@@ -192,8 +157,7 @@ export async function updateParticipantStatus(
   rsvpStatus: DbParticipant["rsvp_status"],
   role?: DbParticipant["role"],
   respondedAt?: string | null,
-  skipReason?: DbParticipant["skip_reason"],
-  circleId?: string | null
+  skipReason?: DbParticipant["skip_reason"]
 ): Promise<DbParticipant | null> {
   if (!planId || !userId) {
     console.warn("[DB] updateParticipantStatus: missing planId or userId.");
@@ -210,7 +174,6 @@ export async function updateParticipantStatus(
   }
   if (respondedAt !== undefined) update.responded_at = respondedAt;
   if (skipReason !== undefined) update.skip_reason = skipReason;
-  if (circleId !== undefined) update.circle_id = circleId;
   const { data, error } = await (supabase as any)
     .from("plan_participants")
     .upsert(update, { onConflict: "plan_id,user_id" })
@@ -252,21 +215,7 @@ export async function insertParticipants(
   return data ?? [];
 }
 
-/** Insert a brand-new circle. */
-export async function insertCircle(circle: Omit<DbCircle, "id">): Promise<DbCircle | null> {
-  const rows = await upsert("circles", [circle]);
-  return rows?.[0] ?? null;
-}
 
-/** Insert circle members. */
-export async function insertCircleMembers(members: Omit<DbCircleMember, "id">[]): Promise<DbCircleMember[]> {
-  if (members.length === 0) return [];
-  const result = await upsert("circle_members", members);
-  if (result && result.length > 0) {
-    await generateCircleFriendshipsDirect(result);
-  }
-  return result ?? [];
-}
 
 /** Insert a plan reminder. */
 export async function insertPlanReminder(reminder: { plan_id: string, sent_by: string }): Promise<any> {
@@ -283,14 +232,13 @@ export async function insertTransaction(tx: Omit<DbTransaction, "id">): Promise<
 /** Sync user stats: increments statistics counters */
 export async function syncUserStats(
   userUuid: string,
-  event: "create_plan" | "join_plan" | "create_circle" | "join_circle" | "upload_memory"
+  event: "create_plan" | "join_plan" | "upload_memory"
 ): Promise<any> {
   // Unfinished User Stats feature: bypass database operations
   return {
     user_id: userUuid,
     plans_created: 0,
     plans_joined: 0,
-    circles_joined: 0,
     memories_uploaded: 0
   };
 }
@@ -337,23 +285,7 @@ export async function deleteParticipant(planUuid: string, userUuid: string): Pro
   }
 }
 
-/** Delete a member from a circle. */
-export async function deleteCircleMember(circleUuid: string, userUuid: string): Promise<boolean> {
-  try {
-    const { error } = await (supabase as any)
-      .from("circle_members")
-      .delete()
-      .match({ circle_id: circleUuid, user_id: userUuid });
-    if (error) {
-      console.error("[DB] deleteCircleMember failed:", error);
-      return false;
-    }
-    return true;
-  } catch (e) {
-    console.error("[DB] deleteCircleMember exception:", e);
-    return false;
-  }
-}
+
 
 // ─────────────────────────────────────────────
 // PLAN TEAM ASSIGNMENTS  (Football Team Organizer)

@@ -3,7 +3,6 @@ import { ArrowLeft, ChevronRight, UserPlus, Users, UserCheck, X, Search } from "
 import { motion, AnimatePresence } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
-import { useToast } from "../../../shared/contexts/ToastContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { supabase } from "../../../../lib/supabaseClient";
 
@@ -17,7 +16,6 @@ interface FriendshipsScreenProps {
 }
 
 export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) => {
-  const { showToast } = useToast();
   const { activeUserUuid } = useProfileStore();
   const {
     friends,
@@ -123,9 +121,8 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
   const handleAddFriend = async (targetUserUuid: string, name: string) => {
     try {
       await sendFriendRequest(targetUserUuid);
-      showToast(`Sent friend request to ${name}!`);
     } catch (err: any) {
-      showToast(err.message || "Failed to send friend request.");
+      console.error("[handleAddFriend] Error:", err);
     }
   };
 

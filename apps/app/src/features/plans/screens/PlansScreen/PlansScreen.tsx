@@ -6,7 +6,6 @@ import { normalizeStatus } from "../../../../../lib/participantStatus";
 import { formatPlanDate } from "../../../../../lib/mappers";
 import { usePlansStore } from "../../state/PlansContext";
 import { useProfileStore } from "../../../profile/state/ProfileContext";
-import { useCirclesStore } from "../../../circles/state/CirclesContext";
 import { EmptyState } from "../../../home/components/EmptyState";
 import { getPlanCover } from "../../config/planCoverImages";
 import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
@@ -31,7 +30,6 @@ export const PlansScreen = React.memo(({
 }: PlansScreenProps) => {
   const { plans, dbPlanParticipants } = usePlansStore();
   const { userProfile, activeUserId } = useProfileStore();
-  const { circles } = useCirclesStore();
 
   const [localPlansFilter, setLocalPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted'>('JOINED');
   const plansFilter = propPlansFilter !== undefined ? propPlansFilter : localPlansFilter;

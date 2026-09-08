@@ -12,7 +12,7 @@ router.get("/fetch-all", authMiddleware, async (req: AuthenticatedRequest, res) 
       res.json({
         configured: false,
         tables_missing: true,
-        missing_tables: ["users", "circles", "circle_members", "plans", "plan_participants", "transactions", "memories", "plan_outcomes", "friendships"],
+        missing_tables: ["users", "plans", "plan_participants", "transactions", "memories", "plan_outcomes", "friendships"],
         data: null
       });
       return;
@@ -23,8 +23,6 @@ router.get("/fetch-all", authMiddleware, async (req: AuthenticatedRequest, res) 
 
     const tables = [
       "users",
-      "circles",
-      "circle_members",
       "plans",
       "plan_participants",
       "wallet_expenses",
@@ -122,154 +120,6 @@ router.get("/team-assignments", authMiddleware, async (req: AuthenticatedRequest
   }
 });
 
-// GET /api/chat/messages
-// Fetches the last 50 circle messages for a given circle_id.
-// Requires circle membership.
-router.get("/chat/messages", authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { circle_id } = req.query as Record<string, string | undefined>;
-    const userId = req.user!.id;
-
-    const client = getSupabaseClient(req.token);
-    if (!client) {
-      res.status(503).json({ error: "Supabase client not initialized." });
-      return;
-    }
-
-    if (!circle_id) {
-      res.status(400).json({ error: "Missing required parameter: circle_id." });
-      return;
-    }
-
-    if (!isUuid(circle_id)) {
-      res.status(400).json({ error: "Invalid circle_id UUID format." });
-      return;
-    }
-
-    // Verify circle membership
-    const { data: member } = await client
-      .from("circle_members")
-      .select("circle_id")
-      .eq("circle_id", circle_id)
-      .eq("user_id", userId)
-      .single();
-
-    if (!member) {
-      res.status(403).json({ error: "Access denied. You are not a member of this circle." });
-      return;
-    }
-
-    // Fetch the last 50 messages for this circle (newest first; client reverses for display)
-    const { data: messages, error } = await client
-      .from("circle_messages")
-      .select("*, sender:users!chat_messages_sender_id_fkey(id, public_id, full_name, profile_url)")
-      .eq("circle_id", circle_id)
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (error) throw error;
-    res.json({ success: true, count: messages?.length || 0, data: messages || [] });
-  } catch (err: any) {
-    console.error("[GET /api/chat/messages] Fetch error:", err);
-    res.status(500).json({ error: err.message || "Failed to fetch chat messages." });
-  }
-});
-
-
-router.post("/transfer-host", authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { circle_id, target_user_uuid } = req.body;
-    if (!circle_id || !target_user_uuid) {
-      res.status(400).json({ error: "Missing circle_id or target_user_uuid." });
-      return;
-    }
-
-    const client = getSupabaseClient(req.token);
-    if (!client) {
-      res.status(503).json({ error: "Supabase client not initialized." });
-      return;
-    }
-
-    // 1. Get circle creator
-    const { data: circleObj, error: errC } = await client
-      .from("circles")
-      .select("*")
-      .eq("id", circle_id)
-      .single();
-
-    if (errC || !circleObj) {
-      res.status(404).json({ error: "Circle not found." });
-      return;
-    }
-
-    if (circleObj.created_by !== req.user!.id) {
-      res.status(403).json({ error: "Unauthorized: Only the current Host can transfer ownership." });
-      return;
-    }
-
-    // 2. Verify target user is a Co-host
-    const { data: targetMember, error: errTM } = await client
-      .from("circle_members")
-      .select("role")
-      .eq("circle_id", circle_id)
-      .eq("user_id", target_user_uuid)
-      .single();
-
-    if (errTM || !targetMember) {
-      res.status(404).json({ error: "Target member not found in the Circle." });
-      return;
-    }
-
-    if (targetMember.role !== "admin") {
-      res.status(403).json({ error: "Forbidden: Ownership can only be transferred to an Admin." });
-      return;
-    }
-
-    // Execute atomic ownership transfer via RPC
-    const sql = `
-      BEGIN;
-        -- 1. Demote old creator_admin to admin
-        UPDATE public.circle_members 
-        SET role = 'admin'::circle_role
-        WHERE circle_id = '${circle_id}'::uuid AND user_id = '${req.user!.id}'::uuid;
-
-        -- 2. Promote new creator_admin
-        UPDATE public.circle_members 
-        SET role = 'creator_admin'::circle_role
-        WHERE circle_id = '${circle_id}'::uuid AND user_id = '${target_user_uuid}'::uuid;
-
-        -- 3. Update circles creator
-        UPDATE public.circles 
-        SET created_by = '${target_user_uuid}'::uuid
-        WHERE id = '${circle_id}'::uuid;
-      COMMIT;
-    `;
-
-    // Wait, getSupabaseClient cannot execute arbitrary raw multi-statement SQL easily, 
-    // but we can execute them sequentially in a single transaction block via RPC or database function,
-    // or just run a Postgres function. Let's check if we can call a function or just do it in sequence inside RPC.
-    // Instead of raw sql string, let's create a DB RPC function 'transfer_circle_ownership' which is extremely robust.
-    
-    // We will call the RPC function transfer_circle_ownership(p_circle_id, p_old_host_id, p_new_host_id)
-    const { data, error } = await client.rpc("transfer_circle_ownership", {
-      p_circle_id: circle_id,
-      p_old_host_id: req.user!.id,
-      p_new_host_id: target_user_uuid
-    });
-
-    if (error) {
-      console.error("[DB] Host transfer RPC error:", error);
-      res.status(500).json({ error: error.message });
-      return;
-    }
-
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error("[DB] Host transfer error:", err);
-    res.status(500).json({ error: err.message || "Failed to transfer host ownership." });
-  }
-});
-
 router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { table, records } = req.body;
@@ -349,13 +199,13 @@ router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) =>
             if (rawStatus === "draft") mappedStatus = "DRAFT";
             else if (rawStatus === "open" || rawStatus === "active" || rawStatus === "live") mappedStatus = "LIVE";
             else if (rawStatus === "locked") mappedStatus = "LOCKED";
+            else if (rawStatus === "overdue") mappedStatus = "OVERDUE";
             else if (rawStatus === "completed") mappedStatus = "COMPLETED";
             else if (rawStatus === "cancelled") mappedStatus = "CANCELLED";
             mappedRec.status = mappedStatus;
           }
           if (rec.created_at !== undefined) mappedRec.created_at = rec.created_at;
           if (rec.updated_at !== undefined) mappedRec.updated_at = rec.updated_at;
-          if (rec.circle_id !== undefined) mappedRec.circle_id = rec.circle_id;
           records[i] = mappedRec;
         } else {
           // New Insert record: map all fields with proper defaults
@@ -413,55 +263,19 @@ router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) =>
           if (rawStatus === "draft") mappedStatus = "DRAFT";
           else if (rawStatus === "open" || rawStatus === "active" || rawStatus === "live") mappedStatus = "LIVE";
           else if (rawStatus === "locked") mappedStatus = "LOCKED";
+          else if (rawStatus === "overdue") mappedStatus = "OVERDUE";
           else if (rawStatus === "completed") mappedStatus = "COMPLETED";
           else if (rawStatus === "cancelled") mappedStatus = "CANCELLED";
           mappedRec.status = mappedStatus;
 
           if (rec.created_at) mappedRec.created_at = rec.created_at;
           if (rec.updated_at) mappedRec.updated_at = rec.updated_at;
-          mappedRec.circle_id = rec.circle_id || null;
 
           records[i] = mappedRec;
         }
       }
     }
 
-    if (table === "circles") {
-      for (let i = 0; i < records.length; i++) {
-        const rec = records[i];
-        const mappedRec: any = {};
-        if (rec.id) mappedRec.id = rec.id;
-        if (rec.public_id) mappedRec.public_id = rec.public_id;
-        else if (rec.circle_id) mappedRec.public_id = rec.circle_id;
-        mappedRec.name = rec.name || "Unnamed Circle";
-        mappedRec.created_by = rec.created_by || req.user!.id;
-        mappedRec.description = rec.description || rec.tagline || null;
-        mappedRec.cover_image = rec.cover_image || rec.groupImage || rec.groupPhoto || null;
-        if (rec.allow_member_edit !== undefined) mappedRec.allow_member_edit = rec.allow_member_edit;
-        if (rec.allow_member_host !== undefined) mappedRec.allow_member_host = rec.allow_member_host;
-        if (rec.allow_member_invite !== undefined) mappedRec.allow_member_invite = rec.allow_member_invite;
-        if (rec.allow_auto_join !== undefined) mappedRec.allow_auto_join = rec.allow_auto_join;
-        if (rec.created_at) mappedRec.created_at = rec.created_at;
-        if (rec.updated_at) mappedRec.updated_at = rec.updated_at;
-        records[i] = mappedRec;
-      }
-    }
-
-    if (table === "circle_members") {
-      for (let i = 0; i < records.length; i++) {
-        const rec = records[i];
-        if (rec.role !== undefined) {
-          const rawRole = String(rec.role).toLowerCase();
-          let mappedRole = "member";
-          if (rawRole === "creator_admin" || rawRole === "host" || rawRole === "creator" || rawRole === "admin") mappedRole = "admin";
-          rec.role = mappedRole;
-        }
-        if (rec.auto_join_enabled !== undefined) {
-          rec.auto_join_enabled = rec.auto_join_enabled;
-        }
-        records[i] = rec;
-      }
-    }
 
     // Runtime UUID validation guards
     for (const rec of records) {
@@ -472,19 +286,9 @@ router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) =>
         if (rec.user_id && !isUuid(rec.user_id)) {
           console.warn(`[DB Integrity Warning] plan_participants mutation has non-UUID user_id: "${rec.user_id}"`);
         }
-      } else if (table === "circle_members") {
-        if (rec.circle_id && !isUuid(rec.circle_id)) {
-          console.warn(`[DB Integrity Warning] circle_members mutation has non-UUID circle_id: "${rec.circle_id}"`);
-        }
-        if (rec.user_id && !isUuid(rec.user_id)) {
-          console.warn(`[DB Integrity Warning] circle_members mutation has non-UUID user_id: "${rec.user_id}"`);
-        }
       } else if (table === "plans") {
         if (rec.created_by && !isUuid(rec.created_by)) {
           console.warn(`[DB Integrity Warning] plans mutation has non-UUID created_by: "${rec.created_by}"`);
-        }
-        if (rec.circle_id && !isUuid(rec.circle_id)) {
-          console.warn(`[DB Integrity Warning] plans mutation has non-UUID circle_id: "${rec.circle_id}"`);
         }
       } else if (table === "wallet_expenses") {
         if (rec.payer_id && !isUuid(rec.payer_id)) {
@@ -546,63 +350,6 @@ router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) =>
     }
 
 
-    if (table === "circle_members") {
-      for (const rec of records) {
-        // Find circle info to resolve Creator Admin
-        const { data: circle } = await client
-          .from("circles")
-          .select("created_by")
-          .eq("id", rec.circle_id)
-          .single();
-
-        if (circle) {
-          // Check if actor is an admin in the circle
-          const { data: actorMember } = await client
-            .from("circle_members")
-            .select("role")
-            .eq("circle_id", rec.circle_id)
-            .eq("user_id", req.user!.id)
-            .single();
-          const isActorAdmin = (actorMember && actorMember.role === "admin") || circle.created_by === req.user!.id;
-
-          if (!isActorAdmin) {
-            res.status(403).json({ error: "Forbidden. Only Admins can manage circle membership roles." });
-            return;
-          }
-
-          // 1. Guard: Creator cannot be demoted or have their role changed
-          if (rec.user_id === circle.created_by && rec.role !== "admin") {
-            res.status(403).json({ error: "Forbidden. Circle Creator cannot be demoted or modified." });
-            return;
-          }
-        }
-      }
-    }
-
-    // Guard: circle_messages validation (membership checks)
-    if (table === "circle_messages") {
-      for (const rec of records) {
-        rec.sender_id = req.user!.id;
-
-        if (!rec.circle_id) {
-          res.status(400).json({ error: "Missing circle_id for message." });
-          return;
-        }
-
-        // Verify circle membership
-        const { data: member } = await client
-          .from("circle_members")
-          .select("id")
-          .eq("circle_id", rec.circle_id)
-          .eq("user_id", rec.sender_id)
-          .single();
-
-        if (!member) {
-          res.status(403).json({ error: "Sender is not a member of the circle." });
-          return;
-        }
-      }
-    }
 
     // plan_team_assignments: upsert on (plan_id, user_id) conflict
     // This allows moving a player between Team A and Team B.
@@ -718,32 +465,6 @@ router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) =>
       return;
     }
 
-    // Guard: Prevent duplicate circle_memberships
-    if (table === "circle_members") {
-      let finalData = [];
-      if (records.length > 0) {
-        const query = client.from(table).upsert(records);
-        const { data, error } = await query.select("*");
-        if (error) {
-          if (error.code === "23505") {
-            const { data: allMatching } = await client
-              .from("circle_members")
-              .select("*")
-              .in("circle_id", records.map((r: any) => r.circle_id).filter(Boolean))
-              .in("user_id", records.map((r: any) => r.user_id).filter(Boolean));
-            res.json({ success: true, count: allMatching?.length || 0, data: allMatching || [] });
-            return;
-          }
-          console.error(`[Supabase DB Operation Sync] Error writing to ${table}:`, error);
-          res.status(500).json({ error: error.message, details: error.details, hint: error.hint });
-          return;
-        }
-        finalData = data || [];
-      }
-
-      res.json({ success: true, count: finalData.length, data: finalData });
-      return;
-    }
 
     console.log(`[Supabase DB Write] Table: ${table}, Payload before write:`, records);
 
@@ -1055,7 +776,7 @@ async function recalculatePlanParticipantsCosts(client: any, planUuid: string): 
   // Fetch all current participants on this plan
   const { data: participants, error: ppErr } = await client
     .from("plan_participants")
-    .select("user_id, rsvp_status, circle_id")
+    .select("user_id, rsvp_status")
     .eq("plan_id", planUuid);
 
   if (ppErr || !participants) {
@@ -1234,84 +955,6 @@ router.post("/delete", authMiddleware, async (req: AuthenticatedRequest, res) =>
       }
     }
 
-    if (table === "circles") {
-      const circleId = match.id || match.circle_id;
-      if (!circleId) {
-        res.status(400).json({ error: "Missing circle ID in deletion match criteria." });
-        return;
-      }
-
-      const { data: circle } = await client
-        .from("circles")
-        .select("created_by")
-        .eq("id", circleId)
-        .single();
-
-      if (!circle) {
-        res.status(404).json({ error: "Circle not found." });
-        return;
-      }
-
-      if (circle.created_by !== req.user!.id) {
-        res.status(403).json({ error: "Forbidden. Only the Circle Host can delete this circle." });
-        return;
-      }
-    }
-
-    if (table === "circle_members") {
-      const circleId = match.circle_id;
-      const targetUserId = match.user_id;
-
-      if (!circleId || !targetUserId) {
-        res.status(400).json({ error: "Missing circle_id or user_id in deletion match criteria." });
-        return;
-      }
-
-      // Allow self-removal (leaving circle)
-      if (targetUserId !== req.user!.id) {
-        const { data: actorMember } = await client
-          .from("circle_members")
-          .select("role")
-          .eq("circle_id", circleId)
-          .eq("user_id", req.user!.id)
-          .single();
-
-        // DB stores roles as admin / member (lowercase)
-        const actorRoleLower = String(actorMember?.role || "").toLowerCase();
-
-        const { data: circle } = await client
-          .from("circles")
-          .select("created_by")
-          .eq("id", circleId)
-          .single();
-
-        const isActorAdmin = actorRoleLower === "admin" || (circle && circle.created_by === req.user!.id);
-
-        if (!actorMember || !isActorAdmin) {
-          res.status(403).json({ error: "Forbidden. Only Admins can remove members." });
-          return;
-        }
-
-        const { data: targetMember } = await client
-          .from("circle_members")
-          .select("role")
-          .eq("circle_id", circleId)
-          .eq("user_id", targetUserId)
-          .single();
-
-        if (targetMember) {
-          const targetRoleLower = String(targetMember.role).toLowerCase();
-          if (circle && targetUserId === circle.created_by) {
-            res.status(403).json({ error: "Forbidden. Circle Creator cannot be removed." });
-            return;
-          }
-          if (actorRoleLower === "admin" && targetRoleLower === "admin") {
-            res.status(403).json({ error: "Forbidden. Admins cannot remove other Admins." });
-            return;
-          }
-        }
-      }
-    }
 
     console.log(`[TRACE /api/db/delete] table="${table}"  match=${JSON.stringify(match)}`);
 
@@ -1393,19 +1036,6 @@ router.post("/reset", async (req, res) => {
       active_status: true
     }]);
 
-    // Re-seed the default test circle needed by spec files
-    const defaultCircleUuid = "c2e4a106-bc73-44c1-b52b-eec759c6eadf";
-    await client.from("circles").upsert([{
-      id: defaultCircleUuid,
-      circle_id: "C_DEFAULT",
-      name: "Custom Plan",
-      description: "Default Spontaneous Circle",
-      category: "custom",
-      created_by: systemUserUuid,
-      cover_image: "https://images.unsplash.com/photo-1522071820081-009f0129c71c",
-      location_anchor: "Third Wave Coffee",
-      privacy: "private"
-    }]);
 
     res.json({ success: true, message: "Supabase database truncated, default test data seeded, and sequential counters reset successfully!" });
   } catch (err: any) {
@@ -1449,19 +1079,6 @@ router.post("/delete-users", async (req, res) => {
       active_status: true
     }]);
 
-    // Re-seed the default test circle needed by spec files
-    const defaultCircleUuid = "c2e4a106-bc73-44c1-b52b-eec759c6eadf";
-    await client.from("circles").upsert([{
-      id: defaultCircleUuid,
-      circle_id: "C_DEFAULT",
-      name: "Custom Plan",
-      description: "Default Spontaneous Circle",
-      category: "custom",
-      created_by: systemUserUuid,
-      cover_image: "https://images.unsplash.com/photo-1522071820081-009f0129c71c",
-      location_anchor: "Third Wave Coffee",
-      privacy: "private"
-    }]);
 
     res.json({ success: true, message: "All user-related data deleted, default test data seeded, and sequential counters reset successfully." });
   } catch (err: any) {

@@ -1,9 +1,6 @@
 import React, { useState } from "react";
 import { X, ArrowRight, Compass, Film, UtensilsCrossed, CalendarDays, ArrowLeft } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
 import { StepWho } from "../components/FriendsSelector";
-import { getCategoryImage } from "../utils/constants";
-import { PlanDetailOverviewCard } from "../../participants/components/PlanDetailOverviewCard";
 
 interface WhoIsComingScreenProps {
   form: any;
@@ -36,24 +33,6 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
   leavingParticipant = null,
   selectedReplacementFriend = null,
 }) => {
-
-  // Format date parts to match WhenIsPlanScreen header summary
-  const eventDateObj = form.eventDateTime ? new Date(form.eventDateTime) : new Date();
-  const formattedDate = eventDateObj.toLocaleDateString('en-US', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long'
-  });
-  const formattedTime = eventDateObj.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  });
-
-  const title = form.localTitle || "New Activity";
-  const coverImage = form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory);
-
-  const [isHeaderOpen, setIsHeaderOpen] = useState(false);
   const [showRemoveHostDialog, setShowRemoveHostDialog] = useState(false);
 
   const totalSelectedCount = isReplacementMode
@@ -146,30 +125,14 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
             };
             const style = getCategoryConfig(selectedCategory);
             return (
-              <button
-                type="button"
-                className="plan-details-toggle shrink-0 flex items-center justify-center p-1 rounded-full text-white/80 hover:text-white transition cursor-pointer"
-                onClick={() => !hideOverviewToggle && setIsHeaderOpen(prev => !prev)}
-                title="Plan Details"
+              <div
+                className="shrink-0 flex items-center justify-center p-1 pointer-events-none"
               >
                 {style.icon}
-              </button>
+              </div>
             );
           })()}
         </div>
-
-        {!hideOverviewToggle && (
-          <AnimatePresence>
-            <PlanDetailOverviewCard
-              planName={title}
-              date={formattedDate}
-              time={formattedTime}
-              activityType={selectedCategory}
-              visible={isHeaderOpen}
-              onClose={() => setIsHeaderOpen(false)}
-            />
-          </AnimatePresence>
-        )}
       </div>
 
       {/* ── Content Area ── */}

@@ -2,14 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronLeft, MapPin, Clock, Users, Check, Link, CheckCircle } from 'lucide-react';
 import { usePlansStore } from "../../plans/state/PlansContext";
-import { useCirclesStore } from "../../circles/state/CirclesContext";
 import { Plan, NotificationItem } from "../../../core/types";
 import { getOrCreatePlanInvite, buildInviteUrl } from "../../plans/services/planInviteService";
 
 // Hooks & utils
 import { useCreatePlanForm } from "../hooks/useCreatePlanForm";
 import { getCategoryImage } from "../utils/constants";
-import { useToast } from "../../../shared/contexts/ToastContext";
 import { formatDateTimeStandard } from "../../../shared/components/NativeDateTimeField";
 
 // Sub-components
@@ -23,15 +21,14 @@ import { DiscardPlanBottomSheet } from "../../plans/components/BottomSheets";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import defaultPlanCover from "../../../assets/planimagedefault.png";
-import { uploadPlanImage } from "../../../shared/utils/imageUtils";
+import { uploadPlanImage, uploadPlanCardImage } from "../../../shared/utils/imageUtils";
 import { clearDraftParticipants, clearCreatePlanDraft } from "../utils/draftParticipantStorage";
 
 
 interface CreatePlanScreenProps {
-  setActiveTab: (tab: "home" | "plans" | "create" | "circles" | "wallet" | "profile") => void;
+  setActiveTab: (tab: "home" | "plans" | "create" | "wallet" | "profile") => void;
   onToggleBottomNav?: (hidden: boolean) => void;
   setPlansFilter?: (filter: 'JOINED' | 'WAITLISTED' | 'SKIPPED') => void;
-  setSelectedCircle?: (circle: any) => void;
 }
 
 export const CreatePlanScreen = ({
@@ -39,9 +36,7 @@ export const CreatePlanScreen = ({
   onToggleBottomNav,
   setPlansFilter,
 }: CreatePlanScreenProps) => {
-  const { showToast } = useToast();
   const { createPlan } = usePlansStore();
-  const { circles, setCircles } = useCirclesStore();
 
   // Flow states
   const [createPhase, setCreatePhase] = useState<'category' | 'when' | 'who' | 'who-actually' | 'sports_select' | 'customizer' | 'review' | 'confirmation'>('category');
@@ -65,11 +60,9 @@ export const CreatePlanScreen = ({
       const url = buildInviteUrl(invite.invite_token);
       await navigator.clipboard.writeText(url);
       setIsCopied(true);
-      showToast("Invite link copied!");
       setTimeout(() => setIsCopied(false), 3000);
     } catch (err) {
       console.error("[CreatePlanScreen] Copy invite failed:", err);
-      showToast("Failed to copy invite link");
     } finally {
       setIsCopying(false);
     }
@@ -233,30 +226,27 @@ export const CreatePlanScreen = ({
 
     const hostUuid = form.userProfile?.dbUuid || form.userProfile?.user_id || form.activeUserId;
     if (!hostUuid) {
-      showToast("User profile session is not active. Onboard first.");
       form.setIsSubmitting(false);
       return;
     }
 
     const titleToUse = form.localTitle ? form.localTitle.trim() : "";
     if (!titleToUse || titleToUse === "Set a title" || titleToUse === "Enter Title") {
-      showToast("Please set a title for your plan");
       form.setIsSubmitting(false);
       return;
     }
 
     const isDateSet = Boolean(form.isDateManuallySet && form.eventDateTime);
+    const rawLocation = (form.localLocation || form.placeAddress || "").trim();
+    const isLocationSet = Boolean(
+      rawLocation &&
+      rawLocation !== "Add a location" &&
+      rawLocation !== "Add venue" &&
+      rawLocation !== "Search for a place…"
+    );
     const isCostSet = Boolean(form.isCostManuallySet && form.costAmount !== undefined && form.costAmount !== null);
 
-    if (!isDateSet && !isCostSet) {
-      form.setIsSubmitting(false);
-      return;
-    }
-    if (!isDateSet) {
-      form.setIsSubmitting(false);
-      return;
-    }
-    if (!isCostSet) {
+    if (!isDateSet || !isLocationSet) {
       form.setIsSubmitting(false);
       return;
     }
@@ -271,19 +261,24 @@ export const CreatePlanScreen = ({
     const timeToUse = formatDateTimeStandard(planEventDate);
     const planId = `p_${Date.now()}`;
     const isLocalCustomImage = Boolean(
+      form.customOriginalImage &&
+      (form.customOriginalImage.startsWith('data:') ||
+        form.customOriginalImage.startsWith('blob:') ||
+        form.customOriginalImage === 'custom_draft_blob')
+    ) || Boolean(
       form.customCoverImage &&
-      (form.customCoverImage.startsWith("data:") ||
-        form.customCoverImage.startsWith("blob:") ||
-        form.customCoverImage === "custom_draft_blob")
+      (form.customCoverImage.startsWith('data:') ||
+        form.customCoverImage.startsWith('blob:') ||
+        form.customCoverImage === 'custom_draft_blob')
     );
     const coverUrl = isLocalCustomImage
       ? getCategoryImage(selectedCategory, selectedSubcategory)
-      : (form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory));
+      : (form.customOriginalImage || form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory));
 
     let hoursOffset = 0;
     let isPlanStart = false;
 
-    if (!form.rsvpDeadline) {
+    if (!form.rsvpDeadline || form.rsvpDeadline === 'Plan start' || form.rsvpDeadline === 'Plan Start') {
       isPlanStart = true;
     } else if (form.rsvpDeadline.includes('1 Hour') || form.rsvpDeadline.includes('1 hour')) {
       hoursOffset = 1;
@@ -297,14 +292,22 @@ export const CreatePlanScreen = ({
       hoursOffset = 24;
     }
 
+    const isExplicitNoDeadline = form.rsvpDeadline === 'No deadline' || form.rsvpDeadline === '-';
+    const hasDeadline = !isExplicitNoDeadline;
     let deadlineDate = new Date(planEventDate);
-    if (form.rsvpDeadline === 'Custom' && form.customDeadline) {
-      deadlineDate = new Date(form.customDeadline);
-    } else if (!isPlanStart) {
-      deadlineDate.setHours(deadlineDate.getHours() - hoursOffset);
+    if (hasDeadline) {
+      if (form.rsvpDeadline === 'Custom' && form.customDeadline) {
+        deadlineDate = new Date(form.customDeadline);
+      } else if (!isPlanStart) {
+        deadlineDate.setHours(deadlineDate.getHours() - hoursOffset);
+      }
+      if (deadlineDate.getTime() < now.getTime()) {
+        form.setIsSubmitting(false);
+        return;
+      }
     }
 
-    if (deadlineDate.getTime() <= now.getTime() - 60000 || deadlineDate.getTime() > planEventDate.getTime()) {
+    if (deadlineDate.getTime() > planEventDate.getTime()) {
       deadlineDate = new Date(planEventDate);
     }
 
@@ -358,7 +361,6 @@ export const CreatePlanScreen = ({
     try {
       const { dbPlanRow } = await createPlan(
         newDbPlan,
-        [],
         form.selectedFriends || [],
         form.userProfile,
         titleToUse,
@@ -366,11 +368,28 @@ export const CreatePlanScreen = ({
         form.priorityGuestIds || []
       );
 
-      if (form.customCoverBlob && dbPlanRow?.id) {
+      // Upload original image → cover_image
+      if (form.customOriginalBlob && dbPlanRow?.id) {
+        try {
+          await uploadPlanImage(dbPlanRow.id, form.customOriginalBlob);
+        } catch (uploadErr) {
+          console.error('[CreatePlanFlow] Failed to upload original plan cover image:', uploadErr);
+        }
+      } else if (form.customCoverBlob && dbPlanRow?.id) {
+        // Fallback: no separate original — treat cropped as the cover_image
         try {
           await uploadPlanImage(dbPlanRow.id, form.customCoverBlob);
         } catch (uploadErr) {
-          console.error("[CreatePlanFlow] Failed to upload/update plan cover image:", uploadErr);
+          console.error('[CreatePlanFlow] Failed to upload plan cover image (fallback):', uploadErr);
+        }
+      }
+
+      // Upload cropped portrait → cover_card_image (only if a separate crop was produced)
+      if (form.customCoverBlob && form.customOriginalBlob && dbPlanRow?.id) {
+        try {
+          await uploadPlanCardImage(dbPlanRow.id, form.customCoverBlob);
+        } catch (uploadErr) {
+          console.error('[CreatePlanFlow] Failed to upload plan card image:', uploadErr);
         }
       }
 
@@ -379,11 +398,9 @@ export const CreatePlanScreen = ({
       clearDraftParticipants();
       clearCreatePlanDraft();
       form.setIsSubmitting(false);
-      showToast("✨ Plan created successfully!");
     } catch (err: any) {
       console.error("[CreatePlanFlow] Error creating plan:", err);
       form.setIsSubmitting(false);
-      showToast(`Failed to create plan: ${err.message || "Unknown error"}`);
     }
   };
 
@@ -397,7 +414,7 @@ export const CreatePlanScreen = ({
     return (
       <WhenIsPlanScreen
         form={form}
-        coverImage={form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory)}
+        coverImage={form.customOriginalImage || form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory)}
         title={form.localTitle || "New Activity"}
         onBack={() => {
           if (cameFromReview) {

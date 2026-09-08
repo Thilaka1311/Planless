@@ -2,7 +2,6 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { ChevronLeft, Crown, Users, Plus, Check, LogOut, Trash2 } from "lucide-react";
 import { Plan, UserProfile } from "../../../../../core/types";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
-import { useToast } from "../../../../../shared/contexts/ToastContext";
 import { normalizeStatus } from "../../../../../../lib/participantStatus";
 import { DiscoveryImages } from "../../../../../IMGfromDB/PlanImages";
 import { getPlanCover } from "../../../config/planCoverImages";
@@ -16,6 +15,7 @@ interface PlanSettingsScreenProps {
   plan: Plan;
   userProfile: UserProfile;
   isCreatorHost?: boolean;
+  isPlanSettingsForParticipant?: boolean;
   mode?: "host" | "participant";
   onBack: () => void;
   onUpdateSettings?: (settings: {
@@ -37,11 +37,11 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   plan,
   userProfile,
   isCreatorHost,
+  isPlanSettingsForParticipant: propIsPlanSettingsForParticipant,
   mode: propMode,
   onBack,
   onUpdateSettings,
   onUpdatePlanDetails,
-
   onDemoteHost,
   onRemoveParticipant,
   onSelectHost,
@@ -51,7 +51,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   onLeavePlan,
   onCancelPlan,
 }) => {
-  const { showToast } = useToast();
 
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showPromoteHostToLeaveModal, setShowPromoteHostToLeaveModal] = useState(false);
@@ -73,9 +72,60 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
   const [newTitleInput, setNewTitleInput] = useState(plan.title || "");
   const [isSavingTitle, setIsSavingTitle] = useState(false);
-  const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setNewTitleInput(plan.title || "");
+  }, [plan.title]);
+
+  useEffect(() => {
+    if (titleTextareaRef.current) {
+      titleTextareaRef.current.style.height = "auto";
+      titleTextareaRef.current.style.height = `${titleTextareaRef.current.scrollHeight}px`;
+    }
+  }, [newTitleInput]);
+
+  const members = plan.members || [];
+  const activeUserUuid = userProfile.dbUuid || (userProfile as any).id || userProfile.user_id || "";
+
+  // Single unified role flag controlling all participant vs host behavior
+  const isPlanSettingsForParticipant = useMemo(() => {
+    if (propIsPlanSettingsForParticipant !== undefined) {
+      return propIsPlanSettingsForParticipant;
+    }
+    if (propMode === "participant") return true;
+    if (propMode === "host") return false;
+    if (isCreatorHost) return false;
+
+    const userIds = new Set<string>();
+    if (activeUserUuid) userIds.add(activeUserUuid);
+    if (userProfile?.dbUuid) userIds.add(userProfile.dbUuid);
+    if ((userProfile as any)?.id) userIds.add((userProfile as any).id);
+    if (userProfile?.user_id) userIds.add(userProfile.user_id);
+
+    // Check if user is the creator or hostId of the plan
+    if (plan.hostId && userIds.has(plan.hostId)) return false;
+    if (plan.creatorId && userIds.has(plan.creatorId)) return false;
+
+    // Check members list for isHost or role === 'HOST'
+    const memberMatch = plan.members?.find((m) => {
+      const uId = m.userId || m.userUuid || (m as any).user_id || m.id;
+      return uId && userIds.has(uId);
+    });
+
+    if (memberMatch) {
+      const isHostRole = Boolean(
+        memberMatch.isHost ||
+        (memberMatch.role && memberMatch.role.toUpperCase() === "HOST")
+      );
+      return !isHostRole;
+    }
+
+    return true;
+  }, [propIsPlanSettingsForParticipant, propMode, isCreatorHost, userProfile, activeUserUuid, plan.hostId, plan.creatorId, plan.members]);
 
   const handleSaveTitle = async () => {
+    if (isPlanSettingsForParticipant) return;
     const trimmed = newTitleInput.trim();
     if (!trimmed || trimmed === plan.title) {
       setNewTitleInput(plan.title || "");
@@ -86,18 +136,13 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     try {
       if (onEditTitle) {
         await onEditTitle(trimmed);
-        showToast("✓ Plan title updated");
       }
     } catch {
-      showToast("Failed to update plan title");
       setNewTitleInput(plan.title || "");
     } finally {
       setIsSavingTitle(false);
     }
   };
-
-  const members = plan.members || [];
-  const activeUserUuid = userProfile.dbUuid || userProfile.user_id || "";
 
   const planCapacity = plan.plan_size ?? (plan as any).planSize ?? plan.maxParticipants ?? (plan as any).max_participants ?? (plan as any).joinLimit ?? (plan as any).capacity ?? 0;
   const waitlistCount = useMemo(() => {
@@ -116,7 +161,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   }, [members]);
 
   const allHosts = useMemo(() => {
-    const rawHosts = members
+    let rawHosts = members
       .filter((m) => Boolean(m.isHost || (m as any).role === "HOST"))
       .map((m) => {
         const uId = m.userId || m.userUuid || (m as any).user_id || m.id || "";
@@ -131,6 +176,19 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         };
       });
 
+    if (rawHosts.length === 0 && (plan.hostId || plan.creatorId || plan.creatorName)) {
+      const hostId = plan.hostId || plan.creatorId || "";
+      const isSelf = Boolean(activeUserUuid && (hostId === activeUserUuid));
+      rawHosts = [{
+        id: hostId,
+        dbUuid: hostId,
+        name: isSelf ? "You" : (plan.creatorName || "Host"),
+        avatar: plan.creatorAvatar || "",
+        isHost: true,
+        isSelf,
+      }];
+    }
+
     const currentUserHost = rawHosts.find((h) => h.isSelf);
     const remainingHosts = rawHosts
       .filter((h) => !h.isSelf)
@@ -140,38 +198,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       ...(currentUserHost ? [currentUserHost] : []),
       ...remainingHosts,
     ];
-  }, [members, activeUserUuid]);
-
-  const isHostUser = useMemo(() => {
-    if (isCreatorHost) return true;
-    if (allHosts.some((h) => h.isSelf)) return true;
-
-    // Check if active user has participant_status === "host" and role === "host" in members
-    return members.some((m) => {
-      const uId = m.userId || m.userUuid || (m as any).user_id || m.id || "";
-      const isSelf = Boolean(
-        activeUserUuid &&
-          (uId === activeUserUuid ||
-            m.userUuid === activeUserUuid ||
-            m.userId === activeUserUuid)
-      );
-      if (!isSelf) return false;
-
-      const pStatus = (
-        m.joinState ||
-        m.rsvp_status ||
-        (m as any).participant_status ||
-        (m as any).status ||
-        ""
-      ).toLowerCase();
-      const pRole = (m.role || (m.isHost ? "host" : "")).toLowerCase();
-
-      return (pStatus === "host" || pStatus === "joined") && pRole === "host";
-    });
-  }, [isCreatorHost, allHosts, members, activeUserUuid]);
-
-  const mode: "host" | "participant" = propMode || (isHostUser ? "host" : "participant");
-  const isHostMode = mode === "host";
+  }, [members, activeUserUuid, plan.hostId, plan.creatorId, plan.creatorName, plan.creatorAvatar]);
 
   const allParticipants = useMemo(() => {
     return members
@@ -196,20 +223,29 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       });
   }, [members, activeUserUuid]);
 
+  const hostIds = useMemo(() => new Set(allHosts.map((h) => h.id)), [allHosts]);
+
+  const nonHostParticipants = useMemo(() => {
+    return allParticipants.filter((p) => !hostIds.has(p.id));
+  }, [allParticipants, hostIds]);
+
   const { requestHostLeaveWithReplacement, stopHostingWithReplacement } = usePlansStore();
   const [isPromotingToLeave, setIsPromotingToLeave] = useState(false);
   const [hostReplacementMode, setHostReplacementMode] = useState<'leave' | 'stop_hosting'>('leave');
 
-  const hostIds = useMemo(() => new Set(allHosts.map((h) => h.id)), [allHosts]);
-
   const eligibleGoingParticipants = useMemo(() => {
     return members
       .filter((m) => {
+        const status = normalizeStatus(m.joinState || m.rsvp_status || (m as any).status);
+        const isHost = Boolean(m.isHost || (m as any).role === "HOST");
         const uId = m.userId || m.userUuid || (m as any).user_id || m.id || "";
-        if (hostIds.has(uId)) return false;
-        if (activeUserUuid && (uId === activeUserUuid || m.userUuid === activeUserUuid || m.userId === activeUserUuid)) return false;
-        const status = normalizeStatus(m.joinState || m.rsvp_status);
-        return status === "JOINED";
+        const isSelf = Boolean(
+          activeUserUuid &&
+            (uId === activeUserUuid ||
+              m.userUuid === activeUserUuid ||
+              m.userId === activeUserUuid)
+        );
+        return status === "JOINED" && !isHost && !isSelf;
       })
       .map((m) => {
         const uId = m.userId || m.userUuid || (m as any).user_id || m.id || "";
@@ -224,7 +260,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       .sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
   }, [members, hostIds, activeUserUuid]);
 
-  const isSoleHost = allHosts.length <= 1 && isHostUser;
+  const isSoleHost = allHosts.length <= 1 && !isPlanSettingsForParticipant;
 
   const myParticipantRecord = useMemo(() => {
     return members.find((m) => {
@@ -237,7 +273,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
   const executeLeavePlanFlow = async () => {
     if (isLeaveRequested) {
-      showToast("Leave request pending with host");
       return;
     }
     setIsLeaving(true);
@@ -247,13 +282,10 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         onBack();
       } else if (onRemoveParticipant) {
         await onRemoveParticipant(activeUserUuid);
-        showToast("You left the plan");
         onBack();
-      } else {
-        showToast("Leave plan feature coming soon");
       }
     } catch (err) {
-      showToast("Failed to leave plan");
+      // error handled silently
     } finally {
       setIsLeaving(false);
     }
@@ -269,26 +301,20 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       if (hostReplacementMode === 'stop_hosting') {
         await stopHostingWithReplacement(planUuid, selectedReplacementId);
         setShowPromoteHostToLeaveModal(false);
-        showToast(`✓ Promoted ${replacementName} to host. You are no longer hosting.`);
       } else {
-        const res = await requestHostLeaveWithReplacement(planUuid, selectedReplacementId);
+        await requestHostLeaveWithReplacement(planUuid, selectedReplacementId);
         setShowPromoteHostToLeaveModal(false);
-        if (res?.leave_requested) {
-          showToast(`✓ Promoted ${replacementName} to host & sent leave request`);
-        } else {
-          showToast(`✓ Promoted ${replacementName} to host & left the plan`);
-        }
         onBack();
       }
     } catch (err: any) {
       console.error("[PlanSettingsScreen] Host replacement failed:", err);
-      showToast(`Failed to update host: ${err.message || "Unknown error"}`);
     } finally {
       setIsPromotingToLeave(false);
     }
   };
 
   const handleToggleInvites = async () => {
+    if (isPlanSettingsForParticipant) return;
     const previousVal = allowInvites;
     const nextVal = !allowInvites;
     setAllowInvites(nextVal);
@@ -298,11 +324,11 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       }
     } catch (err) {
       setAllowInvites(previousVal);
-      showToast("Failed to update setting. Please try again.");
     }
   };
 
   const handleDemoteHost = async (userIdToDemote: string) => {
+    if (isPlanSettingsForParticipant) return;
     const isSelfHost = Boolean(
       activeUserUuid &&
       (userIdToDemote === activeUserUuid ||
@@ -320,10 +346,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     if (!onDemoteHost) return;
     try {
       await onDemoteHost(userIdToDemote);
-      showToast("✓ Host removed");
     } catch (err: any) {
       console.error("[PlanSettingsScreen handleDemoteHost] error:", err);
-      showToast(err?.message || "Failed to remove host. Please try again.");
     }
   };
 
@@ -347,30 +371,24 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   const [isPromoting, setIsPromoting] = useState(false);
 
   const toggleSelectParticipant = (uId: string) => {
+    if (isPlanSettingsForParticipant) return;
     setSelectedParticipantIds((prev) =>
       prev.includes(uId) ? prev.filter((id) => id !== uId) : [...prev, uId]
     );
   };
 
   const handleConfirmPromoteToHosts = async () => {
-    if (selectedParticipantIds.length === 0 || isPromoting || !onPromoteToHost) return;
+    if (isPlanSettingsForParticipant || selectedParticipantIds.length === 0 || isPromoting || !onPromoteToHost) return;
     setIsPromoting(true);
     try {
       for (const uId of selectedParticipantIds) {
         await onPromoteToHost(uId);
       }
 
-      if (selectedParticipantIds.length === 1) {
-        const p = eligibleGoingParticipants.find((x) => x.id === selectedParticipantIds[0]);
-        showToast(`✓ ${p?.name || "Participant"} is now a host`);
-      } else {
-        showToast(`✓ Promoted ${selectedParticipantIds.length} hosts`);
-      }
-
       setShowAddHostPicker(false);
       setSelectedParticipantIds([]);
     } catch (err) {
-      showToast("Failed to promote hosts. Please try again.");
+      // error handled silently
     } finally {
       setIsPromoting(false);
     }
@@ -396,11 +414,11 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       <div className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-6 pb-12">
         <div className="flex flex-col items-center justify-center pt-2 pb-6 text-center border-b border-white/10">
           <div
-            onClick={isHostMode ? () => setShowEditImageScreen(true) : undefined}
+            onClick={!isPlanSettingsForParticipant ? () => setShowEditImageScreen(true) : undefined}
             className={`w-[110px] h-[110px] rounded-full overflow-hidden border-2 border-white/20 shadow-2xl relative bg-zinc-900 mb-4 flex-shrink-0 ${
-              isHostMode ? "cursor-pointer hover:border-white/40 active:scale-95 transition-all" : ""
+              !isPlanSettingsForParticipant ? "cursor-pointer hover:border-white/40 active:scale-95 transition-all" : ""
             }`}
-            title={isHostMode ? "Edit Image" : undefined}
+            title={!isPlanSettingsForParticipant ? "Edit Image" : undefined}
           >
             <DiscoveryImages
               src={currentCoverImage}
@@ -414,28 +432,31 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           </div>
 
           <div className="w-full max-w-sm px-4 flex items-center justify-center min-h-[36px]">
-            {isHostMode ? (
-              <input
-                ref={titleInputRef}
-                type="text"
+            {!isPlanSettingsForParticipant ? (
+              <textarea
+                ref={titleTextareaRef}
                 value={newTitleInput}
-                onChange={(e) => setNewTitleInput(e.target.value.slice(0, 50))}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[\r\n]+/g, " ").slice(0, 50);
+                  setNewTitleInput(val);
+                }}
                 onBlur={handleSaveTitle}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    titleInputRef.current?.blur();
+                    titleTextareaRef.current?.blur();
                   } else if (e.key === "Escape") {
                     setNewTitleInput(plan.title || "");
-                    titleInputRef.current?.blur();
+                    titleTextareaRef.current?.blur();
                   }
                 }}
                 maxLength={50}
+                rows={1}
                 placeholder="Plan title"
-                className="w-full max-w-full bg-transparent text-2xl font-bold text-white tracking-tight text-center focus:outline-none border-none outline-none shadow-none appearance-none cursor-text caret-white"
+                className="w-full max-w-sm bg-transparent text-[22px] sm:text-2xl font-bold text-white tracking-tight text-center focus:outline-none border-none outline-none shadow-none appearance-none cursor-text caret-[#FF6B2C] resize-none overflow-hidden leading-tight p-0 m-0"
               />
             ) : (
-              <h1 className="text-2xl font-bold text-white tracking-tight truncate max-w-full">
+              <h1 className="w-full max-w-sm text-[22px] sm:text-2xl font-bold text-white tracking-tight text-center leading-tight line-clamp-2 break-words p-0 m-0 select-text">
                 {plan.title}
               </h1>
             )}
@@ -443,18 +464,18 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         </div>
 
         {/* ========================================== */}
-        {/* SECTION 1 — PARTICIPANTS (HOST MODE ONLY) */}
+        {/* SECTION 1 — PARTICIPANTS */}
         {/* ========================================== */}
-        {isHostMode && (
-          <div className="space-y-3 px-1">
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-[#FF6B2C]" />
-              <h2 className="text-xs font-bold text-zinc-400">
-                Participants
-              </h2>
-            </div>
+        <div className="space-y-3 px-1">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-[#FF6B2C]" />
+            <h2 className="text-xs font-bold text-zinc-400">
+              Participants
+            </h2>
+          </div>
 
-            {/* Setting 1: Allow participants to invite others */}
+          {/* Setting 1: Allow participants to invite others (Host only) */}
+          {!isPlanSettingsForParticipant && (
             <div className="flex items-center justify-between gap-4 py-2">
               <span className="text-sm font-semibold text-white block pr-2">
                 Allow Participants to Invite Others
@@ -473,8 +494,42 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                 />
               </button>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Participant list if any participants exist */}
+          {nonHostParticipants.length > 0 ? (
+            <div className="space-y-2 py-1">
+              {nonHostParticipants.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between py-2"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative flex-shrink-0">
+                      <UserAvatar
+                        src={p.avatar}
+                        alt={p.name}
+                        size="w-9 h-9"
+                        className="border border-white/10"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-sm font-semibold text-white truncate block">
+                        {p.name}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : isPlanSettingsForParticipant ? (
+            <div className="py-2">
+              <span className="text-xs text-zinc-500">
+                No participants yet.
+              </span>
+            </div>
+          ) : null}
+        </div>
 
         {/* ========================================== */}
         {/* SECTION 2 — HOSTS */}
@@ -488,7 +543,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
               </h2>
             </div>
             {/* Add Host button — only shown in Host Mode when there are eligible Going participants */}
-            {isHostMode && onPromoteToHost && eligibleGoingParticipants.length > 0 && (
+            {!isPlanSettingsForParticipant && onPromoteToHost && eligibleGoingParticipants.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowAddHostPicker(true)}
@@ -507,13 +562,13 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                   <div
                     key={h.id}
                     onClick={() => {
-                      if (!isHostMode) return;
+                      if (isPlanSettingsForParticipant) return;
                       setSelectedHost(h);
                       setShowConfirmRemoveHost(false);
                       if (onSelectHost) onSelectHost(h);
                     }}
                     className={`flex items-center justify-between py-2 transition ${
-                      isHostMode ? "hover:opacity-80 active:scale-[0.99] cursor-pointer" : ""
+                      !isPlanSettingsForParticipant ? "hover:opacity-80 active:scale-[0.99] cursor-pointer" : ""
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
@@ -569,7 +624,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
             </span>
           </button>
 
-          {isHostMode && (
+          {!isPlanSettingsForParticipant && (
             <button
               type="button"
               onClick={() => setShowCancelModal(true)}
@@ -587,7 +642,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       </div>
 
       {/* ── Participant Action Bottom Sheet for Host Cards in Plan Settings ── */}
-      {selectedHost && (
+      {!isPlanSettingsForParticipant && selectedHost && (
         <div
           onClick={closeHostSheet}
           style={{
@@ -691,9 +746,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                         } else if (onDemoteHost) {
                           await onDemoteHost(hostIdToRemove);
                         }
-                        showToast(selectedHost.isSelf ? "You left the plan" : "✓ Participant removed");
                       } catch {
-                        showToast("Failed to remove participant");
+                        // error handled silently
                       }
                     }}
                     style={{ flex: 1, padding: '14px', background: '#EF4444', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
@@ -839,7 +893,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       )}
 
       {/* Cancel Plan Confirmation Modal */}
-      {showCancelModal && (
+      {!isPlanSettingsForParticipant && showCancelModal && (
         <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[#1A1A1A] border border-white/10 rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <h3 className="text-lg font-bold text-white tracking-tight">
@@ -865,14 +919,11 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
                   try {
                     if (onCancelPlan) {
                       await onCancelPlan();
-                    } else {
-                      // Fallback / TODO placeholder
-                      showToast("Plan cancellation feature coming soon");
                     }
                     setShowCancelModal(false);
                     onBack();
                   } catch {
-                    showToast("Failed to cancel plan");
+                    // error handled silently
                   } finally {
                     setIsCancelling(false);
                   }
@@ -887,16 +938,18 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       )}
 
       {/* Promote a New Host Before Leaving / Stopping Hosting Modal (Sole Host Guard) */}
-      <MakeAnotherParticipantHostBottomSheet
-        isOpen={showPromoteHostToLeaveModal}
-        eligibleParticipants={eligibleGoingParticipants}
-        isSubmitting={isPromotingToLeave}
-        onConfirm={handleConfirmHostReplacement}
-        onClose={() => setShowPromoteHostToLeaveModal(false)}
-      />
+      {!isPlanSettingsForParticipant && (
+        <MakeAnotherParticipantHostBottomSheet
+          isOpen={showPromoteHostToLeaveModal}
+          eligibleParticipants={eligibleGoingParticipants}
+          isSubmitting={isPromotingToLeave}
+          onConfirm={handleConfirmHostReplacement}
+          onClose={() => setShowPromoteHostToLeaveModal(false)}
+        />
+      )}
 
       {/* ── Edit Image Screen ── */}
-      {showEditImageScreen && (
+      {!isPlanSettingsForParticipant && showEditImageScreen && (
         <EditPlanImageScreen
           planId={cleanPlanId(plan.dbUuid || (plan as any).public_id || plan.id)}
           currentCoverImage={currentCoverImage}
@@ -904,8 +957,12 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           subcategory={(plan as any).subcategory}
           title={plan.title}
           onBack={() => setShowEditImageScreen(false)}
-          onImageUpdated={(newImage) => {
+          onImageUpdated={(newImage, newCardImage) => {
             setCurrentCoverImage(newImage);
+            // If the parent wants to know about the card image update, pass it along
+            if (onUpdatePlanDetails && newCardImage !== undefined) {
+              onUpdatePlanDetails({ cover_card_image: newCardImage, skipDbWrite: true });
+            }
           }}
           onUpdatePlanDetails={onUpdatePlanDetails}
         />

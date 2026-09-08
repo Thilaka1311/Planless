@@ -2,9 +2,7 @@ import React, { useCallback, useState, useMemo, useEffect, useRef } from 'react'
 import { ParticipantManagementScreen, Friend } from '../../../../participants/screens/ParticipantManagementScreen';
 import { Plan, UserProfile } from '../../../../../core/types';
 import { normalizeStatus, sortGoingParticipants, partitionAutomaticParticipants } from '../../../../../../lib/participantStatus';
-import { useToast } from '../../../../../shared/contexts/ToastContext';
 import { WhoIsComingScreen } from '../../../../create/screens/WhoIsComingScreen';
-import { useCirclesStore } from '../../../../circles/state/CirclesContext';
 import { useFriendshipStore } from '../../../../friendships/state/FriendshipContext';
 import { getCompleteCurrentUserFriends } from '../../../../friendships/api/friendships';
 import { usePlansStore } from '../../../state/PlansContext';
@@ -35,7 +33,7 @@ interface PlanParticipantManagementWrapperProps {
   onPromoteToHost?: (planId: string, userId: string) => Promise<void>;
   onDemoteFromHost?: (planId: string, userId: string) => Promise<void>;
   onUpdatePlanCapacity?: (planId: string, capacity: number, options?: { totalCost?: number }) => Promise<void> | void;
-  onAddParticipants?: (planId: string, userIds: string[], circleIds: string[], targetGroup?: 'GOING' | 'WAITLIST') => Promise<void>;
+  onAddParticipants?: (planId: string, userIds: string[], targetGroup?: 'GOING' | 'WAITLIST' | any, maybeTargetGroup?: any) => Promise<void>;
   onReorderWaitlist?: (planId: string, orderedUserUuids: string[]) => Promise<void>;
   onOpenSettings?: () => void;
   onOpenActivity?: () => void;
@@ -152,10 +150,8 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   currentPage,
   onLeavePlan,
 }) => {
-  const { circles } = useCirclesStore();
   const { friends, refreshFriendships } = useFriendshipStore();
   const { dbPlans, dbPlanParticipants, resolvePaidPlanLeaveRequest, replaceParticipant, moveParticipantToWaitlistAndDecreaseCapacity, requestHostLeaveWithReplacement, stopHostingWithReplacement, resolveRejoinedParticipant } = usePlansStore();
-  const { showToast } = useToast();
   const hostId = plan.hostId || '';
   const members: any[] = plan.members || [];
 
@@ -222,24 +218,17 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       if (hostReplacementMode === 'stop_hosting') {
         await stopHostingWithReplacement(planUuid, selectedReplacementId);
         setShowHostLeaveReplacementSheet(false);
-        showToast(`✓ Promoted ${replacementName} to host. You are no longer hosting.`);
       } else {
         const res = await requestHostLeaveWithReplacement(planUuid, selectedReplacementId);
         setShowHostLeaveReplacementSheet(false);
-        if (res?.leave_requested) {
-          showToast(`✓ Promoted ${replacementName} to host & sent leave request`);
-        } else {
-          showToast(`✓ Promoted ${replacementName} to host & left the plan`);
-        }
         onBack();
       }
     } catch (err: any) {
       console.error("[PlanParticipantManagementWrapper] Host replacement failed:", err);
-      showToast(`Failed to update host: ${err.message || "Unknown error"}`);
     } finally {
       setIsSubmittingHostReplacement(false);
     }
-  }, [plan.dbUuid, plan.id, hostReplacementMode, stopHostingWithReplacement, requestHostLeaveWithReplacement, eligibleHostReplacementParticipants, showToast, onBack]);
+  }, [plan.dbUuid, plan.id, hostReplacementMode, stopHostingWithReplacement, requestHostLeaveWithReplacement, eligibleHostReplacementParticipants, onBack]);
 
   const handleLeavePlan = useCallback(() => {
     if (isCallerHost && isSoleHost) {
@@ -262,34 +251,49 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   }, [dbPlans, targetPlanUuid, plan.id]);
 
   const currentTotalCost = useMemo(() => {
-    if (planFeeTotalCostOverride !== null) return planFeeTotalCostOverride;
-    const rawVal =
-      matchedDbPlan?.total_cost ??
-      (plan as any)?.total_cost ??
-      (plan as any)?.totalCost ??
-      (plan as any)?.cost ??
-      0;
-    return Number(rawVal || 0);
+    if (planFeeTotalCostOverride !== null && planFeeTotalCostOverride > 0) return planFeeTotalCostOverride;
+    const candidates = [
+      matchedDbPlan?.total_cost,
+      (plan as any)?.total_cost,
+      (plan as any)?.totalCost,
+      (plan as any)?.cost,
+      (plan as any)?.paymentAmount,
+    ];
+    for (const val of candidates) {
+      const num = Number(val);
+      if (!isNaN(num) && num > 0) {
+        return num;
+      }
+    }
+    return planFeeTotalCostOverride ?? 0;
   }, [matchedDbPlan, plan, planFeeTotalCostOverride]);
 
   useEffect(() => {
     let isMounted = true;
     const fetchPlanFeeCost = async () => {
-      if (planFeeTotalCostOverride === null && plan.id && isUuid(plan.id)) {
-        const localCost = Number(
-          matchedDbPlan?.total_cost ??
-          (plan as any)?.total_cost ??
-          (plan as any)?.totalCost ??
-          (plan as any)?.cost ??
-          0
-        );
+      const planUuid = isUuid(plan.id) ? plan.id : (isUuid((plan as any).dbUuid || '') ? (plan as any).dbUuid : null);
+      if (planFeeTotalCostOverride === null && planUuid) {
+        const localCost = currentTotalCost;
         if (localCost <= 0) {
           try {
+            const { data: planRow } = await supabase
+              .from("plans")
+              .select("total_cost")
+              .eq("id", planUuid)
+              .maybeSingle();
+
+            if (isMounted && planRow && Number(planRow.total_cost || 0) > 0) {
+              setPlanFeeTotalCostOverride(Number(planRow.total_cost));
+              return;
+            }
+
             const { data: expRow } = await (supabase as any)
               .from("wallet_expenses")
               .select("total_amount")
-              .eq("plan_id", plan.id)
+              .eq("plan_id", planUuid)
               .or("expense_type.eq.PLAN_EXPENSE,message_id.is.null")
+              .order("created_at", { ascending: true })
+              .limit(1)
               .maybeSingle();
 
             if (isMounted && expRow && Number(expRow.total_amount || 0) > 0) {
@@ -305,10 +309,17 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     return () => {
       isMounted = false;
     };
-  }, [plan.id, matchedDbPlan, planFeeTotalCostOverride]);
+  }, [plan.id, (plan as any).dbUuid, currentTotalCost, planFeeTotalCostOverride]);
 
   const [showUpdatePlanFeeModal, setShowUpdatePlanFeeModal] = useState(false);
   const [pendingCapacityTarget, setPendingCapacityTarget] = useState<number | null>(null);
+  const [pendingCostAction, setPendingCostAction] = useState<{
+    type: 'increase_and_promote' | 'decrease_and_demote' | 'increase_and_invite' | 'decrease_and_remove';
+    friend?: Friend;
+    targetCapacity: number;
+    friendIds?: string[];
+    initialCost?: number;
+  } | null>(null);
   const [selectedPlanFeeOption, setSelectedPlanFeeOption] = useState<"split_current_cost" | "keep_cost_per_person" | null>(null);
   const [isSubmittingPlanFeeUpdate, setIsSubmittingPlanFeeUpdate] = useState(false);
 
@@ -323,7 +334,10 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   const storedCapacity = localCapacity !== null ? localCapacity : (plan.plan_size || (plan as any).planSize || plan.joinLimit || plan.capacity || 2);
   const capacity = Math.max(2, storedCapacity);
 
-  const planFeeCurrentTotal = currentTotalCost;
+  const effectiveCostForModal = (pendingCostAction?.initialCost && pendingCostAction.initialCost > 0)
+    ? pendingCostAction.initialCost
+    : currentTotalCost;
+  const planFeeCurrentTotal = effectiveCostForModal;
   const planFeeCurrentPerPerson = capacity > 0 ? Math.round((planFeeCurrentTotal / capacity) * 100) / 100 : 0;
   const planFeeOptionANewTotal = pendingCapacityTarget ? Math.round(pendingCapacityTarget * planFeeCurrentPerPerson * 100) / 100 : planFeeCurrentTotal;
   const planFeeOptionBPerPerson = (pendingCapacityTarget && pendingCapacityTarget > 0) ? Math.round((planFeeCurrentTotal / pendingCapacityTarget) * 100) / 100 : 0;
@@ -497,44 +511,12 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
   const [showAddFriendsPicker, setShowAddFriendsPicker] = useState(false);
   const [searchPeopleQuery, setSearchPeopleQuery] = useState('');
-  const [selectedCircles, setSelectedCircles] = useState<string[]>([]);
   const [individuallySelectedFriendIds, setIndividuallySelectedFriendIds] = useState<string[]>([]);
   const [pickerSelectedFriends, setPickerSelectedFriends] = useState<any[]>([]);
 
-  // Compute set of user IDs belonging to selected circles
-  const selectedCircleMemberUserIds = useMemo(() => {
-    const set = new Set<string>();
-    selectedCircles.forEach((circleId) => {
-      const circleObj = circles.find((c) => c.id === circleId);
-      if (circleObj && circleObj.membersList) {
-        circleObj.membersList.forEach((m) => {
-          if (m.userId) set.add(m.userId);
-        });
-      }
-    });
-    return set;
-  }, [selectedCircles, circles]);
-
   // Sync pickerSelectedFriends
   useEffect(() => {
-    const circleMemberUserIds = new Set<string>();
-    selectedCircles.forEach((circleId) => {
-      const circleObj = circles.find((c) => c.id === circleId);
-      if (circleObj && circleObj.membersList) {
-        circleObj.membersList.forEach((m) => {
-          if (m.userId && m.userId !== userProfile?.dbUuid) {
-            circleMemberUserIds.add(m.userId);
-          }
-        });
-      }
-    });
-
-    const uniqueIds = Array.from(new Set([
-      ...individuallySelectedFriendIds,
-      ...Array.from(circleMemberUserIds)
-    ]));
-
-    const usersToSet = uniqueIds.map(id => {
+    const usersToSet = individuallySelectedFriendIds.map(id => {
       const u = candidateUsers.find(x => x.id === id);
       if (u) {
         return {
@@ -546,17 +528,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       return null;
     }).filter(Boolean);
     setPickerSelectedFriends(usersToSet);
-  }, [selectedCircles, individuallySelectedFriendIds, circles, candidateUsers, userProfile]);
-
-  const AVAILABLE_CIRCLES = useMemo(() => {
-    return circles.map((c) => ({
-      id: c.id,
-      name: c.name,
-      membersCount: c.membersCount,
-      groupImage: c.groupImage,
-      emoji: c.category === 'sports' ? '⚽' : '🔥'
-    }));
-  }, [circles]);
+  }, [individuallySelectedFriendIds, candidateUsers]);
 
   const AVAILABLE_FRIENDS = useMemo(() => {
     const myUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId || "";
@@ -564,7 +536,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     const seenIds = new Set<string>();
     return candidateUsers
       .filter((u) => u.id && u.id !== myUuid && u.id !== userProfile?.user_id && !disabledUserIds.has(u.id))
-      .filter((u) => u.id && !selectedCircleMemberUserIds.has(u.id))
       .filter((u) => {
         if (!u.id || seenIds.has(u.id)) return false;
         seenIds.add(u.id);
@@ -576,7 +547,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         name: u.full_name || u.name || "",
         avatar: u.profile_photo || u.profile_photo_path || u.avatar || ""
       }));
-  }, [candidateUsers, userProfile, activeUserId, selectedCircleMemberUserIds, disabledUserIds]);
+  }, [candidateUsers, userProfile, activeUserId, disabledUserIds]);
 
   // Compute pending leave requests directly from dbPlanParticipants and plan.members where leave_requested === true
   const pendingLeaveRequests = useMemo(() => {
@@ -620,12 +591,10 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     if (!resolvePaidPlanLeaveRequest) return;
     try {
       await resolvePaidPlanLeaveRequest(plan.id, targetUserId, 'KEEP_PAYMENT');
-      showToast("✓ Leave request resolved (Payment kept)");
     } catch (err: any) {
       console.error("[handleKeepPaymentLeaveParticipant] Error:", err);
-      showToast(err?.message || "Failed to resolve leave request");
     }
-  }, [resolvePaidPlanLeaveRequest, plan.id, showToast]);
+  }, [resolvePaidPlanLeaveRequest, plan.id]);
 
   const handleReplaceLeaveParticipant = useCallback((targetUserId: string) => {
     setLocalReplaceTargetUserId(targetUserId);
@@ -650,18 +619,10 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         await onUpdatePlanCapacity(plan.id, newCapacity);
       }
       await onAddParticipants(plan.id, [userId], [], target);
-      showToast('✓ Invitation sent');
     } catch (err: any) {
       console.error('[handleInviteSkipped] error:', err);
-      showToast(err?.message || 'Failed to invite participant');
     }
-  }, [onAddParticipants, onUpdatePlanCapacity, plan.id, plan.joinLimit, plan.capacity, showToast]);
-
-  const toggleCircleSelection = useCallback((circleId: string) => {
-    setSelectedCircles((prev) =>
-      prev.includes(circleId) ? prev.filter((id) => id !== circleId) : [...prev, circleId]
-    );
-  }, []);
+  }, [onAddParticipants, onUpdatePlanCapacity, plan.id, plan.joinLimit, plan.capacity]);
 
   const toggleFriendSelection = useCallback((friend: any) => {
     setIndividuallySelectedFriendIds((prev) =>
@@ -717,31 +678,13 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   ]);
 
 
-  const handleRemoveSelectedItem = useCallback((item: { id: string; type: 'circle' | 'friend'; name: string }) => {
-    if (item.type === 'circle') {
-      setSelectedCircles((prev) => prev.filter((id) => id !== item.id));
-    } else {
-      setIndividuallySelectedFriendIds((prev) => prev.filter((id) => id !== item.id));
-    }
+  const handleRemoveSelectedItem = useCallback((item: { id: string; name: string }) => {
+    setIndividuallySelectedFriendIds((prev) => prev.filter((id) => id !== item.id));
   }, []);
 
   const selectedItems = useMemo(() => {
     const items: any[] = [];
-    selectedCircles.forEach((circleId) => {
-      const c = AVAILABLE_CIRCLES.find(x => x.id === circleId);
-      if (c) {
-        items.push({
-          id: c.id,
-          type: 'circle',
-          name: c.name,
-          displayName: c.name,
-          groupImage: c.groupImage,
-          emoji: c.emoji
-        });
-      }
-    });
     individuallySelectedFriendIds.forEach((friendId) => {
-      if (selectedCircleMemberUserIds.has(friendId)) return;
       const u = candidateUsers.find(x => x.id === friendId);
       if (u) {
         items.push({
@@ -753,19 +696,15 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       }
     });
     return items;
-  }, [selectedCircles, individuallySelectedFriendIds, AVAILABLE_CIRCLES, candidateUsers, selectedCircleMemberUserIds]);
+  }, [individuallySelectedFriendIds, candidateUsers]);
 
 
   const unifiedSearchResults = useMemo(() => {
     const query = searchPeopleQuery.toLowerCase().trim();
     const recentFriends = AVAILABLE_FRIENDS.slice(0, 3);
-    const recentCircles = AVAILABLE_CIRCLES.slice(0, 2);
 
     const matchedFriends = AVAILABLE_FRIENDS.filter(f =>
       f.name.toLowerCase().includes(query)
-    );
-    const matchedCircles = AVAILABLE_CIRCLES.filter(c =>
-      (c.name || '').toLowerCase().includes(query)
     );
 
     const results: any[] = [];
@@ -773,26 +712,19 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       recentFriends.forEach(f => {
         results.push({ id: f.id, type: 'recent', name: f.name, avatar: f.avatar, rawFriend: f });
       });
-      recentCircles.forEach(c => {
-        results.push({ id: c.id, type: 'recent', name: c.name, emoji: c.emoji, membersCount: c.membersCount, rawCircle: c });
-      });
     } else {
       matchedFriends.forEach(f => {
         results.push({ id: f.id, type: 'friend', name: f.name, avatar: f.avatar, rawFriend: f });
       });
-      matchedCircles.forEach(c => {
-        results.push({ id: c.id, type: 'circle', name: c.name, emoji: c.emoji, membersCount: c.membersCount, rawCircle: c });
-      });
     }
     return results;
-  }, [searchPeopleQuery, AVAILABLE_FRIENDS, AVAILABLE_CIRCLES]);
+  }, [searchPeopleQuery, AVAILABLE_FRIENDS]);
 
 
 
   const [addFriendsTargetTab, setAddFriendsTargetTab] = useState<'GOING' | 'WAITLIST'>('GOING');
   const [pendingCapacityInvite, setPendingCapacityInvite] = useState<{
     friendIds: string[];
-    circleIds: string[];
     selectedCount: number;
     targetGroup: 'GOING' | 'WAITLIST';
     currentGoingCount: number;
@@ -800,28 +732,24 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     availableSlots: number;
   } | null>(null);
 
-  const executeInviteFlow = async (friendIds: string[], circleIds: string[], targetGroup?: 'GOING' | 'WAITLIST') => {
+  const executeInviteFlow = async (friendIds: string[], targetGroup?: 'GOING' | 'WAITLIST') => {
     if (!onAddParticipants) return;
 
     // 1. Immediately close the friend picker modal and reset selection
     setShowAddFriendsPicker(false);
     setSearchPeopleQuery('');
-    setSelectedCircles([]);
     setIndividuallySelectedFriendIds([]);
-    showToast('✓ Invitations sent');
 
     // 2. Perform optimistic update and database call in background
     try {
-      await onAddParticipants(plan.id, friendIds, circleIds, targetGroup);
+      await onAddParticipants(plan.id, friendIds, [], targetGroup);
     } catch (err: any) {
       console.error("[executeInviteFlow] Add participants error:", err);
-      showToast(err?.message || 'Failed to add participants');
     }
   };
 
   const handleConfirmInvite = async () => {
     if (!canInvite) {
-      showToast("You do not have permission to invite participants");
       return;
     }
 
@@ -847,7 +775,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         } else if (onRemoveAndReplaceWithWaitlist) {
           await onRemoveAndReplaceWithWaitlist(plan.id, targetId, replacementId);
         }
-        showToast("✓ Participant replacement confirmed");
         setIndividuallySelectedFriendIds([]);
         setLocalReplaceTargetUserId(null);
         if (onCancelReplacement) {
@@ -857,7 +784,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         }
       } catch (err: any) {
         console.error("[handleConfirmInvite] Replacement error:", err);
-        showToast(err?.message || "Failed to replace participant");
       }
       return;
     }
@@ -875,7 +801,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       if (friendIds.length > availableSlots) {
         setPendingCapacityInvite({
           friendIds,
-          circleIds: selectedCircles,
           selectedCount: friendIds.length,
           targetGroup,
           currentGoingCount,
@@ -887,17 +812,15 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     }
 
     try {
-      await executeInviteFlow(friendIds, selectedCircles, targetGroup);
+      await executeInviteFlow(friendIds, targetGroup);
     } catch (err: any) {
       console.error("[handleConfirmInvite] error:", err);
-      const msg = err?.message || 'Failed to add participants';
-      showToast(msg);
     }
   };
 
   const handleIncreaseCapacityAndInvite = async () => {
     if (!pendingCapacityInvite) return;
-    const { friendIds, circleIds, currentGoingCount } = pendingCapacityInvite;
+    const { friendIds, currentGoingCount } = pendingCapacityInvite;
     const newCapacity = currentGoingCount + friendIds.length;
     const primaryFriend = pickerSelectedFriends.length > 0 ? pickerSelectedFriends[0] : ({
       id: friendIds[0],
@@ -906,17 +829,73 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       avatar: undefined,
     } as any);
 
+    // 1. Determine whether the existing plan has a cost/expense
+    let planCost = currentTotalCost;
+    if (planCost <= 0) {
+      const candidates = [
+        matchedDbPlan?.total_cost,
+        (plan as any)?.total_cost,
+        (plan as any)?.totalCost,
+        (plan as any)?.cost,
+        (plan as any)?.paymentAmount,
+      ];
+      for (const val of candidates) {
+        const num = Number(val);
+        if (!isNaN(num) && num > 0) {
+          planCost = num;
+          break;
+        }
+      }
+    }
+
+    if (planCost <= 0) {
+      const planUuid = isUuid(plan.id) ? plan.id : (isUuid((plan as any).dbUuid || '') ? (plan as any).dbUuid : null);
+      if (planUuid) {
+        try {
+          const { data: planRow } = await supabase
+            .from("plans")
+            .select("total_cost")
+            .eq("id", planUuid)
+            .maybeSingle();
+          if (planRow && Number(planRow.total_cost || 0) > 0) {
+            planCost = Number(planRow.total_cost);
+          } else {
+            const { data: expRow } = await (supabase as any)
+              .from("wallet_expenses")
+              .select("total_amount")
+              .eq("plan_id", planUuid)
+              .or("expense_type.eq.PLAN_EXPENSE,message_id.is.null")
+              .order("created_at", { ascending: true })
+              .limit(1)
+              .maybeSingle();
+            if (expRow && Number(expRow.total_amount || 0) > 0) {
+              planCost = Number(expRow.total_amount);
+            }
+          }
+        } catch (err) {
+          console.error("[handleIncreaseCapacityAndInvite] Cost resolution error:", err);
+        }
+      }
+    }
+
     setPendingCapacityInvite(null);
 
-    const hasCost = planFeeCurrentTotal > 0;
-    if (hasCost) {
+    // Plan with non-zero cost -> show confirmation modal before executing
+    if (planCost > 0) {
+      const primaryFriend = allPlanMembers.find(m => (m.dbUuid || m.id) === friendIds[0]) || {
+        id: friendIds[0],
+        name: friendIds.length === 1 ? 'New Participant' : `${friendIds.length} Participants`,
+        avatar: '',
+      };
+
+      setPlanFeeTotalCostOverride(planCost);
       setPendingCapacityTarget(newCapacity);
       setPendingCostAction({
         type: 'increase_and_invite',
         friend: primaryFriend,
         targetCapacity: newCapacity,
         friendIds,
-        circleIds,
+        initialCost: planCost,
       });
       setSelectedPlanFeeOption(null);
       setShowUpdatePlanFeeModal(true);
@@ -927,23 +906,21 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       if (onUpdatePlanCapacity) {
         await onUpdatePlanCapacity(plan.id, newCapacity);
       }
-      await executeInviteFlow(friendIds, circleIds, 'GOING');
+      await executeInviteFlow(friendIds, 'GOING');
     } catch (err: any) {
       console.error("[handleIncreaseCapacityAndInvite] error:", err);
-      showToast(err?.message || 'Failed to increase capacity and invite');
     }
   };
 
   const handleInviteToWaitlistInstead = async () => {
     if (!pendingCapacityInvite) return;
-    const { friendIds, circleIds, currentGoingCount } = pendingCapacityInvite;
+    const { friendIds, currentGoingCount } = pendingCapacityInvite;
 
     try {
       setPendingCapacityInvite(null);
-      await executeInviteFlow(friendIds, circleIds, 'WAITLIST');
+      await executeInviteFlow(friendIds, 'WAITLIST');
     } catch (err: any) {
       console.error("[handleInviteToWaitlistInstead] error:", err);
-      showToast(err?.message || 'Failed to add to waitlist');
     }
   };
 
@@ -1229,14 +1206,12 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         await onMoveToGoing(plan.id, friend.dbUuid || friend.id);
       } catch (err: any) {
         console.error("[handleMoveToGoing] error:", err);
-        const msg = err?.message || 'Failed to move participant';
-        showToast(msg);
       } finally {
         setLocalGoingList(null);
         setLocalWaitlist(null);
       }
     },
-    [plan.id, capacity, goingMembers.length, onMoveToGoing, showToast],
+    [plan.id, capacity, goingMembers.length, onMoveToGoing],
   );
 
   // Pending state for waitlist "Move to Going" capacity flow
@@ -1246,13 +1221,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     setPendingPromoteToGoing(null);
   }, []);
 
-  const [pendingCostAction, setPendingCostAction] = useState<{
-    type: 'increase_and_promote' | 'decrease_and_demote' | 'increase_and_invite' | 'decrease_and_remove';
-    friend: Friend;
-    targetCapacity: number;
-    friendIds?: string[];
-    circleIds?: string[];
-  } | null>(null);
 
   const handleConfirmPendingPromote = useCallback(() => {
     if (!pendingPromoteToGoing) return;
@@ -1354,12 +1322,10 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       await onUpdatePlanCapacity(plan.id, targetCapacity);
       // 2. Remove participant from plan second
       await onRemoveParticipant(plan.id, friend.dbUuid || friend.id);
-      showToast(`✓ Removed ${friend.name} and reduced capacity to ${targetCapacity}`);
     } catch (err: any) {
       console.error("[handleConfirmDecreaseCapacityForRemoveGoing] error:", err);
-      showToast(err?.message || 'Failed to remove participant');
     }
-  }, [pendingRemoveGoing, capacity, onUpdatePlanCapacity, plan.id, onRemoveParticipant, showToast, planFeeCurrentTotal]);
+  }, [pendingRemoveGoing, capacity, onUpdatePlanCapacity, plan.id, onRemoveParticipant, planFeeCurrentTotal]);
 
   const handleOpenRemoveGoingReplacePicker = useCallback(() => {
     if (!pendingRemoveGoing) return;
@@ -1391,15 +1357,13 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           await onUpdatePlanCapacity(plan.id, targetCapacity);
         }
       }
-      showToast(`✓ Moved ${friend.name} to waitlist and reduced plan size`);
     } catch (err: any) {
       console.error("[handleMoveToWaitlistForRemoveGoing] error:", err);
-      showToast(err?.message || 'Failed to move participant to waitlist');
     } finally {
       setLocalGoingList(null);
       setLocalWaitlist(null);
     }
-  }, [pendingRemoveGoing, moveParticipantToWaitlistAndDecreaseCapacity, plan.id, onMoveToWaitlist, onUpdatePlanCapacity, capacity, showToast]);
+  }, [pendingRemoveGoing, moveParticipantToWaitlistAndDecreaseCapacity, plan.id, onMoveToWaitlist, onUpdatePlanCapacity, capacity]);
 
   /**
    * "Replace Participant" from the RemoveGoing sheet.
@@ -1454,13 +1418,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
       try {
         await onRemoveParticipant(plan.id, friendId);
-        showToast(`✓ Removed ${friend.name}`);
       } catch {
         setLocalCapacity(null);
-        showToast('Failed to remove participant');
       }
     },
-    [plan.id, plan.members, waitlistMode, goingList, capacity, onRemoveParticipant, showToast, resolvedUserUuid, userProfile?.user_id, handleLeavePlan],
+    [plan.id, plan.members, waitlistMode, goingList, capacity, onRemoveParticipant, resolvedUserUuid, userProfile?.user_id, handleLeavePlan],
   );
 
   const handleMoveToInvited = useCallback(
@@ -1474,16 +1436,14 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         } else if (onAddParticipants) {
           await onAddParticipants(plan.id, [friendId], []);
         }
-        showToast(`✓ Invited ${friend.name}`);
       } catch (err: any) {
         console.error('[handleMoveToInvited] error:', err);
-        showToast(err?.message || 'Failed to invite participant');
       } finally {
         setLocalGoingList(null);
         setLocalWaitlist(null);
       }
     },
-    [plan.id, onMoveToInvited, onAddParticipants, showToast],
+    [plan.id, onMoveToInvited, onAddParticipants],
   );
 
   const handleRejoinAddToWaitlist = useCallback(
@@ -1491,13 +1451,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       const friendId = friend.dbUuid || friend.id;
       try {
         await resolveRejoinedParticipant(plan.id, friendId, 'WAITLIST');
-        showToast(`✓ Added ${friend.name} to waitlist`);
       } catch (err: any) {
         console.error('[handleRejoinAddToWaitlist] error:', err);
-        showToast(err?.message || 'Failed to add participant to waitlist');
       }
     },
-    [plan.id, resolveRejoinedParticipant, showToast],
+    [plan.id, resolveRejoinedParticipant],
   );
 
   const handleRejoinRemoveFromPlan = useCallback(
@@ -1505,13 +1463,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       const friendId = friend.dbUuid || friend.id;
       try {
         await resolveRejoinedParticipant(plan.id, friendId, 'REMOVE');
-        showToast(`✓ Removed ${friend.name} from plan`);
       } catch (err: any) {
         console.error('[handleRejoinRemoveFromPlan] error:', err);
-        showToast(err?.message || 'Failed to remove participant');
       }
     },
-    [plan.id, resolveRejoinedParticipant, showToast],
+    [plan.id, resolveRejoinedParticipant],
   );
 
   const handleConfirmSwap = useCallback(
@@ -1523,7 +1479,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
       if (!targetUserId || !selectedUserId) {
         console.error("[handleConfirmSwap] Missing participant IDs", { targetUserId, selectedUserId });
-        showToast("Cannot swap: missing participant ID");
         return;
       }
 
@@ -1532,26 +1487,22 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           // targetFriend is GOING → WAITLIST, selectedUser is WAITLIST → GOING
           if (!onSwapParticipants) throw new Error("swap is not supported");
           await onSwapParticipants(plan.id, targetUserId, selectedUserId);
-          showToast(`✓ Swapped ${targetFriend.name} with waitlist participant`);
         } else if (type === 'swap_incoming') {
           // targetFriend is WAITLIST → GOING, selectedUser is GOING → WAITLIST
           if (!onSwapParticipants) throw new Error("swap is not supported");
           await onSwapParticipants(plan.id, selectedUserId, targetUserId);
-          showToast(`✓ Swapped ${targetFriend.name} into Going`);
         } else {
           // type === 'remove': atomically remove going participant + replace from waitlist
           if (!onRemoveAndReplaceWithWaitlist) throw new Error("remove-and-replace is not supported");
           await onRemoveAndReplaceWithWaitlist(plan.id, targetUserId, selectedUserId);
-          showToast(`✓ Removed ${targetFriend.name} and replaced from waitlist`);
         }
         setSwapState(null);
       } catch (err: any) {
         console.error("[handleConfirmSwap] Error:", err);
-        showToast(err?.message || "Failed to swap participants");
         // Do NOT clear swapState on error so user can retry
       }
     },
-    [swapState, plan.id, onSwapParticipants, onRemoveAndReplaceWithWaitlist, onMoveToGoing, onRemoveParticipant, showToast],
+    [swapState, plan.id, onSwapParticipants, onRemoveAndReplaceWithWaitlist, onMoveToGoing, onRemoveParticipant],
   );
 
   const handlePromoteHost = useCallback(
@@ -1571,18 +1522,16 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       if (isAlreadyHost) return;
 
       if (targetStatus !== 'JOINED') {
-        showToast("Only Going participants can be promoted to host");
         return;
       }
 
       try {
         await onPromoteToHost(plan.id, targetId);
-        showToast(`✓ ${friend.name} is now a host`);
       } catch (err: any) {
-        showToast(err?.message || 'Failed to promote host');
+        // error handled silently
       }
     },
-    [plan.id, onPromoteToHost, showToast, members, hostId],
+    [plan.id, onPromoteToHost, members, hostId],
   );
 
   const handleDemoteHost = useCallback(
@@ -1603,13 +1552,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       if (!onDemoteFromHost) return;
       try {
         await onDemoteFromHost(plan.id, friendId);
-        showToast(`✓ ${friend.name} is no longer a host`);
       } catch (err: any) {
         console.error('[handleDemoteHost] error:', err);
-        showToast(err?.message || 'Failed to remove host');
       }
     },
-    [plan.id, onDemoteFromHost, showToast, resolvedUserUuid, userProfile?.user_id, isSoleHost],
+    [plan.id, onDemoteFromHost, resolvedUserUuid, userProfile?.user_id, isSoleHost],
   );
 
   const [guidedAdjustmentState, setGuidedAdjustmentState] = useState<{
@@ -1639,11 +1586,9 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
                 await onMoveToGoing(plan.id, uId, { bypassCapacityCheck: true });
               }
             }
-            showToast(`✓ Plan size updated to ${targetCapacity}`);
           } catch (err: any) {
             const msg = typeof err === 'string' ? err : err?.message || err?.error_description || err?.details || 'Failed to update capacity';
             console.error("[handleAdjustCapacity] Error updating capacity and promoting waitlist:", msg, err);
-            showToast(msg);
           }
           return;
         } else {
@@ -1667,11 +1612,9 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           // If goingList is already within targetCapacity, update capacity directly
           try {
             await onUpdatePlanCapacity!(plan.id, targetCapacity, options);
-            showToast(`✓ Plan size updated to ${targetCapacity}`);
           } catch (err: any) {
             const msg = typeof err === 'string' ? err : err?.message || err?.error_description || err?.details || 'Failed to update capacity';
             console.error("[handleAdjustCapacity] Error updating capacity:", msg, err);
-            showToast(msg);
           }
           return;
         }
@@ -1688,7 +1631,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
             await onMoveToGoing(plan.id, friendToMove.dbUuid || friendToMove.id);
           } catch (moveErr: any) {
             console.error("[handleAdjustCapacity] Error moving pending participant to Going:", moveErr);
-            showToast(moveErr?.message || 'Failed to move participant');
           } finally {
             setLocalWaitlist(null);
           }
@@ -1696,10 +1638,9 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       } catch (err: any) {
         const msg = typeof err === 'string' ? err : err?.message || err?.error_description || err?.details || 'Failed to update capacity';
         console.error("[handleAdjustCapacity] Error updating capacity:", msg, err);
-        showToast(msg);
       }
     },
-    [capacity, waitlistMode, waitlistList, goingList, activeUserId, onUpdatePlanCapacity, plan.id, pendingPromoteToGoing, onMoveToGoing, showToast]
+    [capacity, waitlistMode, waitlistList, goingList, activeUserId, onUpdatePlanCapacity, plan.id, pendingPromoteToGoing, onMoveToGoing]
   );
 
   const handleAdjustCapacity = useCallback(
@@ -1746,7 +1687,9 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     setSelectedPlanFeeOption(option);
     setIsSubmittingPlanFeeUpdate(true);
     const targetCap = pendingCapacityTarget;
-    const planCost = currentTotalCost;
+    const planCost = (pendingCostAction?.initialCost && pendingCostAction.initialCost > 0)
+      ? pendingCostAction.initialCost
+      : (planFeeCurrentTotal > 0 ? planFeeCurrentTotal : currentTotalCost);
     const currentPerPerson = capacity > 0 ? Math.round((planCost / capacity) * 100) / 100 : 0;
 
     let targetTotalCost = planCost;
@@ -1768,14 +1711,13 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         setLocalGoingList(null);
         setLocalWaitlist(null);
         await onMoveToGoing(plan.id, action.friend.dbUuid || action.friend.id, { bypassCapacityCheck: true });
-        showToast(`✓ Moved ${action.friend.name} to Going and updated plan size`);
       } else if (action?.type === 'increase_and_invite') {
         // 1. Update capacity and total cost
         await onUpdatePlanCapacity(plan.id, targetCap, { totalCost: targetTotalCost });
         // 2. Execute invite flow to GOING
         setLocalGoingList(null);
         setLocalWaitlist(null);
-        await executeInviteFlow(action.friendIds || [], action.circleIds || [], 'GOING');
+        await executeInviteFlow(action.friendIds || [], 'GOING');
       } else if (action?.type === 'decrease_and_demote') {
         // 1. Update capacity and total cost
         await onUpdatePlanCapacity(plan.id, targetCap, { totalCost: targetTotalCost });
@@ -1783,7 +1725,6 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         setLocalGoingList(null);
         setLocalWaitlist(null);
         await onMoveToWaitlist(plan.id, action.friend.dbUuid || action.friend.id);
-        showToast(`✓ Moved ${action.friend.name} to waitlist and updated plan size`);
       } else if (action?.type === 'decrease_and_remove') {
         // 1. Update capacity and total cost
         await onUpdatePlanCapacity(plan.id, targetCap, { totalCost: targetTotalCost });
@@ -1791,13 +1732,11 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         setLocalGoingList(null);
         setLocalWaitlist(null);
         await onRemoveParticipant(plan.id, action.friend.dbUuid || action.friend.id);
-        showToast(`✓ Removed ${action.friend.name} and updated plan size`);
       } else {
         await executeCapacityUpdate(targetCap, { totalCost: targetTotalCost });
       }
     } catch (err: any) {
       console.error("[handleSelectAndApplyPlanFeeOption] Failed:", err);
-      showToast(err?.message || "Failed to update cost and plan size");
     } finally {
       setIsSubmittingPlanFeeUpdate(false);
       setLocalGoingList(null);
@@ -1824,14 +1763,12 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           await onMoveToWaitlist(plan.id, uId);
         }
       }
-      showToast(`✓ Capacity updated to ${targetCapacity}`);
     } catch (err: any) {
       console.error("[handleConfirmGuidedAdjustment] Error:", err);
-      showToast(err?.message || "Failed to update capacity");
     } finally {
       setGuidedAdjustmentState(null);
     }
-  }, [guidedAdjustmentState, plan.id, onMoveToGoing, onMoveToWaitlist, onUpdatePlanCapacity, showToast]);
+  }, [guidedAdjustmentState, plan.id, onMoveToGoing, onMoveToWaitlist, onUpdatePlanCapacity]);
 
   const managementMode: "host" | "invite_only" = effectiveIsHost ? "host" : "invite_only";
   const [localGoingList, setLocalGoingList] = useState<Friend[] | null>(null);
@@ -2118,6 +2055,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
               setShowUpdatePlanFeeModal(false);
               setPendingCapacityTarget(null);
               setPendingCostAction(null);
+              setSelectedPlanFeeOption(null);
             }
           }}
           style={{
@@ -2152,17 +2090,36 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
             {/* Personalized Participant Header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20 }}>
-              {pendingCostAction?.friend && (
-                <div style={{ flexShrink: 0 }}>
-                  <div className="w-12 h-12 rounded-full border-2 border-white/20 overflow-hidden bg-[#1A1A1A] flex items-center justify-center">
-                    <UserAvatar
-                      src={pendingCostAction.friend.avatar}
-                      alt={pendingCostAction.friend.name}
-                      size="w-full h-full"
-                    />
+              <div style={{ flexShrink: 0 }}>
+                {pickerSelectedFriends.length > 1 && pendingCostAction?.type === 'increase_and_invite' ? (
+                  <div className="flex items-center -space-x-3 pt-1">
+                    {pickerSelectedFriends.slice(0, 3).map((friend, idx) => (
+                      <div
+                        key={friend.id || idx}
+                        className="w-11 h-11 rounded-full border-2 border-[#1C1C1E] bg-[#1A1A1A] overflow-hidden flex items-center justify-center"
+                        style={{ zIndex: 3 - idx }}
+                      >
+                        <UserAvatar src={friend.avatar} alt={friend.name || "Participant"} size="w-full h-full" />
+                      </div>
+                    ))}
+                    {pickerSelectedFriends.length > 3 && (
+                      <div className="w-11 h-11 rounded-full border-2 border-[#1C1C1E] bg-[#2A2A2D] flex items-center justify-center text-xs font-bold text-white z-0">
+                        +{pickerSelectedFriends.length - 3}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                ) : (
+                  pendingCostAction?.friend && (
+                    <div className="w-12 h-12 rounded-full border-2 border-white/20 overflow-hidden bg-[#1A1A1A] flex items-center justify-center">
+                      <UserAvatar
+                        src={pendingCostAction.friend.avatar}
+                        alt={pendingCostAction.friend.name}
+                        size="w-full h-full"
+                      />
+                    </div>
+                  )
+                )}
+              </div>
 
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.01em' }}>

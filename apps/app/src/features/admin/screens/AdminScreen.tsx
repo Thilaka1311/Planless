@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { ArrowLeft, Plus, Edit, Trash, Upload, Check } from "lucide-react";
-import { useToast } from "../../../shared/contexts/ToastContext";
 import { resolveImage, ImageType } from "../../../shared/imaging/imageResolver";
 
 import {
@@ -84,7 +83,6 @@ interface AdminScreenProps {
 }
 
 export const AdminScreen: React.FC<AdminScreenProps> = ({ onBack, token }) => {
-  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<'home' | 'list' | 'form'>('home');
   const [selectedConfig, setSelectedConfig] = useState<ContentConfig | null>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -101,7 +99,7 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({ onBack, token }) => {
       const itemsList = await adminFetchItems(config.category);
       setItems(itemsList);
     } catch (err: any) {
-      showToast(err.message || "Failed to load items");
+      // error handled silently
     } finally {
       setLoading(false);
     }
@@ -162,9 +160,8 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({ onBack, token }) => {
       // Delegate to the shared upload function — runs the full WebP pipeline
       const storagePath = await adminUploadImage(file, category, subcategory, itemId);
       handleFieldChange(fieldName, storagePath);
-      showToast("Image uploaded successfully.");
     } catch (err: any) {
-      showToast(err.message || "Failed to upload image");
+      // error handled silently
     } finally {
       setUploadingImage(false);
     }
@@ -186,11 +183,10 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({ onBack, token }) => {
         await adminCreateItem(payload, selectedConfig);
       }
 
-      showToast(editingItem ? "Item updated successfully." : "Item created successfully.");
       setActiveTab('list');
       fetchItems(selectedConfig);
     } catch (err: any) {
-      showToast(err.message || "Something went wrong.");
+      // error handled silently
     } finally {
       setLoading(false);
     }
@@ -204,10 +200,9 @@ export const AdminScreen: React.FC<AdminScreenProps> = ({ onBack, token }) => {
     try {
       await adminDeleteItem(id);
 
-      showToast("Item deleted successfully.");
       fetchItems(selectedConfig);
     } catch (err: any) {
-      showToast(err.message || "Failed to delete item.");
+      // error handled silently
     } finally {
       setLoading(false);
     }

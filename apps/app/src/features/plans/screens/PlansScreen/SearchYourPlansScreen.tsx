@@ -6,7 +6,6 @@ import { normalizeStatus } from "../../../../../lib/participantStatus";
 import { formatPlanDate } from "../../../../../lib/mappers";
 import { usePlansStore } from "../../state/PlansContext";
 import { useProfileStore } from "../../../profile/state/ProfileContext";
-import { useCirclesStore } from "../../../circles/state/CirclesContext";
 import { EmptyState } from "../../../home/components/EmptyState";
 import { getPlanCover } from "../../config/planCoverImages";
 import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
@@ -23,7 +22,6 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
 }) => {
   const { plans, dbPlanParticipants } = usePlansStore();
   const { userProfile } = useProfileStore();
-  const { circles } = useCirclesStore();
 
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -190,14 +188,11 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
     const matches = !query
       ? allUserPlansWithCollection
       : allUserPlansWithCollection.filter(({ plan: p }) => {
-          const planCircle = p.circleId ? circles.find((c) => c.id === p.circleId) : null;
-          const circleName = planCircle?.name || "";
           const hostName = p.creatorName || "";
 
           return (
             p.title.toLowerCase().includes(query) ||
             (p.location && p.location.toLowerCase().includes(query)) ||
-            circleName.toLowerCase().includes(query) ||
             hostName.toLowerCase().includes(query)
           );
         });
@@ -207,7 +202,7 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
       const timeB = getPlanScheduledDateTime(b.plan).getTime();
       return timeA - timeB;
     });
-  }, [allUserPlansWithCollection, circles, searchQuery]);
+  }, [allUserPlansWithCollection, searchQuery]);
 
   const handleBackClick = () => {
     if (searchQuery) {
