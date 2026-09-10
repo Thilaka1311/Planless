@@ -412,9 +412,15 @@ export function evictImageCache(
     } else {
       urlCache.delete(`${t}:plan-images/${raw}`);
     }
+    if (raw.startsWith("avatars/")) {
+      urlCache.delete(`${t}:${raw.slice("avatars/".length)}`);
+    } else {
+      urlCache.delete(`${t}:avatars/${raw}`);
+    }
     if (fileName) {
       urlCache.delete(`${t}:${fileName}`);
       urlCache.delete(`${t}:plan-images/${fileName}`);
+      urlCache.delete(`${t}:avatars/${fileName}`);
     }
   }
 
@@ -424,6 +430,11 @@ export function evictImageCache(
     imageVersions.set(raw.slice("plan-images/".length), now);
   } else {
     imageVersions.set(`plan-images/${raw}`, now);
+  }
+  if (raw.startsWith("avatars/")) {
+    imageVersions.set(raw.slice("avatars/".length), now);
+  } else {
+    imageVersions.set(`avatars/${raw}`, now);
   }
   if (fileName) {
     imageVersions.set(fileName, now);

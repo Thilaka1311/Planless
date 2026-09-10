@@ -97,19 +97,49 @@ export const FriendshipProvider = ({ children }: { children: ReactNode }) => {
   }, [activeUserUuid, refreshFriendships]);
 
   const acceptFriendRequest = useCallback(async (friendshipId: string) => {
-    await api.acceptFriendRequest(friendshipId);
-    await refreshFriendships();
-  }, [refreshFriendships]);
+    const prevFriends = friends;
+    const prevIncoming = incomingRequests;
+    const req = incomingRequests.find(r => r.friendshipId === friendshipId);
+    if (req) {
+      setIncomingRequests(prev => prev.filter(r => r.friendshipId !== friendshipId));
+      setFriends(prev => [...prev, { friendshipId, friend: req.sender, created_at: req.created_at, responded_at: new Date().toISOString() }]);
+    }
+    try {
+      await api.acceptFriendRequest(friendshipId);
+      await refreshFriendships();
+    } catch (err) {
+      console.error("[FriendshipContext] Failed to accept friend request:", err);
+      setFriends(prevFriends);
+      setIncomingRequests(prevIncoming);
+      throw err;
+    }
+  }, [friends, incomingRequests, refreshFriendships]);
 
   const rejectFriendRequest = useCallback(async (friendshipId: string) => {
-    await api.rejectFriendRequest(friendshipId);
-    await refreshFriendships();
-  }, [refreshFriendships]);
+    const prevIncoming = incomingRequests;
+    setIncomingRequests(prev => prev.filter(r => r.friendshipId !== friendshipId));
+    try {
+      await api.rejectFriendRequest(friendshipId);
+      await refreshFriendships();
+    } catch (err) {
+      console.error("[FriendshipContext] Failed to reject friend request:", err);
+      setIncomingRequests(prevIncoming);
+      throw err;
+    }
+  }, [incomingRequests, refreshFriendships]);
 
   const removeFriend = useCallback(async (friendshipId: string) => {
-    await api.removeFriend(friendshipId);
-    await refreshFriendships();
-  }, [refreshFriendships]);
+    const prevFriends = friends;
+    setFriends(prev => prev.filter(f => f.friendshipId !== friendshipId));
+    try {
+      await api.removeFriend(friendshipId);
+      await refreshFriendships();
+    } catch (err) {
+      console.error("[FriendshipContext] Failed to remove friend:", err);
+      setFriends(prevFriends);
+      throw err;
+    }
+  }, [friends, refreshFriendships]);
 
   // Load initial data and subscribe to realtime updates
   useEffect(() => {
@@ -133,7 +163,7 @@ export const FriendshipProvider = ({ children }: { children: ReactNode }) => {
       .subscribe();
 
     return () => {
-      channel.unsubscribe();
+      supabase.removeChannel(channel);
     };
   }, [activeUserUuid, refreshFriendships]);
 

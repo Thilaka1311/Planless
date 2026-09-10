@@ -1,9 +1,15 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { UserProfile, Plan } from "../../../core/types";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { PlansDetailsScreen } from "../../plans/screens/PlansScreen/PlansPreview/PlansPreviewScreen";
 import { pickImageFromGallery } from "../../../shared/utils/imageUtils";
 import { PlanImageEditorModal } from "../components/PlanImageEditorModal";
+import {
+  resolveAssignedParticipants,
+  incrementAssignedPlanSize,
+  decrementAssignedPlanSize,
+} from "../../participants/assigned/assignedCapacityLogic";
+import { saveDraftParticipants } from "../utils/draftParticipantStorage";
 
 interface CreatePlanReviewProps {
   form: any;
@@ -48,6 +54,78 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
   const capacity = form.totalCapacity !== undefined ? form.totalCapacity : (totalInvited || 2);
   const isAssignedMode = form.waitlistMode === 'assigned';
 
+  const assignedParticipants = useMemo(() => {
+    if (!isAssignedMode) return null;
+    return resolveAssignedParticipants({
+      userProfile: form.userProfile,
+      isHostSelected: form.isHostSelected,
+      selectedFriends: form.selectedFriends || [],
+      priorityGuestIds: form.priorityGuestIds,
+      capacity: form.totalCapacity,
+      isCapacityConfigured: form.totalCapacity !== undefined,
+    });
+  }, [
+    isAssignedMode,
+    form.userProfile,
+    form.isHostSelected,
+    form.selectedFriends,
+    form.priorityGuestIds,
+    form.totalCapacity,
+  ]);
+
+  const handleIncrementPlanSize = useCallback(() => {
+    if (!isAssignedMode || !assignedParticipants) return;
+    const hostOffset = form.isHostSelected ? 1 : 0;
+    const totalInvitedCount = hostOffset + (form.selectedFriends?.length || 0);
+
+    const res = incrementAssignedPlanSize({
+      capacity: form.totalCapacity,
+      totalInvitedCount,
+      goingList: assignedParticipants.going,
+      waitlist: assignedParticipants.waitlist,
+    });
+    if (!res) return;
+
+    const nonHostGoing = res.nextGoing.filter((f) => !f.isHost);
+    const nonHostWait = res.nextWaitlist.filter((f) => !f.isHost);
+
+    form.setTotalCapacity(res.nextCapacity);
+    form.setPriorityGuestIds(nonHostGoing.map((f) => f.id));
+    form.setSelectedFriends([...nonHostGoing, ...nonHostWait]);
+
+    saveDraftParticipants({
+      joinedIds: res.nextGoing.map((f) => f.id),
+      waitlistIds: res.nextWaitlist.map((f) => f.id),
+      joinedFriends: nonHostGoing,
+      waitlistFriends: nonHostWait,
+    });
+  }, [isAssignedMode, assignedParticipants, form]);
+
+  const handleDecrementPlanSize = useCallback(() => {
+    if (!isAssignedMode || !assignedParticipants) return;
+
+    const res = decrementAssignedPlanSize({
+      capacity: form.totalCapacity,
+      goingList: assignedParticipants.going,
+      waitlist: assignedParticipants.waitlist,
+    });
+    if (!res) return;
+
+    const nonHostGoing = res.nextGoing.filter((f) => !f.isHost);
+    const nonHostWait = res.nextWaitlist.filter((f) => !f.isHost);
+
+    form.setTotalCapacity(res.nextCapacity);
+    form.setPriorityGuestIds(nonHostGoing.map((f) => f.id));
+    form.setSelectedFriends([...nonHostGoing, ...nonHostWait]);
+
+    saveDraftParticipants({
+      joinedIds: res.nextGoing.map((f) => f.id),
+      waitlistIds: res.nextWaitlist.map((f) => f.id),
+      joinedFriends: nonHostGoing,
+      waitlistFriends: nonHostWait,
+    });
+  }, [isAssignedMode, assignedParticipants, form]);
+
   const eventDateObj = form.eventDateTime ? new Date(form.eventDateTime) : new Date();
   const formattedDate = eventDateObj.toLocaleDateString('en-US', {
     weekday: 'long', day: 'numeric', month: 'long'
@@ -61,88 +139,94 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
     const hostName = form.userProfile?.name || 'You';
     const hostAvatar = form.userProfile?.avatar || form.userProfile?.profile_photo || '';
 
-    const priorityIds: string[] = form.priorityGuestIds || [];
-
-    const hostMember = {
-      id: hostId,
-      userId: hostId,
-      userUuid: hostId,
-      name: hostName,
-      avatar: hostAvatar,
-      isHost: true,
-      role: 'HOST' as const,
-      joinState: 'JOINED' as const,
-      assignedGroup: 'going' as const,
-      waitlistPosition: null,
-      reminderState: 'none' as const,
-      joinedAt: null,
-      checkedIn: false,
-    };
-
     const hostOffset = form.isHostSelected ? 1 : 0;
     const totalInvitedCount = hostOffset + (form.selectedFriends?.length || 0);
     const hasCapacityConfigured = form.totalCapacity !== undefined;
     const hasWaitlist = isAssignedMode && hasCapacityConfigured && capacity < totalInvitedCount;
 
-    let waitlistCounter = 0;
-    const friendMembers = (form.selectedFriends || []).map((f: any, index: number) => {
-      const fId = f.id || f.dbUuid;
-      let isInGoing = false;
-      let waitlistPos: number | null = null;
-      let assignedGrp: string = 'going';
-      let rsvpStatus: 'INVITED' | 'JOINED' | 'WAITLISTED' = 'INVITED';
+    let allMembers: any[] = [];
+    if (isAssignedMode && assignedParticipants) {
+      const goingMembers = assignedParticipants.going.map((f) => {
+        const isHost = Boolean(f.isHost);
+        const memberId = isHost ? hostId : (f.id || f.dbUuid);
+        return {
+          id: memberId,
+          userId: memberId,
+          userUuid: memberId,
+          name: isHost ? hostName : (f.name || 'Guest'),
+          avatar: isHost ? hostAvatar : (f.avatar || (f as any).profilePhoto || ''),
+          isHost,
+          role: isHost ? ('HOST' as const) : ('PARTICIPANT' as const),
+          joinState: isHost ? ('JOINED' as const) : ((hasWaitlist ? 'JOINED' : 'INVITED') as any),
+          assignedGroup: 'going' as const,
+          waitlistPosition: null,
+          reminderState: 'none' as const,
+          joinedAt: null,
+          checkedIn: false,
+        };
+      });
 
-      if (isAssignedMode) {
-        if (hasWaitlist) {
-          if (priorityIds.length > 0) {
-            isInGoing = priorityIds.includes(fId);
-          } else {
-            isInGoing = index < (capacity - hostOffset);
-          }
-          assignedGrp = isInGoing ? 'going' : 'waitlisted';
-          if (!isInGoing) {
-            waitlistCounter += 1;
-            waitlistPos = waitlistCounter;
-          } else {
-            waitlistPos = null;
-          }
-          rsvpStatus = isInGoing ? 'JOINED' : 'WAITLISTED';
-        } else {
-          // No waitlist: all are in going group with status INVITED
-          isInGoing = true;
-          assignedGrp = 'going';
-          waitlistPos = null;
-          rsvpStatus = 'INVITED';
-        }
-      } else {
-        // Automatic mode: all invited friends remain Invited
-        isInGoing = true;
-        assignedGrp = 'going';
-        waitlistPos = null;
-        rsvpStatus = 'INVITED';
-      }
+      const waitlistMembers = assignedParticipants.waitlist.map((f, idx) => {
+        const memberId = f.id || f.dbUuid;
+        return {
+          id: memberId,
+          userId: memberId,
+          userUuid: memberId,
+          name: f.name || 'Guest',
+          avatar: f.avatar || (f as any).profilePhoto || '',
+          isHost: false,
+          role: 'PARTICIPANT' as const,
+          joinState: 'WAITLISTED' as const,
+          assignedGroup: 'waitlisted' as const,
+          waitlistPosition: f.waitlistPosition ?? idx + 1,
+          reminderState: 'none' as const,
+          joinedAt: null,
+          checkedIn: false,
+        };
+      });
 
-      return {
-        id: fId,
-        userId: fId,
-        userUuid: fId,
-        name: f.name,
-        avatar: f.avatar || f.profilePhoto || '',
-        isHost: false,
-        role: 'PARTICIPANT' as const,
-        joinState: rsvpStatus as any,
-        assignedGroup: assignedGrp,
-        waitlistPosition: waitlistPos,
+      allMembers = [...goingMembers, ...waitlistMembers];
+    } else {
+      const hostMember = {
+        id: hostId,
+        userId: hostId,
+        userUuid: hostId,
+        name: hostName,
+        avatar: hostAvatar,
+        isHost: true,
+        role: 'HOST' as const,
+        joinState: 'JOINED' as const,
+        assignedGroup: 'going' as const,
+        waitlistPosition: null,
         reminderState: 'none' as const,
         joinedAt: null,
         checkedIn: false,
       };
-    });
 
-    const allMembers = [
-      ...(form.isHostSelected ? [hostMember] : []),
-      ...friendMembers,
-    ];
+      const friendMembers = (form.selectedFriends || []).map((f: any) => {
+        const fId = f.id || f.dbUuid;
+        return {
+          id: fId,
+          userId: fId,
+          userUuid: fId,
+          name: f.name,
+          avatar: f.avatar || f.profilePhoto || '',
+          isHost: false,
+          role: 'PARTICIPANT' as const,
+          joinState: 'INVITED' as any,
+          assignedGroup: 'going',
+          waitlistPosition: null,
+          reminderState: 'none' as const,
+          joinedAt: null,
+          checkedIn: false,
+        };
+      });
+
+      allMembers = [
+        ...(form.isHostSelected ? [hostMember] : []),
+        ...friendMembers,
+      ];
+    }
 
     const isDateConfigured = Boolean(form.isDateManuallySet && form.eventDateTime);
     const isCostConfigured = Boolean(form.isCostManuallySet && form.costAmount !== undefined && form.costAmount !== null);
@@ -226,7 +310,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
       timeline: 'today',
       createdAt: new Date().toISOString(),
     } as any;
-  }, [form, selectedCategory, selectedSubcategory, capacity, isAssignedMode, formattedDate, formattedTime]);
+  }, [form, selectedCategory, selectedSubcategory, capacity, isAssignedMode, assignedParticipants, formattedDate, formattedTime]);
 
   const userProfile: UserProfile = form.userProfile || {
     id: form.activeUserId || 'host',
@@ -275,6 +359,8 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
           if (loc.longitude) form.setLongitude(loc.longitude);
         }}
         onAdjustCapacity={(newCap) => form.setTotalCapacity(newCap)}
+        onIncrementCapacity={isAssignedMode ? handleIncrementPlanSize : undefined}
+        onDecrementCapacity={isAssignedMode ? handleDecrementPlanSize : undefined}
         onSubmit={onSubmit}
         isSubmitting={isSubmitting}
       />

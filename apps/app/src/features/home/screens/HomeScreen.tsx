@@ -1,4 +1,5 @@
 import React from "react";
+import { Plus } from "lucide-react";
 import { UserProfile, Plan, NotificationItem } from "../../../core/types";
 import { EmptyState } from "../components/EmptyState";
 import { PlanStack } from "../components/PlanFeed";
@@ -109,12 +110,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({
     <div id="home_tab_pane" className="w-full h-full relative overflow-hidden bg-[#000000] flex flex-col pb-[72px]">
       {discoverablePlans.length === 0 ? (
         <EmptyState
-          description={
-            <>
-              You have joined all active spontaneous plans! Head to the{" "}
-              <span className="text-white font-semibold cursor-pointer">Plans</span> tab to view and
-              coordinate.
-            </>
+          title="No plans yet"
+          description="Ready to make one?"
+          ctaButton={
+            <button
+              onClick={onNavigateToCreate}
+              className="py-3 px-6 bg-white/[0.06] hover:bg-white/[0.1] active:bg-white/[0.03] text-white font-sans font-semibold text-[13.5px] tracking-wide rounded-full transition-all duration-200 border border-white/[0.12] hover:border-white/[0.22] active:scale-[0.98] cursor-pointer shadow-xl flex items-center justify-center gap-2 group backdrop-blur-md"
+            >
+              <Plus className="w-4 h-4 text-zinc-400 transition-transform duration-200 group-hover:rotate-90" />
+              Create a Plan
+            </button>
           }
         />
       ) : (

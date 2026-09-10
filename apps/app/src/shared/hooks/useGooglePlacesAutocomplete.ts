@@ -24,6 +24,39 @@ export interface PlaceDetails {
 }
 
 /**
+ * Extract underlying error message from Supabase Edge Function error or network error
+ */
+async function parseInvokeError(err: any): Promise<string> {
+  if (!err) return "Failed to process maps request.";
+
+  // Supabase FunctionsHttpError stores the Fetch Response in err.context
+  if (err.context && typeof err.context === "object") {
+    try {
+      const response = typeof err.context.clone === "function" ? err.context.clone() : err.context;
+      if (typeof response.json === "function") {
+        const json = await response.json();
+        if (json) {
+          if (typeof json.error === "string") return json.error;
+          if (typeof json.message === "string") return json.message;
+          if (typeof json.error_message === "string") return json.error_message;
+          if (typeof json.details === "string") return json.details;
+        }
+      }
+    } catch {
+      try {
+        const response = typeof err.context.clone === "function" ? err.context.clone() : err.context;
+        if (typeof response.text === "function") {
+          const text = await response.text();
+          if (text && text.trim().length > 0) return text.trim();
+        }
+      } catch {}
+    }
+  }
+
+  return err.message || "Failed to process maps request.";
+}
+
+/**
  * useGooglePlacesAutocomplete
  * Pure data hook driven by a controlled external query value.
  */
@@ -101,8 +134,9 @@ export function useGooglePlacesAutocomplete(query: string) {
           setError(errMsg);
         }
       } catch (err: any) {
-        console.error("[useGooglePlacesAutocomplete Hook] Fetch exception:", err);
-        setError(err.message || "Failed to search locations.");
+        const detailedError = await parseInvokeError(err);
+        console.error("[useGooglePlacesAutocomplete Hook] Fetch exception:", detailedError, err);
+        setError(detailedError);
       } finally {
         setIsLoading(false);
       }
@@ -135,11 +169,14 @@ export function useGooglePlacesAutocomplete(query: string) {
       if (data.status === "OK") {
         return data.result as PlaceDetails;
       } else {
-        setError(data.error_message || `API error status: ${data.status}`);
+        const errMsg = data.error_message || `API error status: ${data.status}`;
+        setError(errMsg);
         return null;
       }
     } catch (err: any) {
-      setError(err.message || "Failed to fetch place details.");
+      const detailedError = await parseInvokeError(err);
+      console.error("[useGooglePlacesAutocomplete Hook] Place details exception:", detailedError, err);
+      setError(detailedError);
       return null;
     } finally {
       setIsLoading(false);
@@ -166,11 +203,14 @@ export function useGooglePlacesAutocomplete(query: string) {
       if (data.status === "OK") {
         return data.results;
       } else {
-        setError(data.error_message || `API error status: ${data.status}`);
+        const errMsg = data.error_message || `API error status: ${data.status}`;
+        setError(errMsg);
         return null;
       }
     } catch (err: any) {
-      setError(err.message || "Failed to geocode.");
+      const detailedError = await parseInvokeError(err);
+      console.error("[useGooglePlacesAutocomplete Hook] Geocode exception:", detailedError, err);
+      setError(detailedError);
       return null;
     } finally {
       setIsLoading(false);

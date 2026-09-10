@@ -1,4 +1,5 @@
 import defaultPlanCover from "../../../assets/planimagedefault.png";
+import { getPlanCover } from "../../plans/config/planCoverImages";
 
 export const CATEGORY_EMOJI: Record<string, string> = {
   sports: "⚽",
@@ -7,17 +8,11 @@ export const CATEGORY_EMOJI: Record<string, string> = {
   custom: "✨",
 };
 
+/**
+ * @deprecated Use getPlanCover from features/plans/config/planCoverImages directly instead.
+ */
 export const getCategoryImage = (cat: string, sub: string | null): string => {
-  if (cat === 'sports') {
-    switch (sub) {
-      case 'football': return "/assets/plan-covers/football.png";
-      case 'badminton': return "/assets/plan-covers/badminton.png";
-      default: return "/assets/plan-covers/football.png";
-    }
-  }
-  if (cat === 'movies') return "/assets/plan-covers/movie.png";
-  if (cat === 'dining') return "/assets/plan-covers/dining.png";
-  return defaultPlanCover;
+  return getPlanCover(cat, sub);
 };
 
 export const RECENT_PLACES = [

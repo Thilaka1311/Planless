@@ -438,7 +438,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
           {/* Poster Cover Image */}
           <DiscoveryImages
             id="immersive-plan-hero-image"
-            src={selectedPlan.coverImage}
+            src={selectedPlan.coverImage || (selectedPlan as any).cover_image}
             planId={selectedPlan.dbUuid || selectedPlan.id}
             category={selectedPlan.category}
             subcategory={(selectedPlan as any).subcategory || (selectedPlan as any).sports_type}

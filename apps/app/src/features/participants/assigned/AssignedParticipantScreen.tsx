@@ -15,6 +15,13 @@ import { WaitlistModeSelector } from '../shared/WaitlistModeSelector';
 import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
 import { EditCapacityBottomSheet } from '../../plans/components/BottomSheets';
 import { getSavedDraftParticipants, saveDraftParticipants } from '../../create/utils/draftParticipantStorage';
+import {
+  sortGoingFriends,
+  renumberWaitlist,
+  resolveAssignedParticipants,
+  incrementAssignedPlanSize,
+  decrementAssignedPlanSize,
+} from './assignedCapacityLogic';
 
 interface AssignedParticipantScreenProps extends SharedParticipantScreenProps {
   isHostSelected?: boolean;
@@ -91,17 +98,6 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     }
   }, [initialOpenPlanSizeSheet]);
 
-  // ── Helpers for alphabetical Going order and waitlist numbering ──
-  const sortGoingFriends = (friends: Friend[]): Friend[] => {
-    return [...friends].sort((a, b) =>
-      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
-    );
-  };
-
-  const renumberWaitlist = (friends: Friend[]): Friend[] => {
-    return friends.map((f, idx) => ({ ...f, waitlistPosition: idx + 1 }));
-  };
-
   // ── Wizard mode internal state ──
   const hostItem = useMemo<Friend | null>(() => {
     if (!isHostSelected) return null;
@@ -114,131 +110,30 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     };
   }, [isHostSelected, userProfile?.dbUuid, userProfile?.name, userProfile?.avatar, userProfile?.profile_photo]);
 
-  const isConfigured = Boolean(isCapacityConfigured && capacity !== undefined);
   const totalInvitedCount = (hostItem ? 1 : 0) + selectedFriends.length;
 
   const [internalGoingList, setInternalGoingList] = useState<Friend[]>(() => {
     if (mode !== 'wizard') return [];
-    const savedDraft = getSavedDraftParticipants();
-    const hostArr = hostItem ? [hostItem] : [];
-
-    if (savedDraft && (savedDraft.joinedIds.length > 0 || savedDraft.waitlistIds.length > 0)) {
-      const friendMap = new Map<string, Friend>();
-      if (selectedFriends.length > 0) {
-        selectedFriends.forEach((f) => {
-          if (f.id) friendMap.set(String(f.id), f);
-          if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
-        });
-      } else {
-        if (savedDraft.joinedFriends) {
-          savedDraft.joinedFriends.forEach((f) => {
-            if (f.id) friendMap.set(String(f.id), f);
-            if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
-          });
-        }
-        if (savedDraft.waitlistFriends) {
-          savedDraft.waitlistFriends.forEach((f) => {
-            if (f.id) friendMap.set(String(f.id), f);
-            if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
-          });
-        }
-      }
-
-      const isHostInJoined = savedDraft.joinedIds.includes('host') || isHostSelected;
-      const goingGuests = savedDraft.joinedIds
-        .filter((id) => id !== 'host' && friendMap.has(id))
-        .map((id) => friendMap.get(id)!);
-      let restoredGoing = [...(isHostInJoined && hostItem ? [hostItem] : []), ...sortGoingFriends(goingGuests)];
-      const goingIdSet = new Set(restoredGoing.map((f) => f.id));
-
-      const waitGuests = savedDraft.waitlistIds
-        .filter((id) => id !== 'host' && friendMap.has(id) && !goingIdSet.has(id))
-        .map((id) => friendMap.get(id)!);
-      const allocatedIds = new Set([...goingIdSet, ...waitGuests.map((f) => f.id)]);
-      const unallocatedGuests = selectedFriends.filter((f) => !allocatedIds.has(f.id) && !f.isHost);
-
-      if (unallocatedGuests.length > 0) {
-        if (capacity === undefined) {
-          restoredGoing = [...restoredGoing, ...sortGoingFriends(unallocatedGuests)];
-        } else {
-          const availableCapacity = Math.max(0, capacity - restoredGoing.length);
-          const toGoing = unallocatedGuests.slice(0, availableCapacity);
-          restoredGoing = [...restoredGoing, ...sortGoingFriends(toGoing)];
-        }
-      }
-
-      return restoredGoing;
-    }
-
-    if (priorityGuestIds && priorityGuestIds.length > 0) {
-      const prioritySet = new Set(priorityGuestIds);
-      const goingFriends = sortGoingFriends(selectedFriends.filter((f) => prioritySet.has(f.id)));
-      return [...hostArr, ...goingFriends];
-    }
-
-    const sortedGuests = sortGoingFriends(selectedFriends);
-    const allList = [...hostArr, ...sortedGuests];
-    const effectiveCap = isConfigured && capacity !== undefined && capacity < allList.length ? capacity : allList.length;
-    return allList.slice(0, effectiveCap);
+    return resolveAssignedParticipants({
+      userProfile,
+      isHostSelected,
+      selectedFriends,
+      priorityGuestIds,
+      capacity,
+      isCapacityConfigured,
+    }).going;
   });
 
   const [internalWaitlist, setInternalWaitlist] = useState<Friend[]>(() => {
     if (mode !== 'wizard') return [];
-    const savedDraft = getSavedDraftParticipants();
-
-    if (savedDraft && (savedDraft.joinedIds.length > 0 || savedDraft.waitlistIds.length > 0)) {
-      const friendMap = new Map<string, Friend>();
-      if (selectedFriends.length > 0) {
-        selectedFriends.forEach((f) => {
-          if (f.id) friendMap.set(String(f.id), f);
-          if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
-        });
-      } else {
-        if (savedDraft.joinedFriends) {
-          savedDraft.joinedFriends.forEach((f) => {
-            if (f.id) friendMap.set(String(f.id), f);
-            if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
-          });
-        }
-        if (savedDraft.waitlistFriends) {
-          savedDraft.waitlistFriends.forEach((f) => {
-            if (f.id) friendMap.set(String(f.id), f);
-            if (f.dbUuid) friendMap.set(String(f.dbUuid), f);
-          });
-        }
-      }
-
-      const joinedIdSet = new Set(savedDraft.joinedIds);
-      const waitGuests = savedDraft.waitlistIds
-        .filter((id) => id !== 'host' && !joinedIdSet.has(id) && friendMap.has(id))
-        .map((id) => friendMap.get(id)!);
-
-      const hostCount = (savedDraft.joinedIds.includes('host') || isHostSelected) && hostItem ? 1 : 0;
-      const goingGuestCount = savedDraft.joinedIds.filter((id) => id !== 'host' && friendMap.has(id)).length;
-      const totalGoingCount = hostCount + goingGuestCount;
-
-      const allocatedIds = new Set([...savedDraft.joinedIds, ...savedDraft.waitlistIds]);
-      const unallocatedGuests = selectedFriends.filter((f) => !allocatedIds.has(f.id) && !f.isHost);
-
-      if (unallocatedGuests.length > 0 && capacity !== undefined) {
-        const availableCapacity = Math.max(0, capacity - totalGoingCount);
-        const toWait = unallocatedGuests.slice(availableCapacity);
-        return renumberWaitlist([...waitGuests, ...toWait]);
-      }
-
-      return renumberWaitlist(waitGuests);
-    }
-
-    if (priorityGuestIds && priorityGuestIds.length > 0) {
-      const prioritySet = new Set(priorityGuestIds);
-      const waitFriends = renumberWaitlist(selectedFriends.filter((f) => !prioritySet.has(f.id)));
-      return waitFriends;
-    }
-
-    const sortedGuests = sortGoingFriends(selectedFriends);
-    const allList = [...(hostItem ? [hostItem] : []), ...sortedGuests];
-    const effectiveCap = isConfigured && capacity !== undefined && capacity < allList.length ? capacity : allList.length;
-    return renumberWaitlist(allList.slice(effectiveCap));
+    return resolveAssignedParticipants({
+      userProfile,
+      isHostSelected,
+      selectedFriends,
+      priorityGuestIds,
+      capacity,
+      isCapacityConfigured,
+    }).waitlist;
   });
 
   const isInitializedRef = React.useRef(false);
@@ -578,51 +473,37 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
   const handleIncrementPlanSize = () => {
     if (mode !== 'wizard') return;
-    const currentCap = capacity ?? internalGoingList.length;
-    if (currentCap >= totalInvitedCount) return;
+    const res = incrementAssignedPlanSize({
+      capacity,
+      totalInvitedCount,
+      goingList: internalGoingList,
+      waitlist: internalWaitlist,
+    });
+    if (!res) return;
 
-    if (internalWaitlist.length > 0) {
-      const promoted = internalWaitlist[0];
-      const nextWait = renumberWaitlist(internalWaitlist.slice(1));
-      const hostPart = internalGoingList.filter((f) => f.isHost);
-      const guestPart = internalGoingList.filter((f) => !f.isHost && f.id !== promoted.id);
-      const nextGoing = [...hostPart, ...sortGoingFriends([...guestPart, { ...promoted, waitlistPosition: undefined }])];
-
-      setInternalWaitlist(nextWait);
-      setInternalGoingList(nextGoing);
-      if (onAdjustCapacity) {
-        onAdjustCapacity(Math.min(nextGoing.length, totalInvitedCount));
-      }
-      persistParticipantState(nextGoing, nextWait);
+    setInternalWaitlist(res.nextWaitlist);
+    setInternalGoingList(res.nextGoing);
+    if (onAdjustCapacity) {
+      onAdjustCapacity(res.nextCapacity);
     }
+    persistParticipantState(res.nextGoing, res.nextWaitlist);
   };
 
   const handleDecrementPlanSize = () => {
     if (mode !== 'wizard') return;
-    const currentCap = capacity ?? internalGoingList.length;
-    if (currentCap <= 2) return;
+    const res = decrementAssignedPlanSize({
+      capacity,
+      goingList: internalGoingList,
+      waitlist: internalWaitlist,
+    });
+    if (!res) return;
 
-    if (currentCap > internalGoingList.length) {
-      if (onAdjustCapacity) {
-        onAdjustCapacity(currentCap - 1);
-      }
-      return;
-    }
-
-    const nonHostGoing = sortGoingFriends(internalGoingList.filter((f) => !f.isHost));
-    if (nonHostGoing.length === 0 || internalGoingList.length <= 2) return;
-
-    const demoted = nonHostGoing[nonHostGoing.length - 1];
-
-    const nextGoing = internalGoingList.filter((f) => f.id !== demoted.id);
-    const nextWait = renumberWaitlist([...internalWaitlist.filter((f) => f.id !== demoted.id), demoted]);
-
-    setInternalGoingList(nextGoing);
-    setInternalWaitlist(nextWait);
+    setInternalGoingList(res.nextGoing);
+    setInternalWaitlist(res.nextWaitlist);
     if (onAdjustCapacity) {
-      onAdjustCapacity(nextGoing.length);
+      onAdjustCapacity(res.nextCapacity);
     }
-    persistParticipantState(nextGoing, nextWait);
+    persistParticipantState(res.nextGoing, res.nextWaitlist);
   };
 
   useEffect(() => {

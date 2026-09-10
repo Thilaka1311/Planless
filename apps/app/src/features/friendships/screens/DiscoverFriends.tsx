@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from "react";
-import { ArrowLeft, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeft, UserPlus, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { FriendProfileViewerBottomSheet } from "../components/FriendProfileViewerBottomSheet";
+import { SearchBar } from "../../../shared/components/SearchBar";
 
 interface DiscoverFriendsProps {
   onBack: () => void;
@@ -78,55 +79,44 @@ export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
       className="absolute inset-0 bg-[#000000] flex flex-col z-50 select-none"
     >
       {/* HEADER */}
-      <header className="px-5 py-4 border-b border-white/[0.04] flex items-center justify-between">
+      <header className="h-14 shrink-0 bg-[#000000] px-5 flex items-center justify-between z-30 select-none relative">
         <div className="flex items-center space-x-3.5">
           <button
             onClick={onBack}
-            className="w-10 h-10 rounded-full border border-white/[0.06] hover:bg-white/[0.03] flex items-center justify-center text-white transition active:scale-95 cursor-pointer"
+            className="w-9 h-9 -ml-1.5 flex items-center justify-center text-white/90 hover:text-white transition active:scale-95 cursor-pointer"
+            title="Back"
           >
-            <ArrowLeft className="w-4.5 h-4.5" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="font-sans font-bold text-xl text-white">Discover People</h1>
-            <p className="text-[11px] font-sans font-medium text-zinc-500 mt-0.5">
-              Find new connections on Planless
-            </p>
+            <h1 className="font-sans font-bold text-xl text-white tracking-tight leading-none">Discover People</h1>
           </div>
         </div>
       </header>
 
       {/* SEARCH BAR */}
-      <div className="px-5 py-3.5">
-        <div className="relative flex items-center">
-          <Search className="absolute left-4 w-4 h-4 text-zinc-550 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search by name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-11 bg-zinc-950 border border-white/[0.05] rounded-xl pl-11 pr-10 text-sm text-white placeholder-zinc-550 focus:outline-none focus:border-white/[0.12] transition"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3.5 w-6 h-6 rounded-full bg-white/[0.04] flex items-center justify-center text-zinc-400 hover:text-white transition cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
+      <div className="px-5 pt-0.5 pb-2.5 select-none" style={{ boxSizing: 'border-box' }}>
+        <SearchBar
+          id="discover-people-search-input"
+          name="discoverPeopleSearchInput"
+          placeholder="Search friends..."
+          value={searchQuery}
+          onChange={setSearchQuery}
+        />
       </div>
 
-      {/* USERS LIST */}
+      {/* DISCOVER USERS LIST */}
       <div className="flex-1 overflow-y-auto px-5 pb-8">
         {filteredUsers.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center px-4 pt-16">
-            <p className="text-zinc-550 font-sans font-medium text-xs">
-              {searchQuery ? "No people found" : "No discoverable users"}
-            </p>
+          <div className="p-8 bg-[#0A0A0C]/50 border border-white/[0.02] border-dashed rounded-2xl text-center">
+            <div className="w-14 h-14 rounded-full bg-zinc-950 border border-white/[0.03] flex items-center justify-center text-zinc-650 mx-auto mb-3.5">
+              <UserPlus className="w-6 h-6" />
+            </div>
+            <p className="text-zinc-500 font-sans font-medium text-xs">No users found</p>
+            <p className="text-zinc-600 text-[11px] mt-1">Try a different search term</p>
           </div>
         ) : (
-          <div className="space-y-3 pt-2">
+          <div className="space-y-1 pt-1">
             {filteredUsers.map((user) => {
               const pendingRequest = outgoingRequests.find(
                 (r) => r.recipient?.id === user.id || (r.recipient as any)?.public_id === user.public_id
@@ -135,7 +125,7 @@ export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
               return (
                 <div
                   key={user.id}
-                  className="w-full p-4 bg-[#0A0A0C] border border-white/[0.03] rounded-2xl flex items-center justify-between"
+                  className="w-full py-2.5 px-1 hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl flex items-center justify-between transition"
                 >
                   <div
                     onClick={() => setSelectedUserForViewer({ userId: user.id })}

@@ -477,6 +477,8 @@ export interface PlansDetailsScreenProps {
   onAdjustCost?: (newCost: number) => void;
   onAdjustLocation?: (locationData: { place_id?: string | null; place_name?: string | null; place_address?: string | null; latitude?: number | null; longitude?: number | null; }) => void;
   onAdjustCapacity?: (newCapacity: number) => void;
+  onIncrementCapacity?: () => void;
+  onDecrementCapacity?: () => void;
   onSubmit?: () => void;
   isSubmitting?: boolean;
 }
@@ -504,6 +506,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   onAdjustCost,
   onAdjustLocation,
   onAdjustCapacity,
+  onIncrementCapacity,
+  onDecrementCapacity,
   onSubmit,
   isSubmitting = false,
 }) => {
@@ -1686,7 +1690,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             >
               <DiscoveryImages
                 id="immersive-plan-hero-image"
-                src={selectedPlan.coverImage}
+                src={selectedPlan.coverImage || (selectedPlan as any).cover_image}
                 planId={selectedPlan.dbUuid || selectedPlan.id}
                 category={selectedPlan.category}
                 subcategory={(selectedPlan as any).subcategory || (selectedPlan as any).sports_type}
@@ -2312,6 +2316,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       {/* ---------------- 🚫 PLAN ACTIONS SHEET (CANCEL / MARK AS COMPLETE) ---------------- */}
       <CancelPlanBottomSheet
         isOpen={showCancelPlanConfirm}
+        plan={selectedPlan}
         onConfirmCancel={async () => {
           setShowCancelPlanConfirm(false);
           try {
@@ -2410,6 +2415,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       {/* ---------------- ↺ RESTORE PLAN CONFIRMATION SHEET ---------------- */}
       <RestorePlanBottomSheet
         isOpen={showRestorePlanConfirm}
+        plan={selectedPlan}
         isRestoring={isRestoring}
         onConfirm={async () => {
           setIsRestoring(true);
@@ -2497,7 +2503,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         }
         joinedCount={
           createMode
-            ? undefined
+            ? selectedPlan?.members?.filter(m => m.assignedGroup === 'GOING' || (m.assignedGroup as string)?.toLowerCase() === 'going' || m.joinState === 'JOINED' || m.role === 'HOST' || m.isHost)?.length
             : (selectedPlan?.members?.filter(m => {
                 const s = normalizeStatus(m.joinState || (m as any).rsvp_status);
                 return (m.role === 'HOST' || m.isHost === true || s === 'JOINED' || s === 'WAITLISTED' || s === 'REJOINED') && s !== 'SKIPPED';
@@ -2509,9 +2515,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               })?.length ||
               1)
         }
+        waitlistedCount={
+          createMode
+            ? selectedPlan?.members?.filter(m => m.assignedGroup === 'WAITLIST' || (m.assignedGroup as string)?.toLowerCase() === 'waitlisted' || m.joinState === 'WAITLISTED')?.length
+            : undefined
+        }
         minCapacity={2}
-        maxCapacity={currentMaxParticipants}
+        maxCapacity={createMode && plan?.members ? plan.members.length : currentMaxParticipants}
         onCapacityChange={handleCapacityChange}
+        onIncrement={onIncrementCapacity}
+        onDecrement={onDecrementCapacity}
         onAddParticipants={() => {
           setIsEditingCapacitySheetOpen(false);
           if (createMode) {

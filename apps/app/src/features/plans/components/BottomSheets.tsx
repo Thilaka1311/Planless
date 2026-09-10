@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
+import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
+import type { Plan } from "../../../core/types";
 import { HostInfo } from "./HeroHeader";
 
 // Helper functions for date/time formatting inside EditDateTimeBottomSheet
@@ -705,6 +707,13 @@ export const CancelLeaveRequestBottomSheet: React.FC<CancelLeaveRequestBottomShe
 // ----------------------------------------------------------------------
 interface CancelPlanBottomSheetProps {
   isOpen: boolean;
+  plan?: Plan | any | null;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
+  subtitle?: string;
   onConfirm?: () => void;
   onConfirmCancel?: () => void;
   onMarkAsComplete?: () => void;
@@ -713,6 +722,13 @@ interface CancelPlanBottomSheetProps {
 
 export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
   isOpen,
+  plan,
+  planTitle,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
+  subtitle,
   onConfirm,
   onConfirmCancel,
   onMarkAsComplete,
@@ -725,6 +741,14 @@ export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
       onConfirm();
     }
   };
+
+  const resolvedTitle = plan?.title || planTitle || "Plan";
+  const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
+  const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
+  const resolvedCategory = plan?.category || planCategory;
+  const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
+  const isCancelled = Boolean((plan?.status || "").toUpperCase() === "CANCELLED");
+  const displaySubtitle = subtitle || (isCancelled ? "Cancelled plan" : "Manage this plan");
 
   return (
     <AnimatePresence>
@@ -754,21 +778,30 @@ export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
               <div className="w-9 h-1 rounded-full bg-white/20" />
             </div>
 
-            <div className="px-5 pb-2 text-left">
-              <h2 className="text-[18px] font-bold text-white mb-1">Plan Actions</h2>
+            {/* Plan Identity Header matching Chat Screen visual hierarchy */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={resolvedCover}
+                  planId={resolvedPlanId}
+                  category={resolvedCategory}
+                  subcategory={resolvedSubcategory}
+                  screen="Plan Actions Avatar"
+                  alt={resolvedTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {resolvedTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  {displaySubtitle}
+                </p>
+              </div>
             </div>
 
             <div className="px-4 pt-4 flex flex-col gap-2.5">
-              <button
-                id="cancel_plan_confirm_btn"
-                type="button"
-                onClick={handleCancelClick}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-red-400 active:scale-[0.98] transition-transform cursor-pointer"
-                style={{ background: "rgba(255,59,48,0.12)", border: "1px solid rgba(255,59,48,0.2)" }}
-              >
-                Cancel Plan
-              </button>
-
               <button
                 id="mark_as_complete_btn"
                 type="button"
@@ -776,10 +809,66 @@ export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
                   onClose();
                   onMarkAsComplete?.();
                 }}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white active:scale-[0.98] transition-transform cursor-pointer"
-                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#FFFFFF',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
               >
                 Mark as Complete
+              </button>
+
+              <button
+                id="cancel_plan_confirm_btn"
+                type="button"
+                onClick={handleCancelClick}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#EF4444',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                Cancel Plan
+              </button>
+
+              <button
+                id="plan_actions_cancel_btn"
+                type="button"
+                onClick={onClose}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  marginTop: 8,
+                }}
+              >
+                Cancel
               </button>
             </div>
           </motion.div>
@@ -948,11 +1037,15 @@ export const EarlyCompletePlanConfirmationBottomSheet: React.FC<EarlyCompletePla
   );
 };
 
-// ----------------------------------------------------------------------
-// 2b. RESTORE PLAN BOTTOM SHEET
-// ----------------------------------------------------------------------
 interface RestorePlanBottomSheetProps {
   isOpen: boolean;
+  plan?: Plan | any | null;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
+  subtitle?: string;
   isRestoring?: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -960,10 +1053,24 @@ interface RestorePlanBottomSheetProps {
 
 export const RestorePlanBottomSheet: React.FC<RestorePlanBottomSheetProps> = ({
   isOpen,
+  plan,
+  planTitle,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
+  subtitle,
   isRestoring,
   onConfirm,
   onClose,
 }) => {
+  const resolvedTitle = plan?.title || planTitle || "Plan";
+  const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
+  const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
+  const resolvedCategory = plan?.category || planCategory;
+  const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
+  const displaySubtitle = subtitle || "Restore this plan";
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -992,21 +1099,52 @@ export const RestorePlanBottomSheet: React.FC<RestorePlanBottomSheetProps> = ({
               <div className="w-9 h-1 rounded-full bg-white/20" />
             </div>
 
-            <div className="px-5 pb-2 text-left">
-              <h2 className="text-[18px] font-bold text-white mb-2">Restore this plan?</h2>
-              <p className="text-[14px] text-white/55 leading-[1.55]">
-                This will make the plan active again and allow participants to interact with it as before.
-              </p>
+            {/* Plan Identity Header matching Chat Screen / Plan Actions visual hierarchy */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={resolvedCover}
+                  planId={resolvedPlanId}
+                  category={resolvedCategory}
+                  subcategory={resolvedSubcategory}
+                  screen="Restore Plan Avatar"
+                  alt={resolvedTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {resolvedTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  {displaySubtitle}
+                </p>
+              </div>
             </div>
-
-            <div className="px-4 pt-5 flex flex-col gap-2.5">
+            <div className="px-4 pt-4 flex flex-col gap-2.5">
               <button
                 id="restore_plan_confirm_btn"
                 type="button"
                 disabled={isRestoring}
                 onClick={onConfirm}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white active:scale-[0.98] transition-transform disabled:opacity-50"
-                style={{ background: "#FF6B2C" }}
+                className="w-full active:scale-[0.98] transition-transform"
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: '#FF6B2C',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#FFFFFF',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: isRestoring ? 'default' : 'pointer',
+                  opacity: isRestoring ? 0.5 : 1,
+                  textAlign: 'center',
+                }}
               >
                 {isRestoring ? "Restoring…" : "Restore Plan"}
               </button>
@@ -1015,8 +1153,18 @@ export const RestorePlanBottomSheet: React.FC<RestorePlanBottomSheetProps> = ({
                 id="restore_plan_cancel_btn"
                 type="button"
                 onClick={onClose}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform"
-                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  marginTop: 8,
+                }}
               >
                 Cancel
               </button>

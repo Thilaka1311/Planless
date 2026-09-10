@@ -8,6 +8,7 @@ interface EmptyStateProps {
   py?: string;
   variant?: "dashed" | "default";
   title?: string;
+  ctaButton?: React.ReactNode;
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
@@ -16,6 +17,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   py,
   variant,
   title,
+  ctaButton,
 }) => {
   const [timelinePhase, setTimelinePhase] = useState<
     "discovery" | "comingTogether" | "vennOverlap" | "friendsFadeIn" | "planMorph" | "restState"
@@ -24,36 +26,45 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   useEffect(() => {
     if (variant === "dashed") return;
 
-    // Timeline Loop Controller (approx 16 seconds loop cycle)
+    let isMounted = true;
+
+    // Timeline Loop Controller (continuous, seamless loop without long calendar pause)
     const runTimelineLoop = async () => {
-      while (true) {
-        // Phase 1 - Discovery (Hold static separation for 2.5 seconds)
+      while (isMounted) {
+        // Phase 1 - Discovery (Separated category circles)
+        if (!isMounted) break;
         setTimelinePhase("discovery");
-        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        // Phase 2 - Coming Together (Move circles closer over 2.5 seconds)
+        // Phase 2 - Coming Together (Circles move inward)
+        if (!isMounted) break;
         setTimelinePhase("comingTogether");
-        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        // Phase 3 - Venn overlap (Overlapped positioning settles over 1.2s)
+        // Phase 3 - Venn overlap (Overlapped positioning settles)
+        if (!isMounted) break;
         setTimelinePhase("vennOverlap");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Phase 4 - Friends (Category icons fade out, Users icon fades in)
+        if (!isMounted) break;
+        setTimelinePhase("friendsFadeIn");
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        // Phase 5 - Plan Creation (Users icon morphs to Calendar)
+        if (!isMounted) break;
+        setTimelinePhase("planMorph");
         await new Promise((resolve) => setTimeout(resolve, 1200));
 
-        // Phase 4 - Friends (Category icons fade out, Users icon fades in over 1.8s)
-        setTimelinePhase("friendsFadeIn");
-        await new Promise((resolve) => setTimeout(resolve, 1800));
-
-        // Phase 5 - Plan Creation (Users icon morphs to Calendar, lines show over 1.8s)
-        setTimelinePhase("planMorph");
-        await new Promise((resolve) => setTimeout(resolve, 1800));
-
-        // Phase 6 - Rest state (Hold plan composition for 3.5 seconds)
-        setTimelinePhase("restState");
-        await new Promise((resolve) => setTimeout(resolve, 3500));
+        // Loop immediately restarts back to discovery seamlessly
       }
     };
 
     runTimelineLoop();
+
+    return () => {
+      isMounted = false;
+    };
   }, [variant]);
 
   if (variant === "dashed") {
@@ -88,7 +99,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
 
   // Setup spring dynamics
   const smoothSpring = {
-    type: "spring",
+    type: "spring" as const,
     stiffness: 28,
     damping: 12,
   };
@@ -219,37 +230,6 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
             </motion.div>
           </motion.div>
 
-          {/* WARM ORANGE INTERSECTION GLOW & CONNECTION PATHS */}
-          <svg className="absolute w-full h-full pointer-events-none" viewBox="0 0 256 256">
-            {/* Draw light connection lines between centers in Phase 5 Plan creation */}
-            <motion.path
-              d="M128 110 L94 142 M94 142 L162 142 M162 142 L128 110"
-              stroke="#FF6B2C"
-              strokeWidth="1.2"
-              fill="none"
-              strokeLinecap="round"
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{
-                pathLength: showPlan ? 1 : 0,
-                opacity: showPlan ? 0.18 : 0,
-              }}
-              transition={{ duration: 0.5 }}
-            />
-          </svg>
-
-          {/* Warm center bloom glow at intersection point */}
-          <motion.div
-            className="absolute w-12 h-12 rounded-full bg-[#FF6B2C]/10 blur-[12px] pointer-events-none"
-            animate={{
-              opacity: !showCategories ? [0.4, 0.6, 0.4] : 0,
-              scale: !showCategories ? [1, 1.15, 1] : 0.8,
-            }}
-            transition={{
-              opacity: { duration: 0.4 },
-              scale: { duration: 3, repeat: Infinity, ease: "easeInOut" },
-            }}
-          />
-
           {/* Dynamic morph overlays (Users / Calendar) */}
           
           {/* Friends state (Users icon) */}
@@ -281,14 +261,20 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
         </div>
       )}
 
-      {/* Philosophy copy message */}
-      <div className="flex flex-col items-center justify-center text-center space-y-2 pointer-events-none">
+      {/* Empty state copy message and optional CTA */}
+      <div className="flex flex-col items-center justify-center text-center space-y-2">
         <h3 className="font-sans font-semibold text-[20px] text-white tracking-tight leading-tight whitespace-nowrap">
           {title || "Bring friends together."}
         </h3>
         <p className="text-zinc-500 font-sans text-xs leading-relaxed max-w-[260px] font-normal">
           {description || "Every great plan starts with a conversation."}
         </p>
+
+        {ctaButton && (
+          <div className="pt-3">
+            {ctaButton}
+          </div>
+        )}
       </div>
     </div>
   );

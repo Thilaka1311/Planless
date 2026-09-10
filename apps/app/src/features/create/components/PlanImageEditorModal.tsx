@@ -10,15 +10,22 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ChevronLeft, ZoomIn, ZoomOut, Check } from "lucide-react";
 import { resolveImage, ImageType } from "../../../shared/imaging/imageResolver";
 
-interface PlanImageEditorModalProps {
+export type CropShape = 'portrait' | 'circle';
+
+export interface PlanImageEditorModalProps {
   imageSrc: string | File | Blob | null;
   isOpen: boolean;
   onClose: () => void;
+  cropShape?: CropShape;
+  title?: string;
+  subtitle?: string;
+  outputWidth?: number;
+  outputHeight?: number;
   onSave: (result: {
-    previewUrl: string;         // Cropped 9:16 portrait preview URL (Home Card)
-    blob: Blob;                 // Cropped 9:16 portrait blob → cover_card_image
-    originalBlob: Blob | null;  // Original unmodified image blob → cover_image
-    originalPreviewUrl: string; // Original image preview URL → Plan Preview / Hero
+    previewUrl: string;         // Cropped preview URL
+    blob: Blob;                 // Cropped blob
+    originalBlob: Blob | null;  // Original unmodified image blob
+    originalPreviewUrl: string; // Original image preview URL
     width: number;
     height: number;
   }) => Promise<void> | void;
@@ -28,14 +35,21 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
   imageSrc,
   isOpen,
   onClose,
+  cropShape = 'portrait',
+  title,
+  subtitle,
+  outputWidth,
+  outputHeight,
   onSave,
 }) => {
+  const isCircle = cropShape === 'circle';
+
   const [imageElement, setImageElement] = useState<HTMLImageElement | null>(null);
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [isImageLoaded, setIsImageLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Viewport dimensions (in px) — dynamically calculated for mobile portrait Home card (9:16)
+  // Viewport dimensions (in px) — dynamically calculated based on crop shape
   const [viewportWidth, setViewportWidth] = useState(270);
   const [viewportHeight, setViewportHeight] = useState(480);
 
@@ -54,7 +68,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Responsive portrait viewport size calculation (9:16 aspect ratio)
+  // Responsive viewport size calculation
   useEffect(() => {
     const updateViewport = () => {
       const windowWidth = window.innerWidth;
@@ -64,25 +78,32 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
       const maxAvailableHeight = Math.max(200, windowHeight - 190);
       const maxAvailableWidth = Math.max(150, windowWidth - 48);
 
-      // Home card vertical portrait ratio (9:16)
-      const portraitRatio = 9 / 16;
+      if (isCircle) {
+        // Square viewport for circular crop (1:1 ratio) bounded by screen dimensions
+        const size = Math.round(Math.min(maxAvailableWidth, maxAvailableHeight, 340));
+        setViewportWidth(size);
+        setViewportHeight(size);
+      } else {
+        // Home card vertical portrait ratio (9:16)
+        const portraitRatio = 9 / 16;
 
-      let targetHeight = maxAvailableHeight;
-      let targetWidth = Math.round(targetHeight * portraitRatio);
+        let targetHeight = maxAvailableHeight;
+        let targetWidth = Math.round(targetHeight * portraitRatio);
 
-      if (targetWidth > maxAvailableWidth) {
-        targetWidth = maxAvailableWidth;
-        targetHeight = Math.round(targetWidth / portraitRatio);
+        if (targetWidth > maxAvailableWidth) {
+          targetWidth = maxAvailableWidth;
+          targetHeight = Math.round(targetWidth / portraitRatio);
+        }
+
+        setViewportWidth(targetWidth);
+        setViewportHeight(targetHeight);
       }
-
-      setViewportWidth(targetWidth);
-      setViewportHeight(targetHeight);
     };
 
     updateViewport();
     window.addEventListener("resize", updateViewport);
     return () => window.removeEventListener("resize", updateViewport);
-  }, []);
+  }, [isCircle]);
 
   // Helper to compute max allowed translations for a given scale to prevent empty space
   const getBounds = useCallback(
@@ -395,13 +416,13 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
     setIsSaving(true);
 
     try {
-      // High-res mobile portrait output dimensions matching Home screen card (9:16 ratio)
-      const outputWidth = 1080;
-      const outputHeight = 1920;
+      // High-res output dimensions matching context (512x512 for circle avatar, 1080x1920 for portrait card)
+      const targetOutputWidth = outputWidth || (isCircle ? 512 : 1080);
+      const targetOutputHeight = outputHeight || (isCircle ? 512 : 1920);
 
       const canvas = document.createElement("canvas");
-      canvas.width = outputWidth;
-      canvas.height = outputHeight;
+      canvas.width = targetOutputWidth;
+      canvas.height = targetOutputHeight;
 
       const ctx = canvas.getContext("2d");
       if (!ctx) {
@@ -433,8 +454,8 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
         sourceCropHeight,
         0,
         0,
-        outputWidth,
-        outputHeight
+        targetOutputWidth,
+        targetOutputHeight
       );
 
       canvas.toBlob(
@@ -468,8 +489,8 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
               blob,
               originalBlob,
               originalPreviewUrl,
-              width: outputWidth,
-              height: outputHeight,
+              width: targetOutputWidth,
+              height: targetOutputHeight,
             });
           } catch (saveErr) {
             console.error('[PlanImageEditorModal] onSave error:', saveErr);
@@ -510,7 +531,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
         </button>
 
         <h1 className="text-[16px] font-semibold text-white tracking-tight">
-          Crop for Home Card
+          {title || (isCircle ? "Move and Scale" : "Crop for Home Card")}
         </h1>
 
         <button
@@ -561,9 +582,11 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
 
         {/* ── Fixed Mask Overlay Outside Crop Viewport ── */}
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          {/* Portrait Crop Viewport Box */}
+          {/* Crop Viewport Box */}
           <div
-            className="relative rounded-[28px] border-2 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.75)] overflow-hidden"
+            className={`relative ${
+              isCircle ? "rounded-full" : "rounded-[28px]"
+            } border-2 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.75)] overflow-hidden`}
             style={{
               width: `${viewportWidth}px`,
               height: `${viewportHeight}px`,
@@ -588,7 +611,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
       {/* ── BOTTOM CONTROLS ── */}
       <div className="w-full flex flex-col items-center justify-center px-6 pt-2 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] z-30 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
         <p className="text-[12px] text-white/50 mb-3 tracking-wide select-none">
-          Position how this photo appears on your Home card
+          {subtitle || (isCircle ? "Drag to position, pinch or slide to zoom" : "Position how this photo appears on your Home card")}
         </p>
 
         {/* Zoom Slider */}

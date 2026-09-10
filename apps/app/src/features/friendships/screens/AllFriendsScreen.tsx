@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from "react";
-import { ArrowLeft, Search, MoreVertical, Trash2, User, X } from "lucide-react";
+import { ArrowLeft, MoreVertical, Trash2, User } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
+import { SearchBar } from "../../../shared/components/SearchBar";
 
 interface AllFriendsScreenProps {
   onBack: () => void;
@@ -60,9 +61,10 @@ export const AllFriendsScreen: React.FC<AllFriendsScreenProps> = ({ onBack, onZo
         <div className="flex items-center space-x-3.5">
           <button
             onClick={onBack}
-            className="w-10 h-10 rounded-full border border-white/[0.06] hover:bg-white/[0.03] flex items-center justify-center text-white transition active:scale-95 cursor-pointer"
+            className="w-9 h-9 -ml-1.5 flex items-center justify-center text-white/90 hover:text-white transition active:scale-95 cursor-pointer"
+            title="Back"
           >
-            <ArrowLeft className="w-4.5 h-4.5" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <h1 className="font-sans font-bold text-xl text-white">All Friends</h1>
@@ -74,25 +76,14 @@ export const AllFriendsScreen: React.FC<AllFriendsScreenProps> = ({ onBack, onZo
       </header>
 
       {/* SEARCH BAR */}
-      <div className="px-5 py-3.5">
-        <div className="relative flex items-center">
-          <Search className="absolute left-4 w-4 h-4 text-zinc-550 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search friends..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-11 bg-zinc-950 border border-white/[0.05] rounded-xl pl-11 pr-10 text-sm text-white placeholder-zinc-550 focus:outline-none focus:border-white/[0.12] transition"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3.5 w-6 h-6 rounded-full bg-white/[0.04] flex items-center justify-center text-zinc-400 hover:text-white transition cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
+      <div className="px-5 pt-0.5 pb-2.5 select-none" style={{ boxSizing: 'border-box' }}>
+        <SearchBar
+          id="all-friends-search-input"
+          name="allFriendsSearchInput"
+          placeholder="Search friends..."
+          value={searchQuery}
+          onChange={setSearchQuery}
+        />
       </div>
 
       {/* FRIENDS LIST */}
@@ -110,24 +101,24 @@ export const AllFriendsScreen: React.FC<AllFriendsScreenProps> = ({ onBack, onZo
             </p>
           </div>
         ) : (
-          <div className="space-y-3.5 pt-2">
+          <div className="space-y-1 pt-1">
             {filteredFriends.map((item) => (
               <div
                 key={item.friendshipId}
-                className="relative w-full p-4 bg-[#0A0A0C] border border-white/[0.03] rounded-2xl flex items-center justify-between"
+                className="relative w-full py-2.5 px-1 hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl flex items-center justify-between transition"
               >
-                <div className="flex items-center space-x-3.5">
+                <div className="flex items-center space-x-3.5 min-w-0 flex-1">
                   <UserAvatar
                     src={item.friend?.profile_photo || ""}
                     alt={item.friend?.full_name || "User"}
                     onClick={() => onZoomPhoto?.({ src: item.friend?.profile_photo || "", name: item.friend?.full_name || "User" })}
-                    className="w-11 h-11 rounded-full border border-white/[0.06] object-cover cursor-pointer hover:scale-105 active:scale-95 transition-transform duration-200"
+                    className="w-11 h-11 rounded-full border border-white/[0.06] object-cover cursor-pointer hover:scale-105 active:scale-95 transition-transform duration-200 flex-shrink-0"
                   />
-                  <div>
-                    <h4 className="font-sans font-bold text-sm text-zinc-200">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="font-sans font-bold text-sm text-zinc-200 truncate">
                       {item.friend?.full_name || "User"}
                     </h4>
-                    <p className="text-[11.5px] font-sans font-medium text-zinc-500 mt-0.5 line-clamp-1">
+                    <p className="text-[11.5px] font-sans font-medium text-zinc-500 mt-0.5 line-clamp-1 truncate">
                       {item.friend?.bio || "Always spontaneous, never planless."}
                     </p>
                   </div>

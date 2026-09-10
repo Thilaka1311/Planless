@@ -56,40 +56,38 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
       className="absolute inset-0 bg-[#000000] flex flex-col z-50 select-none"
     >
       {/* HEADER */}
-      <header className="px-5 py-4 border-b border-white/[0.04] flex items-center justify-between">
+      <header className="h-14 shrink-0 bg-[#000000] px-5 flex items-center justify-between z-30 select-none relative">
         <div className="flex items-center space-x-3.5">
           <button
             onClick={onBack}
-            className="w-10 h-10 rounded-full border border-white/[0.06] hover:bg-white/[0.03] flex items-center justify-center text-white transition active:scale-95 cursor-pointer"
+            className="w-9 h-9 -ml-1.5 flex items-center justify-center text-white/90 hover:text-white transition active:scale-95 cursor-pointer"
+            title="Back"
           >
-            <ArrowLeft className="w-4.5 h-4.5" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="font-sans font-bold text-xl text-white">Friend Requests</h1>
-            <p className="text-[11px] font-sans font-medium text-zinc-500 mt-0.5">
-              {incomingRequests.length} pending request{incomingRequests.length === 1 ? "" : "s"}
-            </p>
+            <h1 className="font-sans font-bold text-xl text-white tracking-tight leading-none">Friend Requests</h1>
           </div>
         </div>
       </header>
 
       {/* CONTENT */}
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
         {/* INCOMING REQUESTS SECTION */}
         <div>
-          <h3 className="text-[11px] font-sans font-bold uppercase tracking-wider text-zinc-500 mb-3.5">
-            Incoming Requests
-          </h3>
           {incomingRequests.length === 0 ? (
             <div className="p-6 bg-[#0A0A0C]/50 border border-white/[0.02] border-dashed rounded-2xl text-center">
+              <div className="w-12 h-12 rounded-full bg-zinc-950 border border-white/[0.03] flex items-center justify-center text-zinc-600 mx-auto mb-3">
+                <UserCheck className="w-5 h-5" />
+              </div>
               <p className="text-zinc-600 font-sans font-medium text-xs">No pending friend requests</p>
             </div>
           ) : (
-            <div className="space-y-3.5">
+            <div className="space-y-1">
               {incomingRequests.map((item) => (
                 <div
                   key={item.friendshipId}
-                  className="w-full p-4 bg-[#0A0A0C] border border-white/[0.03] rounded-2xl flex items-center justify-between"
+                  className="w-full py-2.5 px-1 hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl flex items-center justify-between transition"
                 >
                   <div
                     onClick={() => setSelectedIncomingUserForViewer({ userId: item.sender?.id })}
@@ -159,27 +157,27 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
                   animate={{ opacity: 1, height: "auto" }}
                   exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.2 }}
-                  className="space-y-3 pt-3 overflow-hidden"
+                  className="space-y-1 pt-2 overflow-hidden"
                 >
                   {outgoingRequests.map((item) => (
                     <div
                       key={item.friendshipId}
-                      className="w-full p-4 bg-[#0A0A0C]/60 border border-white/[0.03] rounded-2xl flex items-center justify-between"
+                      className="w-full py-2.5 px-1 hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl flex items-center justify-between transition"
                     >
                       <div
                         onClick={() => setSelectedSentUserForViewer({ friendshipId: item.friendshipId, userId: item.recipient?.id })}
-                        className="flex items-center space-x-3.5 flex-1 pr-3 cursor-pointer group"
+                        className="flex items-center space-x-3.5 flex-1 pr-3 cursor-pointer group min-w-0"
                       >
                         <UserAvatar
                           src={item.recipient?.profile_photo || ""}
                           alt={item.recipient?.full_name || "User"}
-                          className="w-10 h-10 rounded-full border border-white/[0.06] object-cover transition-transform duration-200 group-hover:scale-105"
+                          className="w-11 h-11 rounded-full border border-white/[0.06] object-cover transition-transform duration-200 group-hover:scale-105 flex-shrink-0"
                         />
-                        <div>
-                          <h4 className="font-sans font-bold text-sm text-zinc-300 group-hover:text-white transition">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-sans font-bold text-sm text-zinc-300 group-hover:text-white transition truncate">
                             {item.recipient?.full_name}
                           </h4>
-                          <p className="text-[11px] font-sans font-medium text-zinc-550 line-clamp-1">
+                          <p className="text-[11.5px] font-sans font-medium text-zinc-500 line-clamp-1 truncate">
                             {item.recipient?.bio || "Always spontaneous, never planless."}
                           </p>
                         </div>

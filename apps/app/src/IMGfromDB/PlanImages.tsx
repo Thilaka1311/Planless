@@ -50,8 +50,8 @@ export function classifyImageSource(
   }
   const raw = src.trim();
 
-  // If the raw path itself is cached as planimagedefault.png
-  if (getPlanCachedImage(raw) === "planimagedefault.png") {
+  // If the raw path itself is cached as planimagedefault.png or points to obsolete plan-covers
+  if (getPlanCachedImage(raw) === "planimagedefault.png" || raw.includes("plan-covers")) {
     return { sourceType: "LOCAL_DEFAULT", cleanedPath: "" };
   }
 
@@ -113,6 +113,7 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
 }) => {
   const [version, setVersion] = useState<number>(0);
   const [catalogFailed, setCatalogFailed] = useState(false);
+  const [localFailed, setLocalFailed] = useState(false);
 
   // Subscribe to image cache updates
   useEffect(() => {
@@ -130,6 +131,7 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
         evictedPath === "planimagedefault.png"
       ) {
         setCatalogFailed(false);
+        setLocalFailed(false);
         setVersion(newVersion || Date.now());
       }
     });
@@ -138,6 +140,7 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
   // Reset state when src changes
   useEffect(() => {
     setCatalogFailed(false);
+    setLocalFailed(false);
   }, [src]);
 
   const { sourceType, cleanedPath } = useMemo(
@@ -162,6 +165,11 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
     }
 
     // LOCAL_DEFAULT (cover_image absent, deleted, or planimagedefault.png)
+    if (localFailed) {
+      const defaultAsset = getPlanCover(category, subcategory);
+      return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
+    }
+
     const defaultAsset = cleanedPath && (
       cleanedPath.startsWith("/assets/") ||
       cleanedPath.startsWith("/") ||
@@ -171,9 +179,9 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
       cleanedPath.startsWith("https://")
     )
       ? cleanedPath
-      : PLAN_COVER_IMAGES.default;
+      : getPlanCover(category, subcategory);
     return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
-  }, [sourceType, cleanedPath, catalogFailed, category, subcategory, version]);
+  }, [sourceType, cleanedPath, catalogFailed, localFailed, category, subcategory, version]);
 
   const handleLoadSuccess = () => {
     // silent
@@ -183,6 +191,8 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
     // If sourceType is PLAN: DO NOT FALLBACK. Keep failed state visible.
     if (sourceType === "CATALOG") {
       setCatalogFailed(true);
+    } else if (sourceType === "LOCAL_DEFAULT") {
+      setLocalFailed(true);
     }
   };
 
