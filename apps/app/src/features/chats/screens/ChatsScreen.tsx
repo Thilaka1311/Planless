@@ -10,6 +10,7 @@ import { EmptyState } from "../../home/components/EmptyState";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
+import { SearchBar } from "../../../shared/components/SearchBar";
 
 interface ChatsScreenProps {
   onSelectChatPlan: (planId: string) => void;
@@ -337,46 +338,13 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
         className="shrink-0 bg-[#050505] px-4 pt-0.5 pb-2.5 z-20 select-none"
         style={{ boxSizing: 'border-box' }}
       >
-        {/* UNIFIED ELLIPTICAL / PILL-SHAPED SEARCH BOX */}
-        <div
-          className="w-full flex items-center rounded-full bg-[#18181B] border border-white/[0.08] px-3.5 transition-all focus-within:border-white/20 focus-within:bg-[#202024]"
-          style={{ height: '46px' }}
-        >
-          {/* SEARCH ICON */}
-          <Search className="w-5 h-5 text-white/50 stroke-[2] mr-2.5 shrink-0" />
-
-          {/* SEARCH INPUT */}
-          <input
-            id="search-chats-input"
-            name="searchChatsInput"
-            type="text"
-            placeholder="Search chats..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              background: 'transparent',
-              fontSize: 15,
-              fontWeight: 500,
-              color: '#FFFFFF',
-              border: 'none',
-              outline: 'none',
-              fontFamily: 'Inter, sans-serif'
-            }}
-            className="placeholder-zinc-500 min-w-0 select-text"
-          />
-
-          {/* CLEAR SEARCH BUTTON */}
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery("")}
-              className="p-1 text-zinc-400 hover:text-white transition shrink-0 mr-1.5 cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        <SearchBar
+          id="search-chats-input"
+          name="searchChatsInput"
+          placeholder="Search chats..."
+          value={searchQuery}
+          onChange={setSearchQuery}
+        />
       </div>
 
       {/* SCROLLABLE CHATS LIST (Begins below sticky search bar) */}

@@ -11,7 +11,14 @@ export function getGoogleApiKey(): string {
 export async function fetchGoogleApi(url: string, params: URLSearchParams): Promise<any> {
   const response = await fetch(`${url}?${params.toString()}`);
   if (!response.ok) {
-    throw new Error(`Google API returned status ${response.status}`);
+    let errorDetail = `Google API returned status ${response.status}`;
+    try {
+      const errorJson = await response.json();
+      if (errorJson?.error_message) {
+        errorDetail += `: ${errorJson.error_message}`;
+      }
+    } catch {}
+    throw new Error(errorDetail);
   }
   return response.json();
 }

@@ -2,6 +2,7 @@ import React from "react";
 import { Home, Calendar, Plus, MessageSquare } from "lucide-react";
 import { UserAvatar } from "../IMGfromDB/UserAvatar";
 import { useProfileStore } from "../features/profile/state/ProfileContext";
+import { useFriendshipStore } from "../features/friendships/state/FriendshipContext";
 
 interface NavigationFooterProps {
   activeTab: string;
@@ -15,6 +16,8 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
   homeBadgeCount,
 }) => {
   const { userProfile, activeUserUuid, activeUserId, dbUsers } = useProfileStore();
+  const { incomingRequests } = useFriendshipStore();
+  const hasIncomingRequests = incomingRequests && incomingRequests.length > 0;
 
   const currentUser = React.useMemo(() => {
     return dbUsers.find(u => u.id === activeUserUuid || u.user_id === activeUserId);
@@ -76,17 +79,22 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
         onClick={() => { setActiveTab("profile"); }}
         className={`flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer ${activeTab === "profile" ? "text-[#ff8b66]" : "text-zinc-500 hover:text-zinc-300"}`}
       >
-        <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
-          activeTab === "profile"
-            ? "ring-2 ring-[#ff8b66] ring-offset-1 ring-offset-[#09090b]"
-            : "opacity-75 hover:opacity-100"
-        }`}>
-          <UserAvatar
-            src={profilePhotoSrc}
-            alt={userProfile?.name || "Profile"}
-            size="w-6 h-6"
-            className="rounded-full object-cover"
-          />
+        <div className="relative">
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+            activeTab === "profile"
+              ? "ring-2 ring-[#ff8b66] ring-offset-1 ring-offset-[#09090b]"
+              : "opacity-75 hover:opacity-100"
+          }`}>
+            <UserAvatar
+              src={profilePhotoSrc}
+              alt={userProfile?.name || "Profile"}
+              size="w-6 h-6"
+              className="rounded-full object-cover"
+            />
+          </div>
+          {hasIncomingRequests && (
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#EF4444] ring-2 ring-[#09090b]" />
+          )}
         </div>
         <span className="text-[10.5px] font-sans tracking-wide mt-1 font-medium">Profile</span>
       </button>

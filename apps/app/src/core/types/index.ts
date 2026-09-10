@@ -12,6 +12,7 @@ export interface User {
   username: string;
   full_name: string;
   phone_number: string;
+  email?: string;
   password_hash?: string;
   profile_photo?: string;
   profile_url?: string;

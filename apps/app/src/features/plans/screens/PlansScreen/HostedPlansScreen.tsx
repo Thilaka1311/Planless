@@ -250,7 +250,7 @@ export const HostedPlansScreen = React.memo(({
     if (activeSections.length === 0) {
       return (
         <EmptyState
-          icon={<Sparkles className="w-8 h-8 text-amber-400 stroke-[1.5]" />}
+          icon={<Sparkles className="w-8 h-8 text-white stroke-[1.5]" />}
           title="You haven't hosted a plan yet"
           description="Host a plan to see it here"
           py="py-12"
@@ -294,7 +294,7 @@ export const HostedPlansScreen = React.memo(({
   return (
     <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none justify-between">
       {/* Header matching main screen black background */}
-      <div className="bg-[#050505] px-6 py-3.5 flex items-center justify-between flex-shrink-0 pt-[calc(0.875rem+env(safe-area-inset-top,0px))]">
+      <div className="bg-[#050505] px-6 py-3.5 flex items-center gap-3 flex-shrink-0 pt-[calc(0.875rem+env(safe-area-inset-top,0px))]">
         <button
           type="button"
           onClick={onBack}
@@ -302,10 +302,9 @@ export const HostedPlansScreen = React.memo(({
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-base font-bold text-white tracking-wide text-center">
+        <h1 className="text-base font-bold text-white tracking-wide text-left">
           Hosted Plans
         </h1>
-        <div className="w-5" />
       </div>
 
       {/* Scrollable Content Container */}

@@ -7,7 +7,7 @@ import { getOrCreatePlanInvite, buildInviteUrl } from "../../plans/services/plan
 
 // Hooks & utils
 import { useCreatePlanForm } from "../hooks/useCreatePlanForm";
-import { getCategoryImage } from "../utils/constants";
+import { getPlanCover } from "../../plans/config/planCoverImages";
 import { formatDateTimeStandard } from "../../../shared/components/NativeDateTimeField";
 
 // Sub-components
@@ -122,7 +122,7 @@ export const CreatePlanScreen = ({
         } as React.CSSProperties}
       >
         <DiscoveryImages
-          src={getCategoryImage(selectedCategory, selectedSubcategory)}
+          src={getPlanCover(selectedCategory, selectedSubcategory)}
           category={selectedCategory}
           alt="Activity Cover"
           className="absolute inset-0 w-full h-full object-cover brightness-[0.7] contrast-110 select-none"
@@ -272,8 +272,8 @@ export const CreatePlanScreen = ({
         form.customCoverImage === 'custom_draft_blob')
     );
     const coverUrl = isLocalCustomImage
-      ? getCategoryImage(selectedCategory, selectedSubcategory)
-      : (form.customOriginalImage || form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory));
+      ? getPlanCover(selectedCategory, selectedSubcategory)
+      : (form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory));
 
     let hoursOffset = 0;
     let isPlanStart = false;
@@ -414,7 +414,7 @@ export const CreatePlanScreen = ({
     return (
       <WhenIsPlanScreen
         form={form}
-        coverImage={form.customOriginalImage || form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory)}
+        coverImage={form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory)}
         title={form.localTitle || "New Activity"}
         onBack={() => {
           if (cameFromReview) {

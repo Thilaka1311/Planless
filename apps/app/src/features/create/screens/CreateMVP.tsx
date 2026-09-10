@@ -6,7 +6,7 @@ import { getOrCreatePlanInvite, buildInviteUrl } from "../../plans/services/plan
 
 // Hooks & utils
 import { useCreatePlanForm } from "../hooks/useCreatePlanForm";
-import { getCategoryImage } from "../utils/constants";
+import { getPlanCover } from "../../plans/config/planCoverImages";
 import { formatDateTimeStandard } from "../../../shared/components/NativeDateTimeField";
 
 // Sub-components
@@ -223,8 +223,8 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
         form.customCoverImage === 'custom_draft_blob')
     );
     const coverUrl = isLocalCustomImage
-      ? getCategoryImage(selectedCategory, selectedSubcategory)
-      : (form.customOriginalImage || form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory));
+      ? getPlanCover(selectedCategory, selectedSubcategory)
+      : (form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory));
 
     let hoursOffset = 0;
     let isPlanStart = false;
@@ -283,7 +283,7 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
       public_id: planId,
       discovery_item_id: form.discoveryItemId || null,
       category: dbCategory,
-      subcategory: "OTHER",
+      subcategory: selectedSubcategory ? selectedSubcategory.toUpperCase() : "OTHER",
       title: titleToUse,
       place_id: form.placeId || null,
       place_name: locationToUse,
@@ -473,7 +473,7 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
       <div className="flex-1 flex flex-col relative h-full bg-[#000000] overflow-hidden text-left">
         <WhenIsPlanScreen
           form={form}
-          coverImage={form.customOriginalImage || form.customCoverImage || getCategoryImage(selectedCategory, selectedSubcategory)}
+          coverImage={form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory)}
           title={form.localTitle || "New Activity"}
           onBack={() => {
             transitionToPhase("review");

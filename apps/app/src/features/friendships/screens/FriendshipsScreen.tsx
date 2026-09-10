@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { ArrowLeft, ChevronRight, UserPlus, Users, UserCheck, X, Search } from "lucide-react";
+import { ArrowLeft, ChevronRight, UserRoundPlus, Users, UserRoundCheck, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
@@ -10,6 +10,7 @@ import { FriendRequestsScreen } from "./FriendRequestsScreen";
 import { AllFriendsScreen } from "./AllFriendsScreen";
 import { DiscoverFriends } from "./DiscoverFriends";
 import { FriendProfileViewerBottomSheet } from "../components/FriendProfileViewerBottomSheet";
+import { SearchBar } from "../../../shared/components/SearchBar";
 
 interface FriendshipsScreenProps {
   onBack: () => void;
@@ -139,91 +140,82 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
       {/* 1. MAIN FRIENDS HUB SCREEN */}
       {activeScreen === "hub" && (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
-          {/* HEADER */}
-          <header className="px-5 py-4 border-b border-white/[0.04] flex items-center justify-between flex-shrink-0">
-            <div className="flex items-center space-x-3.5">
+          {/* STICKY HEADER (Back button, Friends title, Discover button) */}
+          <header className="h-14 shrink-0 bg-[#000000] px-5 flex items-center justify-between z-30 select-none relative">
+            <div className="flex items-center space-x-3">
               <button
                 onClick={onBack}
-                className="w-10 h-10 rounded-full border border-white/[0.06] hover:bg-white/[0.03] flex items-center justify-center text-white transition active:scale-95 cursor-pointer"
+                className="w-9 h-9 -ml-1.5 flex items-center justify-center text-white/90 hover:text-white transition active:scale-95 cursor-pointer"
+                title="Back"
               >
-                <ArrowLeft className="w-4.5 h-4.5" />
+                <ArrowLeft className="w-5 h-5" />
               </button>
               <div>
-                <h1 className="font-sans font-bold text-xl text-white">Friends</h1>
+                <h1 className="font-sans font-bold text-xl text-white tracking-tight leading-none">Friends</h1>
               </div>
             </div>
             <button
-              onClick={() => setActiveScreen("discover")}
-              className="w-10 h-10 rounded-full border border-white/[0.06] hover:bg-white/[0.03] flex items-center justify-center text-white transition active:scale-95 cursor-pointer"
-              title="Discover People"
+              onClick={() => setActiveScreen("requests")}
+              className="w-9 h-9 -mr-1 flex items-center justify-center text-white/90 hover:text-white transition active:scale-95 cursor-pointer relative"
+              title="Friend Requests"
             >
-              <UserPlus className="w-4.5 h-4.5" />
+              <UserRoundCheck className="w-5 h-5" />
+              {incomingRequests.length > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#EF4444] ring-2 ring-black" />
+              )}
             </button>
           </header>
 
-          {/* HUB CONTENT */}
-          <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
-            {/* 1. INLINE SEARCH FRIENDS BAR */}
-            <div className="relative flex items-center">
-              <Search className="absolute left-4 w-4 h-4 text-zinc-550 pointer-events-none" />
-              <input
-                type="text"
+          {/* SCROLLABLE CONTENT (Search bar, Discover Friends, Friends list) */}
+          <div className="flex-1 overflow-y-auto px-5 pt-0.5 pb-8 space-y-4">
+            {/* SEARCH FRIENDS BAR (Scrolls with content) */}
+            <div
+              className="pt-0.5 pb-1 select-none"
+              style={{ boxSizing: 'border-box' }}
+            >
+              <SearchBar
+                id="search-friends-input"
+                name="searchFriendsInput"
                 placeholder="Search friends..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-11 bg-zinc-950 border border-white/[0.05] rounded-xl pl-11 pr-10 text-sm text-white placeholder-zinc-550 focus:outline-none focus:border-white/[0.12] transition"
+                onChange={setSearchQuery}
               />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3.5 w-6 h-6 rounded-full bg-white/[0.04] flex items-center justify-center text-zinc-400 hover:text-white transition cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
             </div>
 
-            {/* 2. FRIEND REQUESTS ROW (Hidden when searchQuery is non-empty) */}
+            {/* 2. DISCOVER FRIENDS ROW (Hidden when searchQuery is non-empty) */}
             {searchQuery === "" && (
               <button
-                onClick={() => setActiveScreen("requests")}
-                className="w-full p-4 bg-[#0A0A0C] hover:bg-[#111115] border border-white/[0.04] rounded-2xl flex items-center justify-between transition active:scale-[0.99] cursor-pointer text-left group"
+                onClick={() => setActiveScreen("discover")}
+                className="w-full py-2.5 px-1 flex items-center justify-between hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl transition cursor-pointer text-left group"
               >
-                <div className="flex items-center space-x-3.5">
-                  <div className="w-11 h-11 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-white flex-shrink-0 relative">
-                    <UserCheck className="w-5 h-5" />
-                    {incomingRequests.length > 0 && (
-                      <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#FF6B2C] text-white font-sans font-bold text-[10px] flex items-center justify-center border-2 border-black">
-                        {incomingRequests.length}
-                      </span>
-                    )}
+                <div className="flex items-center space-x-3.5 min-w-0 flex-1">
+                  <div className="w-11 h-11 flex items-center justify-center text-white/90 group-hover:text-white flex-shrink-0 transition-colors">
+                    <UserRoundPlus className="w-5 h-5" />
                   </div>
-                  <div>
-                    <h3 className="font-sans font-bold text-sm text-zinc-100 group-hover:text-white transition">
-                      Friend Requests
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-sans font-bold text-sm text-zinc-100 group-hover:text-white transition truncate">
+                      Discover Friends
                     </h3>
-                    <p className="text-[11.5px] font-sans font-medium text-zinc-500 mt-0.5">
-                      {incomingRequests.length > 0
-                        ? `Approve or ignore requests (${incomingRequests.length})`
-                        : "Approve or ignore requests"}
+                    <p className="text-[11.5px] font-sans font-medium text-zinc-500 mt-0.5 truncate">
+                      Find and connect with people
                     </p>
                   </div>
                 </div>
 
-                <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition" />
+                <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition flex-shrink-0 ml-2" />
               </button>
             )}
 
             {/* 3. FRIENDS LIST */}
             <div>
-              <div className="flex items-center justify-between mb-3.5 px-0.5">
+              <div className="flex items-center justify-between mb-2 px-1">
                 <h3 className="text-[11px] font-sans font-bold uppercase tracking-wider text-zinc-500">
                   Friends ({filteredFriends.length})
                 </h3>
               </div>
 
               {filteredFriends.length === 0 ? (
-                <div className="p-6 bg-[#0A0A0C]/50 border border-white/[0.02] border-dashed rounded-2xl text-center">
+                <div className="py-8 px-4 text-center">
                   <div className="w-12 h-12 rounded-full bg-zinc-950 border border-white/[0.03] flex items-center justify-center text-zinc-600 mx-auto mb-3">
                     <Users className="w-5 h-5" />
                   </div>
@@ -235,24 +227,24 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-1">
                   {filteredFriends.map((item) => (
                     <div
                       key={item.friendshipId}
                       onClick={() => setSelectedFriendForViewer({ friendshipId: item.friendshipId, userId: item.friend?.id })}
-                      className="w-full p-4 bg-[#0A0A0C] hover:bg-[#111115] border border-white/[0.03] rounded-2xl flex items-center justify-between transition cursor-pointer active:scale-[0.99] group"
+                      className="w-full py-2.5 px-1 flex items-center justify-between hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl transition cursor-pointer group select-none text-left"
                     >
-                      <div className="flex items-center space-x-3.5">
+                      <div className="flex items-center space-x-3.5 min-w-0 flex-1">
                         <UserAvatar
                           src={item.friend?.profile_photo || ""}
                           alt={item.friend?.full_name || "User"}
-                          className="w-11 h-11 rounded-full border border-white/[0.06] object-cover transition-transform duration-200"
+                          className="w-11 h-11 rounded-full border border-white/[0.06] object-cover transition-transform duration-200 flex-shrink-0"
                         />
-                        <div>
-                          <h4 className="font-sans font-bold text-sm text-zinc-200 group-hover:text-white transition">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-sans font-bold text-sm text-zinc-200 group-hover:text-white transition truncate">
                             {item.friend?.full_name || "User"}
                           </h4>
-                          <p className="text-[11.5px] font-sans font-medium text-zinc-500 mt-0.5 line-clamp-1">
+                          <p className="text-[11.5px] font-sans font-medium text-zinc-500 mt-0.5 line-clamp-1 truncate">
                             {item.friend?.bio || "Always spontaneous, never planless."}
                           </p>
                         </div>

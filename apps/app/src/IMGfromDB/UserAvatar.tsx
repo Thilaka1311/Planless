@@ -1,5 +1,5 @@
 import React from "react";
-import { resolveImage, evictImageCache, ImageType } from "../shared/imaging/imageResolver";
+import { resolveImage, evictImageCache, subscribeToImageCache, ImageType } from "../shared/imaging/imageResolver";
 
 interface UserAvatarProps {
   /** The user's uploaded profile image URL. Empty string or null → default avatar. */
@@ -39,6 +39,17 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
   // Sync when src prop changes (e.g. after upload)
   React.useEffect(() => {
     setImgSrc(resolveImage(src, ImageType.Avatar));
+  }, [src]);
+
+  // Subscribe to image cache updates (cache busting / eviction)
+  React.useEffect(() => {
+    if (!src) return;
+    const unsubscribe = subscribeToImageCache((path) => {
+      if (!path || path === src || src.includes(path) || path.includes(src)) {
+        setImgSrc(resolveImage(src, ImageType.Avatar));
+      }
+    });
+    return unsubscribe;
   }, [src]);
 
   const handleError = () => {

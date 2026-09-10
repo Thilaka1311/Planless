@@ -1,19 +1,25 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Mail,
   Users,
   LogOut,
-  History
+  History,
+  Camera,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
-import { AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useProfileStore } from "../state/ProfileContext";
 import { useFriendshipStore } from "../../friendships/state/FriendshipContext";
 import { UserProfile } from "../../../core/types";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
+import { useProfileUpload } from "../hooks/useProfileUpload";
+import { validateImageFile } from "../../../shared/imaging/imagePipeline";
 import { FriendshipsScreen } from "../../friendships/screens/FriendshipsScreen";
 import { Name } from "./Name";
 import { About } from "./About";
 import { PastPlans } from "./PastPlans";
+import { PlanImageEditorModal } from "../../create/components/PlanImageEditorModal";
 
 interface ProfileScreenProps {
   onLogout: () => void;
@@ -30,18 +36,104 @@ export const ProfileScreen = ({
   onToggleBottomNav,
   onOpenPastPlans,
 }: ProfileScreenProps) => {
-  const { userProfile, activeUserId, activeUserUuid, updateProfile, dbUsers, setDbUsers } = useProfileStore();
-  const { friendCount } = useFriendshipStore();
+  const {
+    userProfile,
+    activeUserId,
+    activeUserUuid,
+    updateProfile,
+    updateProfileName,
+    updateProfileBio,
+    updateProfileAvatar,
+    dbUsers,
+    setDbUsers
+  } = useProfileStore();
+  const { friendCount, incomingRequests } = useFriendshipStore();
+  const hasIncomingRequests = incomingRequests && incomingRequests.length > 0;
+  const { uploadImage, uploading: isUploadingAvatar, uploadError } = useProfileUpload();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadSeqRef = useRef(0);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  // Profile photo editor state
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [isCropEditorOpen, setIsCropEditorOpen] = useState(false);
 
   const currentUser = dbUsers.find(u => u.id === activeUserUuid || u.user_id === activeUserId);
 
   // Sub-sheet states for inline edit flows (Name, About, Friends, Past Plans, Logout)
   const [activeSheet, setActiveSheet] = useState<'pastPlans' | 'logout' | 'friends' | 'editName' | 'editAbout' | null>(null);
 
+  // Step 1: User selects file from device -> open editor immediately if valid
+  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    const validationErr = validateImageFile(file);
+    if (validationErr) {
+      setAvatarError(validationErr);
+      return;
+    }
+
+    setAvatarError(null);
+    setSelectedImageFile(file);
+    setIsCropEditorOpen(true);
+  };
+
+  // Step 3: User confirms circular crop in PlanImageEditorModal -> upload & persist
+  const handleSaveAvatarCrop = async ({
+    blob,
+    previewUrl,
+  }: {
+    previewUrl: string;
+    blob: Blob;
+    originalBlob: Blob | null;
+    originalPreviewUrl: string;
+    width: number;
+    height: number;
+  }) => {
+    setIsCropEditorOpen(false);
+    setSelectedImageFile(null);
+
+    const currentSeq = ++uploadSeqRef.current;
+    const prevAvatar = userProfile?.avatar || "";
+
+    // 1. Update UI and local cache immediately (0ms optimistic latency)
+    updateProfileAvatar(previewUrl);
+    setAvatarError(null);
+
+    try {
+      // 2. Upload cropped WebP to Supabase Storage in background
+      const storagePath = await uploadImage(blob, activeUserUuid);
+      if (!storagePath) {
+        throw new Error(uploadError || "Upload failed");
+      }
+
+      // If another upload started while this was in flight, do not overwrite with stale image
+      if (currentSeq !== uploadSeqRef.current) {
+        return;
+      }
+
+      // 3. Persist storage path in DB and bust cache
+      await updateProfileAvatar(storagePath);
+    } catch (err: any) {
+      if (currentSeq !== uploadSeqRef.current) {
+        return;
+      }
+      console.error("[ProfileScreen] Failed to save new avatar:", err);
+      setAvatarError("Failed to update profile photo. Reverting...");
+      if (prevAvatar) {
+        updateProfileAvatar(prevAvatar);
+      }
+    }
+  };
+
   // Keep footer navigation opening the main Profile page directly
   useEffect(() => {
     const handleProfileNavClick = () => {
       setActiveSheet(null);
+      setIsCropEditorOpen(false);
     };
     const profileBtn = document.getElementById('nav_item_profile');
     if (profileBtn) {
@@ -50,16 +142,16 @@ export const ProfileScreen = ({
     }
   }, []);
 
-  // Hide bottom navigation only when a modal/overlay sub-screen is actively open
+  // Hide bottom navigation only when a modal/overlay sub-screen or crop editor is actively open
   useEffect(() => {
-    onToggleBottomNav?.(activeSheet !== null);
+    onToggleBottomNav?.(activeSheet !== null || isCropEditorOpen);
     return () => {
       onToggleBottomNav?.(false);
     };
-  }, [activeSheet, onToggleBottomNav]);
+  }, [activeSheet, isCropEditorOpen, onToggleBottomNav]);
 
   // Email calculation
-  const emailDisplay = userProfile?.phone || (userProfile as any)?.email || currentUser?.email || "thilakasundar1311@gmail.com";
+  const emailDisplay = userProfile?.phone || (userProfile as any)?.email || (currentUser as any)?.email || "thilakasundar1311@gmail.com";
 
   return (
     <div className="flex-1 flex flex-col relative overflow-hidden h-full bg-black">
@@ -67,14 +159,50 @@ export const ProfileScreen = ({
       <div className="flex-1 overflow-y-auto scrollbar-none pb-28">
         <div className="w-full px-6 pt-[calc(4.5rem+env(safe-area-inset-top,0px))] flex flex-col items-center">
 
-          {/* LARGE CENTRED PROFILE PICTURE (Non-clickable static UI element) */}
-          <div className="relative w-[136px] h-[136px] rounded-full mb-4 select-none">
-            <UserAvatar
-              src={userProfile?.avatar}
-              alt={userProfile?.name || "User"}
-              size="w-full h-full"
+          {/* LARGE CENTRED PROFILE PICTURE (Interactive with instant optimistic preview & camera badge) */}
+          <div className="relative w-[136px] h-[136px] rounded-full mb-4 select-none group">
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full h-full rounded-full overflow-hidden cursor-pointer active:scale-[0.98] transition relative shadow-lg shadow-black/40 ring-2 ring-white/10 group-hover:ring-[#FF6B2C]/50"
+              title="Change profile photo"
+            >
+              <UserAvatar
+                src={userProfile?.avatar}
+                alt={userProfile?.name || "User"}
+                size="w-full h-full"
+              />
+              {isUploadingAvatar && (
+                <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] rounded-full flex items-center justify-center">
+                  <Loader2 className="w-7 h-7 text-[#FF6B2C] animate-spin" />
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploadingAvatar}
+              className="absolute bottom-1 right-1 w-9 h-9 rounded-full bg-[#FF6B2C] hover:bg-[#FF8552] border-2 border-black flex items-center justify-center text-white shadow-xl transition active:scale-90 cursor-pointer group-hover:scale-105"
+              aria-label="Change profile photo"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleAvatarFileSelect}
+              className="hidden"
             />
           </div>
+
+          {avatarError && (
+            <div className="mb-3 px-3 py-1 rounded-lg bg-red-950/40 border border-red-500/20 text-red-400 text-xs flex items-center gap-1.5 animate-fade-in">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>{avatarError}</span>
+            </div>
+          )}
 
           {/* NAME AND BIO HEADER SECTIONS (Tappable to edit) */}
           <div className="text-center select-none max-w-[280px] flex flex-col items-center">
@@ -98,12 +226,15 @@ export const ProfileScreen = ({
           <button
             type="button"
             onClick={() => setActiveSheet('friends')}
-            className="flex items-center gap-2.5 px-5 py-2.5 rounded-2xl bg-zinc-900/70 border border-white/[0.05] hover:border-white/[0.10] hover:bg-zinc-900 transition active:scale-[0.97] cursor-pointer group select-none mb-6"
+            className="relative flex items-center gap-2.5 px-5 py-2.5 rounded-2xl bg-zinc-900/70 border border-white/[0.05] hover:border-white/[0.10] hover:bg-zinc-900 transition active:scale-[0.97] cursor-pointer group select-none mb-6"
           >
             <Users className="w-4 h-4 text-zinc-400 group-hover:text-white transition" />
             <span className="font-sans font-semibold text-[13px] text-zinc-200">
               {friendCount} {friendCount === 1 ? 'Friend' : 'Friends'}
             </span>
+            {hasIncomingRequests && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#EF4444] ring-2 ring-black" />
+            )}
           </button>
 
           {/* PROFILE OPTIONS: Email, Past Plans, Logout */}
@@ -181,43 +312,99 @@ export const ProfileScreen = ({
           />
         )}
 
-        {/* 2. LOGOUT MODAL OVERLAY */}
+        {/* 2. LOGOUT BOTTOM SHEET */}
         {activeSheet === 'logout' && (
-          <div className="absolute inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-6" onClick={() => setActiveSheet(null)}>
-            <div
-              className="w-full max-w-[280px] bg-[#0A0A0C] border border-white/10 rounded-2xl p-5 text-center shadow-2xl relative select-none"
+          <>
+            {/* Dimmed Backdrop Overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setActiveSheet(null)}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 pointer-events-auto"
+            />
+
+            {/* Bottom Sheet */}
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 w-full z-50 pointer-events-auto select-none"
+              style={{
+                background: "#1C1C1E",
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+                padding: "16px 20px 24px",
+                boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.3)",
+                paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
+              }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="w-12 h-12 rounded-full bg-[#FF4F00]/10 border border-[#FF4F00]/20 flex items-center justify-center text-[#FF4F00] mx-auto mb-3.5">
-                <LogOut className="w-5 h-5 ml-0.5" />
+              {/* Drag Handle */}
+              <div className="flex justify-center mb-4">
+                <div
+                  style={{
+                    width: 36,
+                    height: 5,
+                    borderRadius: 2.5,
+                    background: "rgba(255, 255, 255, 0.2)",
+                  }}
+                />
               </div>
 
-              <h3 className="font-sans font-bold text-base text-white mb-1.5">Sign Out?</h3>
-              <p className="text-zinc-550 text-xs leading-normal mb-5">
-                Are you sure you want to end your current spontaneous plan-making session?
-              </p>
+              {/* Text Content */}
+              <div className="mb-5">
+                <h3 className="font-sans font-bold text-lg text-white mb-1 tracking-tight">
+                  Log out?
+                </h3>
+                <p className="text-zinc-400 font-sans text-sm leading-normal">
+                  Your plans will be here when you come back.
+                </p>
+              </div>
 
-              <div className="flex gap-2.5">
+              {/* Actions */}
+              <div className="flex flex-col items-center w-full pt-1">
+                {/* Primary Action: Log out */}
                 <button
-                  onClick={() => setActiveSheet(null)}
-                  className="flex-1 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-850 border border-white/5 text-zinc-350 hover:text-white font-semibold text-xs tracking-wide transition active:scale-95 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
+                  type="button"
                   onClick={() => {
                     setActiveSheet(null);
                     setTimeout(() => {
                       onLogout();
-                    }, 500);
+                    }, 250);
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-[#D95A23] hover:bg-[#FF6B2C] text-white font-semibold text-xs tracking-wide transition active:scale-95 cursor-pointer"
+                  className="w-full h-12 rounded-xl text-center font-sans font-semibold text-[15px] text-white active:scale-[0.98] transition-transform cursor-pointer flex items-center justify-center border-none shadow-sm"
+                  style={{ background: "#EF4444" }}
                 >
-                  Logout
+                  Log out
+                </button>
+
+                {/* Secondary Action: Cancel */}
+                <button
+                  type="button"
+                  onClick={() => setActiveSheet(null)}
+                  className="w-full text-center font-sans font-medium text-[14px] text-white/40 hover:text-white/60 active:opacity-70 transition cursor-pointer"
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255, 255, 255, 0.4)',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    marginTop: 8,
+                  }}
+                >
+                  Cancel
                 </button>
               </div>
-            </div>
-          </div>
+            </motion.div>
+          </>
         )}
 
         {/* 3. FRIENDS SCREEN */}
@@ -232,11 +419,10 @@ export const ProfileScreen = ({
             currentValue={userProfile?.name || ""}
             onBack={() => setActiveSheet(null)}
             onSaveSuccess={(newName) => {
-              setDbUsers(prev => prev.map(u => u.id === activeUserUuid ? { ...u, full_name: newName } : u));
-              if (userProfile) {
-                updateProfile({ ...userProfile, name: newName });
-              }
               setActiveSheet(null);
+              updateProfileName(newName).catch(err => {
+                console.error("[ProfileScreen] Failed to save name:", err);
+              });
             }}
           />
         )}
@@ -248,16 +434,29 @@ export const ProfileScreen = ({
             currentValue={userProfile?.bio || ""}
             onBack={() => setActiveSheet(null)}
             onSaveSuccess={(newBio) => {
-              setDbUsers(prev => prev.map(u => u.id === activeUserUuid ? { ...u, bio: newBio } : u));
-              if (userProfile) {
-                updateProfile({ ...userProfile, bio: newBio });
-              }
               setActiveSheet(null);
+              updateProfileBio(newBio).catch(err => {
+                console.error("[ProfileScreen] Failed to save bio:", err);
+              });
             }}
           />
         )}
 
       </AnimatePresence>
+
+      {/* 6. PROFILE PHOTO CROP & MOVE EDITOR (Reusing PlanImageEditorModal with circular crop) */}
+      <PlanImageEditorModal
+        imageSrc={selectedImageFile}
+        isOpen={isCropEditorOpen}
+        cropShape="circle"
+        title="Move and Scale"
+        subtitle="Drag to position, pinch or slide to zoom"
+        onClose={() => {
+          setIsCropEditorOpen(false);
+          setSelectedImageFile(null);
+        }}
+        onSave={handleSaveAvatarCrop}
+      />
 
     </div>
   );
