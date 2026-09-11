@@ -1,0 +1,76 @@
+import React from "react";
+import { motion } from "motion/react";
+import planlessLogo from "../../../../assets/planless_logo.png";
+
+export interface PlanlessProps {
+  onGetStarted: () => void;
+  onLogin?: () => void;
+  className?: string;
+}
+
+export function Planless({
+  onGetStarted,
+  className = "",
+}: PlanlessProps) {
+  return (
+    <div
+      id="planless_entry_screen"
+      className={`w-full h-full text-white bg-[#000000] flex flex-col justify-between items-center font-sans relative overflow-hidden select-none px-5 xs:px-6 sm:px-8 pt-[max(1.75rem,env(safe-area-inset-top))] pb-[max(1.75rem,env(safe-area-inset-bottom))] ${className}`}
+    >
+      {/* Centered Top & Middle Section: PLANLESS Title + Planless Logo */}
+      <div className="flex-1 w-full max-w-sm mx-auto flex flex-col items-center justify-center min-h-0 py-6 sm:py-8">
+        {/* Title: PLANLESS */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="w-full flex justify-center mb-8 xs:mb-10 sm:mb-12"
+        >
+          <h1 className="text-[13px] xs:text-[14px] sm:text-[15px] font-sans font-bold uppercase tracking-[0.42em] text-white/85 text-center select-none">
+            PLANLESS
+          </h1>
+        </motion.div>
+
+        {/* Existing Planless Logo */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.92 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.6, delay: 0.1, ease: "easeOut" }}
+          className="relative flex items-center justify-center"
+        >
+          {/* Subtle Ambient Brand Glow */}
+          <div className="absolute -inset-4 sm:-inset-6 bg-[#FF6B2C]/15 rounded-[36px] sm:rounded-[44px] blur-2xl pointer-events-none" />
+
+          {/* Logo Card */}
+          <div className="relative z-10 w-28 h-28 xs:w-32 xs:h-32 sm:w-36 sm:h-36 rounded-[26px] xs:rounded-[30px] sm:rounded-[34px] overflow-hidden border border-white/[0.12] shadow-2xl shadow-black/90 flex items-center justify-center bg-[#000000]">
+            <img
+              src={planlessLogo}
+              alt="Planless Logo"
+              className="w-full h-full object-cover select-none pointer-events-none"
+            />
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Bottom Actions Section: Get Started (Primary Action) */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+        className="w-full max-w-sm mx-auto flex flex-col gap-2.5 shrink-0 pt-2"
+      >
+        {/* Primary Action: Get Started */}
+        <button
+          id="btn_entry_get_started"
+          type="button"
+          onClick={onGetStarted}
+          className="w-full py-3 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-semibold text-[14px] xs:text-[14.5px] sm:text-[15px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center shadow-md shadow-[#FF6B2C]/20"
+        >
+          Get Started
+        </button>
+      </motion.div>
+    </div>
+  );
+}
+
+export default Planless;

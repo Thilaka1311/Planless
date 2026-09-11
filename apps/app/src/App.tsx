@@ -272,6 +272,9 @@ function AppContent({
   const handleOnboardingComplete = (newProfile: UserProfile) => {
     setUserProfile(newProfile);
     localStorage.setItem(localStorageKey, JSON.stringify(newProfile));
+    try {
+      localStorage.removeItem("planless_onboarding_screen");
+    } catch {}
     setAppState("ready");
   };
 
@@ -283,6 +286,9 @@ function AppContent({
     }
     setUserProfile(null);
     localStorage.removeItem(localStorageKey);
+    try {
+      localStorage.removeItem("planless_onboarding_screen");
+    } catch {}
     setAppState("unauthenticated");
   };
 
@@ -355,7 +361,7 @@ function AppContent({
             <div className="flex-1 overflow-hidden relative">
               <OnboardingFlow
                 onComplete={handleOnboardingComplete}
-                initialStep={(userProfile && lastInitializedUserIdRef.current) ? "PROFILE_SETUP" : "LANDING"}
+                initialStep={(userProfile && lastInitializedUserIdRef.current) ? "PROFILE_SETUP" : "ENTRY"}
                 existingProfile={lastInitializedUserIdRef.current ? userProfile : null}
               />
             </div>
