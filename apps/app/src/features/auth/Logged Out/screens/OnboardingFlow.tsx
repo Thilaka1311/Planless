@@ -38,35 +38,13 @@ function getInitialOnboardingState(initialStep: OnboardingStep): {
     };
   }
 
+  // Clear any stale persisted screen so logged-out flow always starts at Planless welcome page
   try {
-    const saved = localStorage.getItem(ONBOARDING_SCREEN_KEY);
-    if (saved === "complicated") {
-      return {
-        step: "LANDING",
-        onboardingIndex: 0,
-        authSource: "ENTRY",
-      };
-    }
-    if (saved === "solution") {
-      return {
-        step: "LANDING",
-        onboardingIndex: 1,
-        authSource: "LANDING",
-      };
-    }
-    if (saved === "login" || saved === "email") {
-      return {
-        step: "EMAIL_INPUT",
-        onboardingIndex: 0,
-        authSource: "ENTRY",
-      };
-    }
-  } catch (err) {
-    console.warn("[Onboarding] Failed to read saved onboarding step:", err);
-  }
+    localStorage.removeItem(ONBOARDING_SCREEN_KEY);
+  } catch {}
 
   return {
-    step: initialStep,
+    step: "ENTRY",
     onboardingIndex: 0,
     authSource: "ENTRY",
   };
@@ -123,6 +101,14 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
 
   // Handlers for Planless entry screen
   const handleStart = () => {
+    persistScreen("complicated");
+    setAuthSource("LANDING");
+    setOnboardingIndex(0);
+    setErrorMessage("");
+    setStep("LANDING");
+  };
+
+  const handleAlreadyHaveAccount = () => {
     persistScreen("login");
     setAuthSource("ENTRY");
     setErrorMessage("");
@@ -244,7 +230,6 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
   const handleSolutionNext = () => {
     persistScreen("login");
     setAuthSource("LANDING");
-    setAuthMode("login");
     setErrorMessage("");
     setStep("EMAIL_INPUT");
   };
@@ -521,10 +506,11 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
         }`}
       >
 
-        {/* 1. ENTRY STEP: WELCOME SCREEN (PLANLESS, LOGO, GET STARTED) */}
+        {/* 1. ENTRY STEP: WELCOME SCREEN (PLANLESS, LOGO, GET STARTED, ALREADY HAVE AN ACCOUNT) */}
         {step === "ENTRY" && (
           <Planless
             onGetStarted={handleStart}
+            onLogin={handleAlreadyHaveAccount}
           />
         )}
 

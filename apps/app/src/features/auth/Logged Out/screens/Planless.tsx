@@ -10,6 +10,7 @@ export interface PlanlessProps {
 
 export function Planless({
   onGetStarted,
+  onLogin,
   className = "",
 }: PlanlessProps) {
   return (
@@ -52,7 +53,7 @@ export function Planless({
         </motion.div>
       </div>
 
-      {/* Bottom Actions Section: Get Started (Primary Action) */}
+      {/* Bottom Actions Section: Get Started (Primary Action) + Already have an account */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -68,6 +69,18 @@ export function Planless({
         >
           Get Started
         </button>
+
+        {/* Secondary Action: Already have an account */}
+        {onLogin && (
+          <button
+            id="btn_entry_already_have_account"
+            type="button"
+            onClick={onLogin}
+            className="w-full py-2.5 px-4 text-center text-zinc-400 hover:text-white transition-colors duration-150 text-[13.5px] xs:text-[14px] font-medium cursor-pointer"
+          >
+            Already have an account
+          </button>
+        )}
       </motion.div>
     </div>
   );
