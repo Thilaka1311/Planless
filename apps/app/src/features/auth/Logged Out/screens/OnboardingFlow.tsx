@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft, HelpCircle, User } from "lucide-react";
 import { UserProfile } from "../../../../core/types";
 import defaultAvatar from "../../../../assets/default_avatar.png";
@@ -7,17 +8,76 @@ import { supabase } from "../../../../../lib/supabaseClient";
 import { resolveImage, ImageType } from "../../../../shared/imaging/imageResolver";
 import { useProfileUpload } from "../../../profile/hooks/useProfileUpload";
 
+import { Complicated, resetComplicatedAnimation } from "./Complicated";
+import { Solution } from "./solution";
+import { Planless } from "./Planless";
+import { resetPlanAnimation } from "../components/PlanAnimation";
+import planlessLogo from "../../../../assets/planless_logo.png";
+
 interface OnboardingFlowProps {
   onComplete: (profile: UserProfile) => void;
   initialStep?: OnboardingStep;
   existingProfile?: UserProfile | null;
 }
 
-export type OnboardingStep = "LANDING" | "EMAIL_INPUT" | "OTP_INPUT" | "PROFILE_SETUP";
+export type OnboardingStep = "ENTRY" | "LANDING" | "EMAIL_INPUT" | "OTP_INPUT" | "PROFILE_SETUP";
 
-export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingProfile = null }: OnboardingFlowProps) {
-  const [step, setStep] = useState<OnboardingStep>(initialStep);
-  const [authMode, setAuthMode] = useState<"signup" | "login">("signup");
+export const ONBOARDING_SCREEN_KEY = "planless_onboarding_screen";
+export type PersistedOnboardingScreen = "planless" | "complicated" | "solution" | "login";
+
+function getInitialOnboardingState(initialStep: OnboardingStep): {
+  step: OnboardingStep;
+  onboardingIndex: number;
+  authSource: "ENTRY" | "LANDING";
+} {
+  if (initialStep === "PROFILE_SETUP") {
+    return {
+      step: "PROFILE_SETUP",
+      onboardingIndex: 0,
+      authSource: "ENTRY",
+    };
+  }
+
+  try {
+    const saved = localStorage.getItem(ONBOARDING_SCREEN_KEY);
+    if (saved === "complicated") {
+      return {
+        step: "LANDING",
+        onboardingIndex: 0,
+        authSource: "ENTRY",
+      };
+    }
+    if (saved === "solution") {
+      return {
+        step: "LANDING",
+        onboardingIndex: 1,
+        authSource: "LANDING",
+      };
+    }
+    if (saved === "login" || saved === "email") {
+      return {
+        step: "EMAIL_INPUT",
+        onboardingIndex: 0,
+        authSource: "ENTRY",
+      };
+    }
+  } catch (err) {
+    console.warn("[Onboarding] Failed to read saved onboarding step:", err);
+  }
+
+  return {
+    step: initialStep,
+    onboardingIndex: 0,
+    authSource: "ENTRY",
+  };
+}
+
+export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProfile = null }: OnboardingFlowProps) {
+  const [initialState] = useState(() => getInitialOnboardingState(initialStep));
+  const [step, setStep] = useState<OnboardingStep>(initialState.step);
+  const [authSource, setAuthSource] = useState<"ENTRY" | "LANDING">(initialState.authSource);
+  const [onboardingIndex, setOnboardingIndex] = useState(initialState.onboardingIndex);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [email, setEmail] = useState("");
   const [otpToken, setOtpToken] = useState("");
   const [profileName, setProfileName] = useState(existingProfile?.name || "");
@@ -33,6 +93,161 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
   const [sessionToken, setSessionToken] = useState<string | null>(existingProfile?.token || null);
 
   const { uploading: uploadImageInProgress, uploadError, uploadImage } = useProfileUpload();
+
+  const persistScreen = (screen: PersistedOnboardingScreen) => {
+    try {
+      if (screen === "planless") {
+        localStorage.removeItem(ONBOARDING_SCREEN_KEY);
+      } else {
+        localStorage.setItem(ONBOARDING_SCREEN_KEY, screen);
+      }
+    } catch (err) {
+      console.warn("[Onboarding] Failed to persist screen:", err);
+    }
+  };
+
+  // Keep saved onboarding step synced with current screen across all transitions
+  useEffect(() => {
+    if (step === "ENTRY") {
+      persistScreen("planless");
+    } else if (step === "LANDING") {
+      if (onboardingIndex === 0) {
+        persistScreen("complicated");
+      } else if (onboardingIndex === 1) {
+        persistScreen("solution");
+      }
+    } else if (step === "EMAIL_INPUT" || step === "OTP_INPUT") {
+      persistScreen("login");
+    }
+  }, [step, onboardingIndex]);
+
+  // Handlers for Planless entry screen
+  const handleStart = () => {
+    persistScreen("login");
+    setAuthSource("ENTRY");
+    setErrorMessage("");
+    setStep("EMAIL_INPUT");
+  };
+
+  useEffect(() => {
+    if (initialStep === "PROFILE_SETUP") {
+      setStep("PROFILE_SETUP");
+    }
+  }, [initialStep]);
+
+  useEffect(() => {
+    if (existingProfile) {
+      if (existingProfile.dbUuid) setTempUserId(existingProfile.dbUuid);
+      if (existingProfile.user_id) setTempPublicId(existingProfile.user_id);
+      if (existingProfile.token) setSessionToken(existingProfile.token);
+      if (existingProfile.name) setProfileName(existingProfile.name);
+      if (existingProfile.bio) setBio(existingProfile.bio);
+      if (existingProfile.avatar && existingProfile.avatar !== defaultAvatar) {
+        setAvatar(existingProfile.avatar);
+      }
+    }
+  }, [existingProfile]);
+
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleViewportChange = () => {
+      if (window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
+      if (window.visualViewport) {
+        const vv = window.visualViewport;
+        const kbHeight = Math.max(0, window.innerHeight - vv.height);
+        const isKeyboardActive = kbHeight > 120;
+        setKeyboardOpen(isKeyboardActive);
+        setKeyboardHeight(isKeyboardActive ? kbHeight : 0);
+      }
+    };
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", handleViewportChange);
+      window.visualViewport.addEventListener("scroll", handleViewportChange);
+    }
+    window.addEventListener("resize", handleViewportChange);
+    handleViewportChange();
+
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", handleViewportChange);
+        window.visualViewport.removeEventListener("scroll", handleViewportChange);
+      }
+      window.removeEventListener("resize", handleViewportChange);
+    };
+  }, []);
+
+  // Prevent any window scrolling / bouncing when keyboard opens on email input
+  useEffect(() => {
+    if (step !== "EMAIL_INPUT") return;
+    const preventScroll = () => {
+      if (window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
+    };
+    window.addEventListener("scroll", preventScroll, { passive: true });
+    return () => window.removeEventListener("scroll", preventScroll);
+  }, [step]);
+
+  // Keyboard navigation for onboarding screens (0: Complicated, 1: Solution)
+  useEffect(() => {
+    if (step !== "LANDING") return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") {
+        if (onboardingIndex < 1) setOnboardingIndex((prev) => prev + 1);
+      } else if (e.key === "ArrowLeft") {
+        if (onboardingIndex > 0) {
+          setOnboardingIndex((prev) => prev - 1);
+        } else if (onboardingIndex === 0) {
+          setStep("ENTRY");
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [step, onboardingIndex]);
+
+  // Touch handlers for swipe navigation across onboarding screens
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diffX = touchStartX - touchEndX;
+    if (diffX > 50) {
+      if (onboardingIndex < 1) {
+        setOnboardingIndex((prev) => prev + 1);
+      }
+    } else if (diffX < -50) {
+      if (onboardingIndex > 0) {
+        setOnboardingIndex((prev) => prev - 1);
+      } else if (onboardingIndex === 0) {
+        setStep("ENTRY");
+      }
+    }
+    setTouchStartX(null);
+  };
+
+  const handleComplicatedNext = () => {
+    persistScreen("solution");
+    setOnboardingIndex(1);
+  };
+
+  const handleSolutionNext = () => {
+    persistScreen("login");
+    setAuthSource("LANDING");
+    setAuthMode("login");
+    setErrorMessage("");
+    setStep("EMAIL_INPUT");
+  };
 
 
   // Handle Email submission (sends OTP)
@@ -69,7 +284,7 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
     }
   };
 
-  // Handle OTP Verification and public.users creation/routing
+  // Handle OTP Verification and canonical public.users creation/routing
   const handleOtpVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!otpToken.trim() || otpToken.trim().length < 6) {
@@ -92,10 +307,72 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
         setCheckingUser(false);
         return;
       }
-      // Success! Let App.tsx global auth listener handle session restoration and step routing.
+
+      const authUser = session.user;
+
+      // Canonical check: Does this authenticated user already have a completed Planless profile?
+      const { data: dbProfile, error: profileError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", authUser.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("[Onboarding] Error checking profile status:", profileError);
+      }
+
+      if (dbProfile && dbProfile.profile_completed) {
+        // EXISTING USER: Directly enter normal Planless app flow without onboarding
+        try {
+          localStorage.removeItem(ONBOARDING_SCREEN_KEY);
+        } catch {}
+
+        onComplete({
+          name: dbProfile.full_name,
+          phone: authUser.email || "",
+          bio: dbProfile.bio || "",
+          avatar: dbProfile.profile_photo_path || defaultAvatar,
+          joined: true,
+          college_or_work: "SRM Chennai",
+          user_id: dbProfile.public_id,
+          dbUuid: dbProfile.id,
+          token: session.access_token,
+          profile_completed: true,
+          role: dbProfile.role || "user",
+        });
+      } else {
+        // NEW USER (or profile incomplete): ensure user row exists and route to profile setup
+        let publicId = dbProfile?.public_id;
+        if (!dbProfile) {
+          const { data: generatedId } = await supabase.rpc("generate_user_public_id");
+          publicId = generatedId;
+          const { data: newProfile } = await supabase
+            .from("users")
+            .upsert({
+              id: authUser.id,
+              public_id: publicId,
+              full_name: "",
+              profile_photo_path: null,
+              bio: "",
+              profile_completed: false
+            }, { onConflict: "id", ignoreDuplicates: true })
+            .select("*")
+            .single();
+          if (newProfile?.public_id) {
+            publicId = newProfile.public_id;
+          }
+        }
+
+        setTempUserId(authUser.id);
+        setTempPublicId(publicId || null);
+        setSessionToken(session.access_token);
+        setErrorMessage("");
+        setStep("PROFILE_SETUP");
+      }
     } catch (err) {
       console.warn("[Onboarding] OTP verification exception:", err);
       setErrorMessage("Unable to verify OTP. Please try again.");
+    } finally {
       setCheckingUser(false);
     }
   };
@@ -143,6 +420,10 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
       // Track user signup analytics event
       trackEvent("user_signed_up", { source: "app" });
 
+      try {
+        localStorage.removeItem(ONBOARDING_SCREEN_KEY);
+      } catch {}
+
       onComplete({
         name: updatedProfile.full_name,
         phone: email || existingProfile?.phone || "",
@@ -187,162 +468,190 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
   };
 
   return (
-    <div id="onboarding_wrapper" className="w-full h-full text-white bg-[#000000] flex flex-col justify-between font-sans relative overflow-hidden p-6 md:p-8">
+    <div id="onboarding_wrapper" className="w-full h-full text-white bg-[#000000] flex flex-col justify-between font-sans relative overflow-hidden">
       {/* Header bar */}
-      {step !== "LANDING" && (
-        <div id="onboarding_header" className="flex items-center justify-between w-full h-10 shrink-0 z-10">
+      {step !== "LANDING" && step !== "ENTRY" && step !== "EMAIL_INPUT" && (
+        <div id="onboarding_header" className="flex items-center justify-between w-full h-12 shrink-0 z-10 px-5 sm:px-8 pt-4 pb-2">
           {step !== "PROFILE_SETUP" ? (
             <button
               id="back_btn"
               onClick={() => {
-                if (step === "EMAIL_INPUT") setStep("LANDING");
-                else if (step === "OTP_INPUT") setStep("EMAIL_INPUT");
+                if (step === "OTP_INPUT") {
+                  setStep("EMAIL_INPUT");
+                }
               }}
-              className="w-8 h-8 rounded-full border border-white/[0.08] hover:bg-white/[0.04] flex items-center justify-center text-zinc-400 hover:text-white transition active:scale-95 cursor-pointer"
+              className="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white transition-colors active:scale-95 cursor-pointer"
+              aria-label="Back"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-5 h-5 stroke-[1.75]" />
             </button>
           ) : (
-            <div className="w-8 h-8" />
+            <div className="w-9 h-9" />
           )}
 
-          <span className="text-[11px] font-sans uppercase tracking-[0.4em] text-zinc-500 font-bold select-none">
-            PLANLESS
-          </span>
+          <div className="flex items-center justify-center select-none pointer-events-none">
+            <img
+              src={planlessLogo}
+              alt="Planless"
+              className="w-8 h-8 object-contain"
+            />
+          </div>
 
-          <button className="w-8 h-8 rounded-full border border-white/[0.08] hover:bg-white/[0.04] flex items-center justify-center text-zinc-500 hover:text-zinc-300 transition">
-            <HelpCircle className="w-4 h-4" />
+          <button
+            id="help_btn"
+            className="w-9 h-9 flex items-center justify-center text-zinc-400/80 hover:text-zinc-200 transition-colors active:scale-95 cursor-pointer"
+            aria-label="Help"
+          >
+            <HelpCircle className="w-5 h-5 stroke-[1.75]" />
           </button>
         </div>
       )}
 
       {/* Main Form/Content Section */}
-      <div id="onboarding_main" className="flex-1 flex flex-col justify-center my-auto py-10 z-10 max-w-sm mx-auto w-full">
+      <div
+        id="onboarding_main"
+        className={`flex-1 flex flex-col z-10 w-full ${
+          step === "EMAIL_INPUT"
+            ? "justify-start items-center w-full min-h-0 overflow-hidden select-none"
+            : step !== "LANDING" && step !== "ENTRY"
+              ? step === "PROFILE_SETUP"
+                ? "justify-center my-auto max-w-sm mx-auto py-4 sm:py-6 p-6 md:p-8"
+                : "justify-start pt-8 sm:pt-12 md:pt-16 max-w-sm mx-auto px-6 sm:px-8 pb-8 overflow-y-auto"
+              : "justify-center my-auto h-full"
+        }`}
+      >
 
-        {/* LANDING STEP */}
+        {/* 1. ENTRY STEP: WELCOME SCREEN (PLANLESS, LOGO, GET STARTED) */}
+        {step === "ENTRY" && (
+          <Planless
+            onGetStarted={handleStart}
+          />
+        )}
+
+        {/* 2. LANDING STEP: 2-SCREEN ONBOARDING FLOW (COMPLICATED -> SOLUTION -> LOGIN) */}
         {step === "LANDING" && (
-          <div id="step_landing" className="flex flex-col h-full justify-between py-12">
-            <div className="text-zinc-500 text-[11px] font-sans uppercase tracking-[0.4em] font-bold text-center mt-4 select-none">
-              PLANLESS
-            </div>
-
-            <div className="my-auto flex flex-col gap-6 text-left">
-              <h1 className="text-4xl font-sans font-bold tracking-tight text-white leading-[1.1] max-w-sm">
-                Planless<br />
-                fixes plans.<br />
-                Ironic.<br />
-                We know.
-              </h1>
-              <p className="text-zinc-400 text-sm leading-relaxed max-w-xs font-sans">
-                Spontaneous hangouts, real-world experiences, and circles of friends without the calendar complex.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-4 mt-auto">
-              <button
-                id="btn_create_account"
-                onClick={() => {
-                  setErrorMessage("");
-                  setProfileName("");
-                  setEmail("");
-                  setOtpToken("");
-                  setAuthMode("signup");
-                  setStep("EMAIL_INPUT");
-                }}
-                className="w-full py-4 px-6 rounded-xl bg-white hover:bg-zinc-150 text-black font-semibold text-[14px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center"
-              >
-                Get Started
-              </button>
-            </div>
-          </div>
+          onboardingIndex === 0 ? (
+            <Complicated
+              onGetStarted={handleComplicatedNext}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            />
+          ) : (
+            <Solution
+              onGetStarted={handleSolutionNext}
+              onBack={() => setOnboardingIndex(0)}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            />
+          )
         )}
 
         {/* EMAIL SIGN IN STEP */}
         {step === "EMAIL_INPUT" && (
-          <div id="step_email" className="space-y-8 animate-fade-in text-left">
-            <div className="space-y-2">
-              <h2 className="text-3xl font-sans font-bold text-white tracking-tight">
-                {authMode === "signup" ? "Let's get you started" : "Welcome back"}
-              </h2>
-              <p className="text-zinc-400 text-sm leading-relaxed">
-                Enter your email address to continue.
-              </p>
-            </div>
+          <form
+            id="step_email_form"
+            onSubmit={handleEmailSubmit}
+            className="w-full h-full flex flex-col items-center select-none overflow-hidden"
+          >
+            {/* Layer 1: Fixed Authentication Content */}
+            <div
+              className="w-full max-w-sm mx-auto px-6 sm:px-8 pt-[7vh] xs:pt-[9vh] sm:pt-[11vh] space-y-6 sm:space-y-7 text-left select-text"
+            >
+              {/* Centered Planless Symbol */}
+              <div className="flex justify-center select-none pointer-events-none">
+                <img
+                  src={planlessLogo}
+                  alt="Planless"
+                  className="w-11 h-11 sm:w-12 sm:h-12 object-contain"
+                />
+              </div>
 
-            <form onSubmit={handleEmailSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-[11px] text-zinc-500 font-sans font-bold uppercase tracking-widest block">
-                  Email Address
-                </label>
+              {/* Title & Subtitle */}
+              <div className="space-y-1.5 sm:space-y-2">
+                <h2 className="text-[26px] sm:text-[30px] font-sans font-bold text-white tracking-tight leading-tight">
+                  Welcome to Planless
+                </h2>
+                <p className="text-zinc-400 text-sm leading-relaxed">
+                  Enter your email address to continue.
+                </p>
+              </div>
+
+              {/* Email Input Field & Explanation (no EMAIL ADDRESS label) */}
+              <div className="space-y-2.5 pt-0.5">
                 <input
                   id="email_input_field"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="w-full bg-[#111111] border border-white/[0.08] focus:border-[#FFFFFF]/30 rounded-xl px-4 py-3.5 text-sm text-white placeholder-zinc-600 focus:outline-none transition"
+                  className="w-full h-[50px] bg-[#121214] border border-white/[0.08] focus:border-[#FF6B2C] rounded-[14px] px-4 text-base text-white placeholder-zinc-600 focus:outline-none transition-colors duration-150"
                   required
                 />
                 {errorMessage && (
-                  <p className="text-xs text-red-500 font-sans mt-1">{errorMessage}</p>
+                  <p className="text-xs text-red-500 font-sans">{errorMessage}</p>
                 )}
-              </div>
-
-              <div className="text-xs text-zinc-500 leading-relaxed">
-                We will send a passwordless OTP code to your email to verify your identity.
-              </div>
-
-              <button
-                id="email_continue_btn"
-                type="submit"
-                disabled={checkingUser}
-                className="w-full py-3.5 px-6 rounded-xl bg-white hover:bg-zinc-150 text-black font-semibold text-xs tracking-wider uppercase transition active:scale-[0.99] text-center cursor-pointer disabled:opacity-50"
-              >
-                {checkingUser ? "Sending OTP..." : "Continue"}
-              </button>
-            </form>
-
-            <div className="text-center pt-2">
-              {authMode === "signup" ? (
-                <p className="text-xs text-zinc-400">
-                  Already have an account?{" "}
-                  <button
-                    onClick={() => { setAuthMode("login"); setErrorMessage(""); }}
-                    className="text-white font-semibold hover:underline cursor-pointer bg-transparent border-none p-0 focus:outline-none"
-                  >
-                    Log In
-                  </button>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  We'll send you a one-time code to continue.
                 </p>
-              ) : (
-                <p className="text-xs text-zinc-400">
-                  New to Planless?{" "}
-                  <button
-                    onClick={() => { setAuthMode("signup"); setErrorMessage(""); }}
-                    className="text-white font-semibold hover:underline cursor-pointer bg-transparent border-none p-0 focus:outline-none"
-                  >
-                    Sign Up
-                  </button>
-                </p>
-              )}
+              </div>
             </div>
-          </div>
+
+            {/* Layer 2: Next Button - Resting state (keyboard closed) */}
+            <div
+              className={`fixed bottom-0 left-0 right-0 z-20 flex justify-center pb-[max(1.75rem,env(safe-area-inset-bottom))] transition-opacity duration-150 ease-out ${
+                keyboardOpen ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
+              }`}
+            >
+              <div className="w-full max-w-sm px-6 sm:px-8">
+                <button
+                  id={keyboardOpen ? "email_continue_btn_resting" : "email_continue_btn"}
+                  type="submit"
+                  disabled={checkingUser}
+                  tabIndex={keyboardOpen ? -1 : 0}
+                  className="w-full h-[50px] rounded-full bg-[#FF6B2C] hover:bg-[#FF7A3D] active:bg-[#E55A1F] text-white font-semibold text-sm transition-colors duration-150 active:scale-[0.99] text-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center shadow-sm"
+                >
+                  {checkingUser ? "Sending OTP..." : "Next"}
+                </button>
+              </div>
+            </div>
+
+            {/* Layer 2: Next Button - Docked above keyboard (keyboard open) */}
+            <div
+              style={{ bottom: `${keyboardHeight + 14}px` }}
+              className={`fixed left-0 right-0 z-20 flex justify-center transition-opacity duration-150 ease-out ${
+                keyboardOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+              }`}
+            >
+              <div className="w-full max-w-sm px-6 sm:px-8">
+                <button
+                  id={keyboardOpen ? "email_continue_btn" : "email_continue_btn_docked"}
+                  type="submit"
+                  disabled={checkingUser}
+                  tabIndex={keyboardOpen ? 0 : -1}
+                  className="w-full h-[50px] rounded-full bg-[#FF6B2C] hover:bg-[#FF7A3D] active:bg-[#E55A1F] text-white font-semibold text-sm transition-colors duration-150 active:scale-[0.99] text-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center shadow-sm"
+                >
+                  {checkingUser ? "Sending OTP..." : "Next"}
+                </button>
+              </div>
+            </div>
+          </form>
         )}
 
         {/* OTP VERIFICATION STEP */}
         {step === "OTP_INPUT" && (
           <div id="step_otp" className="space-y-8 animate-fade-in text-left">
             <div className="space-y-2">
-              <h2 className="text-3xl font-sans font-bold text-white tracking-tight">
+              <h2 className="text-[28px] sm:text-[32px] font-sans font-bold text-white tracking-tight leading-tight">
                 Verify your email
               </h2>
               <p className="text-zinc-400 text-sm leading-relaxed">
-                Enter the 6-digit OTP code sent to <strong>{email}</strong>.
+                Enter the 6-digit OTP code sent to <strong className="text-white">{email}</strong>.
               </p>
             </div>
 
             <form onSubmit={handleOtpVerify} className="space-y-6">
               <div className="space-y-2">
-                <label className="text-[11px] text-zinc-500 font-sans font-bold uppercase tracking-widest block">
+                <label className="text-[11px] text-zinc-500 font-sans font-bold uppercase tracking-wider block">
                   Verification Code
                 </label>
                 <input
@@ -354,7 +663,7 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
                   value={otpToken}
                   onChange={(e) => setOtpToken(e.target.value.replace(/[^0-9]/g, ""))}
                   placeholder="000000"
-                  className="w-full bg-[#111111] border border-white/[0.08] focus:border-[#FFFFFF]/30 rounded-xl px-4 py-3.5 text-sm text-center text-white tracking-[0.5em] font-mono placeholder-zinc-650 focus:outline-none transition"
+                  className="w-full h-[50px] bg-[#121214] border border-white/[0.08] focus:border-[#FF6B2C] rounded-[14px] px-4 text-sm text-center text-white tracking-[0.5em] font-mono placeholder-zinc-650 focus:outline-none transition-colors duration-150"
                   required
                 />
                 {errorMessage && (
@@ -366,7 +675,7 @@ export function OnboardingFlow({ onComplete, initialStep = "LANDING", existingPr
                 id="otp_verify_btn"
                 type="submit"
                 disabled={checkingUser}
-                className="w-full py-3.5 px-6 rounded-xl bg-white hover:bg-zinc-150 text-black font-semibold text-xs tracking-wider uppercase transition active:scale-[0.99] text-center cursor-pointer disabled:opacity-50"
+                className="w-full h-[50px] rounded-[14px] bg-[#FF6B2C] hover:bg-[#FF7A3D] active:bg-[#E55A1F] text-white font-semibold text-xs tracking-wider uppercase transition-colors duration-150 active:scale-[0.99] text-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center shadow-sm"
               >
                 {checkingUser ? "Verifying..." : "Verify & Continue"}
               </button>
