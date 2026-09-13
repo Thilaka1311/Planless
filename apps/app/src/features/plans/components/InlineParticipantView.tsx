@@ -165,6 +165,23 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     );
   }, [dbPlanParticipants, targetPlanUuid, plan.id, (plan as any).dbUuid]);
 
+  const hasPendingParticipantAction = useMemo(() => {
+    const hasDbPending = (planDbParticipants || []).some((pp: any) => {
+      const status = (pp.rsvp_status || '').toUpperCase();
+      const isRejoined = status === 'REJOINED';
+      const isLeaveRequested = Boolean(pp.leave_requested === true && status !== 'SKIPPED');
+      return isRejoined || isLeaveRequested;
+    });
+    if (hasDbPending) return true;
+    const membersList = plan.members || [];
+    return membersList.some((m: any) => {
+      const status = String(m.rsvp_status || m.joinState || (m as any).rsvpStatus || '').toUpperCase();
+      const isRejoined = status === 'REJOINED';
+      const isLeaveRequested = Boolean((m.leave_requested === true || (m as any).leaveRequested === true) && status !== 'SKIPPED');
+      return isRejoined || isLeaveRequested;
+    });
+  }, [planDbParticipants, plan.members]);
+
   const groups = useMemo(() => {
     const sortAlpha = (list: InlineMemberEntry[]) => [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
 
@@ -838,7 +855,23 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                   className="w-full py-2.5 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] active:scale-[0.98] border border-white/10 transition flex items-center justify-center gap-2 text-xs font-semibold text-white/90 cursor-pointer shadow-sm"
                 >
                   <Users className="w-4 h-4 text-white/70" />
-                  <span>Manage Participants</span>
+                  <span className="flex items-center gap-1.5">
+                    <span>Manage Participants</span>
+                    {hasPendingParticipantAction && (
+                      <span
+                        title="Pending participant request"
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 700,
+                          color: '#F59E0B',
+                          lineHeight: 1,
+                          fontFamily: 'Inter, sans-serif',
+                        }}
+                      >
+                        !
+                      </span>
+                    )}
+                  </span>
                 </button>
               </div>
             )}
