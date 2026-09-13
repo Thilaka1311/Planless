@@ -31,8 +31,13 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
   className = '',
 }) => {
   const isRejoined = item.rsvpStatus === 'REJOINED' || (item as any).rsvp_status === 'REJOINED';
+  const isLeaveRequested = Boolean(
+    (item.leave_requested === true || (item as any).leaveRequested === true) &&
+    item.rsvpStatus !== 'SKIPPED' && (item as any).rsvp_status !== 'SKIPPED'
+  );
+  const hasPendingRequest = isLeaveRequested || isRejoined;
   const isSkipped = !isRejoined && (item.rsvpStatus === 'SKIPPED' || (item as any).rsvp_status === 'SKIPPED' || Boolean(item.skipReason || (item as any).skip_reason));
-  const isDulled = item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED' || isSkipped || isRejoined;
+  const isDulled = !hasPendingRequest && (item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED' || isSkipped);
   const skipReasonText = isRejoined ? '' : formatSkipReason(item.skipReason || (item as any).skip_reason || (isSkipped ? 'SKIPPED' : null));
 
   const indexLabel = (() => {
@@ -109,9 +114,26 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         </span>
       )}
       {renderAvatar()}
-      <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, color: isDulled ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif' }}>
-        {item.name}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: 13.5, fontWeight: 600, color: isDulled ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {item.name}
+        </span>
+        {hasPendingRequest && (
+          <span
+            title={isRejoined ? "Requested to rejoin" : "Requested to leave"}
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: '#F59E0B',
+              lineHeight: 1,
+              flexShrink: 0,
+              fontFamily: 'Inter, sans-serif',
+            }}
+          >
+            !
+          </span>
+        )}
+      </div>
       {skipReasonText && (
         <span style={{
           fontSize: 11,
@@ -123,22 +145,6 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
           fontFamily: 'Inter, sans-serif',
         }}>
           {skipReasonText}
-        </span>
-      )}
-      {Boolean(item.leave_requested === true || (item as any).leaveRequested === true || isRejoined) && (
-        <span
-          title={isRejoined ? "Requested to rejoin" : "Requested to leave"}
-          style={{
-            fontSize: 15,
-            fontWeight: 700,
-            color: '#F59E0B',
-            marginRight: item.isHost || isDulled ? 10 : 4,
-            lineHeight: 1,
-            flexShrink: 0,
-            fontFamily: 'Inter, sans-serif',
-          }}
-        >
-          !
         </span>
       )}
       {item.isHost ? (

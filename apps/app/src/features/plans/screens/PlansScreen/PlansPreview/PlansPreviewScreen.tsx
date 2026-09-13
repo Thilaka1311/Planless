@@ -51,12 +51,14 @@ import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGoog
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";
 import { uploadPlanImage } from "../../../../../shared/utils/imageUtils";
-import { cleanPlanId, parsePlanDateTime } from "../../../utils/planUtils";
+import { cleanPlanId, parsePlanDateTime, isUuid } from "../../../utils/planUtils";
 import { LiveActionButton } from "../../../components/LiveActionButton";
 import { WhoIsComingScreen } from "../../../../create/screens/WhoIsComingScreen";
 import { getCompleteCurrentUserFriends } from "../../../../friendships/api/friendships";
 import {
   LeavePlanBottomSheet,
+  RejoinPlanBottomSheet,
+  CancelRejoinRequestBottomSheet,
   MakeAnotherParticipantHostBottomSheet,
   PaidPlanLeaveConfirmationDialog,
   CancelLeaveRequestBottomSheet,
@@ -68,7 +70,6 @@ import {
   getDateTimeValidationError,
   EditDetailsBottomSheet,
   JoinPlanConfirmationBottomSheet,
-  SkipPlanConfirmationDialog,
   EditCapacityBottomSheet,
 } from "../../../components/BottomSheets";
 import { SetCostScreen } from "../../../components/SetCost";
@@ -522,6 +523,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     cancelPaidPlanLeaveRequest,
     leavePlan,
     rejoinPlan,
+    cancelRejoinRequest,
     joinPlan,
     changePlanHost,
     cancelPlan,
@@ -549,6 +551,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
   const [isRejoining, setIsRejoining] = useState(false);
+  const [showRejoinSheet, setShowRejoinSheet] = useState(false);
+  const [isCancellingRejoinRequest, setIsCancellingRejoinRequest] = useState(false);
+  const [showCancelRejoinRequestSheet, setShowCancelRejoinRequestSheet] = useState(false);
   const [isJoiningDirect, setIsJoiningDirect] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [showChangeHostList, setShowChangeHostList] = useState(false);
@@ -947,7 +952,35 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     return rsvp.text;
   }, [effectiveRsvpIso, isPlanStartRSVP, rsvp.text]);
 
-  const planUuid = selectedPlan ? ((selectedPlan as any).dbUuid || selectedPlan.id) : "";
+  const matchedDbPlan = useMemo(() => {
+    if (!selectedPlan) return null;
+    return (dbPlans || []).find((p: any) =>
+      p.id === selectedPlan.id ||
+      p.id === (selectedPlan as any).dbUuid ||
+      p.public_id === selectedPlan.id ||
+      p.slug === selectedPlan.id ||
+      (selectedPlan.title && p.title && p.title.toLowerCase() === selectedPlan.title.toLowerCase())
+    );
+  }, [dbPlans, selectedPlan]);
+
+  const targetPlanUuid = useMemo(() => {
+    if (!selectedPlan) return "";
+    if (isUuid(selectedPlan.id)) return selectedPlan.id;
+    if (isUuid((selectedPlan as any).dbUuid)) return (selectedPlan as any).dbUuid;
+    if (matchedDbPlan?.id) return matchedDbPlan.id;
+    return (selectedPlan as any).dbUuid || selectedPlan.id || "";
+  }, [selectedPlan, matchedDbPlan]);
+
+  const isParticipantInPlan = useCallback((pp: any) => {
+    if (!pp || !selectedPlan) return false;
+    if (targetPlanUuid && pp.plan_id === targetPlanUuid) return true;
+    if (selectedPlan.id && pp.plan_id === selectedPlan.id) return true;
+    if ((selectedPlan as any).dbUuid && pp.plan_id === (selectedPlan as any).dbUuid) return true;
+    if (matchedDbPlan?.id && pp.plan_id === matchedDbPlan.id) return true;
+    return false;
+  }, [targetPlanUuid, selectedPlan, matchedDbPlan]);
+
+  const planUuid = targetPlanUuid || (selectedPlan ? ((selectedPlan as any).dbUuid || selectedPlan.id) : "");
   const resolvedUserUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId || "";
 
   const myParticipantRecord = useMemo(() => {
@@ -960,9 +993,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     if (userProfile?.user_id) userIds.add(userProfile.user_id);
 
     return dbPlanParticipants.find(
-      pp => (pp.plan_id === planUuid || (selectedPlan.id && pp.plan_id === selectedPlan.id)) && userIds.has(pp.user_id)
+      pp => isParticipantInPlan(pp) && userIds.has(pp.user_id)
     );
-  }, [dbPlanParticipants, selectedPlan, planUuid, activeUserId, resolvedUserUuid, userProfile]);
+  }, [dbPlanParticipants, selectedPlan, isParticipantInPlan, activeUserId, resolvedUserUuid, userProfile]);
 
   const isHost = createMode
     ? true
@@ -974,6 +1007,33 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const isCompleted = Boolean((selectedPlan?.status || "").toUpperCase() === "COMPLETED");
   const isOverdue = Boolean((selectedPlan?.status || "").toUpperCase() === "OVERDUE");
   const isLive = Boolean((selectedPlan?.status || "").toUpperCase() === "LIVE");
+
+  const hasPendingParticipantAction = useMemo(() => {
+    if (!selectedPlan || !isHost || isCancelled) return false;
+
+    // 1. Fresh dbPlanParticipants check
+    const hasDbPending = (dbPlanParticipants || []).some((pp: any) => {
+      if (!isParticipantInPlan(pp)) return false;
+      const status = (pp.rsvp_status || '').toUpperCase();
+      const isRejoined = status === 'REJOINED';
+      const isLeaveRequested = Boolean(pp.leave_requested === true && status !== 'SKIPPED');
+      return isRejoined || isLeaveRequested;
+    });
+
+    if (hasDbPending) return true;
+
+    // 2. Fallback to plan.members
+    const members = selectedPlan.members || [];
+    return members.some((m: any) => {
+      const status = String(m.rsvp_status || m.joinState || (m as any).rsvpStatus || '').toUpperCase();
+      const isRejoined = status === 'REJOINED';
+      const isLeaveRequested = Boolean(
+        (m.leave_requested === true || (m as any).leaveRequested === true) &&
+        status !== 'SKIPPED'
+      );
+      return isRejoined || isLeaveRequested;
+    });
+  }, [selectedPlan, isHost, isCancelled, dbPlanParticipants, isParticipantInPlan]);
 
   const isCreatorHost = isHost;
 
@@ -1490,22 +1550,25 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const handleRejoin = useCallback(() => {
     if (!selectedPlan || !activeUserId || isRejoining) return;
     const planToJoin = selectedPlan;
-    if (isFull) {
-      if (setShowWaitlistSuccess) {
-        setShowWaitlistSuccess(planToJoin.id);
-      }
-    } else {
-      if (setShowPaymentSuccess) {
-        setShowPaymentSuccess(planToJoin.id);
-      }
-    }
-    onClose();
 
-    // Perform DB rejoin asynchronously in background without blocking visual confirmation overlay
+    // Perform DB rejoin asynchronously — UI updates reactively via participant record
     rejoinPlan(planToJoin.id, userProfile).catch((err) => {
       console.error("[handleRejoin] Background rejoin failed:", err);
     });
-  }, [selectedPlan, activeUserId, isRejoining, userProfile, isFull, rejoinPlan, setShowWaitlistSuccess, setShowPaymentSuccess, onClose]);
+  }, [selectedPlan, activeUserId, isRejoining, userProfile, rejoinPlan]);
+
+  const handleConfirmCancelRejoinRequest = useCallback(async () => {
+    if (!selectedPlan || !activeUserId || isCancellingRejoinRequest) return;
+    setIsCancellingRejoinRequest(true);
+    try {
+      await cancelRejoinRequest(selectedPlan.id);
+      setShowCancelRejoinRequestSheet(false);
+    } catch (err) {
+      console.error("[handleConfirmCancelRejoinRequest] Failed:", err);
+    } finally {
+      setIsCancellingRejoinRequest(false);
+    }
+  }, [selectedPlan, activeUserId, isCancellingRejoinRequest, cancelRejoinRequest]);
 
   const [showJoinConfirmation, setShowJoinConfirmation] = useState(false);
 
@@ -1972,7 +2035,23 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
               >
                 <Users className="w-4 h-4 text-white/70" />
-                <span>Manage Participants</span>
+                <span className="flex items-center gap-1.5">
+                  <span>Manage Participants</span>
+                  {hasPendingParticipantAction && (
+                    <span
+                      title="Pending participant request"
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: '#F59E0B',
+                        lineHeight: 1,
+                        fontFamily: 'Inter, sans-serif',
+                      }}
+                    >
+                      !
+                    </span>
+                  )}
+                </span>
               </button>
             </div>
           )}
@@ -2036,7 +2115,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 isCompleted={isCompleted}
                 isManagementExpired={isManagementExpired}
                 showExclamation={showExclamation}
-                className={(myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT") ? "!bottom-24" : ""}
+                className=""
                 onClick={
                   isCompleted && isHost
                     ? !isManagementExpired
@@ -2054,23 +2133,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                             ? () => setShowLeavePlanConfirm(true)
                             : currentStatus === "WAITLISTED" && !alreadySkipped
                               ? () => setShowSkipConfirmation(true)
-                              : undefined
+                              : alreadySkipped && myParticipantRecord?.skip_reason === "LEFT"
+                                ? () => setShowRejoinSheet(true)
+                                : (currentStatus === "REJOINED" || myParticipantRecord?.rsvp_status === "REJOINED")
+                                  ? () => setShowCancelRejoinRequestSheet(true)
+                                  : undefined
               }
             />
           );
         })()}
-          {myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" && (
-            <div className="fixed bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black via-black/90 to-transparent z-40">
-              <button
-                type="button"
-                disabled={isRejoining}
-                onClick={handleRejoin}
-                className="w-full py-4 bg-white hover:bg-zinc-100 active:bg-zinc-200 text-black font-semibold text-[15px] rounded-full transition cursor-pointer shadow-lg active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isRejoining ? "Rejoining..." : "Rejoin Plan"}
-              </button>
-            </div>
-          )}
           {hasUserEnteredDescription(selectedPlan) && (
             <div id="immersive-description-block" className="space-y-2 text-left bg-zinc-900/20 p-5 rounded-3xl border border-white/[0.02] select-text">
               <span className="text-[10px] font-sans font-bold tracking-[0.14em] text-zinc-500 uppercase">About</span>
@@ -2249,10 +2320,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onClose={() => setShowJoinConfirmation(false)}
       />
 
-      <SkipPlanConfirmationDialog
+      <LeavePlanBottomSheet
         isOpen={showSkipConfirmation}
-        planTitle={selectedPlan?.title}
         isSkipping={isSkipping}
+        plan={selectedPlan}
         onConfirm={handleConfirmSkip}
         onClose={() => setShowSkipConfirmation(false)}
       />
@@ -2276,6 +2347,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       <LeavePlanBottomSheet
         isOpen={showLeavePlanConfirm}
         isSkipping={isSkipping}
+        plan={selectedPlan}
         onConfirm={async () => {
           setShowLeavePlanConfirm(false);
           const isPaidPlan = rawDbPlan && rawDbPlan.total_cost !== undefined && rawDbPlan.total_cost !== null && Number(rawDbPlan.total_cost) > 0;
@@ -2310,6 +2382,26 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           handleConfirmSkip();
         }}
         onClose={() => setShowLeavePlanConfirm(false)}
+      />
+
+      <RejoinPlanBottomSheet
+        isOpen={showRejoinSheet}
+        isRejoining={isRejoining}
+        plan={selectedPlan}
+        isFull={isFull}
+        onConfirm={() => {
+          setShowRejoinSheet(false);
+          handleRejoin();
+        }}
+        onClose={() => setShowRejoinSheet(false)}
+      />
+
+      <CancelRejoinRequestBottomSheet
+        isOpen={showCancelRejoinRequestSheet}
+        isSubmitting={isCancellingRejoinRequest}
+        plan={selectedPlan}
+        onConfirm={handleConfirmCancelRejoinRequest}
+        onClose={() => setShowCancelRejoinRequestSheet(false)}
       />
 
       <MakeAnotherParticipantHostBottomSheet

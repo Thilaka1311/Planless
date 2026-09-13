@@ -550,7 +550,7 @@ export function usePlanParticipants({
     }
 
     const normStatus = normalizeStatus(existingBefore.rsvp_status);
-    const isSkippable = normStatus === "JOINED" || normStatus === "WAITLISTED" || normStatus === "INVITED";
+    const isSkippable = normStatus === "JOINED" || normStatus === "WAITLISTED" || normStatus === "INVITED" || normStatus === "REJOINED";
     if (!isSkippable) {
       return;
     }
@@ -798,6 +798,39 @@ export function usePlanParticipants({
       throw err;
     }
   }, [plans, userId, resolveUserUuid, isUuid, dbPlanParticipants, refreshPlans]);
+
+  const cancelRejoinRequest = useCallback(async (rawPlanId: string) => {
+    const planId = cleanPlanId(rawPlanId);
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
+    const planUuid = matchedPlan?.dbUuid || planId;
+    const userUuid = resolveUserUuid(userId);
+
+    if (!userUuid || !isUuid(userUuid)) {
+      console.error(`[PlansContext] Cannot cancel rejoin request: user UUID is missing or invalid:`, userUuid);
+      return;
+    }
+
+    // Optimistically update participant state to SKIPPED with skip_reason "LEFT"
+    applyParticipantOptimisticUpdate(planUuid, userUuid, {
+      role: "PARTICIPANT",
+      rsvp_status: "SKIPPED",
+      skip_reason: "LEFT",
+      assigned_group: null,
+      waitlist_position: null,
+      leave_requested: false,
+      leave_requested_at: null,
+      responded_at: new Date().toISOString(),
+    } as any);
+
+    try {
+      await api.leavePlanRPC(planUuid);
+      await refreshPlans(["plan_participants"]);
+    } catch (err) {
+      console.error("[cancelRejoinRequest] RPC failed, rolling back:", err);
+      await refreshPlans(["plan_participants"]);
+      throw err;
+    }
+  }, [plans, userId, resolveUserUuid, isUuid, applyParticipantOptimisticUpdate, refreshPlans]);
 
   const resolveRejoinedParticipant = useCallback(async (
     planId: string,
@@ -2098,6 +2131,7 @@ export function usePlanParticipants({
     replaceParticipant,
     moveParticipantToWaitlistAndDecreaseCapacity,
     rejoinPlan,
+    cancelRejoinRequest,
     resolveRejoinedParticipant,
     removeParticipant,
     promoteWaitlistIfSpotsAvailable,

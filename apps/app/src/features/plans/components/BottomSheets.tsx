@@ -120,6 +120,12 @@ export const DiscardPlanBottomSheet: React.FC<DiscardPlanBottomSheetProps> = ({
 interface LeavePlanBottomSheetProps {
   isOpen: boolean;
   isSkipping: boolean;
+  plan?: Plan | any | null;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
   onConfirm: () => void;
   onClose: () => void;
 }
@@ -127,9 +133,21 @@ interface LeavePlanBottomSheetProps {
 export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
   isOpen,
   isSkipping,
+  plan,
+  planTitle,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
   onConfirm,
   onClose,
 }) => {
+  const resolvedTitle = plan?.title || planTitle || "Plan";
+  const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
+  const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
+  const resolvedCategory = plan?.category || planCategory;
+  const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -154,35 +172,359 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
               paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
             }}
           >
+            {/* Drag handle */}
             <div className="flex justify-center pt-3 pb-4">
               <div className="w-9 h-1 rounded-full bg-white/20" />
             </div>
 
-            <div className="px-5 pb-2 text-left">
-              <h2 className="text-[18px] font-bold text-white mb-2">Leave this plan?</h2>
-              <p className="text-[14px] text-white/55 leading-[1.55]">
-                You will no longer be part of this plan.
-              </p>
+            {/* Plan Identity Header — matches CancelPlanBottomSheet */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={resolvedCover}
+                  planId={resolvedPlanId}
+                  category={resolvedCategory}
+                  subcategory={resolvedSubcategory}
+                  screen="Leave Plan Sheet"
+                  alt={resolvedTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {resolvedTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  Plan Actions
+                </p>
+              </div>
             </div>
 
-            <div className="px-4 pt-5 flex flex-col gap-2.5">
+            {/* Action Buttons */}
+            <div className="px-4 pt-4 flex flex-col gap-2.5">
               <button
                 id="leave_plan_confirm_btn"
                 type="button"
                 disabled={isSkipping}
                 onClick={onConfirm}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-red-400 active:scale-[0.98] transition-transform disabled:opacity-50"
-                style={{ background: "rgba(255,59,48,0.12)", border: "1px solid rgba(255,59,48,0.2)" }}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#EF4444',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: isSkipping ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  opacity: isSkipping ? 0.5 : 1,
+                }}
               >
                 {isSkipping ? "Leaving…" : "Leave Plan"}
               </button>
 
+              {/* Text-only Cancel — no border, no background */}
               <button
                 id="leave_plan_cancel_btn"
                 type="button"
                 onClick={onClose}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform"
-                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.45)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 1AA. REJOIN PLAN BOTTOM SHEET
+// ----------------------------------------------------------------------
+interface RejoinPlanBottomSheetProps {
+  isOpen: boolean;
+  isRejoining: boolean;
+  plan?: Plan | any | null;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
+  isFull?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+export const RejoinPlanBottomSheet: React.FC<RejoinPlanBottomSheetProps> = ({
+  isOpen,
+  isRejoining,
+  plan,
+  planTitle,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
+  isFull = false,
+  onConfirm,
+  onClose,
+}) => {
+  const resolvedTitle = plan?.title || planTitle || "Plan";
+  const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
+  const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
+  const resolvedCategory = plan?.category || planCategory;
+  const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
+
+            {/* Plan Identity Header */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={resolvedCover}
+                  planId={resolvedPlanId}
+                  category={resolvedCategory}
+                  subcategory={resolvedSubcategory}
+                  screen="Rejoin Plan Sheet"
+                  alt={resolvedTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {resolvedTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  Plan Actions
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="px-4 pt-4 flex flex-col gap-2.5">
+              <button
+                id="rejoin_plan_confirm_btn"
+                type="button"
+                disabled={isRejoining}
+                onClick={onConfirm}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#FFFFFF',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: isRejoining ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  opacity: isRejoining ? 0.5 : 1,
+                }}
+              >
+                {isRejoining ? "Rejoining…" : (isFull ? "Rejoin Waitlist" : "Rejoin Plan")}
+              </button>
+
+              {/* Text-only Cancel — no border, no background */}
+              <button
+                id="rejoin_plan_cancel_btn"
+                type="button"
+                onClick={onClose}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.45)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// ----------------------------------------------------------------------
+// 1AB. CANCEL REJOIN REQUEST BOTTOM SHEET
+// ----------------------------------------------------------------------
+interface CancelRejoinRequestBottomSheetProps {
+  isOpen: boolean;
+  isSubmitting?: boolean;
+  plan?: Plan | any | null;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+export const CancelRejoinRequestBottomSheet: React.FC<CancelRejoinRequestBottomSheetProps> = ({
+  isOpen,
+  isSubmitting = false,
+  plan,
+  planTitle,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
+  onConfirm,
+  onClose,
+}) => {
+  const resolvedTitle = plan?.title || planTitle || "Plan";
+  const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
+  const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
+  const resolvedCategory = plan?.category || planCategory;
+  const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
+
+            {/* Plan Identity Header */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={resolvedCover}
+                  planId={resolvedPlanId}
+                  category={resolvedCategory}
+                  subcategory={resolvedSubcategory}
+                  screen="Cancel Rejoin Request Sheet"
+                  alt={resolvedTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {resolvedTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  Plan Actions
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="px-4 pt-4 flex flex-col gap-2.5">
+              <button
+                id="cancel_rejoin_request_confirm_btn"
+                type="button"
+                disabled={isSubmitting}
+                onClick={onConfirm}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#EF4444',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  opacity: isSubmitting ? 0.5 : 1,
+                }}
+              >
+                {isSubmitting ? "Cancelling…" : "Cancel Request"}
+              </button>
+
+              {/* Text-only Cancel — no border, no background */}
+              <button
+                id="cancel_rejoin_request_cancel_btn"
+                type="button"
+                onClick={onClose}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.45)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                }}
               >
                 Cancel
               </button>

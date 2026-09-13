@@ -62,6 +62,7 @@ interface PlansContextType {
   replaceParticipant: (planId: string, targetUserId: string, replacementUserId: string) => Promise<any>;
   moveParticipantToWaitlistAndDecreaseCapacity: (planId: string, targetUserId: string) => Promise<any>;
   rejoinPlan: (planId: string, userProfile: any) => Promise<void>;
+  cancelRejoinRequest: (planId: string) => Promise<void>;
   resolveRejoinedParticipant: (planId: string, targetUserId: string, decision: 'JOINED' | 'WAITLIST' | 'WAITLISTED' | 'REMOVE') => Promise<void>;
   // New acceptance / payment / booking actions
   acceptPlan: (planId: string, userProfile: any) => Promise<void>;
@@ -523,6 +524,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     replaceParticipant,
     moveParticipantToWaitlistAndDecreaseCapacity,
     rejoinPlan,
+    cancelRejoinRequest,
     resolveRejoinedParticipant,
     removeParticipant,
     promoteWaitlistIfSpotsAvailable,
@@ -1268,6 +1270,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     replaceParticipant,
     moveParticipantToWaitlistAndDecreaseCapacity,
     rejoinPlan,
+    cancelRejoinRequest,
     resolveRejoinedParticipant,
     acceptPlan: memoizedAcceptPlan,
     declinePlan: memoizedDeclinePlan,
@@ -1298,7 +1301,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     plans, dbPlans, dbPlanParticipants,
     dbPlanOutcomes, dbMemories, dbMemoryResults, dbPlanTeamAssignments,
     getTeamAssignments, assignTeam, unassignTeam,
-    joinPlan, leavePlan, skipPlan, rejoinPlan, resolveRejoinedParticipant, removeParticipant,
+    joinPlan, leavePlan, skipPlan, rejoinPlan, cancelRejoinRequest, resolveRejoinedParticipant, removeParticipant,
     memoizedPassPlan, memoizedWaitlistPlan,
     memoizedSendReminder, memoizedIgnoreReminder, memoizedGetHomeFeedPlans,
     memoizedGetHubPlans, memoizedGetParticipantCounts, refreshPlans,

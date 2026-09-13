@@ -19,7 +19,7 @@ import { useHoldToAccept } from "../../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "../../components/HoldToAccept";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
 import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
-import { JoinPlanConfirmationBottomSheet, SkipPlanConfirmationDialog, PaidPlanLeaveConfirmationDialog, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet } from "../../../plans/components/BottomSheets";
+import { JoinPlanConfirmationBottomSheet, PaidPlanLeaveConfirmationDialog, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet } from "../../../plans/components/BottomSheets";
 import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
 import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../../plans/utils/planUtils";
@@ -253,15 +253,20 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     const planToJoin = selectedPlan;
     setShowJoinConfirmation(false);
 
-    if (isFull) {
-      if (setShowWaitlistSuccess) setShowWaitlistSuccess(planToJoin.id);
-    } else {
-      if (setShowPaymentSuccess) setShowPaymentSuccess(planToJoin.id);
-    }
-    onClose();
+    const isRejoin = alreadySkipped && activeUserId;
 
-    // Perform DB join asynchronously in background without blocking UI overlay
-    const joinOp = alreadySkipped && activeUserId
+    if (!isRejoin) {
+      // Only show success animation for actual joins, not rejoins
+      if (isFull) {
+        if (setShowWaitlistSuccess) setShowWaitlistSuccess(planToJoin.id);
+      } else {
+        if (setShowPaymentSuccess) setShowPaymentSuccess(planToJoin.id);
+      }
+      onClose();
+    }
+
+    // Perform DB join/rejoin asynchronously in background
+    const joinOp = isRejoin
       ? rejoinPlan(planToJoin.id, userProfile)
       : joinPlan(planToJoin.id, userProfile);
 
@@ -621,10 +626,10 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         onClose={() => setShowJoinConfirmation(false)}
       />
 
-      <SkipPlanConfirmationDialog
+      <LeavePlanBottomSheet
         isOpen={showSkipConfirmation}
-        planTitle={selectedPlan?.title}
         isSkipping={isSkipping}
+        plan={selectedPlan}
         onConfirm={handleConfirmSkip}
         onClose={() => setShowSkipConfirmation(false)}
       />
@@ -632,6 +637,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       <LeavePlanBottomSheet
         isOpen={showLeavePlanConfirm}
         isSkipping={isSkipping}
+        plan={selectedPlan}
         onConfirm={async () => {
           const planUuid = selectedPlan?.dbUuid || selectedPlan?.id || "";
           console.log('[LEAVE HANDLER ENTERED]');

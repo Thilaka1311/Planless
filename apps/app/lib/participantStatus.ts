@@ -494,18 +494,25 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
     ...hostMembers,
     ...joinedMembers,
     ...waitlistedMembers,
-    ...rejoinedMembers,
   ];
+
+  const mappedRejoined = sortAlpha(rejoinedMembers).map((item) => ({
+    ...item,
+    joinedQueueNumber: null,
+    waitlistPosition: null,
+    isAccepted: false,
+  }));
 
   const joinedCount = allJoinedMembers.length;
 
   // RULE 4: WHEN PLAN SIZE HAS NOT BEEN REACHED (cap <= 0 || joinedCount < cap)
-  // - Do NOT create a separate Waitlist section.
+  // - Do NOT create a separate Waitlist section for accepted members.
   // - Everyone who has joined should appear in the Joined section.
   // - Everyone who is still invited should appear below the Joined participants.
   // - Joined participants are alphabetical, with "You" always first.
   // - Invited participants are alphabetical.
   // - NO numbers should be displayed anywhere.
+  // - Rejoin requests remain in the waitlist section awaiting host approval.
   if (cap <= 0 || joinedCount < cap) {
     const alphaJoined = sortAlpha(allJoinedMembers).map((item) => ({
       ...item,
@@ -525,7 +532,7 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
 
     return {
       going,
-      waitlist: [],
+      waitlist: mappedRejoined,
       skipped: sortAlpha(skippedMembers),
       goingJoinedCount: joinedCount,
       capacity: cap,
@@ -600,6 +607,7 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
 
   const finalWaitlist = [
     ...numberedWaitlist,
+    ...mappedRejoined,
     ...unnumberedInvited,
   ];
 

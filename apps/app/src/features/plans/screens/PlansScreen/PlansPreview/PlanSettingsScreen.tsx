@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { ChevronLeft, Crown, Users, Plus, Check, LogOut, Trash2 } from "lucide-react";
+import { ChevronLeft, Crown, Users, Plus, Check, Settings, LogOut } from "lucide-react";
 import { Plan, UserProfile } from "../../../../../core/types";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
 import { normalizeStatus } from "../../../../../../lib/participantStatus";
 import { DiscoveryImages } from "../../../../../IMGfromDB/PlanImages";
 import { getPlanCover } from "../../../config/planCoverImages";
 import { usePlansStore } from "../../../state/PlansContext";
-import { MakeAnotherParticipantHostBottomSheet } from "../../../components/BottomSheets";
+import { MakeAnotherParticipantHostBottomSheet, CancelPlanBottomSheet } from "../../../components/BottomSheets";
 import { EditPlanImageScreen } from "./EditPlanImageScreen";
 import { cleanPlanId } from "../../../utils/planUtils";
 import { supabase } from "../../../../../../lib/supabaseClient";
@@ -52,7 +52,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   onCancelPlan,
 }) => {
 
-  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showManagePlanSheet, setShowManagePlanSheet] = useState(false);
   const [showPromoteHostToLeaveModal, setShowPromoteHostToLeaveModal] = useState(false);
   const [promotingToLeaveUserId, setPromotingToLeaveUserId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -600,41 +600,43 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         </div>
 
         {/* ========================================== */}
-        {/* SECTION 3 — DESTRUCTIVE ACTIONS */}
+        {/* SECTION 3 — ACTIONS */}
         {/* ========================================== */}
         <div className="pt-2 space-y-3 px-1">
-          <button
-            type="button"
-            disabled={isLeaving}
-            onClick={() => {
-              if (isSoleHost) {
-                setHostReplacementMode('leave');
-                setShowPromoteHostToLeaveModal(true);
-              } else {
-                executeLeavePlanFlow();
-              }
-            }}
-            className="w-full py-2.5 flex items-center gap-3.5 transition cursor-pointer active:scale-[0.99] group text-left"
-          >
-            <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center text-red-500 group-hover:scale-105 transition flex-shrink-0">
-              <LogOut className="w-4.5 h-4.5 text-red-500" />
-            </div>
-            <span className="text-sm font-semibold text-red-500 tracking-wide">
-              {isLeaving ? "Leaving Plan..." : "Leave Plan"}
-            </span>
-          </button>
-
-          {!isPlanSettingsForParticipant && (
+          {isPlanSettingsForParticipant ? (
+            /* Participant: red Leave Plan button */
             <button
               type="button"
-              onClick={() => setShowCancelModal(true)}
+              disabled={isLeaving}
+              onClick={() => {
+                if (isSoleHost) {
+                  setHostReplacementMode('leave');
+                  setShowPromoteHostToLeaveModal(true);
+                } else {
+                  executeLeavePlanFlow();
+                }
+              }}
               className="w-full py-2.5 flex items-center gap-3.5 transition cursor-pointer active:scale-[0.99] group text-left"
             >
-              <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center text-red-500 group-hover:scale-105 transition flex-shrink-0">
-                <Trash2 className="w-4.5 h-4.5 text-red-500" />
+              <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center group-hover:scale-105 transition flex-shrink-0">
+                <LogOut className="w-4.5 h-4.5 text-red-500" />
               </div>
               <span className="text-sm font-semibold text-red-500 tracking-wide">
-                Cancel Plan
+                {isLeaving ? "Leaving Plan..." : "Leave Plan"}
+              </span>
+            </button>
+          ) : (
+            /* Host: white Manage This Plan button */
+            <button
+              type="button"
+              onClick={() => setShowManagePlanSheet(true)}
+              className="w-full py-2.5 flex items-center gap-3.5 transition cursor-pointer active:scale-[0.99] group text-left"
+            >
+              <div className="w-9 h-9 rounded-full bg-white/[0.07] flex items-center justify-center text-white group-hover:scale-105 transition flex-shrink-0">
+                <Settings className="w-4.5 h-4.5 text-white" />
+              </div>
+              <span className="text-sm font-semibold text-white tracking-wide">
+                Manage This Plan
               </span>
             </button>
           )}
@@ -892,50 +894,19 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         </div>
       )}
 
-      {/* Cancel Plan Confirmation Modal */}
-      {!isPlanSettingsForParticipant && showCancelModal && (
-        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#1A1A1A] border border-white/10 rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <h3 className="text-lg font-bold text-white tracking-tight">
-              Cancel this plan?
-            </h3>
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              This action cannot be undone. All participants will be notified that the plan has been cancelled.
-            </p>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowCancelModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isCancelling}
-                onClick={async () => {
-                  setIsCancelling(true);
-                  try {
-                    if (onCancelPlan) {
-                      await onCancelPlan();
-                    }
-                    setShowCancelModal(false);
-                    onBack();
-                  } catch {
-                    // error handled silently
-                  } finally {
-                    setIsCancelling(false);
-                  }
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-600 hover:bg-red-700 text-white disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition cursor-pointer shadow-md"
-              >
-                {isCancelling ? "Cancelling..." : "Cancel Plan"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Manage This Plan Bottom Sheet */}
+      <CancelPlanBottomSheet
+        isOpen={showManagePlanSheet}
+        plan={plan}
+        onConfirmCancel={async () => {
+          setShowManagePlanSheet(false);
+          if (onCancelPlan) {
+            await onCancelPlan();
+          }
+          onBack();
+        }}
+        onClose={() => setShowManagePlanSheet(false)}
+      />
 
       {/* Promote a New Host Before Leaving / Stopping Hosting Modal (Sole Host Guard) */}
       {!isPlanSettingsForParticipant && (
