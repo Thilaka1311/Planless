@@ -45,7 +45,8 @@ export function parseCurrentRoute(): AppRoute {
 
   // Plans: /plans, /plans/:id, /plan/:id
   if (primary === 'plans' || primary === 'plan') {
-    const planId = parts[1] || null;
+    const rawParam = parts[1] || null;
+    const planId = rawParam ? decodeURIComponent(rawParam) : null;
     return { tab: 'plans', selectedPlanId: planId };
   }
 

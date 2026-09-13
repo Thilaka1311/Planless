@@ -8,6 +8,7 @@ import {
 } from "../src/core/types";
 import { normalizeStatus } from "./participantStatus";
 import { getPlanCover, PLAN_COVER_IMAGES } from "../src/features/plans/config/planCoverImages";
+import { getPlanSlug } from "../src/features/plans/utils/planSlugUtils";
 import defaultAvatar from "../src/assets/default_avatar.png";
 
 // ── avatar helper ───────────────────────────────────────────────────────────
@@ -271,6 +272,7 @@ export const mapPlansToLegacyPlans = (
       id: p.id,
       dbUuid: p.id,
       publicId: p.public_id,
+      slug: getPlanSlug({ id: p.id, dbUuid: p.id, title: p.title, publicId: p.public_id }, plansList as any),
       title: p.title,
       groupId: null,
       hostId: hostIdVal,

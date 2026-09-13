@@ -26,6 +26,7 @@ import { NavigationFooter } from "./components/NavigationFooter";
 import { HomeHeader } from "./components/HomeHeader";
 
 import { useLivePlan } from "./features/plans/hooks/useLivePlan";
+import { getPlanSlug, findPlanBySlugOrId } from "./features/plans/utils/planSlugUtils";
 import { SearchYourPlansScreen } from "./features/plans/screens/PlansScreen/SearchYourPlansScreen";
 import { HostedPlansScreen } from "./features/plans/screens/PlansScreen/HostedPlansScreen";
 import { PastPlans } from "./features/profile/screens/PastPlans";
@@ -114,13 +115,16 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
       isFirstRouteSync.current = false;
       if (selectedPlanId) {
         localStorage.setItem("planless_selected_plan_id", selectedPlanId);
-        navigateToRoute({ tab: activeTab, selectedPlanId }, { replace: isInitial });
+        // Resolve readable slug from plan if available
+        const matchedPlan = findPlanBySlugOrId(plans, selectedPlanId);
+        const routePlanParam = matchedPlan ? (matchedPlan.slug || getPlanSlug(matchedPlan, plans)) : selectedPlanId;
+        navigateToRoute({ tab: activeTab, selectedPlanId: routePlanParam }, { replace: isInitial });
       } else {
         localStorage.removeItem("planless_selected_plan_id");
         navigateToRoute({ tab: activeTab }, { replace: isInitial });
       }
     }
-  }, [activeTab, selectedPlanId]);
+  }, [activeTab, selectedPlanId, plans]);
 
   // Listen for external / popstate route changes
   React.useEffect(() => {

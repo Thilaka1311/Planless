@@ -6,5 +6,8 @@ verify_jwt = false
 [analytics]
 enabled = false
 
+[auth.email]
+otp_expiry = 600
+
 [auth.email.template.magic_link]
 content_path = "supabase/templates/magic_link.html"

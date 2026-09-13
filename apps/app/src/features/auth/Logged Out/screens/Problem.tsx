@@ -259,7 +259,7 @@ export function Complicated({ onGetStarted, className = "", onTouchStart, onTouc
     return (
       <div
         id="complicated_chat_card"
-        className="w-full max-w-[340px] xs:max-w-[365px] sm:max-w-[395px] md:max-w-[425px] h-full max-h-[540px] sm:max-h-[600px] mx-auto rounded-[28px] sm:rounded-[32px] bg-[#0c0c10] border border-white/[0.08] shadow-2xl shadow-black/80 flex flex-col relative overflow-hidden select-none px-4 pt-3.5 pb-4"
+        className="w-full max-w-[340px] xs:max-w-[365px] sm:max-w-[395px] md:max-w-[425px] h-full max-h-[460px] xs:max-h-[500px] sm:max-h-[540px] md:max-h-[570px] mx-auto rounded-[28px] sm:rounded-[32px] bg-[#0c0c10] border border-white/[0.08] shadow-2xl shadow-black/80 flex flex-col relative overflow-hidden select-none px-4 pt-3.5 pb-4"
         aria-label="Group chat animation and conversation"
       >
         {/* Group Name Header */}
@@ -433,46 +433,48 @@ export function Complicated({ onGetStarted, className = "", onTouchStart, onTouc
       onTouchEnd={onTouchEnd}
       className={`w-full h-full text-white bg-[#000000] flex flex-col justify-between font-sans relative overflow-hidden select-none ${className}`}
     >
-      {/* 1. [HEADER] Top title functioning as primary visual header - immediately visible */}
-      <div className="w-full shrink-0 pt-[max(1.25rem,env(safe-area-inset-top))] px-5 sm:px-8 md:px-10">
-        <h1 className="text-[22px] xs:text-[24px] sm:text-[26px] md:text-[28px] font-sans font-bold tracking-tight text-white leading-[1.22] text-left">
+      {/* 1. Top title functioning as primary visual headline - center aligned & responsively scaled */}
+      <div className="w-full shrink-0 pt-1 xs:pt-2 sm:pt-3 px-5 sm:px-8 md:px-10 flex flex-col items-center">
+        <h1 className="text-[18px] xs:text-[20px] sm:text-[22px] md:text-[24px] font-sans font-bold tracking-tight text-white leading-[1.25] text-center max-w-[360px] xs:max-w-[400px] sm:max-w-[440px] mx-auto">
           <span className="block">Making plans with friends</span>
           <span className="block">shouldn&apos;t be this complicated.</span>
         </h1>
       </div>
 
-      {/* 2. [LARGE CHAT ANIMATION] Slowly fades in on first mount (~850ms), plays once, becomes scrollable */}
+      {/* 2. [LARGE CHAT ANIMATION] Perfectly vertically centered between Heading bottom and Next Button top */}
       <motion.div
         initial={hasEverCompletedAnimation ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.85, ease: "easeOut" }}
-        className="flex-1 w-full flex items-center justify-center min-h-0 px-4 py-2 sm:py-3.5 overflow-hidden"
+        className="flex-1 w-full min-h-0 flex items-center justify-center px-4 py-2 sm:py-3 overflow-hidden"
       >
         {renderChatContainer()}
       </motion.div>
 
-      {/* 3. [CTA] Full-width Next - immediately starts smooth fade-in the moment WHAT IS THE PLAN? appears */}
-      <div className="w-full shrink-0 min-h-[58px] flex items-end">
-        <AnimatePresence>
-          {showCta && (
-            <motion.div
-              key="cta_container"
-              initial={hasEverCompletedAnimation && !isAnimationComplete ? false : { opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
-              className="w-full px-4 sm:px-6 md:px-8 pb-[max(1rem,env(safe-area-inset-bottom))]"
-            >
-              <button
-                id="btn_onboarding_cta_1"
-                type="button"
-                onClick={onGetStarted}
-                className="w-full py-3 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] text-white font-semibold text-[14px] xs:text-[14.5px] sm:text-[15px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center shadow-md shadow-[#FF6B2C]/20"
+      {/* 3. [CTA] Full-width Next - anchored at bottom with consistent safe-area spacing */}
+      <div className="w-full shrink-0 px-4 sm:px-6 md:px-8 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="h-[46px] w-full flex items-center">
+          <AnimatePresence>
+            {showCta && (
+              <motion.div
+                key="cta_container"
+                initial={hasEverCompletedAnimation && !isAnimationComplete ? false : { opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+                className="w-full"
               >
-                Next
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                <button
+                  id="btn_onboarding_cta_1"
+                  type="button"
+                  onClick={onGetStarted}
+                  className="w-full py-3 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] text-white font-semibold text-[14px] xs:text-[14.5px] sm:text-[15px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center shadow-md shadow-[#FF6B2C]/20"
+                >
+                  Next
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );

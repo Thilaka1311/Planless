@@ -51,9 +51,18 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
     >
       {/* Left Column: Title */}
       <div className="flex-1 flex items-center justify-start z-10 min-w-0">
-        <h1 className="text-stone-100 font-sans font-bold text-xl tracking-tight leading-none text-left truncate">
-          {title}
-        </h1>
+        {title === "Planless" ? (
+          <h1
+            style={{ fontFamily: "'Grand Hotel', cursive" }}
+            className="text-white text-[28px] leading-none font-normal text-left truncate tracking-normal select-none"
+          >
+            {title}
+          </h1>
+        ) : (
+          <h1 className="text-stone-100 font-sans font-bold text-xl tracking-tight leading-none text-left truncate">
+            {title}
+          </h1>
+        )}
       </div>
 
       {/* Right Column: Compact Action Utility Group */}

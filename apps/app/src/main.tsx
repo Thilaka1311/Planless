@@ -19,6 +19,13 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { registerSW } from 'virtual:pwa-register';
+import planlessLogo from './assets/planless_logo.png';
+import { preloadImage } from './shared/imaging/preloadImage';
+
+// Module-level eager warmup: start fetching and decoding Planless logo immediately on bundle evaluation
+if (typeof window !== "undefined") {
+  preloadImage(planlessLogo);
+}
 
 interface ErrorBoundaryProps {
   children: ReactNode;

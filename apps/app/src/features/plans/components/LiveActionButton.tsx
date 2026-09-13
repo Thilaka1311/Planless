@@ -9,6 +9,7 @@ export interface LiveActionButtonProps {
   isCancelled?: boolean;
   isCompleted?: boolean;
   isManagementExpired?: boolean;
+  showExclamation?: boolean;
 }
 
 export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
@@ -18,6 +19,7 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
   isCancelled = false,
   isCompleted = false,
   isManagementExpired = false,
+  showExclamation = false,
 }) => {
   if (!myParticipantRecord && !isCancelled && !isCompleted) return null;
 
@@ -135,9 +137,23 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -2 }}
           transition={{ duration: 0.2 }}
-          className={`text-[13px] font-sans font-semibold tracking-wide whitespace-nowrap ${glassStyle.textColor}`}
+          className={`text-[13px] font-sans font-semibold tracking-wide whitespace-nowrap flex items-center gap-1.5 ${glassStyle.textColor}`}
         >
-          {text}
+          <span>{text}</span>
+          {showExclamation && isHostRole && !isCancelled && !isCompleted && (
+            <span
+              title="Host action required"
+              style={{
+                fontSize: 14,
+                fontWeight: 700,
+                color: '#F59E0B',
+                lineHeight: 1,
+                fontFamily: 'Inter, sans-serif',
+              }}
+            >
+              !
+            </span>
+          )}
         </motion.span>
       </AnimatePresence>
     </motion.div>
