@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { motion } from "motion/react";
 import planlessLogo from "../../../../assets/planless_logo.png";
+import onboardingCups from "../../../../assets/Onboarding_cups.png";
+import { preloadImage } from "../../../../shared/imaging/preloadImage";
 
 export interface PlanlessProps {
   onGetStarted: () => void;
@@ -13,52 +15,75 @@ export function Planless({
   onLogin,
   className = "",
 }: PlanlessProps) {
+  // Idle prefetch: warm up the one-time cups illustration in the background while user views entry screen
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if ("requestIdleCallback" in window) {
+        (window as any).requestIdleCallback(() => preloadImage(onboardingCups));
+      } else {
+        const t = setTimeout(() => preloadImage(onboardingCups), 300);
+        return () => clearTimeout(t);
+      }
+    }
+  }, []);
+
   return (
     <div
       id="planless_entry_screen"
-      className={`w-full h-full text-white bg-[#000000] flex flex-col justify-between items-center font-sans relative overflow-hidden select-none px-5 xs:px-6 sm:px-8 pt-[max(1.75rem,env(safe-area-inset-top))] pb-[max(1.75rem,env(safe-area-inset-bottom))] ${className}`}
+      className={`w-full h-full text-white bg-[#000000] flex flex-col justify-between items-center font-sans relative overflow-hidden select-none px-4 sm:px-6 md:px-8 pt-[max(1.75rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] ${className}`}
     >
       {/* Centered Top & Middle Section: PLANLESS Title + Planless Logo */}
       <div className="flex-1 w-full max-w-sm mx-auto flex flex-col items-center justify-center min-h-0 py-6 sm:py-8">
-        {/* Title: PLANLESS */}
+        {/* Title: Planless */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: "easeOut" }}
-          className="w-full flex justify-center mb-8 xs:mb-10 sm:mb-12"
+          className="w-full flex justify-center mb-6 xs:mb-7 sm:mb-8"
         >
-          <h1 className="text-[13px] xs:text-[14px] sm:text-[15px] font-sans font-bold uppercase tracking-[0.42em] text-white/85 text-center select-none">
-            PLANLESS
+          <h1
+            style={{ fontFamily: "'Grand Hotel', cursive" }}
+            className="text-[40px] xs:text-[46px] sm:text-[50px] leading-tight text-white text-center select-none font-normal tracking-normal"
+          >
+            Planless
           </h1>
         </motion.div>
 
-        {/* Existing Planless Logo */}
+        {/* Planless P Symbol */}
         <motion.div
           initial={{ opacity: 0, scale: 0.92 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6, delay: 0.1, ease: "easeOut" }}
           className="relative flex items-center justify-center"
         >
-          {/* Subtle Ambient Brand Glow */}
-          <div className="absolute -inset-4 sm:-inset-6 bg-[#FF6B2C]/15 rounded-[36px] sm:rounded-[44px] blur-2xl pointer-events-none" />
+          <img
+            src={planlessLogo}
+            alt="Planless Logo"
+            loading="eager"
+            decoding="sync"
+            className="relative z-10 w-28 h-28 xs:w-32 xs:h-32 sm:w-36 sm:h-36 object-contain select-none pointer-events-none"
+          />
+        </motion.div>
 
-          {/* Logo Card */}
-          <div className="relative z-10 w-28 h-28 xs:w-32 xs:h-32 sm:w-36 sm:h-36 rounded-[26px] xs:rounded-[30px] sm:rounded-[34px] overflow-hidden border border-white/[0.12] shadow-2xl shadow-black/90 flex items-center justify-center bg-[#000000]">
-            <img
-              src={planlessLogo}
-              alt="Planless Logo"
-              className="w-full h-full object-cover select-none pointer-events-none"
-            />
-          </div>
+        {/* Brand Tagline */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.15, ease: "easeOut" }}
+          className="w-full flex justify-center mt-6 xs:mt-7 sm:mt-8"
+        >
+          <p className="text-[14.5px] xs:text-[15px] sm:text-[15.5px] font-sans font-normal text-zinc-400 tracking-tight text-center select-none">
+            Plan less. Do more.
+          </p>
         </motion.div>
       </div>
 
-      {/* Bottom Actions Section: Get Started (Primary Action) + Already have an account */}
+      {/* Bottom Actions Section: Get Started (Primary Action) + Already have an account - Full Width */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
-        className="w-full max-w-sm mx-auto flex flex-col gap-2.5 shrink-0 pt-2"
+        className="w-full flex flex-col gap-2.5 shrink-0 pt-2"
       >
         {/* Primary Action: Get Started */}
         <button

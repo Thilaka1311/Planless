@@ -19,48 +19,9 @@ import diningCover from "../../../../assets/dining.png";
 import sportsCover from "../../../../assets/sports.png";
 import customPlanCover from "../../../../assets/planimagedefault.png";
 import defaultAvatar from "../../../../assets/default_avatar.png";
+import { preloadImage } from "../../../../shared/imaging/preloadImage";
 
-// ============================================================================
-// IMAGE PRELOADING & DECODING CACHE
-// Ensures zero network delay, no blank flashes, and fully decoded GPU textures
-// BEFORE any visual transition begins.
-// ============================================================================
-const imagePreloadCache = new Map<string, Promise<boolean>>();
-
-export function preloadImage(src: string): Promise<boolean> {
-  if (imagePreloadCache.has(src)) {
-    return imagePreloadCache.get(src)!;
-  }
-  const promise = new Promise<boolean>((resolve) => {
-    if (typeof window === "undefined") {
-      resolve(true);
-      return;
-    }
-    const img = new Image();
-    img.src = src;
-
-    const onComplete = () => {
-      if ("decode" in img) {
-        img
-          .decode()
-          .then(() => resolve(true))
-          .catch(() => resolve(true));
-      } else {
-        resolve(true);
-      }
-    };
-
-    if (img.complete && img.naturalWidth > 0) {
-      onComplete();
-    } else {
-      img.onload = onComplete;
-      img.onerror = () => resolve(false);
-    }
-  });
-
-  imagePreloadCache.set(src, promise);
-  return promise;
-}
+export { preloadImage };
 
 // Module-level eager warmup: start fetching and decoding immediately on bundle evaluation
 if (typeof window !== "undefined") {
@@ -199,6 +160,7 @@ export const PLAN_SLIDES: PlanSlideConfig[] = [
 interface PlanAnimationProps {
   onComplete?: () => void;
   onBack?: () => void;
+  isInteractive?: boolean;
   className?: string;
 }
 
@@ -228,10 +190,19 @@ export const FINAL_DEMO_PEOPLE: DemoPerson[] = [
 export function PlanAnimation({
   onComplete,
   onBack,
+  isInteractive = false,
   className = "",
 }: PlanAnimationProps) {
   // Defined manual time for the example plan ("Today • 19:00")
   const currentPlanTime = ONBOARDING_PLAN_TIME;
+
+  // Animation completion state to gate interactivity
+  const [isAnimationFinished, setIsAnimationFinished] = useState<boolean>(() =>
+    hasEverCompletedPlanAnimation
+  );
+
+  // Interactivity is active ONLY if the animation is completed AND the parent signals isInteractive (Next button visible)
+  const canInteract = isAnimationFinished && isInteractive;
 
   // Navigation screen view:
   // Starts directly with plan carousel switching (Movies -> Dining -> Sports -> Custom Plan)
@@ -266,7 +237,7 @@ export function PlanAnimation({
   const [highlightAlexRow, setHighlightAlexRow] = useState<boolean>(false);
   const [highlightRemoveAction, setHighlightRemoveAction] = useState<boolean>(false);
 
-  // User manual interaction flag to prevent automated interruption
+  // User manual interaction flag after animation completion
   const [isUserInteracted, setIsUserInteracted] = useState<boolean>(false);
 
   const timersRef = useRef<NodeJS.Timeout[]>([]);
@@ -450,6 +421,7 @@ export function PlanAnimation({
       isCompletedRef.current = true;
       hasEverCompletedPlanAnimation = true;
       isRunningRef.current = false;
+      setIsAnimationFinished(true);
       clearAllTimers();
       onCompleteRef.current?.();
       // Animation halts completely. No timers, no loop, no restart.
@@ -462,10 +434,11 @@ export function PlanAnimation({
       isRunningRef.current = false;
       clearAllTimers();
     };
-  }, [isUserInteracted]);
+  }, []);
 
-  // Interactive user manual handlers
+  // Interactive user manual handlers (only allowed when canInteract is true)
   const handleOpenManageManual = () => {
+    if (!canInteract) return;
     setIsUserInteracted(true);
     clearAllTimers();
     setHighlightManageBtn(false);
@@ -473,6 +446,7 @@ export function PlanAnimation({
   };
 
   const handleBackToPreviewManual = () => {
+    if (!canInteract) return;
     setIsUserInteracted(true);
     clearAllTimers();
     handleCloseSheet();
@@ -480,6 +454,7 @@ export function PlanAnimation({
   };
 
   const handleOpenAddParticipantsManual = () => {
+    if (!canInteract) return;
     setIsUserInteracted(true);
     clearAllTimers();
     setHighlightAddBtn(false);
@@ -488,12 +463,14 @@ export function PlanAnimation({
   };
 
   const handleBackFromAddManual = () => {
+    if (!canInteract) return;
     setIsUserInteracted(true);
     clearAllTimers();
     setScreenView("manage_participants");
   };
 
   const handleToggleFriendSelectionManual = (friendId: string) => {
+    if (!canInteract) return;
     setIsUserInteracted(true);
     clearAllTimers();
     setSelectedFriendIds((prev) =>
@@ -502,6 +479,7 @@ export function PlanAnimation({
   };
 
   const handleConfirmAddManual = () => {
+    if (!canInteract) return;
     setIsUserInteracted(true);
     clearAllTimers();
     const friendsToAdd = NEW_FRIENDS_TO_ADD.filter((f) => selectedFriendIds.includes(f.id));
@@ -514,7 +492,7 @@ export function PlanAnimation({
   };
 
   const handlePersonClickManual = (person: DemoPerson) => {
-    if (person.isHost) return;
+    if (!canInteract || person.isHost) return;
     setIsUserInteracted(true);
     clearAllTimers();
     setSelectedPerson(person);
@@ -527,7 +505,7 @@ export function PlanAnimation({
   };
 
   const handleRemovePersonManual = () => {
-    if (!selectedPerson) return;
+    if (!canInteract || !selectedPerson) return;
     const p = selectedPerson;
     handleCloseSheet();
     setGoingList((prev) => prev.filter((item) => item.id !== p.id));
@@ -540,8 +518,13 @@ export function PlanAnimation({
   return (
     <div
       id="plan_animation_card"
-      style={{ transform: "translate3d(0, 0, 0)" }}
-      className={`w-full max-w-[340px] xs:max-w-[365px] sm:max-w-[395px] md:max-w-[425px] h-full max-h-[540px] sm:max-h-[600px] mx-auto rounded-[28px] sm:rounded-[32px] bg-[#0A0A0C] border border-white/[0.12] shadow-2xl shadow-black/90 flex flex-col relative overflow-hidden select-none font-sans text-white ${className}`}
+      style={{
+        transform: "translate3d(0, 0, 0)",
+        touchAction: canInteract ? "auto" : "none",
+      }}
+      className={`w-full max-w-[340px] xs:max-w-[365px] sm:max-w-[395px] md:max-w-[425px] h-full max-h-[460px] xs:max-h-[500px] sm:max-h-[540px] md:max-h-[570px] mx-auto rounded-[28px] sm:rounded-[32px] bg-[#0A0A0C] border border-white/[0.12] shadow-2xl shadow-black/90 flex flex-col relative overflow-hidden select-none font-sans text-white ${
+        canInteract ? "pointer-events-auto" : "pointer-events-none cursor-default"
+      } ${className}`}
     >
       {/* Hidden Pre-rendered Image Warmup Cache (keeps decoded GPU textures active in browser) */}
       <div className="sr-only pointer-events-none fixed -top-[9999px] -left-[9999px] opacity-0" aria-hidden="true">

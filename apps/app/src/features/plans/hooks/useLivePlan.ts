@@ -1,11 +1,13 @@
 import { useMemo } from "react";
 import { usePlansStore } from "../state/PlansContext";
 import { Plan } from "../../../core/types";
+import { findPlanBySlugOrId } from "../utils/planSlugUtils";
 
-export function useLivePlan(planId: string | null | undefined): Plan | null {
+export function useLivePlan(planIdOrSlug: string | null | undefined): Plan | null {
   const { plans } = usePlansStore();
   return useMemo(() => {
-    if (!planId) return null;
-    return plans.find(p => p.id === planId || p.dbUuid === planId) || null;
-  }, [plans, planId]);
+    if (!planIdOrSlug) return null;
+    return findPlanBySlugOrId(plans, planIdOrSlug);
+  }, [plans, planIdOrSlug]);
 }
+

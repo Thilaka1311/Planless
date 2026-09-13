@@ -216,7 +216,14 @@ export const PlansScreen = React.memo(({
 
   const renderPlanRow = (plan: Plan, section: 'today' | 'tomorrow' | 'thisWeek' | 'later' | 'past') => {
     const timeLabel = getPlanTimeLabel(plan, section);
+    const myParticipant = participantMap.get(plan.id) || (plan.dbUuid ? participantMap.get(plan.dbUuid) : undefined);
+    const isHostUser = myParticipant
+      ? myParticipant.role === "HOST"
+      : Boolean(plan.members?.some(m => (allMyUserIds.has(m.userId) || (m.userUuid && allMyUserIds.has(m.userUuid))) && m.isHost));
+    const isPastPlan = section === 'past' || getPlanDateTime(plan).getTime() < new Date().setHours(0, 0, 0, 0);
     const hasPendingAction = pendingActionPlanIds.has(plan.id) || Boolean(plan.dbUuid && pendingActionPlanIds.has(plan.dbUuid));
+
+    const showExclamation = (isPastPlan && isHostUser) || hasPendingAction;
 
     return (
       <motion.div
@@ -253,10 +260,10 @@ export const PlansScreen = React.memo(({
           </div>
         </div>
 
-        {/* Plan-level pending host action indicator */}
-        {hasPendingAction && (
+        {/* Plan-level host indicator */}
+        {showExclamation && (
           <span
-            title="Action required"
+            title={isPastPlan && isHostUser ? "Host action required" : "Action required"}
             style={{
               fontSize: 15,
               fontWeight: 700,

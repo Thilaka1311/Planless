@@ -260,6 +260,7 @@ export interface Plan {
   id: string;
   dbUuid?: string;
   publicId?: string;
+  slug?: string;
   title: string;
   maxParticipants?: number;
   max_participants?: number;

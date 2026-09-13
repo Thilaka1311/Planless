@@ -51,7 +51,7 @@ import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGoog
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";
 import { uploadPlanImage } from "../../../../../shared/utils/imageUtils";
-import { cleanPlanId } from "../../../utils/planUtils";
+import { cleanPlanId, parsePlanDateTime } from "../../../utils/planUtils";
 import { LiveActionButton } from "../../../components/LiveActionButton";
 import { WhoIsComingScreen } from "../../../../create/screens/WhoIsComingScreen";
 import { getCompleteCurrentUserFriends } from "../../../../friendships/api/friendships";
@@ -2024,20 +2024,26 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 </button>
               </div>
             );
-          })() : (
-            <LiveActionButton
-              myParticipantRecord={myParticipantRecord}
-              isCancelled={isCancelled}
-              isCompleted={isCompleted}
-              isManagementExpired={isManagementExpired}
-              className={(myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT") ? "!bottom-24" : ""}
-              onClick={
-                isCompleted && isHost
-                  ? !isManagementExpired
-                    ? () => setShowAttendanceSheet(true)
-                    : undefined
-                  : isCompleted
-                    ? undefined
+          })() : (() => {
+            const planDateTime = selectedPlan ? parsePlanDateTime(selectedPlan) : new Date();
+            const isPastPlan = Boolean(selectedPlan && planDateTime.getTime() < new Date().setHours(0, 0, 0, 0));
+            const showExclamation = Boolean(isHost && isPastPlan && !isCancelled && !isCompleted);
+
+            return (
+              <LiveActionButton
+                myParticipantRecord={myParticipantRecord}
+                isCancelled={isCancelled}
+                isCompleted={isCompleted}
+                isManagementExpired={isManagementExpired}
+                showExclamation={showExclamation}
+                className={(myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT") ? "!bottom-24" : ""}
+                onClick={
+                  isCompleted && isHost
+                    ? !isManagementExpired
+                      ? () => setShowAttendanceSheet(true)
+                      : undefined
+                    : isCompleted
+                      ? undefined
                     : isHost && isCancelled
                       ? () => setShowRestorePlanConfirm(true)
                       : isHost
@@ -2051,7 +2057,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                               : undefined
               }
             />
-          )}
+          );
+        })()}
           {myParticipantRecord?.rsvp_status === "SKIPPED" && myParticipantRecord?.skip_reason === "LEFT" && (
             <div className="fixed bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black via-black/90 to-transparent z-40">
               <button
