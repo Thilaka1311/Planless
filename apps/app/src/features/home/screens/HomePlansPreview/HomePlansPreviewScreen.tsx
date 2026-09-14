@@ -7,7 +7,7 @@ import { useLivePlan } from "../../../plans/hooks/useLivePlan";
 import { getPlanCover } from "../../../plans/config/planCoverImages";
 import { formatPlanDate } from "../../../../../lib/mappers";
 import { supabase } from "../../../../../lib/supabaseClient";
-import { checkHasValidWaitlistReplacement, normalizeStatus } from "../../../../../lib/participantStatus";
+import { normalizeStatus } from "../../../../../lib/participantStatus";
 import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
 import { HeroHeader } from "../../../plans/components/HeroHeader";
 import { InlineParticipantView } from "../../../plans/components/InlineParticipantView";
@@ -19,7 +19,7 @@ import { useHoldToAccept } from "../../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "../../components/HoldToAccept";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
 import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
-import { JoinPlanConfirmationBottomSheet, PaidPlanLeaveConfirmationDialog, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet } from "../../../plans/components/BottomSheets";
+import { JoinPlanConfirmationBottomSheet, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet } from "../../../plans/components/BottomSheets";
 import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
 import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../../plans/utils/planUtils";
@@ -288,7 +288,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   }, [dbPlanParticipants, selectedPlan, resolvedUserUuid]);
 
   const [showSkipConfirmation, setShowSkipConfirmation] = useState(false);
-  const [showPaidLeaveConfirmation, setShowPaidLeaveConfirmation] = useState(false);
   const [showCancelLeaveRequestConfirmation, setShowCancelLeaveRequestConfirmation] = useState(false);
   const [isSubmittingPaidLeave, setIsSubmittingPaidLeave] = useState(false);
   const [isCancellingLeaveRequest, setIsCancellingLeaveRequest] = useState(false);
@@ -311,7 +310,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     setIsSubmittingPaidLeave(true);
     try {
       await requestPaidPlanLeave(selectedPlan.id);
-      setShowPaidLeaveConfirmation(false);
     } catch (err) {
       console.error("[handleConfirmPaidLeaveRequest] Failed:", err);
     } finally {
@@ -629,6 +627,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       <LeavePlanBottomSheet
         isOpen={showSkipConfirmation}
         isSkipping={isSkipping}
+        isPaid={false}
         plan={selectedPlan}
         onConfirm={handleConfirmSkip}
         onClose={() => setShowSkipConfirmation(false)}
@@ -637,72 +636,16 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       <LeavePlanBottomSheet
         isOpen={showLeavePlanConfirm}
         isSkipping={isSkipping}
+        isSubmitting={isSubmittingPaidLeave}
+        isPaid={hasCost}
         plan={selectedPlan}
         onConfirm={async () => {
-          const planUuid = selectedPlan?.dbUuid || selectedPlan?.id || "";
-          console.log('[LEAVE HANDLER ENTERED]');
-          console.log('source: HomePlansPreviewScreen');
-          console.log('planId:', planUuid);
-          console.log('userId:', resolvedUserUuid);
-
           setShowLeavePlanConfirm(false);
-          const isPaidPlan = rawDbPlan && rawDbPlan.total_cost !== undefined && rawDbPlan.total_cost !== null && Number(rawDbPlan.total_cost) > 0;
-          const isActuallyJoined = myParticipantRecord?.rsvp_status === "JOINED";
-
-          if (isPaidPlan && isActuallyJoined) {
-            try {
-              const { data: freshParticipants, error: freshErr } = await (supabase as any)
-                .from("plan_participants")
-                .select("user_id, rsvp_status, assigned_group, waitlist_position")
-                .eq("plan_id", planUuid);
-
-              if (freshErr) {
-                console.error("[HomePlansPreviewScreen] Error querying fresh database state:", freshErr);
-              }
-
-              const mode = rawDbPlan?.participant_filtering || (selectedPlan as any)?.participantFiltering || "AUTOMATIC";
-              
-              const pos1Candidate = freshParticipants?.find(p => p.assigned_group === 'WAITLIST' && p.waitlist_position === 1);
-
-              console.log('[ASSIGNED #1 AUDIT]');
-              console.log('plan_id:', planUuid);
-              console.log('user_id:', pos1Candidate?.user_id);
-              console.log('assigned_group:', pos1Candidate?.assigned_group);
-              console.log('waitlist_position:', pos1Candidate?.waitlist_position);
-              console.log('rsvp_status:', pos1Candidate?.rsvp_status);
-
-              const { hasReplacement, candidate } = checkHasValidWaitlistReplacement(freshParticipants, mode);
-
-              console.log('[REAL PAID LEAVE DECISION]');
-              console.log(JSON.stringify({
-                planId: planUuid,
-                currentUserId: resolvedUserUuid,
-                waitlistMode: mode,
-                waitlistCandidates: freshParticipants?.filter(p => p.assigned_group === 'WAITLIST'),
-                positionOneCandidate: pos1Candidate,
-                positionOneIsAccepted: pos1Candidate ? (pos1Candidate.rsvp_status !== 'INVITED' && pos1Candidate.rsvp_status !== 'SKIPPED') : false,
-                hasValidReplacement: hasReplacement,
-                finalDecision: hasReplacement ? 'ALLOW_IMMEDIATE_LEAVE' : 'SHOW_LEAVE_REQUEST_SHEET'
-              }, null, 2));
-
-              console.log('[LEAVE ELIGIBILITY RESULT]');
-              console.log('hasValidReplacement:', hasReplacement);
-              console.log('decision:', hasReplacement ? 'DIRECT_LEAVE' : 'LEAVE_REQUEST');
-
-              if (!hasReplacement) {
-                console.log('[LEAVE SHEET]');
-                console.log('sheet: LEAVE_REQUEST');
-                setShowPaidLeaveConfirmation(true);
-                return;
-              }
-            } catch (err) {
-              console.error("[HomePlansPreviewScreen] Error querying fresh database state:", err);
-            }
+          if (hasCost) {
+            await handleConfirmPaidLeaveRequest();
+          } else {
+            handleConfirmSkip();
           }
-
-          console.log('[LEAVE SHEET]');
-          console.log('sheet: DIRECT_LEAVE');
-          handleConfirmSkip();
         }}
         onClose={() => setShowLeavePlanConfirm(false)}
       />
@@ -713,14 +656,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         isSubmitting={isSubmittingHostReplacement}
         onConfirm={handleConfirmHostLeaveReplacement}
         onClose={() => setShowHostLeaveReplacementSheet(false)}
-      />
-
-      <PaidPlanLeaveConfirmationDialog
-        isOpen={showPaidLeaveConfirmation}
-        planTitle={selectedPlan?.title}
-        isSubmitting={isSubmittingPaidLeave}
-        onConfirm={handleConfirmPaidLeaveRequest}
-        onClose={() => setShowPaidLeaveConfirmation(false)}
       />
 
       <CancelLeaveRequestBottomSheet

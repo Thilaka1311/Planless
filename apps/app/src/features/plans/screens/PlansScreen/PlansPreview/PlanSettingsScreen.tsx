@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { ChevronLeft, Crown, Users, Plus, Check, Settings, LogOut } from "lucide-react";
+import { ArrowLeft, Crown, Users, Plus, Check, Settings, LogOut } from "lucide-react";
 import { Plan, UserProfile } from "../../../../../core/types";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
 import { normalizeStatus } from "../../../../../../lib/participantStatus";
@@ -404,7 +404,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           className="p-2 -ml-2 text-white hover:text-white/80 active:scale-95 transition cursor-pointer flex items-center justify-center"
           title="Back"
         >
-          <ChevronLeft className="w-6 h-6" />
+          <ArrowLeft className="w-6 h-6" />
         </button>
         <h1 className="text-lg font-bold text-white tracking-tight">
           Plan Settings
