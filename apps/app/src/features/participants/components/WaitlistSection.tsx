@@ -12,6 +12,7 @@ interface WaitlistSectionProps {
   reorderable?: boolean;
   showIndex?: boolean;
   indexOffset?: number;
+  useParticipantPosition?: boolean;
 }
 
 export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
@@ -23,6 +24,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
   reorderable = true,
   showIndex = true,
   indexOffset = 1,
+  useParticipantPosition = false,
 }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -36,6 +38,11 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
     );
   }
 
+  const hasWaitlistNumbers = waitlist.some(
+    (item) => typeof item.waitlistPosition === 'number' || typeof (item as any).waitlist_position === 'number'
+  );
+  const effectiveShowIndex = useParticipantPosition ? (showIndex && hasWaitlistNumbers) : showIndex;
+
   return (
     <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%', position: 'relative' }}>
       {reorderable && onReorder && waitlist.length > 1 ? (
@@ -48,8 +55,11 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
         >
           {waitlist.map((item, idx) => {
             const itemKey = item.dbUuid || item.id;
-            const itemIndex = idx + indexOffset;
-            const shouldShowIndex = Boolean(showIndex && itemIndex !== undefined);
+            const itemPos = typeof item.waitlistPosition === 'number'
+              ? item.waitlistPosition
+              : (typeof (item as any).waitlist_position === 'number' ? (item as any).waitlist_position : undefined);
+            const itemIndex = useParticipantPosition ? itemPos : (idx + indexOffset);
+            const shouldShowIndex = Boolean(effectiveShowIndex && itemIndex !== undefined);
 
             return (
               <Reorder.Item
@@ -86,8 +96,11 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
       ) : (
         waitlist.map((item, idx) => {
           const itemKey = item.dbUuid || item.id;
-          const itemIndex = idx + indexOffset;
-          const shouldShowIndex = Boolean(showIndex && itemIndex !== undefined);
+          const itemPos = typeof item.waitlistPosition === 'number'
+            ? item.waitlistPosition
+            : (typeof (item as any).waitlist_position === 'number' ? (item as any).waitlist_position : undefined);
+          const itemIndex = useParticipantPosition ? itemPos : (idx + indexOffset);
+          const shouldShowIndex = Boolean(effectiveShowIndex && itemIndex !== undefined);
 
           return (
             <StackingFriends

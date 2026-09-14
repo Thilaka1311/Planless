@@ -466,6 +466,13 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
       if (aIsHost && !bIsHost) return -1;
       if (!aIsHost && bIsHost) return 1;
 
+      const statusA = normalizeStatus((a as any).rsvp_status || (a as any).joinState || (a as any).rsvpStatus);
+      const statusB = normalizeStatus((b as any).rsvp_status || (b as any).joinState || (b as any).rsvpStatus);
+      const isAJoined = statusA === 'JOINED';
+      const isBJoined = statusB === 'JOINED';
+      if (isAJoined && !isBJoined) return -1;
+      if (!isAJoined && isBJoined) return 1;
+
       const timeA = getQueueTimestamp(a);
       const timeB = getQueueTimestamp(b);
 
@@ -576,14 +583,34 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   //         - Sort these invited people alphabetically.
   const overflowJoined = sortedJoined.slice(cap);
 
-  const validJoinedWaitlist = overflowJoined.filter((item) => getQueueTimestamp(item) !== null);
-  const invalidJoinedWaitlist = overflowJoined.filter((item) => getQueueTimestamp(item) === null);
+  const validJoinedWaitlist = overflowJoined.filter((item) =>
+    getQueueTimestamp(item) !== null ||
+    typeof item.waitlistPosition === 'number' ||
+    typeof (item as any).waitlist_position === 'number'
+  );
+  const invalidJoinedWaitlist = overflowJoined.filter((item) =>
+    getQueueTimestamp(item) === null &&
+    typeof item.waitlistPosition !== 'number' &&
+    typeof (item as any).waitlist_position !== 'number'
+  );
 
-  // Group A: Sort by join_queue_at ASC
+  // Group A: Sort by waitlist_position ASC if both present, then join_queue_at ASC
   const sortedValidWaitlist = [...validJoinedWaitlist].sort((a, b) => {
-    const tA = getQueueTimestamp(a)!;
-    const tB = getQueueTimestamp(b)!;
-    if (tA !== tB) return tA - tB;
+    const posA = typeof a.waitlistPosition === 'number'
+      ? a.waitlistPosition
+      : (typeof (a as any).waitlist_position === 'number' ? (a as any).waitlist_position : null);
+    const posB = typeof b.waitlistPosition === 'number'
+      ? b.waitlistPosition
+      : (typeof (b as any).waitlist_position === 'number' ? (b as any).waitlist_position : null);
+
+    if (posA !== null && posB !== null && posA !== posB) return posA - posB;
+
+    const tA = getQueueTimestamp(a);
+    const tB = getQueueTimestamp(b);
+    if (tA !== null && tB !== null && tA !== tB) return tA - tB;
+    if (tA !== null && tB === null) return -1;
+    if (tA === null && tB !== null) return 1;
+
     const nameA = a.name || a.full_name || a.username || '';
     const nameB = b.name || b.full_name || b.username || '';
     return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });

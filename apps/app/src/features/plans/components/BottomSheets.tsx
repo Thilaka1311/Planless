@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock } from "lucide-react";
+import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2 } from "lucide-react";
+import { useToast } from "../../../shared/contexts/ToastContext";
+import { buildInviteUrl } from "../services/planInviteService";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import type { Plan } from "../../../core/types";
@@ -3471,6 +3473,193 @@ export type {
   PlanSizeBottomsheetProps,
   EditCapacityBottomSheetProps,
 } from "../../create/components/PlanSizeBottomsheet";
+
+// ----------------------------------------------------------------------
+// 16. SHARE PLAN LINK BOTTOM SHEET
+// ----------------------------------------------------------------------
+export interface SharePlanLinkBottomSheetProps {
+  isOpen: boolean;
+  onClose: () => void;
+  planId: string;
+  userUuid?: string;
+}
+
+export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> = ({
+  isOpen,
+  onClose,
+  planId,
+}) => {
+  const { showToast } = useToast();
+  const inviteUrl = planId ? buildInviteUrl(planId) : "";
+  const [copied, setCopied] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setCopied(false);
+    }
+  }, [isOpen]);
+
+  const handleCopy = async () => {
+    if (!inviteUrl) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(inviteUrl);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = inviteUrl;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+      setCopied(true);
+      showToast("Link copied");
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("[SharePlanLinkBottomSheet] Failed to copy link:", err);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 z-[110] pointer-events-auto"
+          />
+
+          {/* Bottom Sheet */}
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[115] pointer-events-auto"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              padding: "14px 20px calc(24px + env(safe-area-inset-bottom, 0px))",
+              fontFamily: "Inter, sans-serif",
+              color: "#FFFFFF",
+              boxSizing: "border-box",
+            }}
+          >
+            {/* Drag Handle */}
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255, 255, 255, 0.2)", margin: "0 auto 16px" }} />
+
+            {/* Title */}
+            <h3 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 6px", textAlign: "center", letterSpacing: "-0.01em" }}>
+              Share Plan Link
+            </h3>
+
+            {/* Subtitle / Explanation */}
+            <p style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.5)", textAlign: "center", margin: "0 0 20px", lineHeight: 1.4 }}>
+              Invite people to this plan with a link.
+            </p>
+
+            {/* Visible / Copyable Invite Link Box */}
+            <div
+              id="share_plan_link_box"
+              onClick={handleCopy}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "12px 14px",
+                borderRadius: 14,
+                background: "rgba(255, 255, 255, 0.05)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                marginBottom: 20,
+                cursor: inviteUrl ? "pointer" : "default",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <Link2 style={{ width: 18, height: 18, color: "#FF6B2C", flexShrink: 0 }} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: "rgba(255, 255, 255, 0.9)",
+                    wordBreak: "break-all",
+                    userSelect: "all",
+                    display: "block",
+                    lineHeight: 1.3,
+                  }}
+                >
+                  {inviteUrl || "No plan selected"}
+                </span>
+              </div>
+            </div>
+
+            {/* Primary Action Button: "Copy Link" */}
+            <button
+              id="share_plan_copy_link_btn"
+              type="button"
+              disabled={!inviteUrl}
+              onClick={handleCopy}
+              style={{
+                width: "100%",
+                padding: "14px",
+                borderRadius: 14,
+                background: !inviteUrl ? "rgba(255, 255, 255, 0.1)" : "#FF6B2C",
+                color: !inviteUrl ? "rgba(255, 255, 255, 0.3)" : "#FFFFFF",
+                fontSize: 15,
+                fontWeight: 700,
+                cursor: !inviteUrl ? "not-allowed" : "pointer",
+                border: "none",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                transition: "all 0.15s ease",
+              }}
+            >
+              {copied ? (
+                <>
+                  <Check style={{ width: 18, height: 18 }} />
+                  <span>Link Copied</span>
+                </>
+              ) : (
+                <span>Copy Link</span>
+              )}
+            </button>
+
+            {/* Cancel / Close action */}
+            <button
+              id="share_plan_cancel_btn"
+              type="button"
+              onClick={onClose}
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                background: "none",
+                border: "none",
+                color: "rgba(255, 255, 255, 0.45)",
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "pointer",
+                textAlign: "center",
+                marginTop: 6,
+              }}
+            >
+              Cancel
+            </button>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
 
 
 

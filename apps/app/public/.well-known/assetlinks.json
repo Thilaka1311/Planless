@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.planless",
+      "sha256_cert_fingerprints": [
+        "14:6D:E9:D4:58:EA:3A:99:6D:77:24:A4:44:81:4D:42:3B:56:56:4C:E6:86:14:02:69:B6:BA:55:1A:4C:7C:F4"
+      ]
+    }
+  }
+]

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Check, Link, CheckCircle } from "lucide-react";
 import { usePlansStore } from "../../plans/state/PlansContext";
-import { getOrCreatePlanInvite, buildInviteUrl } from "../../plans/services/planInviteService";
+import { buildInviteUrl } from "../../plans/services/planInviteService";
 
 // Hooks & utils
 import { useCreatePlanForm } from "../hooks/useCreatePlanForm";
@@ -148,11 +148,7 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
     if (!postedPlanUuid || isCopying) return;
     setIsCopying(true);
     try {
-      const hostUuid = form.userProfile?.dbUuid;
-      if (!hostUuid) throw new Error("No host UUID");
-      const invite = await getOrCreatePlanInvite(postedPlanUuid, hostUuid);
-      if (!invite) throw new Error("Failed to get invite");
-      const url = buildInviteUrl(invite.invite_token);
+      const url = buildInviteUrl(postedPlanUuid);
       await navigator.clipboard.writeText(url);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 3000);

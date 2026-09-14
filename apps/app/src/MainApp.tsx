@@ -38,16 +38,30 @@ import {
   listenToNavigation,
 } from "./features/navigation/appRouter";
 import { getSavedCreatePlanDraft } from "./features/create/utils/draftParticipantStorage";
+import {
+  claimPlanInviteRPC,
+  clearStoredPendingInviteToken,
+  getStoredPendingInviteToken,
+  extractInviteTokenFromPath,
+} from "./features/plans/services/planInviteService";
 
 interface MainAppProps {
   userProfile: UserProfile;
   onLogout: () => void;
   activeUserId: string;
+  pendingInviteToken?: string | null;
+  onClearPendingInvite?: () => void;
 }
 
-export default function MainApp({ userProfile, onLogout, activeUserId }: MainAppProps) {
+export default function MainApp({
+  userProfile,
+  onLogout,
+  activeUserId,
+  pendingInviteToken,
+  onClearPendingInvite,
+}: MainAppProps) {
   // --- Decoupled Context Stores ---
-  const { plans, dbPlans, setDbPlans, dbPlanParticipants, setDbPlanParticipants, dbPlanOutcomes, setDbPlanOutcomes, dbPlanTeamAssignments, setDbPlanTeamAssignments, joinPlan, waitlistPlan, passPlan, submitReview, submitStats, submitMvp, updatePlanDetails, cancelPlan, getHomeFeedPlans, dbMemories, dbMemoryResults } = usePlansStore();
+  const { plans, dbPlans, setDbPlans, dbPlanParticipants, setDbPlanParticipants, dbPlanOutcomes, setDbPlanOutcomes, dbPlanTeamAssignments, setDbPlanTeamAssignments, joinPlan, waitlistPlan, passPlan, submitReview, submitStats, submitMvp, updatePlanDetails, cancelPlan, getHomeFeedPlans, dbMemories, dbMemoryResults, refreshPlans } = usePlansStore();
   const { dbUsers, setDbUsers, updateProfile, activeUserUuid } = useProfileStore();  const { walletBalance, transactions, dbTransactions, setDbTransactions, refreshTransactions } = useWalletStore();
   const { friends } = useFriendshipStore();
 
@@ -121,10 +135,14 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
         navigateToRoute({ tab: activeTab, selectedPlanId: routePlanParam }, { replace: isInitial });
       } else {
         localStorage.removeItem("planless_selected_plan_id");
+        // On initial load, preserve /join/:token so it isn't prematurely replaced by /home
+        if (isInitial && (initialRoute.inviteToken || pendingInviteToken)) {
+          return;
+        }
         navigateToRoute({ tab: activeTab }, { replace: isInitial });
       }
     }
-  }, [activeTab, selectedPlanId, plans]);
+  }, [activeTab, selectedPlanId, plans, initialRoute.inviteToken, pendingInviteToken]);
 
   // Listen for external / popstate route changes
   React.useEffect(() => {
@@ -159,6 +177,67 @@ export default function MainApp({ userProfile, onLogout, activeUserId }: MainApp
     });
     return unsubscribe;
   }, [activeTab, selectedPlanId, selectedChatPlanId]);
+
+  // --- Process and claim shared plan invite token if present ---
+  const isClaimingInviteRef = useRef(false);
+  const claimedTokensRef = useRef<Set<string>>(new Set());
+
+  React.useEffect(() => {
+    const tokenToProcess = pendingInviteToken || getStoredPendingInviteToken();
+    if (!tokenToProcess) return;
+    if (claimedTokensRef.current.has(tokenToProcess) || isClaimingInviteRef.current) return;
+
+    isClaimingInviteRef.current = true;
+    claimedTokensRef.current.add(tokenToProcess);
+
+    const processInvite = async () => {
+      try {
+        const result = await claimPlanInviteRPC(tokenToProcess);
+        if (result.success) {
+          // Successfully claimed or user already had an existing participant row
+          onClearPendingInvite?.();
+          clearStoredPendingInviteToken();
+
+          await refreshPlans();
+
+          // Navigate to Home as the existing flow does
+          setActiveTab("home");
+        } else {
+          console.warn("[MainApp] Failed to claim plan invite:", result.error);
+          const errStr = (result.error || "").toLowerCase();
+          const isTerminalError =
+            errStr.includes("invalid") ||
+            errStr.includes("no longer active") ||
+            errStr.includes("expired") ||
+            errStr.includes("not active") ||
+            errStr.includes("not found") ||
+            errStr.includes("host");
+
+          if (isTerminalError) {
+            onClearPendingInvite?.();
+            clearStoredPendingInviteToken();
+          } else {
+            // Transient error: allow retry on next attempt
+            claimedTokensRef.current.delete(tokenToProcess);
+          }
+        }
+      } catch (err) {
+        console.error("[MainApp] Unexpected error claiming plan invite:", err);
+        claimedTokensRef.current.delete(tokenToProcess);
+      } finally {
+        isClaimingInviteRef.current = false;
+
+        // If the browser URL is /join/:token and the token was cleared (success or terminal error),
+        // redirect cleanly to /home
+        const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
+        if (extractInviteTokenFromPath(currentPath) && !getStoredPendingInviteToken()) {
+          navigateToRoute({ tab: "home" }, { replace: true });
+        }
+      }
+    };
+
+    processInvite();
+  }, [pendingInviteToken, onClearPendingInvite, refreshPlans, setActiveTab]);
 
   // Snooze and Auto-Pass overrides
   const [interestedPlanIds, setInterestedPlanIds] = useState<string[]>([]);

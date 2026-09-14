@@ -97,7 +97,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         if (!draggable && !isItemDragged && onClick) e.currentTarget.style.background = 'transparent';
       }}
     >
-      {showIndex && (
+      {showIndex && Boolean(indexLabel) && (
         <span style={{
           fontSize: 11,
           fontWeight: 700,
@@ -110,7 +110,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
           flexShrink: 0,
           fontFamily: 'Inter, sans-serif'
         }}>
-          {indexLabel || ''}
+          {indexLabel}
         </span>
       )}
       {renderAvatar()}
