@@ -1,0 +1,21 @@
+<!-- 
+  Planless Android App Links Configuration
+  Add this <intent-filter> block inside your primary browsable <activity> in AndroidManifest.xml
+-->
+<intent-filter android:autoVerify="true">
+    <action android:name="android.intent.action.VIEW" />
+
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+
+    <!-- Deep link for https://planless.app/join/<planId> -->
+    <data
+        android:scheme="https"
+        android:host="planless.app"
+        android:pathPrefix="/join/" />
+
+    <data
+        android:scheme="https"
+        android:host="www.planless.app"
+        android:pathPrefix="/join/" />
+</intent-filter>

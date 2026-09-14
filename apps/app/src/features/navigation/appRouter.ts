@@ -6,6 +6,7 @@ export interface AppRoute {
   createPhase?: CreatePhase;
   selectedPlanId?: string | null;
   selectedChatPlanId?: string | null;
+  inviteToken?: string | null;
 }
 
 /**
@@ -58,6 +59,13 @@ export function parseCurrentRoute(): AppRoute {
 
 
 
+  // Shared plan invite: /join/:token
+  if (primary === 'join') {
+    const rawParam = parts[1] || null;
+    const inviteToken = rawParam ? decodeURIComponent(rawParam).trim() || null : null;
+    return { tab: 'home', inviteToken };
+  }
+
   // Wallet: /wallet
   if (primary === 'wallet') {
     return { tab: 'wallet' };
@@ -75,6 +83,10 @@ export function parseCurrentRoute(): AppRoute {
  * Converts an AppRoute to a canonical pathname.
  */
 export function getRoutePath(route: AppRoute): string {
+  if (route.inviteToken) {
+    return `/join/${encodeURIComponent(route.inviteToken)}`;
+  }
+
   if (route.tab === 'create') {
     if (!route.createPhase || route.createPhase === 'category') return '/create';
     if (route.createPhase === 'who') return '/create/who';

@@ -70,6 +70,7 @@ import {
   EditDetailsBottomSheet,
   JoinPlanConfirmationBottomSheet,
   EditCapacityBottomSheet,
+  SharePlanLinkBottomSheet,
 } from "../../../components/BottomSheets";
 import { SetCostScreen } from "../../../components/SetCost";
 import { HostAttendanceScreen } from "../../../../completion/docs/Screens/HostAttendanceScreen";
@@ -196,7 +197,7 @@ function ActionButtons({
               type="button"
               onClick={handleJoinDirect}
               disabled={isJoiningDirect || isWaitlist}
-              className={`w-full py-4 px-6 rounded-[20px] text-[13px] font-sans font-black tracking-[0.14em] uppercase transition-all duration-200 text-center cursor-pointer border shadow-lg active:scale-[0.98] ${isWaitlist
+              className={`w-full py-2.5 px-6 rounded-full text-[13px] font-sans font-black tracking-[0.14em] uppercase transition-all duration-200 text-center cursor-pointer border shadow-lg active:scale-[0.98] ${isWaitlist
                 ? 'bg-amber-500/10 text-amber-400 border-amber-500/25 shadow-amber-500/5 cursor-default'
                 : 'bg-[#FF6B2C] text-white hover:bg-[#FF854C] border-[#FF6B2C]/20 shadow-[#FF6B2C]/15 disabled:opacity-40'
                 }`}
@@ -210,7 +211,7 @@ function ActionButtons({
               type="button"
               onClick={handleRejoin}
               disabled={isRejoining}
-              className="w-full py-4 px-6 rounded-[20px] text-[13px] font-sans font-black tracking-[0.14em] uppercase transition-all duration-200 text-center cursor-pointer bg-[#FF6B2C] text-white hover:bg-[#FF854C] border border-[#FF6B2C]/20 shadow-lg shadow-[#FF6B2C]/15 active:scale-[0.98] disabled:opacity-40"
+              className="w-full py-2.5 px-6 rounded-full text-[13px] font-sans font-black tracking-[0.14em] uppercase transition-all duration-200 text-center cursor-pointer bg-[#FF6B2C] text-white hover:bg-[#FF854C] border border-[#FF6B2C]/20 shadow-lg shadow-[#FF6B2C]/15 active:scale-[0.98] disabled:opacity-40"
             >
               {isRejoining ? "Rejoining…" : (isFull ? "Rejoin Waitlist" : "Rejoin Plan")}
             </button>
@@ -584,6 +585,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [editTotalCostInput, setEditTotalCostInput] = useState<string>("");
 
   const [isEditingCapacitySheetOpen, setIsEditingCapacitySheetOpen] = useState(false);
+  const [showSharePlanLinkSheet, setShowSharePlanLinkSheet] = useState(false);
 
   const [isEditingDetailsSheetOpen, setIsEditingDetailsSheetOpen] = useState(false);
   const [tempTitle, setTempTitle] = useState("");
@@ -1806,6 +1808,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   ? undefined
                   : () => setShowPlanSettingsScreen(true)
               }
+              onSharePlanLink={
+                !createMode && !isCancelled && !isCompleted && isHost
+                  ? () => setShowSharePlanLinkSheet(true)
+                  : undefined
+              }
             />
 
             {isEditingLocationInline && (
@@ -2605,6 +2612,14 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           }
         }}
         onClose={() => setIsEditingCapacitySheetOpen(false)}
+      />
+
+      {/* ---------------- 🔗 SHARE PLAN LINK BOTTOM SHEET ---------------- */}
+      <SharePlanLinkBottomSheet
+        isOpen={showSharePlanLinkSheet}
+        onClose={() => setShowSharePlanLinkSheet(false)}
+        planId={selectedPlan ? cleanPlanId(selectedPlan.dbUuid || selectedPlan.id) : ""}
+        userUuid={resolvedUserUuid}
       />
 
       {/* Location bottom sheet removed – location editing is now inline */}

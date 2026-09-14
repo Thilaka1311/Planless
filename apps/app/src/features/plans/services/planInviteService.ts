@@ -2,84 +2,110 @@ import { supabase } from "../../../../lib/supabaseClient";
 
 const BASE_URL = "https://planless.app";
 
-export interface PlanInviteRecord {
-  id: string;
-  plan_id: string;
-  invite_token: string;
-  created_by: string;
-  is_active: boolean;
-  created_at: string;
+export const PENDING_INVITE_TOKEN_KEY = "planless_pending_invite_token";
+
+/**
+ * Returns the full sharable invite URL for a plan using its UUID.
+ */
+export function buildInviteUrl(planId: string): string {
+  const cleanId = planId.trim();
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}/join/${cleanId}`;
+  }
+  return `${BASE_URL}/join/${cleanId}`;
 }
 
 /**
- * Returns the full sharable invite URL for a plan.
+ * Extracts a plan invite token (plan UUID) from a URL or pathname (e.g. /join/<plan_id>).
  */
-export function buildInviteUrl(inviteToken: string): string {
-  return `${BASE_URL}/join/${inviteToken}`;
+export function extractInviteTokenFromPath(pathname?: string | null): string | null {
+  if ((pathname === undefined || pathname === null) && typeof window !== "undefined") {
+    pathname = window.location.pathname;
+  }
+  if (!pathname) return null;
+  const parts = pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+  if (parts[0]?.toLowerCase() === "join" && parts[1]) {
+    return decodeURIComponent(parts[1]).trim() || null;
+  }
+  return null;
 }
 
 /**
- * Retrieves the active invite token for a given plan.
- * If none exists, creates one.
+ * Retrieves the stored pending invite token (plan UUID) from localStorage.
  */
-export async function getOrCreatePlanInvite(
-  planUuid: string,
-  createdByUuid: string
-): Promise<PlanInviteRecord | null> {
-  // Check if an active invite already exists
-  const { data: existing, error: fetchError } = await supabase
-    .from("plan_invites")
-    .select("*")
-    .eq("plan_id", planUuid)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (fetchError) {
-    console.error("[planInviteService] Error fetching invite:", fetchError);
+export function getStoredPendingInviteToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(PENDING_INVITE_TOKEN_KEY);
+  } catch {
     return null;
   }
-
-  if (existing) return existing as PlanInviteRecord;
-
-  // Create a new invite token
-  const newToken = crypto.randomUUID().replace(/-/g, "");
-  const { data: created, error: insertError } = await supabase
-    .from("plan_invites")
-    .insert({
-      plan_id: planUuid,
-      invite_token: newToken,
-      created_by: createdByUuid,
-      is_active: true
-    })
-    .select("*")
-    .single();
-
-  if (insertError) {
-    console.error("[planInviteService] Error creating invite:", insertError);
-    return null;
-  }
-
-  return created as PlanInviteRecord;
 }
 
 /**
- * Resolves an invite token and returns the corresponding plan_id.
- * Returns null if the token is invalid or inactive.
+ * Persists the pending invite token (plan UUID) in localStorage.
  */
-export async function resolveInviteToken(
-  token: string
-): Promise<{ plan_id: string; invite_id: string } | null> {
-  const { data, error } = await supabase
-    .from("plan_invites")
-    .select("id, plan_id, is_active")
-    .eq("invite_token", token)
-    .eq("is_active", true)
-    .maybeSingle();
+export function setStoredPendingInviteToken(token: string): void {
+  if (typeof window === "undefined" || !token) return;
+  try {
+    localStorage.setItem(PENDING_INVITE_TOKEN_KEY, token.trim());
+  } catch (e) {
+    console.warn("[planInviteService] Failed to store pending invite token:", e);
+  }
+}
 
-  if (error || !data) {
-    console.warn("[planInviteService] Invalid or inactive invite token:", token, error);
-    return null;
+/**
+ * Clears the stored pending invite token from localStorage.
+ */
+export function clearStoredPendingInviteToken(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(PENDING_INVITE_TOKEN_KEY);
+  } catch (e) {
+    console.warn("[planInviteService] Failed to clear pending invite token:", e);
+  }
+}
+
+export interface ClaimInviteResult {
+  success: boolean;
+  plan_id?: string;
+  rsvp_status?: "INVITED" | "JOINED" | "WAITLISTED" | "SKIPPED" | string;
+  assigned_group?: "GOING" | "WAITLIST" | null;
+  waitlist_position?: number | null;
+  plan_size?: number;
+  new_plan_size?: number;
+  already_participating?: boolean;
+  error?: string;
+}
+
+/**
+ * Invokes the claim_plan_invite RPC in Supabase to atomically claim a plan invite
+ * using the plan UUID. Returns the resulting RSVP state, assigned group, waitlist position,
+ * and plan size.
+ */
+export async function claimPlanInviteRPC(planId: string): Promise<ClaimInviteResult> {
+  if (!planId) {
+    return { success: false, error: "Missing plan ID" };
   }
 
-  return { plan_id: data.plan_id, invite_id: data.id };
+  const { data, error } = await supabase.rpc("claim_plan_invite" as any, {
+    p_plan_id: planId.trim(),
+  });
+
+  if (error) {
+    console.error("[planInviteService] claimPlanInviteRPC failed:", error);
+    return { success: false, error: error.message };
+  }
+
+  const res = data as ClaimInviteResult;
+  return {
+    success: Boolean(res?.success),
+    plan_id: res?.plan_id || planId.trim(),
+    rsvp_status: res?.rsvp_status,
+    assigned_group: res?.assigned_group,
+    waitlist_position: res?.waitlist_position,
+    plan_size: res?.plan_size ?? res?.new_plan_size,
+    already_participating: Boolean(res?.already_participating),
+  };
 }
+

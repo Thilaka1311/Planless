@@ -794,13 +794,6 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       throw new Error("Backend did not return the generated UUID for the new plan.");
     }
 
-    // Generate a secure invite token
-    const inviteToken = crypto.randomUUID().replace(/-/g, "");
-    try {
-      await api.createPlanInvite(insertedPlanUuid, inviteToken, userProfile.dbUuid);
-    } catch (inviteError) {
-      console.error("[PlansContext] Failed to insert plan invite token:", inviteError);
-    }
 
     const inviteeUuids: string[] = [];
     const uniqueInviteeUuids = new Set<string>();

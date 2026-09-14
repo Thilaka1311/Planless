@@ -310,6 +310,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
             onAddFriends={effectiveIsHost ? onAddFriends : undefined}
             reorderable={false}
             showIndex={true}
+            useParticipantPosition={true}
           />
         )}
         {activeTab === 'skipped' && (

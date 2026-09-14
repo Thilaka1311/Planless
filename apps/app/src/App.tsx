@@ -11,6 +11,12 @@ import { ToastProvider } from "./shared/contexts/ToastContext";
 import { FriendshipProvider } from "./features/friendships/state/FriendshipContext";
 import { supabase } from "../lib/supabaseClient";
 import defaultAvatar from "./assets/default_avatar.png";
+import {
+  extractInviteTokenFromPath,
+  getStoredPendingInviteToken,
+  setStoredPendingInviteToken,
+  clearStoredPendingInviteToken,
+} from "./features/plans/services/planInviteService";
 
 const WalletProviderComp = WalletProvider as React.ComponentType<{ children: React.ReactNode; userId?: string }>;
 const PlansProviderComp = PlansProvider as React.ComponentType<{ children: React.ReactNode; userId?: string }>;
@@ -20,12 +26,15 @@ export default function App() {
   const sessionKey = query.get("session") || query.get("user") || "default";
   const localStorageKey = `planless_active_user_${sessionKey}`;
 
-  // Detect /join/:token invite URLs
+  // Detect /join/:token invite URLs and/or restore pending invite token from storage
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
-    const parts = window.location.pathname.split("/");
-    if (parts[1] === "join" && parts[2]) return parts[2];
-    return null;
+    const tokenFromPath = extractInviteTokenFromPath(window.location.pathname);
+    if (tokenFromPath) {
+      setStoredPendingInviteToken(tokenFromPath);
+      return tokenFromPath;
+    }
+    return getStoredPendingInviteToken();
   });
 
   const [initialProfile, setInitialProfile] = useState<UserProfile | null>(() => {
@@ -57,6 +66,24 @@ export default function App() {
     updateClock();
     const interval = setInterval(updateClock, 15000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Synchronize invite token if URL changes
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncTokenFromUrl = () => {
+      const tokenFromPath = extractInviteTokenFromPath(window.location.pathname);
+      if (tokenFromPath) {
+        setStoredPendingInviteToken(tokenFromPath);
+        setPendingInviteToken(tokenFromPath);
+      }
+    };
+    window.addEventListener("popstate", syncTokenFromUrl);
+    window.addEventListener("planless-navigation", syncTokenFromUrl);
+    return () => {
+      window.removeEventListener("popstate", syncTokenFromUrl);
+      window.removeEventListener("planless-navigation", syncTokenFromUrl);
+    };
   }, []);
 
   const handleProfileSync = useCallback(async (profile: UserProfile | null) => {
@@ -260,14 +287,10 @@ function AppContent({
     }
   }, [restoreSessionAndProfile, appState]);
 
-  useEffect(() => {
-    if (pendingInviteToken) {
-      setPendingInviteToken(null);
-      if (typeof window !== "undefined" && window.history?.replaceState) {
-        window.history.replaceState({}, "", "/");
-      }
-    }
-  }, [pendingInviteToken, setPendingInviteToken]);
+  const handleClearPendingInviteToken = useCallback(() => {
+    setPendingInviteToken(null);
+    clearStoredPendingInviteToken();
+  }, [setPendingInviteToken]);
 
   const handleOnboardingComplete = (newProfile: UserProfile) => {
     setUserProfile(newProfile);
@@ -275,6 +298,13 @@ function AppContent({
     try {
       localStorage.removeItem("planless_onboarding_screen");
     } catch {}
+
+    // Ensure any stored pending invite is active in state
+    const storedToken = getStoredPendingInviteToken();
+    if (storedToken) {
+      setPendingInviteToken(storedToken);
+    }
+
     setAppState("ready");
   };
 
@@ -382,6 +412,8 @@ function AppContent({
                               userProfile={userProfile!}
                               activeUserId={userProfile?.dbUuid || "U001"}
                               onLogout={handleLogoutReset}
+                              pendingInviteToken={pendingInviteToken}
+                              onClearPendingInvite={handleClearPendingInviteToken}
                             />
                           </ToastProvider>
                         </div>

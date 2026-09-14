@@ -78,18 +78,7 @@ export async function createPlan(newDbPlan: any): Promise<any> {
   return data;
 }
 
-export async function createPlanInvite(planId: string, inviteToken: string, createdBy: string): Promise<void> {
-  const { error } = await supabase
-    .from("plan_invites")
-    .insert({
-      plan_id: planId,
-      invite_token: inviteToken,
-      created_by: createdBy,
-      is_active: true
-    });
 
-  if (error) throw error;
-}
 
 export async function upsertParticipants(records: any[]): Promise<any[]> {
   const { data, error } = await supabase

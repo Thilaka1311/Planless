@@ -22,6 +22,8 @@ import aiRouter from "./routes/ai";
 import paymentsRouter from "./routes/payments";
 import adminRouter from "./routes/admin";
 import { createProxyMiddleware } from "http-proxy-middleware";
+import fs from "fs";
+import { getAppleAppSiteAssociation, getAndroidAssetLinks } from "./config/deepLinkConfig";
 
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -146,6 +148,21 @@ async function startServer() {
   app.use("/api/admin", adminRouter);
 
 
+  // Deep linking endpoints for iOS Universal Links and Android App Links
+  app.get(["/.well-known/apple-app-site-association", "/apple-app-site-association"], (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "public, max-age=3600, must-revalidate");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.json(getAppleAppSiteAssociation());
+  });
+
+  app.get("/.well-known/assetlinks.json", (req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "public, max-age=3600, must-revalidate");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.json(getAndroidAssetLinks());
+  });
+
   // Health check API
   app.get("/api/health", (req, res) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
@@ -202,7 +219,9 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = fs.existsSync(path.join(process.cwd(), "dist", "index.html"))
+      ? path.join(process.cwd(), "dist")
+      : path.resolve(__dirname, "../dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));

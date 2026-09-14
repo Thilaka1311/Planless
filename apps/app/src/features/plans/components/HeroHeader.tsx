@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle } from "lucide-react";
+import { ArrowLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle, Share2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
@@ -35,6 +35,7 @@ interface HeroHeaderProps {
   onEdit?: () => void;
   onEditTitle?: (newTitle: string) => Promise<void> | void;
   onOpenSettings?: () => void;
+  onSharePlanLink?: () => void;
   /** Items to show in the ⋮ overflow menu */
   overflowMenuItems?: OverflowMenuItem[];
   /** Optional plan cover image for chat header */
@@ -71,6 +72,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   onEditTitle,
   onOpenChat,
   onOpenSettings,
+  onSharePlanLink,
   overflowMenuItems = [],
   coverImage,
   category,
@@ -287,6 +289,23 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                 onClick={(e) => e.stopPropagation()}
                 className="absolute top-[calc(3.25rem+env(safe-area-inset-top,0px))] right-4 min-w-[170px] bg-[#121216]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-1.5 z-10 flex flex-col space-y-0.5 text-left select-none"
               >
+                {/* Share Plan Link */}
+                {onSharePlanLink && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onSharePlanLink();
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
+                  >
+                    <Share2 className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
+                    <span className="text-xs font-semibold text-white tracking-tight">
+                      Share Plan Link
+                    </span>
+                  </button>
+                )}
+
                 {/* Settings */}
                 <button
                   type="button"
@@ -327,7 +346,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
 
         {/* Right action buttons — Contextual Popup Menu */}
         <div ref={menuRef} className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto">
-          {(onOpenChat || onOpenSettings || showOverflow) && (
+          {(onOpenChat || onOpenSettings || onSharePlanLink || showOverflow) && (
             <div className="relative">
               <button
                 id="immersive-plan-overflow-btn"
@@ -370,7 +389,24 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                       </button>
                     )}
 
-                    {/* 2. Settings */}
+                    {/* 2. Share Plan Link */}
+                    {onSharePlanLink && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onSharePlanLink();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
+                      >
+                        <Share2 className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
+                        <span className="text-xs font-semibold text-white tracking-tight">
+                          Share Plan Link
+                        </span>
+                      </button>
+                    )}
+
+                    {/* 3. Settings */}
                     {onOpenSettings && (
                       <button
                         type="button"

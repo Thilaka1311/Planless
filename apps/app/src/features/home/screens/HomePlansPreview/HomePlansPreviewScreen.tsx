@@ -534,7 +534,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
             type="button"
             onClick={handleJoinDirect}
             disabled={isJoiningDirect || isWaitlist}
-            className="w-full py-3.5 px-6 rounded-2xl bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white font-sans font-semibold text-[15px] tracking-tight transition-all duration-150 flex items-center justify-center text-center cursor-pointer shadow-md shadow-[#FF6B2C]/20 border border-[#FF6B2C]/20 disabled:opacity-40"
+            className="w-full py-2.5 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white font-sans font-semibold text-[15px] tracking-tight transition-all duration-150 flex items-center justify-center text-center cursor-pointer shadow-md shadow-[#FF6B2C]/20 border border-[#FF6B2C]/20 disabled:opacity-40"
           >
             {isJoiningDirect
               ? "Joining…"

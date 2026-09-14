@@ -1,0 +1,29 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": [
+          "TEAM_ID.app.planless"
+        ],
+        "components": [
+          {
+            "/": "/join/*",
+            "comment": "Matches invite links: https://planless.app/join/<planId>"
+          }
+        ]
+      },
+      {
+        "appID": "TEAM_ID.app.planless",
+        "paths": [
+          "/join/*"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "TEAM_ID.app.planless"
+    ]
+  }
+}

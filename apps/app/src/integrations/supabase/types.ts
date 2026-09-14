@@ -404,48 +404,7 @@ export type Database = {
           },
         ]
       }
-      plan_invites: {
-        Row: {
-          created_at: string
-          created_by: string
-          id: string
-          invite_token: string
-          is_active: boolean
-          plan_id: string
-        }
-        Insert: {
-          created_at?: string
-          created_by: string
-          id?: string
-          invite_token: string
-          is_active?: boolean
-          plan_id: string
-        }
-        Update: {
-          created_at?: string
-          created_by?: string
-          id?: string
-          invite_token?: string
-          is_active?: boolean
-          plan_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "plan_invites_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "plan_invites_plan_id_fkey"
-            columns: ["plan_id"]
-            isOneToOne: false
-            referencedRelation: "plans"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+
       plan_messages: {
         Row: {
           content: string

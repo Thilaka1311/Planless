@@ -67,7 +67,8 @@ export const memberToFriend = (
   dbPlanParticipants: any[],
   currentPlanId?: string,
   planDbUuid?: string,
-  planAltId?: string
+  planAltId?: string,
+  planWaitlistMode?: 'automatic' | 'assigned'
 ): Friend => {
   const id = m.userUuid || m.userId || m.user_id || m.id || m.dbUuid;
   const isHostRole = (m.role || '').toUpperCase() === 'HOST';
@@ -101,13 +102,22 @@ export const memberToFriend = (
     ? (dbPp.leave_requested_at || null)
     : (m.leave_requested_at || (m as any).leaveRequestedAt || null);
 
-  const waitlistPosition = dbPp
-    ? dbPp.waitlist_position
-    : (m.waitlistPosition ?? m.waitlist_position ?? null);
-
   const assignedGroup = dbPp
     ? (dbPp.assigned_group ? (String(dbPp.assigned_group).toUpperCase() as any) : null)
     : (m.assignedGroup || m.assigned_group || (status === 'WAITLISTED' ? 'WAITLIST' : 'GOING'));
+
+  const isActivelyJoined = status === 'JOINED' || status === 'WAITLISTED' || status === 'REJOINED' || isHostRole;
+  const joinedQueueAt = isActivelyJoined
+    ? (dbPp?.joined_queue_at || m.joined_queue_at || m.joinedQueueAt || (m as any).join_queue_at || null)
+    : null;
+
+  const isWaitlistMember = planWaitlistMode === 'assigned'
+    ? (assignedGroup === 'WAITLIST' || status === 'WAITLISTED')
+    : (isActivelyJoined && status === 'WAITLISTED');
+
+  const waitlistPosition = isWaitlistMember
+    ? (dbPp ? dbPp.waitlist_position : (m.waitlistPosition ?? m.waitlist_position ?? null))
+    : null;
 
   return {
     id,
@@ -115,7 +125,7 @@ export const memberToFriend = (
     name: isCurrentUser ? 'You' : (m.name || m.displayName || 'Unknown'),
     avatar: m.avatar || m.profile_photo || m.profile_photo_path || m.profile_image_url || m.avatar_url || '',
     isHost: isHostRole,
-    joinedQueueAt: m.joinedQueueAt || m.joined_queue_at || m.createdAt || m.created_at,
+    joinedQueueAt,
     isAccepted,
     rsvpStatus: status,
     assignedGroup,
@@ -998,6 +1008,8 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           leave_requested_at: pp.leave_requested_at,
           rsvp_status: pp.rsvp_status,
           skip_reason: pp.skip_reason,
+          joined_queue_at: pp.joined_queue_at || null,
+          joinedQueueAt: pp.joined_queue_at || null,
           joinedAt: pp.responded_at || pp.created_at,
           created_at: pp.created_at,
           updated_at: pp.updated_at,
@@ -1058,7 +1070,14 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       if (isARejoined && !isBRejoined) return -1;
       if (!isARejoined && isBRejoined) return 1;
 
-      // 3. Sort by queue timestamp
+      // 3. For automatic mode, if both have waitlistPosition, sort by it
+      if (waitlistMode === 'automatic') {
+        const posA = typeof a.waitlistPosition === 'number' ? a.waitlistPosition : null;
+        const posB = typeof b.waitlistPosition === 'number' ? b.waitlistPosition : null;
+        if (posA !== null && posB !== null && posA !== posB) return posA - posB;
+      }
+
+      // 4. Sort by queue timestamp
       const queueA = a.joinedQueueAt ? new Date(a.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
       const queueB = b.joinedQueueAt ? new Date(b.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
       if (queueA !== queueB) return queueA - queueB;
@@ -1135,20 +1154,20 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
     
     const rawInvited = allPlanMembers
       .filter((m) => normalizeStatus(m.joinState || m.rsvp_status) === 'INVITED')
-      .map(m => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id));
+      .map(m => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id, waitlistMode));
     return prioritizeCurrentUserAndSort(rawInvited);
   }, [allPlanMembers, prioritizeCurrentUserAndSort, waitlistMode, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id, isCompletedPlan]);
 
   const rawGoingList: Friend[] = useMemo(() => {
-    return goingMembers.map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id));
-  }, [goingMembers, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id]);
+    return goingMembers.map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id, waitlistMode));
+  }, [goingMembers, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id, waitlistMode]);
 
   const goingList: Friend[] = useMemo(() => {
     return prioritizeCurrentUserAndSort(rawGoingList);
   }, [rawGoingList, prioritizeCurrentUserAndSort]);
 
   const waitlistList: Friend[] = useMemo(() => {
-    const rawList = waitlistMembers.map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id));
+    const rawList = waitlistMembers.map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id, waitlistMode));
     return sortByWaitlistOrder(rawList);
   }, [waitlistMembers, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id, sortByWaitlistOrder, waitlistMode]);
 
@@ -1176,7 +1195,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
 
         return status === 'SKIPPED';
       })
-      .map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id));
+      .map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id, waitlistMode));
     return prioritizeCurrentUserAndSort(rawSkipped);
   }, [allPlanMembers, hostId, activeUserId, dbPlanParticipants, isParticipantInPlan, targetPlanUuid, (plan as any).dbUuid, plan.id, prioritizeCurrentUserAndSort, isCompletedPlan, waitlistMode]);
 
