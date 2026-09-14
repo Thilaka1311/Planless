@@ -30,7 +30,7 @@ import { UserProfile, Plan } from "../../../../../core/types";
 import { usePlansStore } from "../../../state/PlansContext";
 import { useLivePlan } from "../../../hooks/useLivePlan";
 import { supabase } from "../../../../../../lib/supabaseClient";
-import { normalizeStatus, checkHasValidWaitlistReplacement } from "../../../../../../lib/participantStatus";
+import { normalizeStatus } from "../../../../../../lib/participantStatus";
 import { getPlanCover } from "../../../config/planCoverImages";
 import { formatPlanDate } from "../../../../../../lib/mappers";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
@@ -60,7 +60,6 @@ import {
   RejoinPlanBottomSheet,
   CancelRejoinRequestBottomSheet,
   MakeAnotherParticipantHostBottomSheet,
-  PaidPlanLeaveConfirmationDialog,
   CancelLeaveRequestBottomSheet,
   CancelPlanBottomSheet,
   CompletePlanConfirmationBottomSheet,
@@ -1453,7 +1452,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   }, [planUuid, selectedPlan, getTeamAssignments]);
 
   const [showSkipConfirmation, setShowSkipConfirmation] = useState(false);
-  const [showPaidLeaveConfirmation, setShowPaidLeaveConfirmation] = useState(false);
   const [showCancelLeaveRequestConfirmation, setShowCancelLeaveRequestConfirmation] = useState(false);
   const [isSubmittingPaidLeave, setIsSubmittingPaidLeave] = useState(false);
   const [isCancellingLeaveRequest, setIsCancellingLeaveRequest] = useState(false);
@@ -1476,7 +1474,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     setIsSubmittingPaidLeave(true);
     try {
       await requestPaidPlanLeave(selectedPlan.id);
-      setShowPaidLeaveConfirmation(false);
     } catch (err: any) {
       console.error("[handleConfirmPaidLeaveRequest] Failed:", err);
     } finally {
@@ -2328,14 +2325,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onClose={() => setShowSkipConfirmation(false)}
       />
 
-      <PaidPlanLeaveConfirmationDialog
-        isOpen={showPaidLeaveConfirmation}
-        planTitle={selectedPlan?.title}
-        isSubmitting={isSubmittingPaidLeave}
-        onConfirm={handleConfirmPaidLeaveRequest}
-        onClose={() => setShowPaidLeaveConfirmation(false)}
-      />
-
       <CancelLeaveRequestBottomSheet
         isOpen={showCancelLeaveRequestConfirmation}
         planTitle={selectedPlan?.title}
@@ -2347,39 +2336,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       <LeavePlanBottomSheet
         isOpen={showLeavePlanConfirm}
         isSkipping={isSkipping}
+        isSubmitting={isSubmittingPaidLeave}
+        isPaid={hasCost}
         plan={selectedPlan}
         onConfirm={async () => {
           setShowLeavePlanConfirm(false);
-          const isPaidPlan = rawDbPlan && rawDbPlan.total_cost !== undefined && rawDbPlan.total_cost !== null && Number(rawDbPlan.total_cost) > 0;
-          const isJoined = currentStatus === "JOINED";
-
-          if (isPaidPlan && isJoined) {
-            try {
-              // Perform a fresh database query directly against plan_participants table
-              const { data: freshParticipants, error: freshErr } = await (supabase as any)
-                .from("plan_participants")
-                .select("user_id, rsvp_status, assigned_group, waitlist_position")
-                .eq("plan_id", planUuid);
-
-              if (freshErr) {
-                console.error("[LeavePlanBottomSheet] Error querying fresh database state:", freshErr);
-              }
-
-              const mode = rawDbPlan?.participant_filtering || (selectedPlan as any)?.participantFiltering || "AUTOMATIC";
-              const { hasReplacement } = checkHasValidWaitlistReplacement(freshParticipants, mode);
-
-              if (!hasReplacement) {
-                // FLOW 2 — NO VALID WAITLIST REPLACEMENT -> Show second bottom sheet ("Leave request required")
-                setShowPaidLeaveConfirmation(true);
-                return;
-              }
-            } catch (err) {
-              console.error("[LeavePlanBottomSheet] Error during leave decision:", err);
-            }
+          if (hasCost) {
+            await handleConfirmPaidLeaveRequest();
+          } else {
+            handleConfirmSkip();
           }
-
-          // FLOW 1 — HAS ELIGIBLE WAITLIST / FREE PLAN / WAITLISTED PARTICIPANT -> Allow immediate leave
-          handleConfirmSkip();
         }}
         onClose={() => setShowLeavePlanConfirm(false)}
       />

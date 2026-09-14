@@ -119,7 +119,9 @@ export const DiscardPlanBottomSheet: React.FC<DiscardPlanBottomSheetProps> = ({
 // ----------------------------------------------------------------------
 interface LeavePlanBottomSheetProps {
   isOpen: boolean;
-  isSkipping: boolean;
+  isSkipping?: boolean;
+  isSubmitting?: boolean;
+  isPaid?: boolean;
   plan?: Plan | any | null;
   planTitle?: string;
   planCoverImage?: string | null;
@@ -132,7 +134,9 @@ interface LeavePlanBottomSheetProps {
 
 export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
   isOpen,
-  isSkipping,
+  isSkipping = false,
+  isSubmitting = false,
+  isPaid,
   plan,
   planTitle,
   planCoverImage,
@@ -147,6 +151,18 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
   const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
   const resolvedCategory = plan?.category || planCategory;
   const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
+
+  const resolvedCost = Number(
+    plan?.total_cost ??
+    (plan as any)?.cost ??
+    (plan as any)?.totalCost ??
+    0
+  );
+  const isPaidPlan = isPaid !== undefined ? isPaid : resolvedCost > 0;
+  const isLoading = Boolean(isSkipping || isSubmitting);
+  const buttonText = isPaidPlan
+    ? (isLoading ? "Sending Request…" : "Request to leave")
+    : (isLoading ? "Leaving…" : "Leave Plan");
 
   return (
     <AnimatePresence>
@@ -205,7 +221,7 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
               <button
                 id="leave_plan_confirm_btn"
                 type="button"
-                disabled={isSkipping}
+                disabled={isLoading}
                 onClick={onConfirm}
                 style={{
                   width: '100%',
@@ -219,12 +235,12 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
                   color: '#EF4444',
                   fontSize: 14,
                   fontWeight: 600,
-                  cursor: isSkipping ? 'not-allowed' : 'pointer',
+                  cursor: isLoading ? 'not-allowed' : 'pointer',
                   textAlign: 'left',
-                  opacity: isSkipping ? 0.5 : 1,
+                  opacity: isLoading ? 0.5 : 1,
                 }}
               >
-                {isSkipping ? "Leaving…" : "Leave Plan"}
+                {buttonText}
               </button>
 
               {/* Text-only Cancel — no border, no background */}
@@ -882,87 +898,6 @@ export const SkipPlanConfirmationDialog: React.FC<SkipPlanConfirmationDialogProp
   );
 };
 
-// ----------------------------------------------------------------------
-// 1D. PAID PLAN LEAVE REQUEST CONFIRMATION DIALOG (Phase 1)
-// ----------------------------------------------------------------------
-interface PaidPlanLeaveConfirmationDialogProps {
-  isOpen: boolean;
-  planTitle?: string;
-  isSubmitting: boolean;
-  onConfirm: () => void;
-  onClose: () => void;
-}
-
-export const PaidPlanLeaveConfirmationDialog: React.FC<PaidPlanLeaveConfirmationDialogProps> = ({
-  isOpen,
-  planTitle,
-  isSubmitting,
-  onConfirm,
-  onClose,
-}) => {
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
-          />
-          <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 260 }}
-            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
-            style={{
-              background: "#1C1C1E",
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
-            }}
-          >
-            <div className="flex justify-center pt-3 pb-4">
-              <div className="w-9 h-1 rounded-full bg-white/20" />
-            </div>
-
-            <div className="px-5 pb-2 text-left">
-              <h2 className="text-[18px] font-bold text-white mb-2">Leave request required</h2>
-              <p className="text-[14px] text-white/55 leading-[1.55]">
-                There is no one on the waitlist to take your place. You need to send a leave request to the host.
-              </p>
-            </div>
-
-            <div className="px-4 pt-5 flex flex-col gap-2.5">
-              <button
-                id="paid_leave_request_modal_confirm_btn"
-                type="button"
-                disabled={isSubmitting}
-                onClick={onConfirm}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-amber-400 active:scale-[0.98] transition-transform disabled:opacity-50"
-                style={{ background: "rgba(245,158,11,0.16)", border: "1px solid rgba(245,158,11,0.3)" }}
-              >
-                {isSubmitting ? "Sending Request…" : "Send leave request"}
-              </button>
-
-              <button
-                id="paid_leave_request_modal_cancel_btn"
-                type="button"
-                onClick={onClose}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform"
-                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
-              >
-                Cancel
-              </button>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  );
-};
 
 // ----------------------------------------------------------------------
 // 1E. CANCEL LEAVE REQUEST BOTTOM SHEET (Phase 1)

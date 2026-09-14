@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle } from "lucide-react";
+import { ArrowLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
@@ -184,7 +184,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               className="p-2 -ml-2 flex items-center justify-center text-white active:scale-95 transition-transform cursor-pointer flex-shrink-0 drop-shadow-md"
               style={{ minWidth: "44px", minHeight: "44px" }}
             >
-              <ChevronLeft className="w-6 h-6" />
+              <ArrowLeft className="w-6 h-6" />
             </button>
 
             {/* Tappable identity region: avatar + title → opens Plan Details */}
@@ -322,7 +322,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           onClick={onClose}
           className="absolute left-4 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-white active:scale-95 transition-transform cursor-pointer pointer-events-auto"
         >
-          {isCloseIcon ? <X className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+          {isCloseIcon ? <X className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
         </button>
 
         {/* Right action buttons — Contextual Popup Menu */}
