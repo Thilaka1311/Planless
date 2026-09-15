@@ -1113,7 +1113,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         return isAttended;
       }
 
-      if (status === 'SKIPPED') return false;
+      if (status === 'SKIPPED' || status === 'REJOINED') return false;
       
       if (waitlistMode === 'assigned') {
         return group === 'GOING' || group === 'JOINED' || (!group && (status === 'JOINED' || status === 'INVITED'));
@@ -1134,9 +1134,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         (pp.user_id === id || pp.user_id === m.userUuid || pp.user_id === m.userId || pp.user_id === m.user_id || pp.user_id === m.dbUuid)
       );
       const status = dbPp ? normalizeStatus(dbPp.rsvp_status) : normalizeStatus(m.joinState || m.rsvp_status);
-      if (status === 'SKIPPED') return false;
-
-      if (status === 'REJOINED') return true;
+      if (status === 'SKIPPED' || status === 'REJOINED') return false;
 
       if (waitlistMode === 'assigned') {
         const dbGroup = dbPp?.assigned_group;
@@ -1193,7 +1191,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
           return !isAttended;
         }
 
-        return status === 'SKIPPED';
+        return status === 'SKIPPED' || status === 'REJOINED';
       })
       .map((m) => memberToFriend(m, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id, waitlistMode));
     return prioritizeCurrentUserAndSort(rawSkipped);
@@ -1231,6 +1229,12 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
   // Direct move (with capacity check)
   const handleMoveToGoing = useCallback(
     async (friend: Friend) => {
+      const isRejoined = friend.rsvpStatus === 'REJOINED' || (friend as any).rsvp_status === 'REJOINED';
+      if (isRejoined) {
+        await handleRejoinAddToJoined(friend);
+        return;
+      }
+
       const currentGoingCount = goingMembers.length;
       if (capacity > 0 && currentGoingCount >= capacity) {
         setPendingPromoteToGoing(friend);
@@ -1481,6 +1485,18 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
       }
     },
     [plan.id, onMoveToInvited, onAddParticipants],
+  );
+
+  const handleRejoinAddToJoined = useCallback(
+    async (friend: Friend) => {
+      const friendId = friend.dbUuid || friend.id;
+      try {
+        await resolveRejoinedParticipant(plan.id, friendId, 'JOINED');
+      } catch (err: any) {
+        console.error('[handleRejoinAddToJoined] error:', err);
+      }
+    },
+    [plan.id, resolveRejoinedParticipant],
   );
 
   const handleRejoinAddToWaitlist = useCallback(
@@ -1960,6 +1976,7 @@ export const PlanParticipantManagementWrapper: React.FC<PlanParticipantManagemen
         onKeepPaymentLeaveParticipant={handleKeepPaymentLeaveParticipant}
         onInviteSkipped={effectiveIsHost ? handleInviteSkipped : undefined}
         onMoveToInvited={effectiveIsHost ? handleMoveToInvited : undefined}
+        onRejoinAddToJoined={effectiveIsHost ? handleRejoinAddToJoined : undefined}
         onRejoinAddToWaitlist={effectiveIsHost ? handleRejoinAddToWaitlist : undefined}
         onRejoinRemoveFromPlan={effectiveIsHost ? handleRejoinRemoveFromPlan : undefined}
         isCompletedPlan={isCompletedPlan}

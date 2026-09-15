@@ -63,6 +63,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   pendingLeaveRequests,
   currentPage,
   onInviteSkipped,
+  onRejoinAddToJoined,
   onRejoinAddToWaitlist,
   onRejoinRemoveFromPlan,
   isCompletedPlan,
@@ -356,7 +357,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
           onInviteSkipped={onInviteSkipped ? (item) => onInviteSkipped(item) : undefined}
           onViewProfile={(item) => setViewProfileUserId(item.dbUuid || item.id)}
-          onAddToJoined={onMoveToGoing}
+          onAddToJoined={onRejoinAddToJoined || onMoveToGoing}
           onAddToWaitlist={onRejoinAddToWaitlist}
           onRemoveFromPlan={onRejoinRemoveFromPlan || onRemoveParticipant}
           onMoveToGoing={onMoveToGoing}

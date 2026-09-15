@@ -198,13 +198,14 @@ export function getEffectiveParticipantState(
 
   if (
     rawRsvpStatus === 'SKIPPED' ||
+    rawRsvpStatus === 'REJOINED' ||
     rawSkipReason === 'REMOVED' ||
     rawSkipReason === 'SKIPPED'
   ) {
     return 'SKIPPED';
   }
 
-  if (rawAssignedGroup === 'WAITLIST' || rawRsvpStatus === 'WAITLISTED' || rawRsvpStatus === 'REJOINED') {
+  if (rawAssignedGroup === 'WAITLIST' || rawRsvpStatus === 'WAITLISTED') {
     return 'WAITLIST';
   }
 
@@ -508,6 +509,8 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
     joinedQueueNumber: null,
     waitlistPosition: null,
     isAccepted: false,
+    rsvpStatus: 'REJOINED',
+    rsvp_status: 'REJOINED',
   }));
 
   const joinedCount = allJoinedMembers.length;
@@ -519,7 +522,7 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   // - Joined participants are alphabetical, with "You" always first.
   // - Invited participants are alphabetical.
   // - NO numbers should be displayed anywhere.
-  // - Rejoin requests remain in the waitlist section awaiting host approval.
+  // - Rejoin requests remain in the skipped section awaiting host approval.
   if (cap <= 0 || joinedCount < cap) {
     const alphaJoined = sortAlpha(allJoinedMembers).map((item) => ({
       ...item,
@@ -539,8 +542,8 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
 
     return {
       going,
-      waitlist: mappedRejoined,
-      skipped: sortAlpha(skippedMembers),
+      waitlist: [],
+      skipped: sortAlpha([...skippedMembers, ...mappedRejoined]),
       goingJoinedCount: joinedCount,
       capacity: cap,
     };
@@ -634,7 +637,6 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
 
   const finalWaitlist = [
     ...numberedWaitlist,
-    ...mappedRejoined,
     ...unnumberedInvited,
   ];
 
@@ -643,7 +645,7 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   return {
     going: finalGoing,
     waitlist: finalWaitlist,
-    skipped: sortAlpha(skippedMembers),
+    skipped: sortAlpha([...skippedMembers, ...mappedRejoined]),
     goingJoinedCount,
     capacity: cap,
   };

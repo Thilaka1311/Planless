@@ -69,19 +69,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({
   }, []);
 
   React.useEffect(() => {
-    // When plans load or change, set the active card to the first one and reset scroll
-    if (discoverablePlans.length > 0 && !hasInitializedRef.current) {
-      hasInitializedRef.current = true;
+    // When plans load or change, focus targeted card if specified (e.g. from invite link) or default to first card
+    if (discoverablePlans.length > 0) {
       const feed = homeFeedRef.current;
-      if (feed) {
-        feed.scrollTop = 0;
+      const targetIdx = activeCardId
+        ? discoverablePlans.findIndex(p => p.id === activeCardId || (p as any).dbUuid === activeCardId)
+        : -1;
+      const finalIdx = targetIdx >= 0 ? targetIdx : 0;
+
+      if (!hasInitializedRef.current || (activeCardId && targetIdx >= 0)) {
+        hasInitializedRef.current = true;
+        if (feed && feed.clientHeight) {
+          feed.scrollTop = finalIdx * feed.clientHeight;
+        }
+        setActiveCardIndex(finalIdx);
+        if (!activeCardId || targetIdx < 0) {
+          setActiveCardId(discoverablePlans[finalIdx].id);
+        }
       }
-      setActiveCardIndex(0);
-      setActiveCardId(discoverablePlans[0].id);
     } else if (discoverablePlans.length === 0) {
       setActiveCardId("");
     }
-  }, [discoverablePlans, setActiveCardId, homeFeedRef]);
+  }, [discoverablePlans, activeCardId, setActiveCardId, homeFeedRef]);
 
   const prevSelectedPlanIdRef = React.useRef<string | null>(null);
 

@@ -1809,7 +1809,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   : () => setShowPlanSettingsScreen(true)
               }
               onSharePlanLink={
-                !createMode && !isCancelled && !isCompleted && isHost
+                !createMode && !isCancelled && !isCompleted && (isHost || allowParticipantInvites)
                   ? () => setShowSharePlanLinkSheet(true)
                   : undefined
               }

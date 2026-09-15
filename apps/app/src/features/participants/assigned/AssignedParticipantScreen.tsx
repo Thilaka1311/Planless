@@ -82,6 +82,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onReplaceLeaveParticipant,
   onKeepPaymentLeaveParticipant,
   onInviteSkipped,
+  onRejoinAddToJoined,
   onRejoinAddToWaitlist,
   onRejoinRemoveFromPlan,
   isCompletedPlan,
@@ -666,7 +667,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
           onInviteSkipped={onInviteSkipped}
           onViewProfile={(item) => setViewProfileUserId(item.dbUuid || item.id)}
-          onAddToJoined={moveToGoingAction}
+          onAddToJoined={onRejoinAddToJoined || moveToGoingAction}
           onAddToWaitlist={onRejoinAddToWaitlist}
           onRemoveFromPlan={onRejoinRemoveFromPlan || removeFromPlanAction}
         />

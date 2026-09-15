@@ -26,6 +26,8 @@ interface InlineMemberEntry {
   userId: string;
   isHost: boolean;
   isAccepted: boolean;
+  rsvp_status?: string | null;
+  leave_requested?: boolean;
   assignedGroup?: string | null;
   waitlistPosition?: number | null;
   joinedQueueAt?: string | null;
@@ -256,10 +258,12 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
           userId: rowUserId,
           isHost: Boolean(isHostRole),
           isAccepted,
+          rsvp_status: effectiveStatus,
+          leave_requested: Boolean((item as any).leave_requested || (m as any)?.leave_requested),
           assignedGroup,
           waitlistPosition,
           joinedQueueAt: null, // Explicitly no fallback in assigned mode
-          skipReason: (item as any).skip_reason || (item as any).skipReason || (m as any)?.skipReason || (m as any)?.skip_reason || null,
+          skipReason: effectiveStatus === 'REJOINED' ? null : ((item as any).skip_reason || (item as any).skipReason || (m as any)?.skipReason || (m as any)?.skip_reason || null),
         };
 
         // 5. Split into Going / Waitlisted / Skipped
@@ -269,7 +273,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
           } else {
             skipped.push(entry);
           }
-        } else if (effectiveStatus === 'SKIPPED') {
+        } else if (effectiveStatus === 'SKIPPED' || effectiveStatus === 'REJOINED') {
           skipped.push(entry);
         } else if (assignedGroup === 'waitlisted' || assignedGroup === 'waitlist') {
           waitlist.push(entry);
@@ -342,10 +346,11 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         isAccepted,
         rsvp_status: effectiveStatus,
         joinState: effectiveStatus,
+        leave_requested: Boolean(dbRow?.leave_requested || (m as any).leave_requested),
         waitlistPosition: dbRow?.waitlist_position ?? (m as any).waitlistPosition ?? (m as any).waitlist_position ?? null,
         joinedQueueAt,
         join_queue_at: joinedQueueAt,
-        skipReason: dbRow?.skip_reason || (m as any).skipReason || (m as any).skip_reason || null,
+        skipReason: effectiveStatus === 'REJOINED' ? null : (dbRow?.skip_reason || (m as any).skipReason || (m as any).skip_reason || null),
       };
     });
 
@@ -560,11 +565,28 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                         <UserAvatar src={person.avatar} alt={person.name} size="w-full h-full" />
                       </div>
                     </div>
-                    <span className={`font-sans text-[13.5px] font-semibold leading-none truncate flex-1 ${
-                      person.isAccepted ? 'text-white' : 'text-[#8E8E93]'
-                    }`}>
-                      {person.name}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <span className={`font-sans text-[13.5px] font-semibold leading-none truncate ${
+                        person.isAccepted ? 'text-white' : 'text-[#8E8E93]'
+                      }`}>
+                        {person.name}
+                      </span>
+                      {(person.rsvp_status === 'REJOINED' || (person.leave_requested && person.rsvp_status !== 'SKIPPED')) && (
+                        <span
+                          title={person.rsvp_status === 'REJOINED' ? "Requested to rejoin" : "Requested to leave"}
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 700,
+                            color: '#F59E0B',
+                            lineHeight: 1,
+                            flexShrink: 0,
+                            fontFamily: 'Inter, sans-serif',
+                          }}
+                        >
+                          !
+                        </span>
+                      )}
+                    </div>
                     {activeTab === 'skipped' && person.skipReason && (
                       <span className="text-[11px] font-medium text-white/50 truncate max-w-[100px] text-right font-sans">
                         {formatSkipReason(person.skipReason)}
@@ -822,11 +844,28 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                             <UserAvatar src={person.avatar} alt={person.name} size="w-full h-full" />
                           </div>
                         </div>
-                        <span className={`font-sans text-[13.5px] font-semibold leading-none truncate flex-1 ${
-                          person.isAccepted ? 'text-white' : 'text-[#8E8E93]'
-                        }`}>
-                          {person.name}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className={`font-sans text-[13.5px] font-semibold leading-none truncate ${
+                            person.isAccepted ? 'text-white' : 'text-[#8E8E93]'
+                          }`}>
+                            {person.name}
+                          </span>
+                          {(person.rsvp_status === 'REJOINED' || (person.leave_requested && person.rsvp_status !== 'SKIPPED')) && (
+                            <span
+                              title={person.rsvp_status === 'REJOINED' ? "Requested to rejoin" : "Requested to leave"}
+                              style={{
+                                fontSize: 14,
+                                fontWeight: 700,
+                                color: '#F59E0B',
+                                lineHeight: 1,
+                                flexShrink: 0,
+                                fontFamily: 'Inter, sans-serif',
+                              }}
+                            >
+                              !
+                            </span>
+                          )}
+                        </div>
                         {activeTab === 'skipped' && person.skipReason && (
                           <span className="text-[11px] font-medium text-white/50 truncate max-w-[100px] text-right font-sans">
                             {formatSkipReason(person.skipReason)}

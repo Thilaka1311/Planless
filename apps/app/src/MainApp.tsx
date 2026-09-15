@@ -43,6 +43,7 @@ import {
   clearStoredPendingInviteToken,
   getStoredPendingInviteToken,
   extractInviteTokenFromPath,
+  resolveInviteDestination,
 } from "./features/plans/services/planInviteService";
 
 interface MainAppProps {
@@ -178,66 +179,63 @@ export default function MainApp({
     return unsubscribe;
   }, [activeTab, selectedPlanId, selectedChatPlanId]);
 
-  // --- Process and claim shared plan invite token if present ---
-  const isClaimingInviteRef = useRef(false);
-  const claimedTokensRef = useRef<Set<string>>(new Set());
+  // --- Process shared plan invite token based on participant state ---
+  const isResolvingInviteRef = useRef(false);
+  const processedTokensRef = useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
     const tokenToProcess = pendingInviteToken || getStoredPendingInviteToken();
     if (!tokenToProcess) return;
-    if (claimedTokensRef.current.has(tokenToProcess) || isClaimingInviteRef.current) return;
+    if (processedTokensRef.current.has(tokenToProcess) || isResolvingInviteRef.current) return;
 
-    isClaimingInviteRef.current = true;
-    claimedTokensRef.current.add(tokenToProcess);
+    isResolvingInviteRef.current = true;
+    processedTokensRef.current.add(tokenToProcess);
 
     const processInvite = async () => {
       try {
-        const result = await claimPlanInviteRPC(tokenToProcess);
-        if (result.success) {
-          // Successfully claimed or user already had an existing participant row
+        const userUuid = userProfile?.dbUuid || activeUserId;
+        const resolution = await resolveInviteDestination(tokenToProcess, userUuid);
+
+        if (resolution.destination === "PLAN_PREVIEW") {
+          // Cases 3, 4, 5, 6: Existing JOINED / WAITLISTED / SKIPPED / HOST
+          // Do not claim/reset/update their state. Open specific Plan Preview screen.
           onClearPendingInvite?.();
           clearStoredPendingInviteToken();
 
           await refreshPlans();
 
-          // Navigate to Home as the existing flow does
+          setSelectedPlanSource("deep_link");
+          setSelectedPlanId(tokenToProcess);
+          setActiveTab("plans");
+          navigateToRoute({ tab: "plans", selectedPlanId: tokenToProcess }, { replace: true });
+        } else if (resolution.destination === "HOME") {
+          // Case 1 (new participant claimed) & Case 2 (existing INVITED participant)
+          onClearPendingInvite?.();
+          clearStoredPendingInviteToken();
+
+          await refreshPlans();
+
+          setSelectedPlanId(null);
           setActiveTab("home");
+          setActiveCardId(tokenToProcess);
+          navigateToRoute({ tab: "home" }, { replace: true });
         } else {
-          console.warn("[MainApp] Failed to claim plan invite:", result.error);
-          const errStr = (result.error || "").toLowerCase();
-          const isTerminalError =
-            errStr.includes("invalid") ||
-            errStr.includes("no longer active") ||
-            errStr.includes("expired") ||
-            errStr.includes("not active") ||
-            errStr.includes("not found") ||
-            errStr.includes("host");
-
-          if (isTerminalError) {
-            onClearPendingInvite?.();
-            clearStoredPendingInviteToken();
-          } else {
-            // Transient error: allow retry on next attempt
-            claimedTokensRef.current.delete(tokenToProcess);
-          }
-        }
-      } catch (err) {
-        console.error("[MainApp] Unexpected error claiming plan invite:", err);
-        claimedTokensRef.current.delete(tokenToProcess);
-      } finally {
-        isClaimingInviteRef.current = false;
-
-        // If the browser URL is /join/:token and the token was cleared (success or terminal error),
-        // redirect cleanly to /home
-        const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
-        if (extractInviteTokenFromPath(currentPath) && !getStoredPendingInviteToken()) {
+          // Inactive / invalid / expired / not found
+          console.warn("[MainApp] Invite resolution failed or inactive plan:", resolution.error);
+          onClearPendingInvite?.();
+          clearStoredPendingInviteToken();
           navigateToRoute({ tab: "home" }, { replace: true });
         }
+      } catch (err) {
+        console.error("[MainApp] Unexpected error resolving invite destination:", err);
+        processedTokensRef.current.delete(tokenToProcess);
+      } finally {
+        isResolvingInviteRef.current = false;
       }
     };
 
     processInvite();
-  }, [pendingInviteToken, onClearPendingInvite, refreshPlans, setActiveTab]);
+  }, [pendingInviteToken, onClearPendingInvite, refreshPlans, setActiveTab, userProfile, activeUserId]);
 
   // Snooze and Auto-Pass overrides
   const [interestedPlanIds, setInterestedPlanIds] = useState<string[]>([]);
