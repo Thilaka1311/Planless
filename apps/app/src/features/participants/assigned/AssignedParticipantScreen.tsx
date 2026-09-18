@@ -99,6 +99,10 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     }
   }, [initialOpenPlanSizeSheet]);
 
+  useEffect(() => {
+    onPlanSizeEditingChange?.(isCapacitySheetOpen);
+  }, [isCapacitySheetOpen, onPlanSizeEditingChange]);
+
   // ── Wizard mode internal state ──
   const hostItem = useMemo<Friend | null>(() => {
     if (!isHostSelected) return null;
@@ -525,13 +529,14 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           title={title}
           subtitle={subtitle}
           isHostUser={effectiveIsHost}
+          capacity={capacity}
           onBack={onBack}
           onOpenSettings={onOpenSettings}
           onOpenActivity={onOpenActivity}
           displayMode={displayMode}
           mode={mode}
           waitlistMode={waitlistMode}
-          onOpenPlanSize={mode === 'wizard' && effectiveIsHost && !isCompletedPlan ? () => setIsCapacitySheetOpen(true) : undefined}
+          onOpenPlanSize={effectiveIsHost && !isCompletedPlan ? () => setIsCapacitySheetOpen(true) : undefined}
         />
       )}
 
@@ -686,33 +691,32 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         onClose={() => setViewProfileUserId(null)}
       />
 
-      {mode === 'wizard' && (
-        <EditCapacityBottomSheet
-          isOpen={isCapacitySheetOpen}
-          capacity={Math.min(capacity ?? displayGoing.length, totalInvitedCount)}
-          joinedCount={displayGoing.length}
-          waitlistedCount={displayWaitlist.length}
-          invitedCount={totalInvitedCount}
-          minCapacity={2}
-          maxCapacity={totalInvitedCount}
-          onCapacityChange={(newCap) => {
-            if (onAdjustCapacity) {
-              onAdjustCapacity(Math.min(newCap, totalInvitedCount));
-            }
-          }}
-          onIncrement={handleIncrementPlanSize}
-          onDecrement={handleDecrementPlanSize}
-          onAddParticipants={() => {
-            setIsCapacitySheetOpen(false);
-            onPlanSizeSheetDismissed?.();
-            onAddFriends?.('invited');
-          }}
-          onClose={() => {
-            setIsCapacitySheetOpen(false);
-            onPlanSizeSheetDismissed?.();
-          }}
-        />
-      )}
+      <EditCapacityBottomSheet
+        isOpen={isCapacitySheetOpen}
+        capacity={mode === 'wizard' ? Math.min(capacity ?? displayGoing.length, totalInvitedCount) : (capacity ?? 2)}
+        joinedCount={displayGoing.length}
+        waitlistedCount={displayWaitlist.length}
+        invitedCount={mode === 'wizard' ? totalInvitedCount : (displayGoing.length + displayWaitlist.length + (externalInvitedList?.length || 0))}
+        minCapacity={2}
+        maxCapacity={mode === 'wizard' ? totalInvitedCount : (maxCapacity ?? Math.max(2, displayGoing.length + displayWaitlist.length + (externalInvitedList?.length || 0)))}
+        limitToInvitedCount={true}
+        onCapacityChange={(newCap) => {
+          if (onAdjustCapacity) {
+            const activeCount = displayGoing.length + displayWaitlist.length + (externalInvitedList?.length || 0);
+            const capped = Math.min(newCap, mode === 'wizard' ? totalInvitedCount : (maxCapacity ?? Math.max(2, activeCount)));
+            onAdjustCapacity(capped);
+          }
+        }}
+        onAddParticipants={() => {
+          setIsCapacitySheetOpen(false);
+          onPlanSizeSheetDismissed?.();
+          onAddFriends?.(mode === 'wizard' ? 'invited' : activeTab);
+        }}
+        onClose={() => {
+          setIsCapacitySheetOpen(false);
+          onPlanSizeSheetDismissed?.();
+        }}
+      />
 
       {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
       {!isCompletedPlan && mode !== 'wizard' && (currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (

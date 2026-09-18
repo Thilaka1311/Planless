@@ -9,7 +9,7 @@ import { supabase } from "../../../../lib/supabaseClient";
  *    recalculation, and applies the full atomic logic in one Postgres call.
  *
  * The RPC logic (normalized schema):
- *  1. Fetches plan (total_cost, host_id, max_participants, title)
+ *  1. Fetches plan (total_cost, host_id, plan_size, title)
  *  2. Clears then sets legacy cost_per_participant on plan_participants
  *  3. If no cost: removes plan-level wallet_expense (message_id IS NULL)
  *  4. Finds or creates one plan-level wallet_expense (payer = host)

@@ -70,9 +70,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     (plan as any).planSize ??
     plan.capacity ??
     plan.maxSpots ??
-    plan.joinLimit ??
-    (plan as any).max_participants ??
-    (plan as any).maxParticipants;
+    plan.joinLimit;
   const maxCapacity = Number(
     rawCap !== undefined && rawCap !== null
       ? rawCap

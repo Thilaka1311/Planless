@@ -45,13 +45,13 @@ console.log("\n--- Test 3: partitionAutomaticParticipants (Capacity not reached)
   console.log("Going count:", result.going.length);
   console.log("Waitlist count:", result.waitlist.length);
   console.log("Skipped count:", result.skipped.length);
-  console.log("Skipped members:", result.skipped.map(m => ({ name: m.name, rsvpStatus: m.rsvpStatus })));
+  console.log("Skipped members:", result.skipped.map(m => ({ name: m.name, rsvpStatus: (m as any).rsvpStatus || (m as any).rsvp_status })));
 
   assert.strictEqual(result.going.length, 2, "Going should have 2 joined participants");
   assert.strictEqual(result.waitlist.length, 0, "Waitlist should be EMPTY (0 members)");
   assert.strictEqual(result.skipped.length, 1, "Skipped should have 1 member (Thilak)");
   assert.strictEqual(result.skipped[0].name, 'Thilak');
-  assert.strictEqual(result.skipped[0].rsvpStatus, 'REJOINED');
+  assert.strictEqual((result.skipped[0] as any).rsvpStatus || (result.skipped[0] as any).rsvp_status, 'REJOINED');
   console.log("✓ Test 3 passed: Rejoined participant is in Skipped section, NOT Waitlist.");
 }
 
@@ -74,7 +74,7 @@ console.log("\n--- Test 4: partitionAutomaticParticipants (Capacity reached) ---
   assert.strictEqual(result.waitlist.length, 0, "Waitlist should still be EMPTY (0 members)");
   assert.strictEqual(result.skipped.length, 1, "Skipped should have 1 member (Thilak)");
   assert.strictEqual(result.skipped[0].name, 'Thilak');
-  assert.strictEqual(result.skipped[0].rsvpStatus, 'REJOINED');
+  assert.strictEqual((result.skipped[0] as any).rsvpStatus || (result.skipped[0] as any).rsvp_status, 'REJOINED');
   console.log("✓ Test 4 passed: Even when plan is full, Rejoined participant remains in Skipped.");
 }
 

@@ -17,6 +17,7 @@ import { PlansScreen } from "./features/plans/screens/PlansScreen/PlansScreen";
 import { CreatePlanScreen } from "./features/create/screens/Create";
 import { CreateMVP } from "./features/create/screens/CreateMVP";
 import { ProfileScreen } from "./features/profile/screens/ProfileScreen";
+import { FriendshipsScreen } from "./features/friendships/screens/FriendshipsScreen";
 import DetailedPlanModal from "./components/common screens/DetailedPlanModal";
 import { getPlanCover } from "./features/plans/config/planCoverImages";
 import DepositCashModal from "./shared/modals/DepositCashModal";
@@ -255,11 +256,15 @@ export default function MainApp({
   const [showPastPlansScreen, setShowPastPlansScreen] = useState(false);
   const [plansScrollY, setPlansScrollY] = useState(0);
   const [showPlansSearchScreen, setShowPlansSearchScreen] = useState(false);
+  const [showFriendsScreen, setShowFriendsScreen] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
 
   // Reset sub-screens when changing tabs
   React.useEffect(() => {
+    if (activeTab !== "home") {
+      setShowFriendsScreen(false);
+    }
     if (activeTab !== "plans") {
       setShowHostedPlansScreen(false);
       setShowPastPlansScreen(false);
@@ -512,6 +517,7 @@ export default function MainApp({
     !showPlansSearchScreen &&
     !showHostedPlansScreen &&
     !showPastPlansScreen &&
+    !showFriendsScreen &&
     !isChildHidingBottomNav;
 
   return (
@@ -523,6 +529,8 @@ export default function MainApp({
           userProfile={userProfile}
           setActiveTab={handleTabChange}
           pendingMemoryCount={pendingMemoryCount}
+          showFriendsIcon={true}
+          onToggleFriends={() => setShowFriendsScreen(true)}
         />
       )}
 
@@ -664,6 +672,13 @@ export default function MainApp({
 
 
 
+
+      {/* ---------------- 👥 FRIENDS SCREEN ---------------- */}
+      {showFriendsScreen && (
+        <div className="fixed inset-0 z-50 bg-[#000000] flex flex-col">
+          <FriendshipsScreen onBack={() => setShowFriendsScreen(false)} />
+        </div>
+      )}
 
       {/* ---------------- 🔍 SEARCH YOUR PLANS SCREEN ---------------- */}
       {showPlansSearchScreen && (

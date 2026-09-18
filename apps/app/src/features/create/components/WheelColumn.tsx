@@ -25,8 +25,8 @@ export const WheelColumn: React.FC<WheelColumnProps> = ({
   const scrollRef   = useRef<HTMLDivElement>(null);
   const lastIdx     = useRef(selectedIndex);
   const scrolling   = useRef(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const rafRef      = useRef<number>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const rafRef      = useRef<number>(undefined);
 
   // Always-current refs so callbacks never go stale
   const onChangeRef = useRef(onIndexChange);

@@ -12,7 +12,6 @@ interface HeroMetadataCardProps {
   costText?: string;
   totalCost?: number | null;
   planSize?: number | null;
-  maxParticipants?: number | null;
   isHost?: boolean;
   onEditCost?: () => void;
   onEditCapacity?: () => void;
@@ -41,11 +40,7 @@ export function getHeroMetadataCostText(
         ? Number(rawDbPlan.plan_size)
         : (plan?.plan_size
             ? Number(plan.plan_size)
-            : (rawDbPlan?.max_participants
-                ? Number(rawDbPlan.max_participants)
-                : (plan?.max_participants
-                    ? Number(plan.max_participants)
-                    : (fallbackSpots || plan?.maxSpots || 8)))));
+            : (fallbackSpots || plan?.maxSpots || 8)));
 
   if (divisor <= 0) return null;
   const perPerson = Math.round((total / divisor) * 100) / 100;
@@ -59,7 +54,6 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
   costText,
   totalCost,
   planSize,
-  maxParticipants,
   isHost,
   onEditCost,
   onEditCapacity,
@@ -82,7 +76,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
   );
   const rsvp = useRSVPDeadline(effectiveRsvpIso);
   const rsvpDisplayText = isPlanStartRSVP && datetime ? formatPlanDate(datetime) : rsvp.text;
-  const displayPlanSize = planSize || maxParticipants;
+  const displayPlanSize = planSize;
 
   return (
     <div className="bg-black/45 backdrop-blur-[6px] rounded-2xl border border-white/10 shadow-xl w-[260px] flex-shrink-0 text-left overflow-visible relative">
@@ -119,7 +113,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
             </button>
             <CostBreakdownPopover
               totalCost={totalCost}
-              maxParticipants={maxParticipants}
+              planSize={planSize}
               isOpen={isCostPopoverOpen}
               onClose={() => setIsCostPopoverOpen(false)}
               isHost={isHost}

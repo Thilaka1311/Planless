@@ -556,7 +556,16 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 onRemoveParticipant={(pId, uId) => removeParticipant(pId, uId)}
                 onPromoteToHost={(pId, uId) => promoteParticipantToHost(pId, uId)}
                 onDemoteFromHost={(pId, uId) => demoteHostToParticipant(pId, uId)}
-                onUpdatePlanCapacity={(pId, capacity) => updatePlanDetails(pId, { plan_size: capacity })}
+                onUpdatePlanCapacity={(pId, capacity, opts) =>
+                  updatePlanDetails(
+                    pId,
+                    {
+                      plan_size: capacity,
+                      ...(opts?.totalCost !== undefined ? { total_cost: opts.totalCost } : {}),
+                    },
+                    opts
+                  )
+                }
                 onCancelPlan={(pId) => cancelPlan(pId)}
                 onAddParticipants={(pId, userIds, assignedGroup) =>
                   addParticipantsToPlan({

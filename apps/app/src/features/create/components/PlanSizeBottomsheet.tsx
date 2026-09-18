@@ -10,6 +10,8 @@ export interface PlanSizeBottomsheetProps {
   waitlistedCount?: number;
   minCapacity?: number;
   maxCapacity?: number;
+  limitToInvitedCount?: boolean;
+  isAutomatic?: boolean;
   onCapacityChange: (newCapacity: number) => void | Promise<void>;
   onIncrement?: () => void;
   onDecrement?: () => void;
@@ -28,6 +30,8 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   waitlistedCount,
   minCapacity = 2,
   maxCapacity = 50,
+  limitToInvitedCount = true,
+  isAutomatic = false,
   onCapacityChange,
   onIncrement,
   onDecrement,
@@ -36,7 +40,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   onAddParticipants,
 }) => {
   const effectiveMaxCapacity =
-    invitedCount !== undefined
+    limitToInvitedCount && invitedCount !== undefined
       ? Math.max(minCapacity, Math.min(invitedCount, maxCapacity))
       : Math.max(minCapacity, maxCapacity);
   const initialValidCapacity = Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity || minCapacity));
@@ -59,13 +63,9 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
       originalCapacityRef.current = valid;
       hasCommittedRef.current = false;
       setShowInviteHint(false);
-    } else if (isOpen && (onIncrement || onDecrement) && capacity !== undefined) {
-      const valid = Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity));
-      setDraftCapacity(valid);
-      draftCapacityRef.current = valid;
     } else if (!isOpen && prevIsOpenRef.current) {
       // In case sheet was closed from external state without handleClose having been called
-      if (!hasCommittedRef.current && !onIncrement && !onDecrement) {
+      if (!hasCommittedRef.current) {
         hasCommittedRef.current = true;
         const finalVal = draftCapacityRef.current;
         const originalVal = originalCapacityRef.current;
@@ -83,16 +83,12 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
       }
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen, capacity, effectiveMaxCapacity, minCapacity, onCapacityChange, onSave, onIncrement, onDecrement]);
+  }, [isOpen, capacity, effectiveMaxCapacity, minCapacity, onCapacityChange, onSave]);
 
   const currentCapacity = Math.max(minCapacity, Math.min(effectiveMaxCapacity, draftCapacity));
 
   const handleDecrement = () => {
     setShowInviteHint(false);
-    if (onDecrement) {
-      onDecrement();
-      return;
-    }
     if (currentCapacity > minCapacity) {
       const nextVal = currentCapacity - 1;
       setDraftCapacity(nextVal);
@@ -106,18 +102,13 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
       return;
     }
     setShowInviteHint(false);
-    if (onIncrement) {
-      onIncrement();
-      return;
-    }
     const nextVal = currentCapacity + 1;
     setDraftCapacity(nextVal);
     draftCapacityRef.current = nextVal;
   };
 
-  // Commit exactly once when closing, and only if value actually changed (when not using onIncrement/onDecrement)
+  // Commit exactly once when closing, and only if value actually changed
   const commitChangeIfDifferent = () => {
-    if (onIncrement || onDecrement) return;
     if (hasCommittedRef.current) return;
     hasCommittedRef.current = true;
     const finalVal = draftCapacityRef.current;
@@ -146,22 +137,29 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
     onAddParticipants?.();
   };
 
-  const isCapacityReached = joinedCount !== undefined ? joinedCount >= currentCapacity : true;
-  const effectiveWaitlistedCount =
-    waitlistedCount !== undefined
-      ? waitlistedCount
-      : isCapacityReached && invitedCount !== undefined
-      ? Math.max(0, invitedCount - currentCapacity)
-      : 0;
-  const effectiveGoingCount =
-    joinedCount !== undefined
-      ? joinedCount
-      : Math.min(currentCapacity, invitedCount ?? currentCapacity);
+  let capacitySummary: string;
+  if (isAutomatic) {
+    const going = currentCapacity;
+    const waitlisted = Math.max(0, (invitedCount ?? currentCapacity) - currentCapacity);
+    capacitySummary = `${going} going • ${waitlisted} waitlisted`;
+  } else {
+    const isCapacityReached = joinedCount !== undefined ? joinedCount >= currentCapacity : true;
+    const effectiveWaitlistedCount =
+      waitlistedCount !== undefined
+        ? waitlistedCount
+        : isCapacityReached && invitedCount !== undefined
+        ? Math.max(0, invitedCount - currentCapacity)
+        : 0;
+    const effectiveGoingCount =
+      joinedCount !== undefined
+        ? joinedCount
+        : Math.min(currentCapacity, invitedCount ?? currentCapacity);
 
-  const capacitySummary =
-    effectiveWaitlistedCount > 0
-      ? `${effectiveGoingCount} going • ${effectiveWaitlistedCount} waitlisted`
-      : `${effectiveGoingCount} going`;
+    capacitySummary =
+      effectiveWaitlistedCount > 0
+        ? `${effectiveGoingCount} going • ${effectiveWaitlistedCount} waitlisted`
+        : `${effectiveGoingCount} going`;
+  }
 
   return (
     <AnimatePresence>
@@ -179,6 +177,14 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            drag="y"
+            dragConstraints={{ top: 0 }}
+            dragElastic={0.2}
+            onDragEnd={(_e, info) => {
+              if (info.offset.y > 80 || info.velocity.y > 400) {
+                handleClose();
+              }
+            }}
             style={{
               position: "fixed",
               bottom: 0,
@@ -195,10 +201,17 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
               display: "flex",
               flexDirection: "column",
               pointerEvents: "auto",
+              touchAction: "pan-y",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
-              <div style={{ width: 36, height: 5, borderRadius: 2.5, background: "rgba(255, 255, 255, 0.15)" }} />
+            <div
+              onClick={handleClose}
+              className="cursor-pointer select-none py-1 flex justify-center mb-4"
+              role="button"
+              tabIndex={0}
+              aria-label="Dismiss plan size sheet"
+            >
+              <div style={{ width: 36, height: 5, borderRadius: 2.5, background: "rgba(255, 255, 255, 0.2)" }} />
             </div>
 
             {/* Header */}

@@ -202,7 +202,7 @@ export const PlanStack: React.FC<PlanStackProps> = ({
           setIsExpanded={(val) => {
             setExpandedCardId((prev) => {
               const currentIsExpanded = prev === plan.id;
-              const nextVal = typeof val === "function" ? val(currentIsExpanded) : val;
+              const nextVal = typeof val === "function" ? (val as any)(currentIsExpanded) : val;
               return nextVal ? plan.id : null;
             });
           }}

@@ -20,7 +20,7 @@ interface PlanSettingsScreenProps {
   onBack: () => void;
   onUpdateSettings?: (settings: {
     allowParticipantInvites?: boolean;
-    maxParticipants?: number;
+    plan_size?: number;
   }) => Promise<void> | void;
   onUpdatePlanDetails?: (updates: any) => Promise<void> | void;
   onDemoteHost?: (userId: string) => Promise<void> | void;
@@ -144,7 +144,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     }
   };
 
-  const planCapacity = plan.plan_size ?? (plan as any).planSize ?? plan.maxParticipants ?? (plan as any).max_participants ?? (plan as any).joinLimit ?? (plan as any).capacity ?? 0;
+  const planCapacity = plan.plan_size ?? (plan as any).planSize ?? (plan as any).joinLimit ?? (plan as any).capacity ?? 0;
   const waitlistCount = useMemo(() => {
     return members.filter((m) => {
       const status = normalizeStatus(m.joinState || m.rsvp_status || (m as any).status);

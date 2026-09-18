@@ -199,20 +199,21 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
 
   // ─── updatePlanDetails ──────────────────────────────────────────────────────
 
-  const updatePlanDetails = useCallback(async (rawPlanId: string, updates: Partial<DbPlan> & { skipDbWrite?: boolean }) => {
+  const updatePlanDetails = useCallback(async (
+    rawPlanId: string,
+    updates: Partial<DbPlan> & { skipDbWrite?: boolean },
+    options?: { totalCost?: number; autoPromote?: boolean }
+  ) => {
     const planId = cleanPlanId(rawPlanId);
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
 
     const oldCapacity = matchedPlan?.plan_size || matchedPlan?.joinLimit || matchedPlan?.capacity || matchedPlan?.maxSpots || 0;
-    const newCapacity = updates.plan_size !== undefined ? Math.max(1, updates.plan_size) : (updates.max_participants !== undefined ? Math.max(1, updates.max_participants) : undefined);
+    const newCapacity = updates.plan_size !== undefined ? Math.max(1, updates.plan_size) : undefined;
 
-    // Validate and clamp plan_size / max_participants to at least 1
+    // Validate and clamp plan_size to at least 1
     if (updates.plan_size !== undefined) {
       updates.plan_size = Math.max(1, updates.plan_size);
-    }
-    if (updates.max_participants !== undefined) {
-      updates.max_participants = Math.max(1, updates.max_participants);
     }
 
     // Persist updates to the plans table
@@ -224,7 +225,6 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       "scheduled_at",
       "rsvp_deadline",
       "plan_size",
-      "max_participants",
       "total_cost",
       "status",
       "cover_image",
@@ -256,15 +256,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     }
 
     if (planUpdate.plan_size !== undefined) {
-      const currentPlan = (plans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid)
-        || (dbPlans || []).find(p => p.id === planUuid);
-      const maxAllowed = planUpdate.max_participants ?? currentPlan?.max_participants ?? (currentPlan as any)?.maxParticipants;
-
-      if (maxAllowed !== undefined && maxAllowed !== null && planUpdate.plan_size > maxAllowed) {
-        throw new Error(`Plan size (${planUpdate.plan_size}) cannot exceed invitation capacity (${maxAllowed})`);
-      }
-
-      const boundedPlanSize = Math.max(1, maxAllowed ? Math.min(planUpdate.plan_size, maxAllowed) : planUpdate.plan_size);
+      const boundedPlanSize = Math.max(1, planUpdate.plan_size);
 
       const previousDbPlans = dbPlans;
       if (setDbPlans) {
@@ -285,7 +277,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       }
 
       try {
-        await api.updatePlanCapacityRPC(planUuid, boundedPlanSize);
+        await api.updatePlanCapacityRPC(planUuid, boundedPlanSize, options?.autoPromote);
       } catch (err: any) {
         console.error("[usePlanLifecycle.updatePlanDetails] updatePlanCapacityRPC failed:", {
           message: err?.message || String(err),
@@ -294,30 +286,12 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
           hint: err?.hint,
           planUuid,
           attemptedPlanSize: boundedPlanSize,
-          maxParticipants: maxAllowed,
           rawError: err,
         });
         if (setDbPlans) setDbPlans(previousDbPlans);
         throw err;
       }
       delete planUpdate.plan_size;
-    }
-
-    if (planUpdate.max_participants !== undefined) {
-      const newMax = planUpdate.max_participants;
-      if (setDbPlans) {
-        setDbPlans(prev => prev.map(p => {
-          if (p.id === planUuid || (p as any).dbUuid === planUuid) {
-            return {
-              ...p,
-              max_participants: newMax,
-              maxParticipants: newMax,
-              ...(planUpdate.total_cost !== undefined ? { total_cost: planUpdate.total_cost, totalCost: planUpdate.total_cost } : {}),
-            };
-          }
-          return p;
-        }));
-      }
     }
 
     const updatedCoverImage = updates.cover_image;

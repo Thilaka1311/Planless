@@ -190,7 +190,9 @@ router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) =>
           if (rec.datetime !== undefined) mappedRec.scheduled_at = rec.datetime;
           if (rec.rsvp_deadline !== undefined) mappedRec.rsvp_deadline = rec.rsvp_deadline;
           if (rec.response_deadline_at !== undefined) mappedRec.rsvp_deadline = rec.response_deadline_at;
-          if (rec.max_participants !== undefined) mappedRec.max_participants = rec.max_participants;
+          if (rec.plan_size !== undefined) mappedRec.plan_size = rec.plan_size;
+          if (rec.invited_participants !== undefined) mappedRec.invited_participants = rec.invited_participants;
+          else if (rec.max_participants !== undefined) mappedRec.invited_participants = rec.max_participants;
           if (rec.total_cost !== undefined) mappedRec.total_cost = rec.total_cost;
           else if (rec.entry_fee !== undefined) mappedRec.total_cost = rec.entry_fee;
           if (rec.status !== undefined) {
@@ -254,7 +256,8 @@ router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) =>
           mappedRec.place_address = rec.place_address || rec.location || "TBD";
           mappedRec.scheduled_at = rec.scheduled_at || rec.datetime || new Date().toISOString();
           mappedRec.rsvp_deadline = rec.rsvp_deadline || rec.response_deadline_at || mappedRec.scheduled_at;
-          mappedRec.max_participants = rec.max_participants !== undefined ? rec.max_participants : (rec.join_limit !== undefined ? rec.join_limit : (rec.max_people !== undefined ? rec.max_people : null));
+          mappedRec.plan_size = rec.plan_size !== undefined ? rec.plan_size : (rec.capacity !== undefined ? rec.capacity : (rec.join_limit !== undefined ? rec.join_limit : (rec.max_spots !== undefined ? rec.max_spots : (rec.max_people !== undefined ? rec.max_people : 10))));
+          mappedRec.invited_participants = rec.invited_participants !== undefined ? rec.invited_participants : (rec.max_participants !== undefined ? rec.max_participants : 1);
           mappedRec.total_cost = rec.total_cost !== undefined ? rec.total_cost : (rec.entry_fee !== undefined ? rec.entry_fee : (rec.costAmount !== undefined ? rec.costAmount : 0.00));
           mappedRec.cover_image = rec.coverImage || rec.cover_image || null;
 
@@ -758,7 +761,7 @@ async function recalculatePlanParticipantsCosts(client: any, planUuid: string): 
   console.log(`[Backend Recalculating Costs] Starting for plan: ${planUuid}`);
   const { data: plan, error: planErr } = await client
     .from("plans")
-    .select("total_cost, host_id, max_participants")
+    .select("total_cost, host_id, plan_size")
     .eq("id", planUuid)
     .single();
 
@@ -784,14 +787,14 @@ async function recalculatePlanParticipantsCosts(client: any, planUuid: string): 
     return;
   }
 
-  // cost_per_participant = total_cost / max_participants (fixed plan capacity).
-  // The per-participant cost is based on the plan's defined maximum capacity,
+  // cost_per_participant = total_cost / plan_size (fixed plan capacity).
+  // The per-participant cost is based on the plan's defined joined capacity,
   // not the current number of people who have joined. This keeps the share
   // amount consistent regardless of current RSVP state.
-  const divisor = plan.max_participants > 0 ? plan.max_participants : 1;
+  const divisor = plan.plan_size > 0 ? plan.plan_size : 1;
   const shareAmount = totalCost <= 0 ? 0 : Math.round((totalCost / divisor) * 100) / 100;
 
-  console.log(`[Backend Recalculating Costs] Plan total cost: ₹${totalCost}, max_participants: ${plan.max_participants}, Share per participant: ₹${shareAmount}`);
+  console.log(`[Backend Recalculating Costs] Plan total cost: ₹${totalCost}, plan_size: ${plan.plan_size}, Share per participant: ₹${shareAmount}`);
 
   // Batch update: Update cost_per_participant to shareAmount for joined, others to NULL
   // Run this as a single transaction update query on the table to avoid row-by-row race conditions
