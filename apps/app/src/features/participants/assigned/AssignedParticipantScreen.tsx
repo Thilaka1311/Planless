@@ -704,7 +704,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       />
 
       <EditCapacityBottomSheet
-        isOpen={isCapacitySheetOpen}
+        isOpen={effectiveIsHost && isCapacitySheetOpen}
         capacity={
           mode === 'wizard'
             ? Math.min(capacity ?? displayGoing.length, totalInvitedCount)

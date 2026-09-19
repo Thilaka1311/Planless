@@ -66,7 +66,7 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
           </h1>
         </div>
 
-        {onOpenPlanSize && (
+        {isHostUser && onOpenPlanSize && (
           <button
             type="button"
             id="header_plan_size_btn"

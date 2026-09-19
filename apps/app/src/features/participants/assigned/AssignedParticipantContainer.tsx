@@ -160,6 +160,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
   onConfirmReplacement,
   currentPage,
   onLeavePlan,
+  initialOpenPlanSizeSheet,
 }) => {
   const { friends, refreshFriendships } = useFriendshipStore();
   const {
@@ -2067,6 +2068,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         onRejoinAddToWaitlist={effectiveIsHost ? handleRejoinAddToWaitlist : undefined}
         onRejoinRemoveFromPlan={effectiveIsHost ? handleRejoinRemoveFromPlan : undefined}
         isCompletedPlan={isCompletedPlan}
+        initialOpenPlanSizeSheet={initialOpenPlanSizeSheet}
         initialCapacityOverride={reopenPlanSizeCapacity}
         onPlanSizeSheetDismissed={() => setReopenPlanSizeCapacity(null)}
       />

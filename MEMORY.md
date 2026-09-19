@@ -74,6 +74,25 @@ This file stores durable lessons, corrections, architectural invariants, and wor
 
 ---
 
+## 9. Efficient Safe Path for Small UI & Access Changes
+
+* **Lesson**: When asked to make the Plan Size bottom sheet host-only, execution became unnecessarily slow and complex because investigation ballooned across every participant screen, container, and tab file instead of focusing on the directly relevant screen, its host detection, and its trigger. Furthermore, an extensive formal implementation plan artifact was produced for a simple UI condition check.
+* **Rules**:
+  1. **Classify by Complexity & Risk First**:
+     - **Small / Isolated UI or Access Change** (e.g. disabling an action, hiding/disabling a button based on existing roles, guarding a modal):
+       - Do **NOT** scan whole features, backend tables, or unrelated components.
+       - Do **NOT** create a heavy multi-section implementation plan artifact unless architectural or database changes are involved.
+  2. **Direct Investigation Chain**:
+     - For role/access UI restrictions, strictly trace:
+       $$\text{Target Screen} \longrightarrow \text{Existing Role/Host Flag} \longrightarrow \text{Trigger Element} \longrightarrow \text{Target Sheet/Modal Prop}$$
+     - Reuse the existing role check (e.g. `isHost`, `effectiveIsHost`, `isHostUser`).
+     - Stop investigation immediately once you have enough context to make the change safely.
+  3. **Smallest Effective Diff & Local Verification**:
+     - Apply the check directly to the trigger button (`disabled={!isHost}`, guard `onClick`) and guard the modal's `isOpen`.
+     - Run `npm run lint` and verify actual behavior locally without side-tracking into surrounding code.
+
+---
+
 ## Adding New Learned Rules
 
 When Thilak makes a correction or an architectural invariant is established, append it using this format:

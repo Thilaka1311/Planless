@@ -393,7 +393,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       />
 
       <EditCapacityBottomSheet
-        isOpen={isCapacitySheetOpen}
+        isOpen={effectiveIsHost && isCapacitySheetOpen}
         capacity={mode === 'wizard' ? Math.min(capacity ?? totalInvitedCount, totalInvitedCount) : (capacity ?? 2)}
         invitedCount={mode === 'wizard' ? totalInvitedCount : (externalGoingList.length + externalWaitlist.length + externalInvitedList.length)}
         joinedCount={mode === 'wizard' ? undefined : externalGoingList.length}

@@ -32,4 +32,5 @@ export interface PlanParticipantManagementWrapperProps {
   onCancelReplacement?: () => void;
   onConfirmReplacement?: (planId: string, targetUserId: string, replacementUserId: string) => Promise<void>;
   currentPage?: number;
+  initialOpenPlanSizeSheet?: boolean;
 }

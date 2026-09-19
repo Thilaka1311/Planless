@@ -90,7 +90,7 @@ import defaultPlanCoverSrc from "../../assets/planimagedefault.png";
 
 const PLACEHOLDER_REGISTRY: Record<ImageType, string> = {
   [ImageType.Avatar]: defaultAvatarSrc,
-  [ImageType.DiscoveryCover]: placeholderCoverSrc,
+  [ImageType.DiscoveryCover]: defaultPlanCoverSrc,
   [ImageType.PlanCover]: defaultPlanCoverSrc,
   [ImageType.Unknown]: defaultPlanCoverSrc,
 };

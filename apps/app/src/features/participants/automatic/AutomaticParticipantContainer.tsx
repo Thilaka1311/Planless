@@ -142,6 +142,7 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
   onConfirmReplacement,
   currentPage,
   onLeavePlan,
+  initialOpenPlanSizeSheet,
 }) => {
   const { friends, refreshFriendships } = useFriendshipStore();
   const {
@@ -1257,6 +1258,7 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
         onRejoinAddToWaitlist={effectiveIsHost ? handleRejoinAddToWaitlist : undefined}
         onRejoinRemoveFromPlan={effectiveIsHost ? handleRejoinRemoveFromPlan : undefined}
         isCompletedPlan={isCompletedPlan}
+        initialOpenPlanSizeSheet={initialOpenPlanSizeSheet}
       />
 
       {isPickerOpen && (

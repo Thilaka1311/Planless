@@ -859,6 +859,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [selectedParticipantForActions, setSelectedParticipantForActions] = useState<any | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showParticipantManagement, setShowParticipantManagement] = useState(false);
+  const [openParticipantManagementWithPlanSize, setOpenParticipantManagementWithPlanSize] = useState(false);
 
   useEffect(() => {
     if (planId && sessionStorage.getItem('expand_participants_once') === planId) {
@@ -1855,16 +1856,21 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                         </div>
                       </button>
 
-                      {/* Plan Size Indicator (Right side of Date & Time row / above Free) */}
+                      {/* Plan Size Indicator (Right side of Date & Time row / above Free) - Host-Only Interactive */}
                       {Boolean(currentPlanSize) && (
                         <button
                           type="button"
                           id="hero_plan_size_btn"
                           data-testid="hero_plan_size_indicator"
-                          disabled={isCancelled || isCompleted}
+                          disabled={!isHost || isCancelled || isCompleted}
                           onClick={() => {
-                            if (isCancelled || isCompleted) return;
-                            setIsEditingCapacitySheetOpen(true);
+                            if (!isHost || isCancelled || isCompleted) return;
+                            if (createMode) {
+                              setIsEditingCapacitySheetOpen(true);
+                            } else {
+                              setOpenParticipantManagementWithPlanSize(true);
+                              setShowParticipantManagement(true);
+                            }
                           }}
                           className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
                         >
@@ -2191,7 +2197,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               activeUserId={activeUserId}
               isHost={isHost}
               isCreatorHost={isCreatorHost}
-              onBack={() => setShowParticipantManagement(false)}
+              initialOpenPlanSizeSheet={openParticipantManagementWithPlanSize}
+              onBack={() => {
+                setOpenParticipantManagementWithPlanSize(false);
+                setShowParticipantManagement(false);
+              }}
               onMoveToGoing={(planId, userId, opts) => moveParticipantToGoing(planId, userId, opts)}
               onMoveToWaitlist={(planId, userId) => moveParticipantToWaitlist(planId, userId)}
               onMoveToInvited={(planId, userId) => moveParticipantToInvited(planId, userId)}
@@ -2559,58 +2569,46 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onClose={() => setIsEditingDetailsSheetOpen(false)}
       />
 
-      {/* ---------------- 👥 EDIT CAPACITY / PLAN SIZE BOTTOM SHEET ---------------- */}
-      <EditCapacityBottomSheet
-        isOpen={isEditingCapacitySheetOpen}
-        capacity={currentPlanSize}
-        invitedCount={
-          createMode && plan?.members
-            ? plan.members.length
-            : (selectedPlan?.members?.filter(m => normalizeStatus(m.joinState || (m as any).rsvp_status) !== 'SKIPPED')?.length ||
-               dbPlanParticipants?.filter(p => p.plan_id === (selectedPlan?.id || planUuid) && p.rsvp_status !== 'SKIPPED')?.length ||
-               selectedPlan?.members?.length ||
-               undefined)
-        }
-        joinedCount={
-          createMode
-            ? selectedPlan?.members?.filter(m => m.assignedGroup === 'GOING' || (m.assignedGroup as string)?.toLowerCase() === 'going' || m.joinState === 'JOINED' || m.role === 'HOST' || m.isHost)?.length
-            : (selectedPlan?.members?.filter(m => {
-                const s = normalizeStatus(m.joinState || (m as any).rsvp_status);
-                return (m.role === 'HOST' || m.isHost === true || s === 'JOINED' || s === 'WAITLISTED' || s === 'REJOINED') && s !== 'SKIPPED';
-              })?.length ||
-              dbPlanParticipants?.filter(p => {
-                if (p.plan_id !== (selectedPlan?.id || planUuid)) return false;
-                const s = normalizeStatus(p.rsvp_status);
-                return (p.role === 'HOST' || s === 'JOINED' || s === 'WAITLISTED' || s === 'REJOINED') && s !== 'SKIPPED';
-              })?.length ||
-              1)
-        }
-        waitlistedCount={
-          createMode
-            ? selectedPlan?.members?.filter(m => m.assignedGroup === 'WAITLIST' || (m.assignedGroup as string)?.toLowerCase() === 'waitlisted' || m.joinState === 'WAITLISTED')?.length
-            : undefined
-        }
-        minCapacity={2}
-        maxCapacity={createMode && plan?.members ? plan.members.length : undefined}
-        onCapacityChange={handleCapacityChange}
-        onIncrement={onIncrementCapacity}
-        onDecrement={onDecrementCapacity}
-        onAddParticipants={() => {
-          setIsEditingCapacitySheetOpen(false);
-          if (createMode) {
+      {/* ---------------- 👥 EDIT CAPACITY / PLAN SIZE BOTTOM SHEET (Create Mode Only) ---------------- */}
+      {createMode && (
+        <EditCapacityBottomSheet
+          isOpen={isHost && isEditingCapacitySheetOpen}
+          capacity={currentPlanSize}
+          invitedCount={plan?.members?.length}
+          joinedCount={
+            selectedPlan?.members?.filter(
+              (m) =>
+                m.assignedGroup === 'GOING' ||
+                (m.assignedGroup as string)?.toLowerCase() === 'going' ||
+                m.joinState === 'JOINED' ||
+                m.role === 'HOST' ||
+                m.isHost
+            )?.length
+          }
+          waitlistedCount={
+            selectedPlan?.members?.filter(
+              (m) =>
+                m.assignedGroup === 'WAITLIST' ||
+                (m.assignedGroup as string)?.toLowerCase() === 'waitlisted' ||
+                m.joinState === 'WAITLISTED'
+            )?.length
+          }
+          minCapacity={2}
+          maxCapacity={plan?.members ? plan.members.length : undefined}
+          onCapacityChange={handleCapacityChange}
+          onIncrement={onIncrementCapacity}
+          onDecrement={onDecrementCapacity}
+          onAddParticipants={() => {
+            setIsEditingCapacitySheetOpen(false);
             if (onAddParticipants) {
               onAddParticipants();
             } else if (onEditParticipants) {
               onEditParticipants();
             }
-          } else if (isHost) {
-            setShowParticipantManagement(true);
-          } else if (allowParticipantInvites) {
-            setShowParticipantAddPicker(true);
-          }
-        }}
-        onClose={() => setIsEditingCapacitySheetOpen(false)}
-      />
+          }}
+          onClose={() => setIsEditingCapacitySheetOpen(false)}
+        />
+      )}
 
       {/* ---------------- 🔗 SHARE PLAN LINK BOTTOM SHEET ---------------- */}
       <SharePlanLinkBottomSheet
