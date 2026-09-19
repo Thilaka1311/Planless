@@ -235,6 +235,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
     return (
       <ExpenseDetails
         expenseId={selectedExpenseIdForDetail}
+        activeUserId={activeUserId || ''}
         onBack={() => setSelectedExpenseIdForDetail(null)}
         onRefreshBalances={onRefreshBalances}
       />
@@ -498,7 +499,7 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                           relationship.fullName,
                           isPayerMe,
                           allExpenses,
-                          userProfile?.full_name || userProfile?.name || userProfile?.username
+                          (userProfile as any)?.full_name || userProfile?.name || (userProfile as any)?.username
                         );
 
                         return (

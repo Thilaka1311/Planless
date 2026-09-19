@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2 } from "lucide-react";
 import { useToast } from "../../../shared/contexts/ToastContext";
 import { buildInviteUrl } from "../services/planInviteService";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
@@ -3280,8 +3280,16 @@ interface GuidedCapacityAdjustmentBottomSheetProps {
   title?: string;
   subtitle?: string;
   ctaLabel?: string;
+  planAvatar?: string | null;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
+  plan?: Plan | null;
+  initialSelectedIds?: string[];
   onConfirm: (selectedUserIds: string[]) => Promise<void> | void;
   onClose: () => void;
+  onBack?: () => void;
 }
 
 export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustmentBottomSheetProps> = ({
@@ -3292,18 +3300,26 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
   title: customTitle,
   subtitle: customSubtitle,
   ctaLabel: customCtaLabel,
+  planAvatar,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
+  plan,
+  initialSelectedIds,
   onConfirm,
   onClose,
+  onBack,
 }) => {
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds || []);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedIds([]);
+      setSelectedIds(initialSelectedIds || []);
       setIsSubmitting(false);
     }
-  }, [isOpen]);
+  }, [isOpen, initialSelectedIds]);
 
   if (!isOpen) return null;
 
@@ -3312,8 +3328,13 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
       if (prev.includes(id)) {
         return prev.filter(i => i !== id);
       }
-      if (prev.length >= requiredCount) {
+      if (requiredCount <= 0) {
         return prev;
+      }
+      if (prev.length >= requiredCount) {
+        // Automatically deselect the most recently selected participant (drop last element)
+        const base = prev.slice(0, Math.max(0, requiredCount - 1));
+        return [...base, id];
       }
       return [...prev, id];
     });
@@ -3327,16 +3348,20 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
     setIsSubmitting(true);
     try {
       await onConfirm(selectedIds);
-      onClose();
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const title = customTitle || (mode === 'promote' ? 'Who should move to Going?' : 'Move to Waitlist');
+  const title = customTitle || (mode === 'promote' ? 'Move to Join' : 'Move to Waitlist');
   const subtitle = customSubtitle || (mode === 'promote'
-    ? 'Select the participant(s) to promote from the waitlist.'
+    ? 'Select the participant(s) to move to Going.'
     : 'Select who should move to the waitlist.');
+
+  const resolvedCover = planAvatar || planCoverImage || plan?.coverImage || (plan as any)?.cover_image;
+  const resolvedCategory = planCategory || plan?.category;
+  const resolvedSubcategory = planSubcategory || (plan as any)?.subcategory;
+  const resolvedPlanId = planId || plan?.dbUuid || plan?.id;
 
   return (
     <div
@@ -3348,6 +3373,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
         zIndex: 100,
         display: 'flex',
         alignItems: 'flex-end',
+        justifyContent: 'center',
         animation: 'fadeIn 0.2s ease-out',
       }}
     >
@@ -3355,6 +3381,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
+          maxWidth: '100%',
           maxHeight: '85vh',
           background: '#1C1C1E',
           borderTopLeftRadius: 20,
@@ -3369,68 +3396,77 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
       >
         <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.2)', margin: '0 auto 12px' }} />
 
-        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 4px', textAlign: 'center' }}>
-          {title}
-        </h3>
+        {/* Header with Title and Optional Back Button */}
+        <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' }}>
+          {onBack && (
+            <button
+              id="guided-capacity-back-btn"
+              type="button"
+              onClick={onBack}
+              className="p-1 -ml-1 text-white hover:text-white/80 active:scale-95 transition cursor-pointer flex items-center justify-center shrink-0"
+              title="Back"
+              aria-label="Back to Plan Size"
+            >
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
+          )}
+          <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: '#FFFFFF', lineHeight: 1.25 }} className="truncate">
+            {title}
+          </h3>
+        </div>
 
-        <p style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.5)', textAlign: 'center', margin: '0 0 14px', lineHeight: 1.4 }}>
-          {subtitle}
-        </p>
-
-        {/* Candidate Selection List */}
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14, maxHeight: '45vh' }}>
-          {candidates.map((friend) => {
+        {/* Candidate Selection List matching Add Participants screen styling */}
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', marginBottom: 14, maxHeight: '45vh' }}>
+          {candidates.map((friend, index) => {
             const fId = friend.dbUuid || friend.id;
             const isSelected = selectedIds.includes(fId);
             return (
-              <div
+              <button
                 key={fId}
+                type="button"
                 onClick={() => toggleSelect(fId)}
                 style={{
+                  width: '100%',
+                  padding: '11px 2px',
+                  borderBottom: index === candidates.length - 1 ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: 'transparent',
+                  borderTop: 'none',
+                  borderLeft: 'none',
+                  borderRight: 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '8px 12px',
-                  borderRadius: 14,
-                  background: isSelected ? 'rgba(18, 18, 18, 0.9)' : 'rgba(255, 255, 255, 0.04)',
-                  border: isSelected ? '1px solid rgba(255, 107, 44, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  outline: 'none',
+                  textAlign: 'left',
+                  transition: 'opacity 0.15s ease',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div className="w-8 h-8 rounded-full overflow-hidden border border-white/10 flex-shrink-0 flex items-center justify-center bg-[#1A1A1A]">
-                    <UserAvatar
-                      src={friend.avatar}
-                      alt={friend.name}
-                      size="w-full h-full"
-                    />
+                <div className="flex items-center gap-3.5 truncate">
+                  <UserAvatar
+                    src={friend.avatar}
+                    alt={friend.name}
+                    size="w-11 h-11"
+                    className="shrink-0"
+                  />
+                  <div className="truncate text-left">
+                    <span className="block truncate text-[15px] font-semibold text-white">
+                      {friend.name}
+                    </span>
                   </div>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>{friend.name}</span>
                 </div>
 
-                <div
-                  style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: 10,
-                    border: isSelected ? 'none' : '1.5px solid rgba(255, 255, 255, 0.25)',
-                    background: isSelected ? '#FF6B2C' : 'transparent',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {isSelected && <span style={{ color: '#FFFFFF', fontSize: 11, fontWeight: 800 }}>✓</span>}
-                </div>
-              </div>
+                {/* Selection circular check indicator matching Add Participants */}
+                {isSelected ? (
+                  <span className="w-6 h-6 rounded-full bg-[#FF6B2C] flex items-center justify-center shrink-0 shadow-sm">
+                    <Check className="w-4 h-4 text-white stroke-[3]" />
+                  </span>
+                ) : (
+                  <span className="w-6 h-6 rounded-full border border-white/20 shrink-0" />
+                )}
+              </button>
             );
           })}
-        </div>
-
-        {/* Dynamic Selection Count Label */}
-        <div style={{ textAlign: 'center', marginBottom: 8, fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', fontWeight: 500 }}>
-          {selectedIds.length} {selectedIds.length === 1 ? 'participant' : 'participants'} selected
         </div>
 
         <button
@@ -3440,7 +3476,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
           style={{
             width: '100%',
             padding: '14px',
-            borderRadius: 14,
+            borderRadius: 9999,
             background: isReady ? '#FF6B2C' : 'rgba(255, 255, 255, 0.1)',
             color: isReady ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
             fontSize: 14,
@@ -3453,8 +3489,8 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
           {isSubmitting
             ? 'Updating...'
             : isReady
-            ? (customCtaLabel || (mode === 'demote' ? 'Move to Waitlist' : mode === 'promote' ? 'Move to Going' : 'Continue'))
-            : `Select ${remainingNeeded} more participant${remainingNeeded > 1 ? 's' : ''}`}
+            ? (customCtaLabel || (mode === 'demote' ? 'Move to Waitlist' : mode === 'promote' ? 'Move to Join' : 'Continue'))
+            : `Select ${remainingNeeded} participant${remainingNeeded === 1 ? '' : 's'}`}
         </button>
       </div>
     </div>

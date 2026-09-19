@@ -26,6 +26,8 @@ interface InlineMemberEntry {
   userId: string;
   isHost: boolean;
   isAccepted: boolean;
+  rsvp_status?: string | null;
+  leave_requested?: boolean;
   assignedGroup?: string | null;
   waitlistPosition?: number | null;
   joinedQueueAt?: string | null;
@@ -68,9 +70,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     (plan as any).planSize ??
     plan.capacity ??
     plan.maxSpots ??
-    plan.joinLimit ??
-    (plan as any).max_participants ??
-    (plan as any).maxParticipants;
+    plan.joinLimit;
   const maxCapacity = Number(
     rawCap !== undefined && rawCap !== null
       ? rawCap
@@ -256,10 +256,12 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
           userId: rowUserId,
           isHost: Boolean(isHostRole),
           isAccepted,
+          rsvp_status: effectiveStatus,
+          leave_requested: Boolean((item as any).leave_requested || (m as any)?.leave_requested),
           assignedGroup,
           waitlistPosition,
           joinedQueueAt: null, // Explicitly no fallback in assigned mode
-          skipReason: (item as any).skip_reason || (item as any).skipReason || (m as any)?.skipReason || (m as any)?.skip_reason || null,
+          skipReason: effectiveStatus === 'REJOINED' ? null : ((item as any).skip_reason || (item as any).skipReason || (m as any)?.skipReason || (m as any)?.skip_reason || null),
         };
 
         // 5. Split into Going / Waitlisted / Skipped
@@ -269,7 +271,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
           } else {
             skipped.push(entry);
           }
-        } else if (effectiveStatus === 'SKIPPED') {
+        } else if (effectiveStatus === 'SKIPPED' || effectiveStatus === 'REJOINED') {
           skipped.push(entry);
         } else if (assignedGroup === 'waitlisted' || assignedGroup === 'waitlist') {
           waitlist.push(entry);
@@ -342,10 +344,11 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         isAccepted,
         rsvp_status: effectiveStatus,
         joinState: effectiveStatus,
+        leave_requested: Boolean(dbRow?.leave_requested || (m as any).leave_requested),
         waitlistPosition: dbRow?.waitlist_position ?? (m as any).waitlistPosition ?? (m as any).waitlist_position ?? null,
         joinedQueueAt,
         join_queue_at: joinedQueueAt,
-        skipReason: dbRow?.skip_reason || (m as any).skipReason || (m as any).skip_reason || null,
+        skipReason: effectiveStatus === 'REJOINED' ? null : (dbRow?.skip_reason || (m as any).skipReason || (m as any).skip_reason || null),
       };
     });
 
@@ -560,11 +563,13 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                         <UserAvatar src={person.avatar} alt={person.name} size="w-full h-full" />
                       </div>
                     </div>
-                    <span className={`font-sans text-[13.5px] font-semibold leading-none truncate flex-1 ${
-                      person.isAccepted ? 'text-white' : 'text-[#8E8E93]'
-                    }`}>
-                      {person.name}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <span className={`font-sans text-[13.5px] font-semibold leading-none truncate ${
+                        person.isAccepted ? 'text-white' : 'text-[#8E8E93]'
+                      }`}>
+                        {person.name}
+                      </span>
+                    </div>
                     {activeTab === 'skipped' && person.skipReason && (
                       <span className="text-[11px] font-medium text-white/50 truncate max-w-[100px] text-right font-sans">
                         {formatSkipReason(person.skipReason)}
@@ -822,11 +827,13 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                             <UserAvatar src={person.avatar} alt={person.name} size="w-full h-full" />
                           </div>
                         </div>
-                        <span className={`font-sans text-[13.5px] font-semibold leading-none truncate flex-1 ${
-                          person.isAccepted ? 'text-white' : 'text-[#8E8E93]'
-                        }`}>
-                          {person.name}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className={`font-sans text-[13.5px] font-semibold leading-none truncate ${
+                            person.isAccepted ? 'text-white' : 'text-[#8E8E93]'
+                          }`}>
+                            {person.name}
+                          </span>
+                        </div>
                         {activeTab === 'skipped' && person.skipReason && (
                           <span className="text-[11px] font-medium text-white/50 truncate max-w-[100px] text-right font-sans">
                             {formatSkipReason(person.skipReason)}
@@ -855,23 +862,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                   className="w-full py-2.5 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] active:scale-[0.98] border border-white/10 transition flex items-center justify-center gap-2 text-xs font-semibold text-white/90 cursor-pointer shadow-sm"
                 >
                   <Users className="w-4 h-4 text-white/70" />
-                  <span className="flex items-center gap-1.5">
-                    <span>Manage Participants</span>
-                    {hasPendingParticipantAction && (
-                      <span
-                        title="Pending participant request"
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 700,
-                          color: '#F59E0B',
-                          lineHeight: 1,
-                          fontFamily: 'Inter, sans-serif',
-                        }}
-                      >
-                        !
-                      </span>
-                    )}
-                  </span>
+                  <span>Manage Participants</span>
                 </button>
               </div>
             )}

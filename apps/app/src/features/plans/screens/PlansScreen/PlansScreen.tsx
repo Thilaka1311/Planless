@@ -331,7 +331,7 @@ export const PlansScreen = React.memo(({
               <span className="text-[12px] font-sans font-medium text-[#8E8E93] shrink-0">
                 {sec.label}
               </span>
-              {sec.id !== 'today' && <div className="flex-1 h-[0.5px] bg-[#1C1C1E]"></div>}
+              {index !== 0 && <div className="flex-1 h-[0.5px] bg-[#1C1C1E]"></div>}
             </div>
 
             {/* Cards List */}

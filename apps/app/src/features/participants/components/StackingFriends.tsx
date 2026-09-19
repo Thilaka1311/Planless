@@ -7,6 +7,7 @@ import { formatSkipReason } from '../../../../lib/participantStatus';
 
 interface StackingFriendsProps {
   item: Friend;
+  isHost?: boolean;
   index?: number;
   showIndex?: boolean;
   draggable?: boolean;
@@ -20,6 +21,7 @@ interface StackingFriendsProps {
 
 export const StackingFriends: React.FC<StackingFriendsProps> = ({
   item,
+  isHost = false,
   index,
   showIndex = false,
   draggable = false,
@@ -36,8 +38,9 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
     item.rsvpStatus !== 'SKIPPED' && (item as any).rsvp_status !== 'SKIPPED'
   );
   const hasPendingRequest = isLeaveRequested || isRejoined;
+  const showPendingIndicator = Boolean(isHost && hasPendingRequest);
   const isSkipped = !isRejoined && (item.rsvpStatus === 'SKIPPED' || (item as any).rsvp_status === 'SKIPPED' || Boolean(item.skipReason || (item as any).skip_reason));
-  const isDulled = !hasPendingRequest && (item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED' || isSkipped);
+  const isDulled = !showPendingIndicator && (item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED' || isSkipped);
   const skipReasonText = isRejoined ? '' : formatSkipReason(item.skipReason || (item as any).skip_reason || (isSkipped ? 'SKIPPED' : null));
 
   const indexLabel = (() => {
@@ -118,7 +121,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         <span style={{ fontSize: 13.5, fontWeight: 600, color: isDulled ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {item.name}
         </span>
-        {hasPendingRequest && (
+        {showPendingIndicator && (
           <span
             title={isRejoined ? "Requested to rejoin" : "Requested to leave"}
             style={{

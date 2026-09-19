@@ -92,9 +92,7 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
               className="rounded-full object-cover"
             />
           </div>
-          {hasIncomingRequests && (
-            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#EF4444] ring-2 ring-[#09090b]" />
-          )}
+
         </div>
         <span className="text-[10.5px] font-sans tracking-wide mt-1 font-medium">Profile</span>
       </button>

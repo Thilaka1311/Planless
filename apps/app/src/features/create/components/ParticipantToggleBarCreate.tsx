@@ -32,13 +32,13 @@ const footerContainerVariants = {
   }
 };
 
-const footerItemVariants = {
+const footerItemVariants: any = {
   hidden: { opacity: 0, y: 12 },
   show: {
     opacity: 1,
     y: 0,
     transition: {
-      type: 'spring',
+      type: 'spring' as const,
       stiffness: 220,
       damping: 20
     }

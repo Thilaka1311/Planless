@@ -69,7 +69,7 @@ interface PlansContextType {
   declinePlan: (planId: string, userProfile: any) => Promise<void>;
   changePlanHost: (planId: string, newHostUuid: string, oldHostUuid: string) => Promise<void>;
   cancelPlan: (planId: string) => Promise<void>;
-  updatePlanDetails: (planId: string, updates: Partial<DbPlan> & { skipDbWrite?: boolean }) => Promise<any>;
+  updatePlanDetails: (planId: string, updates: Partial<DbPlan> & { skipDbWrite?: boolean }, options?: { totalCost?: number; autoPromote?: boolean }) => Promise<any>;
   completePlan: (planId: string, attendanceInput: Array<{ user_id: string; attendance: 'ATTENDED' | 'DID_NOT_ATTEND' }>, opts?: { isEarly?: boolean; expenseMode?: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE' }) => Promise<void>;
   manageCompletedPlanParticipants: (planId: string, usersToAdd: string[], usersToRemove: string[], expenseMode?: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE') => Promise<any>;
   submitReview: (memoryId: string, category: 'movie' | 'dining', rating: number, review: string | null, userUuid: string, existingId?: string) => Promise<void>;
@@ -101,8 +101,7 @@ interface PlansContextType {
     settings: {
       allow_participant_invites?: boolean;
       allowParticipantInvites?: boolean;
-      max_participants?: number;
-      maxParticipants?: number;
+      plan_size?: number;
     }
   ) => Promise<void>;
   promoteParticipantToHost: (planId: string, participantUserUuid: string) => Promise<void>;
@@ -814,7 +813,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const waitlistPositionMap = new Map<string, number>();
 
     if (isAssignedMode && selectedFriends.length > 0) {
-      const planCapacity = newDbPlan?.plan_size ?? newDbPlan?.max_participants;
+      const planCapacity = newDbPlan?.plan_size;
       const hasConfiguredCapacity = planCapacity != null;
       const hostOffset = isHostSelected ? 1 : 0;
       const totalCount = selectedFriends.length + hostOffset;
@@ -1056,25 +1055,18 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     updateLocalPlan(planUuid, { status: "CANCELLED" });
   }, [lifecycle, plans, updateLocalPlan]);
 
-  const updatePlanDetails = useCallback(async (planId: string, updates: Partial<DbPlan>) => {
+  const updatePlanDetails = useCallback(async (planId: string, updates: Partial<DbPlan>, options?: { totalCost?: number; autoPromote?: boolean }) => {
     const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId || (p as any).public_id === planId);
     const planUuid = matchedPlan?.dbUuid || planId;
 
     const previousPlanState = matchedPlan ? {
       plan_size: matchedPlan.plan_size,
-      max_participants: matchedPlan.max_participants,
       capacity: matchedPlan.capacity,
       joinLimit: matchedPlan.joinLimit,
     } : null;
 
     // Synchronously update local React state first so capacity bounds expand immediately
     updateLocalPlan(planUuid, updates);
-    if (updates.max_participants !== undefined) {
-      updateLocalPlan(planUuid, {
-        max_participants: updates.max_participants,
-        maxParticipants: updates.max_participants,
-      } as any);
-    }
     if (updates.plan_size !== undefined) {
       updateLocalPlan(planUuid, {
         plan_size: updates.plan_size,
@@ -1086,7 +1078,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     try {
-      await lifecycle.updatePlanDetails(planId, updates);
+      await lifecycle.updatePlanDetails(planId, updates, options);
     } catch (err) {
       if (previousPlanState) {
         updateLocalPlan(planUuid, previousPlanState as any);
@@ -1133,8 +1125,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       settings: {
         allow_participant_invites?: boolean;
         allowParticipantInvites?: boolean;
-        max_participants?: number;
-        maxParticipants?: number;
+        plan_size?: number;
       }
     ) => {
       const planId = cleanPlanId(rawPlanId);
@@ -1145,8 +1136,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (settings.allow_participant_invites !== undefined || settings.allowParticipantInvites !== undefined) {
         dbPayload.allow_participant_invites = settings.allow_participant_invites ?? settings.allowParticipantInvites;
       }
-      if (settings.max_participants !== undefined || settings.maxParticipants !== undefined) {
-        dbPayload.max_participants = settings.max_participants ?? settings.maxParticipants;
+      if (settings.plan_size !== undefined) {
+        dbPayload.plan_size = settings.plan_size;
       }
 
       const newAllowInvites = dbPayload.allow_participant_invites;

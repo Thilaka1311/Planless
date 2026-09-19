@@ -152,15 +152,15 @@ export async function updatePlanSettingsInDb(
   planId: string,
   settings: {
     allow_participant_invites?: boolean;
-    max_participants?: number;
+    plan_size?: number;
   }
 ): Promise<any> {
-  if (settings.max_participants !== undefined) {
-    await updatePlanCapacityRPC(planId, settings.max_participants);
+  if (settings.plan_size !== undefined) {
+    await updatePlanCapacityRPC(planId, settings.plan_size);
   }
 
   const remainingSettings: any = { ...settings };
-  delete remainingSettings.max_participants;
+  delete remainingSettings.plan_size;
 
   if (Object.keys(remainingSettings).length > 0) {
     const { data, error } = await supabase
@@ -186,10 +186,14 @@ export async function inviteParticipantsRPC(
   inviteeUserIds: string[],
   assignedGroup?: 'GOING' | 'WAITLIST' | null
 ): Promise<any> {
+  const normalizedGroup = typeof assignedGroup === 'string' && (assignedGroup === 'GOING' || assignedGroup === 'WAITLIST')
+    ? assignedGroup
+    : null;
+
   const { data, error } = await supabase.rpc("invite_participants" as any, {
     p_plan_id: planId,
     p_invitee_user_ids: inviteeUserIds,
-    p_assigned_group: assignedGroup || null
+    p_assigned_group: normalizedGroup
   });
 
   if (error) throw error;
@@ -235,16 +239,22 @@ export async function demoteFromHostRPC(
 /**
  * Invokes the update_plan_capacity SECURITY DEFINER RPC.
  * Authorized for any Host (role = 'HOST' or plans.host_id).
- * Updates max_participants on a plan.
+ * Updates plan_size (JOINED capacity) on a plan.
  */
 export async function updatePlanCapacityRPC(
   planId: string,
-  maxParticipants: number
+  planSize: number,
+  autoPromote?: boolean
 ): Promise<any> {
-  const { data, error } = await supabase.rpc("update_plan_capacity" as any, {
+  const params: any = {
     p_plan_id: planId,
-    p_max_participants: maxParticipants
-  });
+    p_plan_size: planSize,
+  };
+  if (autoPromote !== undefined) {
+    params.p_auto_promote = autoPromote;
+  }
+
+  const { data, error } = await supabase.rpc("update_plan_capacity" as any, params);
 
   if (error) {
     console.error("[updatePlanCapacityRPC] Supabase RPC error:", {
@@ -253,7 +263,8 @@ export async function updatePlanCapacityRPC(
       details: error.details,
       hint: error.hint,
       planId,
-      maxParticipants,
+      planSize,
+      autoPromote,
     });
     throw error;
   }
@@ -286,6 +297,19 @@ export async function removeParticipantRPC(
   const { data, error } = await supabase.rpc("remove_participant" as any, {
     p_plan_id: planId,
     p_target_user_id: targetUserId
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Invokes the join_plan SECURITY DEFINER RPC.
+ * Atomically transitions an invited user (or link claimer) to JOINED or WAITLISTED.
+ */
+export async function joinPlanRPC(planId: string): Promise<any> {
+  const { data, error } = await supabase.rpc("join_plan" as any, {
+    p_plan_id: planId
   });
 
   if (error) throw error;

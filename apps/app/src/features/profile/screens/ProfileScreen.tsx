@@ -232,9 +232,7 @@ export const ProfileScreen = ({
             <span className="font-sans font-semibold text-[13px] text-zinc-200">
               {friendCount} {friendCount === 1 ? 'Friend' : 'Friends'}
             </span>
-            {hasIncomingRequests && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#EF4444] ring-2 ring-black" />
-            )}
+
           </button>
 
           {/* PROFILE OPTIONS: Email, Past Plans, Logout */}

@@ -13,6 +13,7 @@ interface WaitlistSectionProps {
   showIndex?: boolean;
   indexOffset?: number;
   useParticipantPosition?: boolean;
+  isHost?: boolean;
 }
 
 export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
@@ -25,8 +26,24 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
   showIndex = true,
   indexOffset = 1,
   useParticipantPosition = false,
+  isHost = false,
 }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
+
+  // Stop pointer and touch events from bubbling to any outer Framer Motion drag handler (e.g. the
+  // horizontal pager in PlanChatScreen). Must be a *native* addEventListener because
+  // React synthetic events don't stop Framer Motion's native listeners.
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const stop = (e: Event) => e.stopPropagation();
+    el.addEventListener('pointerdown', stop);
+    el.addEventListener('touchstart', stop, { passive: true });
+    return () => {
+      el.removeEventListener('pointerdown', stop);
+      el.removeEventListener('touchstart', stop);
+    };
+  }, []);
 
   if (waitlist.length === 0 && !onAddFriends) {
     return (
@@ -44,7 +61,10 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
   const effectiveShowIndex = useParticipantPosition ? (showIndex && hasWaitlistNumbers) : showIndex;
 
   return (
-    <div ref={containerRef} style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%', position: 'relative' }}>
+    <div
+      ref={containerRef}
+      style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%', position: 'relative', overflow: 'visible' }}
+    >
       {reorderable && onReorder && waitlist.length > 1 ? (
         <Reorder.Group
           axis="y"
@@ -85,6 +105,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
               >
                 <StackingFriends
                   item={item}
+                  isHost={isHost}
                   index={itemIndex}
                   showIndex={shouldShowIndex}
                   onClick={onItemTap ? () => onItemTap(item) : undefined}
@@ -106,6 +127,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
             <StackingFriends
               key={itemKey}
               item={item}
+              isHost={isHost}
               index={itemIndex}
               showIndex={shouldShowIndex}
               onClick={onItemTap ? () => onItemTap(item) : undefined}

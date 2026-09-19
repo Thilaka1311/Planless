@@ -13,6 +13,7 @@ interface ParticipantHeaderProps {
   mode?: string;
   waitlistMode?: 'automatic' | 'assigned' | string;
   hideTitle?: boolean;
+  capacity?: number;
 }
 
 export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
@@ -27,6 +28,7 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
   mode,
   waitlistMode,
   hideTitle = false,
+  capacity,
 }) => {
   const isStandalone = displayMode === 'standalone';
   const isWizard = mode === 'wizard' || hideTitle;
@@ -70,9 +72,14 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
             id="header_plan_size_btn"
             onClick={onOpenPlanSize}
             title="Plan Size"
-            className="p-1.5 bg-transparent hover:opacity-100 active:scale-95 text-white/50 hover:text-white/80 transition cursor-pointer pointer-events-auto select-none shrink-0 flex items-center justify-center"
+            className="h-8 px-2.5 rounded-lg bg-white/[0.06] hover:bg-white/10 border border-white/10 flex items-center gap-1.5 text-white active:scale-95 transition cursor-pointer pointer-events-auto select-none shrink-0"
           >
-            <Users className="w-5 h-5 stroke-[2]" />
+            <Users className="w-4 h-4 text-white/70 stroke-[2]" />
+            {capacity !== undefined && (
+              <span className="text-[13px] font-semibold text-white/90 tracking-tight font-sans">
+                {capacity}
+              </span>
+            )}
           </button>
         )}
       </div>
@@ -81,7 +88,7 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
 
   return (
     <div
-      className="w-full shrink-0 px-5 flex items-center bg-[#000000] border-b border-white/[0.08] relative z-40"
+      className="w-full shrink-0 px-5 flex items-center bg-[#000000] relative z-40"
       style={{ height: '72px', boxSizing: 'border-box' }}
     >
       {isStandalone && onBack && (
@@ -125,10 +132,15 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
               id="header_plan_size_btn"
               type="button"
               onClick={onOpenPlanSize}
-              className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-white active:scale-95 transition cursor-pointer"
+              className="h-9 px-1.5 flex items-center gap-1.5 text-white active:scale-95 transition cursor-pointer"
               title="Plan Size"
             >
               <Users className="w-4 h-4 text-zinc-300" />
+              {capacity !== undefined && (
+                <span className="text-[13px] font-semibold text-white/90 tracking-tight font-sans">
+                  {capacity}
+                </span>
+              )}
             </button>
           )}
         </div>

@@ -6,12 +6,14 @@ interface GoingSectionProps {
   goingList: Friend[];
   onItemTap?: (item: Friend) => void;
   showIndex?: boolean;
+  isHost?: boolean;
 }
 
 export const GoingSection: React.FC<GoingSectionProps> = ({
   goingList,
   onItemTap,
   showIndex = false,
+  isHost = false,
 }) => {
   if (goingList.length === 0) {
     return (
@@ -29,6 +31,7 @@ export const GoingSection: React.FC<GoingSectionProps> = ({
         <StackingFriends
           key={item.dbUuid || item.id}
           item={item}
+          isHost={isHost}
           index={undefined}
           showIndex={false}
           onClick={onItemTap ? () => onItemTap(item) : undefined}

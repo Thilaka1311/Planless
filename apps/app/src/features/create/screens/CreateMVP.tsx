@@ -268,7 +268,6 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
     const isAssigned = form.waitlistMode === "assigned";
     const planSizeToUse = form.totalCapacity !== undefined && form.totalCapacity !== null ? Number(form.totalCapacity) : null;
     const totalInvited = (form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0);
-    const maxParticipantsToUse = Math.max(planSizeToUse || 2, totalInvited || 2);
 
     let dbCategory: string = "CUSTOM";
     if (selectedCategory) {
@@ -289,7 +288,6 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
       scheduled_at: parsedIsoDateTime,
       rsvp_deadline: responseDeadlineAt,
       plan_size: planSizeToUse,
-      max_participants: maxParticipantsToUse,
       total_cost: costToUse,
       cover_image: coverUrl,
       status: "LIVE" as const,

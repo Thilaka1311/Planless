@@ -45,7 +45,7 @@ export interface DbPlan {
   place_address: string;
   scheduled_at: string;
   rsvp_deadline: string;
-  max_participants: number | null;
+  invited_participants: number | null;
   plan_size?: number | null;
   attended_participants?: number;
   attendedParticipants?: number;
@@ -262,8 +262,7 @@ export interface Plan {
   publicId?: string;
   slug?: string;
   title: string;
-  maxParticipants?: number;
-  max_participants?: number;
+  invited_participants?: number | null;
   planSize?: number;
   plan_size?: number;
   min_participants?: number;

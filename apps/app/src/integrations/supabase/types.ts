@@ -404,7 +404,6 @@ export type Database = {
           },
         ]
       }
-
       plan_messages: {
         Row: {
           content: string
@@ -640,9 +639,9 @@ export type Database = {
           created_at: string
           discovery_item_id: string | null
           id: string
+          invited_participants: number | null
           latitude: number | null
           longitude: number | null
-          max_participants: number | null
           participant_filtering: Database["public"]["Enums"]["participant_filtering_type"]
           place_address: string
           place_id: string | null
@@ -667,9 +666,9 @@ export type Database = {
           created_at?: string
           discovery_item_id?: string | null
           id?: string
+          invited_participants?: number | null
           latitude?: number | null
           longitude?: number | null
-          max_participants?: number | null
           participant_filtering?: Database["public"]["Enums"]["participant_filtering_type"]
           place_address: string
           place_id?: string | null
@@ -694,9 +693,9 @@ export type Database = {
           created_at?: string
           discovery_item_id?: string | null
           id?: string
+          invited_participants?: number | null
           latitude?: number | null
           longitude?: number | null
-          max_participants?: number | null
           participant_filtering?: Database["public"]["Enums"]["participant_filtering_type"]
           place_address?: string
           place_id?: string | null
@@ -1062,6 +1061,7 @@ export type Database = {
         Returns: Json
       }
       cancel_plan: { Args: { p_plan_id: string }; Returns: Json }
+      claim_plan_invite: { Args: { p_plan_id: string }; Returns: Json }
       complete_plan:
         | {
             Args: { p_attendance_input: Json; p_plan_id: string }
@@ -1252,6 +1252,7 @@ export type Database = {
         Args: { p_plan_id: string; p_promoted_user_ids?: string[] }
         Returns: undefined
       }
+      sync_overdue_plans: { Args: never; Returns: undefined }
       update_cost_expense: {
         Args: {
           p_expense_id: string
@@ -1263,7 +1264,7 @@ export type Database = {
         Returns: Json
       }
       update_plan_capacity: {
-        Args: { p_max_participants: number; p_plan_id: string }
+        Args: { p_plan_id: string; p_plan_size: number }
         Returns: Json
       }
     }

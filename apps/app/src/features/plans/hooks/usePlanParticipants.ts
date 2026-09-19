@@ -343,7 +343,6 @@ export function usePlanParticipants({
       matchedPlan?.capacity ||
       matchedPlan?.joinLimit ||
       matchedPlan?.maxSpots ||
-      (dbPlanObj as any)?.max_participants ||
       0;
     const isWaitlistMode = !!(limit > 0 && acceptedCount >= limit);
 
@@ -421,45 +420,24 @@ export function usePlanParticipants({
 
       applyParticipantOptimisticUpdate(planUuid, userUuid, optimisticRecord as any);
 
-      if (existingBefore) {
-        try {
-          const res = await (supabase as any)
-            .from("plan_participants")
-            .update({
-              rsvp_status: targetDbState,
-              waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
-              responded_at: new Date().toISOString(),
-              skip_reason: existingSr,
-              updated_at: new Date().toISOString()
-            })
-            .eq("plan_id", planUuid)
-            .eq("user_id", userUuid);
+      // 2. Persist atomically via SECURITY DEFINER RPC
+      try {
+        const rpcResult = await api.joinPlanRPC(planUuid);
+        const finalStatus = (rpcResult?.rsvp_status || targetDbState) as "JOINED" | "WAITLISTED";
+        const finalPos = rpcResult?.waitlist_position ?? (finalStatus === "WAITLISTED" ? newWaitlistPos : null);
+        const finalGroup = rpcResult?.assigned_group ?? (isAssigned ? (finalStatus === "JOINED" ? "GOING" : "WAITLIST") : null);
 
-          if (!res) {
-            console.error("[WAITLIST WRITE] FAILED (returned null)");
-          }
-        } catch (err) {
-          console.error("[WAITLIST WRITE] FAILED", err);
-        }
-      } else {
-        const payload = {
-          plan_id: planUuid,
-          user_id: userUuid,
-          rsvp_status: targetDbState as any,
-          waitlist_position: targetDbState === "WAITLISTED" ? newWaitlistPos : null,
-          role: "PARTICIPANT" as const,
+        applyParticipantOptimisticUpdate(planUuid, userUuid, {
+          rsvp_status: finalStatus as any,
+          assigned_group: finalGroup as any,
+          waitlist_position: finalPos,
           responded_at: new Date().toISOString(),
-          skip_reason: null
-        };
-
-        try {
-          const res = await insertParticipant(payload);
-          if (!res) {
-            console.error("[WAITLIST WRITE] FAILED (returned null)");
-          }
-        } catch (err) {
-          console.error("[WAITLIST WRITE] FAILED", err);
-        }
+          skip_reason: existingSr,
+        });
+      } catch (rpcErr) {
+        console.error("[joinPlan] joinPlanRPC failed:", rpcErr);
+        await refreshPlans(["plan_participants"]);
+        throw rpcErr;
       }
       await handleParticipantStatusChange(planUuid, userUuid, existingBefore?.rsvp_status, targetDbState);
       await syncUserStats(userUuid, "join_plan");
@@ -972,16 +950,8 @@ export function usePlanParticipants({
       (matchedPlan as any)?.planSize ||
       matchedPlan?.capacity ||
       matchedDbPlan?.plan_size ||
-      matchedDbPlan?.max_participants ||
       matchedPlan?.joinLimit ||
       0
-    );
-
-    const currentMaxParticipants = Number(
-      matchedPlan?.max_participants ||
-      (matchedPlan as any)?.maxParticipants ||
-      matchedDbPlan?.max_participants ||
-      currentPlanSize
     );
 
     // Active participants before this removal (excluding already skipped/left)
@@ -991,31 +961,6 @@ export function usePlanParticipants({
           (pp.plan_id === planUuid || pp.plan_id === planId) &&
           normalizeStatus(pp.rsvp_status) !== 'SKIPPED'
         );
-
-    const partition = partitionAutomaticParticipants(activeParticipants as any[], currentPlanSize, userId);
-    const hasWaitlist = partition.waitlist.length > 0;
-    const invitedParticipantCount = activeParticipants.length;
-    const remainingInvitedCount = Math.max(0, invitedParticipantCount - 1);
-
-    // Rule: The plan size should only automatically decrease when there is NO waitlist
-    // AND the plan size currently equals the number of invited participants.
-    // Removing a participant from a waitlist should NEVER decrease the plan size.
-    const shouldDecreasePlanSize =
-      isAutomatic &&
-      !hasWaitlist &&
-      currentPlanSize > 0 &&
-      currentPlanSize === invitedParticipantCount;
-
-    const targetCapacity = shouldDecreasePlanSize ? Math.max(2, currentPlanSize - 1) : currentPlanSize;
-
-    // max_participants should never be lower than the number of people currently invited.
-    // If there is no waitlist and max_participants was tied to invited count, decrease it alongside plan_size:
-    const shouldDecreaseMaxParticipants =
-      shouldDecreasePlanSize &&
-      currentMaxParticipants === invitedParticipantCount;
-    const targetMaxParticipants = shouldDecreaseMaxParticipants
-      ? Math.max(2, targetCapacity, remainingInvitedCount)
-      : Math.max(currentMaxParticipants, remainingInvitedCount);
 
     // Optimistic state update:
     // If participant is still INVITED, remove them entirely from local state.
@@ -1042,25 +987,6 @@ export function usePlanParticipants({
       }));
     }
 
-    // Optimistic plan size & max_participants update: update immediately in local state
-    if (setDbPlans && (shouldDecreasePlanSize || targetMaxParticipants !== currentMaxParticipants)) {
-      setDbPlans(prev => prev.map(p => {
-        if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId) {
-          return {
-            ...p,
-            plan_size: targetCapacity,
-            planSize: targetCapacity,
-            capacity: targetCapacity,
-            joinLimit: targetCapacity,
-            maxSpots: targetCapacity,
-            max_participants: targetMaxParticipants,
-            maxParticipants: targetMaxParticipants,
-          };
-        }
-        return p;
-      }));
-    }
-
     // 1. Pre-emptively clean up any team assignment before deleting participant
     try {
       await unassignTeam(planUuid, resolvedParticipantUuid);
@@ -1071,17 +997,6 @@ export function usePlanParticipants({
     // 2. Persist removal via trusted SECURITY DEFINER RPC
     try {
       await api.removeParticipantRPC(planUuid, resolvedParticipantUuid);
-
-      if (shouldDecreasePlanSize && targetCapacity < currentPlanSize) {
-        await api.updatePlanCapacityRPC(planUuid, targetCapacity);
-      }
-
-      if (targetMaxParticipants < currentMaxParticipants) {
-        await (supabase as any)
-          .from("plans")
-          .update({ max_participants: targetMaxParticipants })
-          .eq("id", planUuid);
-      }
 
       renumberWaitlistPositions(planUuid).catch(() => {});
       // Recalculate wallet expenses when a participant is removed
@@ -1129,8 +1044,11 @@ export function usePlanParticipants({
     if (!planUuid || inviteeUuids.length === 0) return;
 
     const dbPlan = dbPlans.find(p => p.id === planUuid || p.public_id === planUuid);
-    const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
-    const effectiveAssignedGroup = filteringMode === 'ASSIGNED' ? (assignedGroup || 'GOING') : null;
+    const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || dbPlan?.participant_filtering || 'AUTOMATIC';
+    const rawAssignedGroup = (typeof assignedGroup === 'string' && (assignedGroup.toUpperCase() === 'GOING' || assignedGroup.toUpperCase() === 'WAITLIST'))
+      ? (assignedGroup.toUpperCase() as 'GOING' | 'WAITLIST')
+      : undefined;
+    const effectiveAssignedGroup: 'GOING' | 'WAITLIST' | null = filteringMode === 'ASSIGNED' ? (rawAssignedGroup || 'GOING') : null;
 
     // ── Pre-invite Timing Validation ──
     const currentTime = new Date();
@@ -1174,24 +1092,13 @@ export function usePlanParticipants({
     });
     let maxWaitlistPos = currentWaitlist.reduce((max, p) => Math.max(max, p.waitlist_position || 0), 0);
 
-    // Recalculate total invited participants to enforce: max_participants >= total invited
+    // Count truly new invitees (not already active)
     const activeParticipants = dbPlanParticipants.filter(pp =>
       (pp.plan_id === planUuid || pp.plan_id === planId) &&
       pp.rsvp_status !== 'SKIPPED'
     );
     const existingActiveUserIds = new Set(activeParticipants.map(p => p.user_id));
     const trulyNewInvitees = inviteeUuids.filter(id => !existingActiveUserIds.has(id));
-    const newTotalInvited = activeParticipants.length + trulyNewInvitees.length;
-
-    const currentPlan = (plans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid) ||
-      (dbPlans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid);
-    const currentMax = Number(
-      currentPlan?.max_participants ??
-      (currentPlan as any)?.maxParticipants ??
-      0
-    );
-    const nextMaxParticipants = Math.max(currentMax, newTotalInvited);
-    const shouldIncreaseMax = nextMaxParticipants > currentMax;
 
     const previousDbPlans = dbPlans;
 
@@ -1217,22 +1124,8 @@ export function usePlanParticipants({
       } as any);
     });
 
-    // Optimistically increase max_participants immediately if total invited count exceeds current max
-    if (shouldIncreaseMax && setDbPlans) {
-      setDbPlans(prev => prev.map(p => {
-        if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId) {
-          return {
-            ...p,
-            max_participants: nextMaxParticipants,
-            maxParticipants: nextMaxParticipants,
-          };
-        }
-        return p;
-      }));
-    }
-
     try {
-      // 2. Persist via trusted SECURITY DEFINER RPC (which also enforces max_participants >= total_invited in Postgres)
+      // 2. Persist via trusted SECURITY DEFINER RPC (which also enforces invited_participants server-side)
       await api.inviteParticipantsRPC(planUuid, inviteeUuids, effectiveAssignedGroup);
 
       // Insert plan_activity entries for each added participant (temporarily disabled)
@@ -1289,7 +1182,7 @@ export function usePlanParticipants({
     } catch (err: any) {
       console.error("[addParticipantsToPlan] Failed to persist invites, rolling back optimistic state:", err);
       setDbPlanParticipants(prev => prev.filter(pp => !(pp.plan_id === planUuid && inviteeUuids.includes(pp.user_id))));
-      if (shouldIncreaseMax && setDbPlans) {
+      if (setDbPlans) {
         setDbPlans(previousDbPlans);
       }
       throw err;

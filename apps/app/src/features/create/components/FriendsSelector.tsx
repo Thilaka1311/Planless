@@ -211,7 +211,7 @@ export const StepWho: React.FC<StepWhoProps> = ({
         )}
 
         {/* ── Friends list — all participants with check indicators ── */}
-        <div className="flex-1 flex flex-col select-none overflow-y-auto scrollbar-none pr-0 min-h-0 pb-1">
+        <div className="flex-1 flex flex-col select-none overflow-y-auto scrollbar-none pr-0 min-h-0" style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))' }}>
           {availableItems.length === 0 ? (
             <div className="w-full py-8 text-center text-zinc-600 text-xs font-semibold select-none">
               {searchPeopleQuery ? 'No friends matched your search' : 'No friends found'}

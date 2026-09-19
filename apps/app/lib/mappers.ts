@@ -242,8 +242,8 @@ export const mapPlansToLegacyPlans = (
       timeVal = p.scheduled_at ? String(p.scheduled_at).split(" • ")[1] || String(p.scheduled_at) : "";
     }
 
-    const planSizeVal = (p as any).plan_size ?? p.max_participants ?? (members.length > 0 ? members.length : 10);
-    const maxParticipantsVal = p.max_participants ?? planSizeVal;
+    const planSizeVal = (p as any).plan_size ?? (p as any).invited_participants ?? (members.length > 0 ? members.length : 10);
+    const invitedParticipantsVal = (p as any).invited_participants ?? planSizeVal;
     const costVal = p.total_cost !== undefined ? Number(p.total_cost) : 0;
     const rawCover = p.cover_image || dbItem?.cover_image_url;
     const coverImageVal = (rawCover && rawCover !== "planimagedefault.png" && rawCover !== "default" && !rawCover.includes("plan-covers"))
@@ -286,8 +286,7 @@ export const mapPlansToLegacyPlans = (
       capacity: planSizeVal,
       planSize: planSizeVal,
       plan_size: planSizeVal,
-      maxParticipants: maxParticipantsVal,
-      max_participants: maxParticipantsVal,
+      invited_participants: invitedParticipantsVal,
       date: dateVal,
       time: timeVal,
       location: p.place_name,

@@ -13,6 +13,7 @@ import { HeroHeader } from "../../plans/components/HeroHeader";
 import { PlanSettingsScreen } from "../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
 import { uploadPlanImage } from "../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../plans/utils/planUtils";
+import { findPlanBySlugOrId } from "../../plans/utils/planSlugUtils";
 import { PlanParticipantManagementWrapper } from "../../plans/screens/PlansScreen/PlansPreview/PlanParticipantManagementWrapper";
 import { PlanDetailsScreen } from "../../wallet/screens/PlanBalances";
 import { getPlanCover } from "../../plans/config/planCoverImages";
@@ -49,7 +50,9 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     "";
 
   const currentUserId = senderUuid;
-  const plan = plans.find((p) => p.id === planId || p.dbUuid === planId);
+  const plan = useMemo(() => {
+    return findPlanBySlugOrId(plans, planId) || plans.find((p) => p.id === planId || p.dbUuid === planId);
+  }, [plans, planId]);
   const isPlanCompleted = String(plan?.status || "").toUpperCase() === "COMPLETED";
 
   // Resolved target database UUID for plan (must be a valid UUID)
@@ -539,7 +542,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           className="flex h-full w-[200%]"
         >
           {/* PAGE 0: PARTICIPANTS */}
-          <div className="w-1/2 h-full overflow-hidden flex flex-col flex-shrink-0">
+          <div className="w-1/2 h-full overflow-hidden flex flex-col flex-shrink-0 relative">
             {plan && (
               <PlanParticipantManagementWrapper
                 plan={plan}
@@ -556,7 +559,16 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 onRemoveParticipant={(pId, uId) => removeParticipant(pId, uId)}
                 onPromoteToHost={(pId, uId) => promoteParticipantToHost(pId, uId)}
                 onDemoteFromHost={(pId, uId) => demoteHostToParticipant(pId, uId)}
-                onUpdatePlanCapacity={(pId, capacity) => updatePlanDetails(pId, { plan_size: capacity })}
+                onUpdatePlanCapacity={(pId, capacity, opts) =>
+                  updatePlanDetails(
+                    pId,
+                    {
+                      plan_size: capacity,
+                      ...(opts?.totalCost !== undefined ? { total_cost: opts.totalCost } : {}),
+                    },
+                    opts
+                  )
+                }
                 onCancelPlan={(pId) => cancelPlan(pId)}
                 onAddParticipants={(pId, userIds, assignedGroup) =>
                   addParticipantsToPlan({

@@ -228,6 +228,10 @@ function AppContent({
         setUserProfile(mappedProfile);
         localStorage.setItem(localStorageKey, JSON.stringify(mappedProfile));
         lastInitializedUserIdRef.current = authUser.id;
+        const storedToken = getStoredPendingInviteToken();
+        if (storedToken) {
+          setPendingInviteToken(storedToken);
+        }
         setAppState(dbProfile.profile_completed ? "ready" : "unauthenticated");
       } else {
         setUserProfile(null);

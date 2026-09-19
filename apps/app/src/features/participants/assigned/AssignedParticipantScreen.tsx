@@ -82,21 +82,35 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onReplaceLeaveParticipant,
   onKeepPaymentLeaveParticipant,
   onInviteSkipped,
+  onRejoinAddToJoined,
   onRejoinAddToWaitlist,
   onRejoinRemoveFromPlan,
   isCompletedPlan,
   initialOpenPlanSizeSheet,
   onPlanSizeSheetDismissed,
+  initialCapacityOverride,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
   const [isCapacitySheetOpen, setIsCapacitySheetOpen] = useState(false);
+  const [draftCapacityOverride, setDraftCapacityOverride] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (initialCapacityOverride !== undefined && initialCapacityOverride !== null) {
+      setDraftCapacityOverride(initialCapacityOverride);
+      setIsCapacitySheetOpen(true);
+    }
+  }, [initialCapacityOverride]);
 
   useEffect(() => {
     if (initialOpenPlanSizeSheet) {
       setIsCapacitySheetOpen(true);
     }
   }, [initialOpenPlanSizeSheet]);
+
+  useEffect(() => {
+    onPlanSizeEditingChange?.(isCapacitySheetOpen);
+  }, [isCapacitySheetOpen, onPlanSizeEditingChange]);
 
   // ── Wizard mode internal state ──
   const hostItem = useMemo<Friend | null>(() => {
@@ -524,13 +538,14 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           title={title}
           subtitle={subtitle}
           isHostUser={effectiveIsHost}
+          capacity={capacity}
           onBack={onBack}
           onOpenSettings={onOpenSettings}
           onOpenActivity={onOpenActivity}
           displayMode={displayMode}
           mode={mode}
           waitlistMode={waitlistMode}
-          onOpenPlanSize={mode === 'wizard' && effectiveIsHost && !isCompletedPlan ? () => setIsCapacitySheetOpen(true) : undefined}
+          onOpenPlanSize={effectiveIsHost && !isCompletedPlan ? () => setIsCapacitySheetOpen(true) : undefined}
         />
       )}
 
@@ -569,12 +584,13 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       />
 
       {/* List content — Assigned Mode */}
-      <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 16, flex: 1, overflowY: 'auto' }}>
+      <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 16, flex: 1, overflowY: activeTab === 'waitlist' ? 'visible' : 'auto' }}>
         {(activeTab === 'going' || activeTab === 'invited') && (
           <>
             {displayGoing.length > 0 ? (
               <GoingSection
                 goingList={displayGoing}
+                isHost={effectiveIsHost}
                 onItemTap={(item) => handleItemTap(item, 'going')}
                 showIndex={false}
               />
@@ -593,6 +609,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             {displayWaitlist.length > 0 ? (
               <WaitlistSection
                 waitlist={displayWaitlist}
+                isHost={effectiveIsHost}
                 onItemTap={(item) => handleItemTap(item, 'waitlist')}
                 onAddFriends={effectiveIsHost ? onAddFriends : undefined}
                 onReorder={mode === 'wizard' ? (newWait) => {
@@ -624,6 +641,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
               <StackingFriends
                 key={item.id}
                 item={item}
+                isHost={effectiveIsHost}
                 onClick={() => handleItemTap(item, 'skipped')}
               />
             ))}
@@ -666,7 +684,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
           onInviteSkipped={onInviteSkipped}
           onViewProfile={(item) => setViewProfileUserId(item.dbUuid || item.id)}
-          onAddToJoined={moveToGoingAction}
+          onAddToJoined={onRejoinAddToJoined || moveToGoingAction}
           onAddToWaitlist={onRejoinAddToWaitlist}
           onRemoveFromPlan={onRejoinRemoveFromPlan || removeFromPlanAction}
         />
@@ -685,36 +703,42 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         onClose={() => setViewProfileUserId(null)}
       />
 
-      {mode === 'wizard' && (
-        <EditCapacityBottomSheet
-          isOpen={isCapacitySheetOpen}
-          capacity={Math.min(capacity ?? displayGoing.length, totalInvitedCount)}
-          joinedCount={displayGoing.length}
-          waitlistedCount={displayWaitlist.length}
-          invitedCount={totalInvitedCount}
-          minCapacity={2}
-          maxCapacity={totalInvitedCount}
-          onCapacityChange={(newCap) => {
-            if (onAdjustCapacity) {
-              onAdjustCapacity(Math.min(newCap, totalInvitedCount));
-            }
-          }}
-          onIncrement={handleIncrementPlanSize}
-          onDecrement={handleDecrementPlanSize}
-          onAddParticipants={() => {
-            setIsCapacitySheetOpen(false);
-            onPlanSizeSheetDismissed?.();
-            onAddFriends?.('invited');
-          }}
-          onClose={() => {
-            setIsCapacitySheetOpen(false);
-            onPlanSizeSheetDismissed?.();
-          }}
-        />
-      )}
+      <EditCapacityBottomSheet
+        isOpen={isCapacitySheetOpen}
+        capacity={
+          mode === 'wizard'
+            ? Math.min(capacity ?? displayGoing.length, totalInvitedCount)
+            : (draftCapacityOverride ?? capacity ?? 2)
+        }
+        joinedCount={displayGoing.length}
+        waitlistedCount={displayWaitlist.length}
+        invitedCount={mode === 'wizard' ? totalInvitedCount : (displayGoing.length + displayWaitlist.length + (externalInvitedList?.length || 0))}
+        minCapacity={2}
+        maxCapacity={mode === 'wizard' ? totalInvitedCount : (maxCapacity ?? Math.max(2, displayGoing.length + displayWaitlist.length + (externalInvitedList?.length || 0)))}
+        limitToInvitedCount={true}
+        onCapacityChange={(newCap) => {
+          setDraftCapacityOverride(null);
+          if (onAdjustCapacity) {
+            const activeCount = displayGoing.length + displayWaitlist.length + (externalInvitedList?.length || 0);
+            const capped = Math.min(newCap, mode === 'wizard' ? totalInvitedCount : (maxCapacity ?? Math.max(2, activeCount)));
+            onAdjustCapacity(capped);
+          }
+        }}
+        onAddParticipants={() => {
+          setDraftCapacityOverride(null);
+          setIsCapacitySheetOpen(false);
+          onPlanSizeSheetDismissed?.();
+          onAddFriends?.(mode === 'wizard' ? 'invited' : activeTab);
+        }}
+        onClose={() => {
+          setDraftCapacityOverride(null);
+          setIsCapacitySheetOpen(false);
+          onPlanSizeSheetDismissed?.();
+        }}
+      />
 
-      {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
-      {!isCompletedPlan && mode !== 'wizard' && (currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
+      {/* Sticky/Floating Action Button — Bottom Right */}
+      {!isCompletedPlan && mode !== 'wizard' && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
         <button
           type="button"
           onClick={() => onAddFriends(activeTab)}
@@ -723,7 +747,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             bottom: 'calc(2.25rem + env(safe-area-inset-bottom, 0px))',
             right: 'calc(2rem + env(safe-area-inset-right, 0px))',
           }}
-          className="fixed z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-200 cursor-pointer pointer-events-auto select-none"
+          className="absolute z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-200 cursor-pointer pointer-events-auto select-none"
         >
           <UserPlus className="w-5 h-5 text-white" />
         </button>

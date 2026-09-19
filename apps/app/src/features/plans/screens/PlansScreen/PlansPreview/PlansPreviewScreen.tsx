@@ -73,7 +73,7 @@ import {
   SharePlanLinkBottomSheet,
 } from "../../../components/BottomSheets";
 import { SetCostScreen } from "../../../components/SetCost";
-import { HostAttendanceScreen } from "../../../../completion/docs/Screens/HostAttendanceScreen";
+import { HostAttendanceScreen } from "../../../../completion/Screens/HostAttendanceScreen";
 
 // ==========================================
 // UTILITIES & CONSTANTS
@@ -766,10 +766,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   };
 
   const handleCapacityChange = async (newCapacity: number) => {
-    if (newCapacity > currentMaxParticipants) {
-      console.warn(`[handleCapacityChange] Attempted capacity ${newCapacity} exceeds max_participants ${currentMaxParticipants}. Ignoring.`);
-      return;
-    }
     if (newCapacity < 2) {
       console.warn(`[handleCapacityChange] Attempted capacity ${newCapacity} below minimum 2. Ignoring.`);
       return;
@@ -787,7 +783,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           hint: err?.hint,
           planId: selectedPlan?.id,
           attemptedPlanSize: newCapacity,
-          maxParticipants: currentMaxParticipants,
+          planSize: currentPlanSize,
           rawError: err,
         });
         throw err;
@@ -1183,11 +1179,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     2
   );
 
-  const currentMaxParticipants = Number(
-    rawDbPlan?.max_participants ??
-    selectedPlan?.max_participants ??
-    (selectedPlan as any)?.maxParticipants ??
-    50
+  const currentInvitedParticipants = Number(
+    rawDbPlan?.invited_participants ??
+    selectedPlan?.invited_participants ??
+    0
   );
 
   const currentTotalCost = Number(
@@ -1809,7 +1804,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   : () => setShowPlanSettingsScreen(true)
               }
               onSharePlanLink={
-                !createMode && !isCancelled && !isCompleted && isHost
+                !createMode && !isCancelled && !isCompleted && (isHost || allowParticipantInvites)
                   ? () => setShowSharePlanLinkSheet(true)
                   : undefined
               }
@@ -1987,7 +1982,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
                         <CostBreakdownPopover
                           totalCost={createMode ? (selectedPlan as any).total_cost : rawDbPlan?.total_cost}
-                          maxParticipants={currentPlanSize}
+                          planSize={currentPlanSize}
                           attendedParticipants={rawDbPlan?.attended_participants ?? selectedPlan?.attended_participants}
                           isCompleted={isCompleted}
                           isOpen={isCostPopoverOpen}
@@ -2206,11 +2201,14 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               onPromoteToHost={(planId, userId) => promoteParticipantToHost(planId, userId)}
               onDemoteFromHost={(planId, userId) => demoteHostToParticipant(planId, userId)}
               onUpdatePlanCapacity={(planId, capacity, opts) =>
-                updatePlanDetails(planId, {
-                  plan_size: capacity,
-                  max_participants: capacity,
-                  ...(opts?.totalCost !== undefined ? { total_cost: opts.totalCost } : {}),
-                })
+                updatePlanDetails(
+                  planId,
+                  {
+                    plan_size: capacity,
+                    ...(opts?.totalCost !== undefined ? { total_cost: opts.totalCost } : {}),
+                  },
+                  opts
+                )
               }
               onCancelPlan={(planId) => cancelPlan(planId)}
               onAddParticipants={(planId, userIds, assignedGroup) => addParticipantsToPlan({
@@ -2593,7 +2591,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             : undefined
         }
         minCapacity={2}
-        maxCapacity={createMode && plan?.members ? plan.members.length : currentMaxParticipants}
+        maxCapacity={createMode && plan?.members ? plan.members.length : undefined}
         onCapacityChange={handleCapacityChange}
         onIncrement={onIncrementCapacity}
         onDecrement={onDecrementCapacity}

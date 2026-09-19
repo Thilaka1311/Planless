@@ -83,16 +83,10 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
   const totalInvitedCount = (form.isHostSelected ? 1 : 0) + selectedFriends.length;
   const isCapacityConfigured = Boolean(form.isCapacityManuallySet || form.totalCapacity !== undefined);
   const capacity: number | undefined =
-    form.totalCapacity !== undefined && totalInvitedCount > 0
-      ? Math.min(form.totalCapacity, totalInvitedCount)
-      : form.totalCapacity;
+    form.totalCapacity !== undefined
+      ? Math.max(2, form.totalCapacity)
+      : undefined;
   const currentWaitlistMode: 'automatic' | 'assigned' = form.waitlistMode || 'automatic';
-
-  React.useEffect(() => {
-    if (form.totalCapacity !== undefined && totalInvitedCount > 0 && form.totalCapacity > totalInvitedCount) {
-      form.setTotalCapacity(totalInvitedCount);
-    }
-  }, [form.totalCapacity, totalInvitedCount]);
 
   const eventDateObj = form.eventDateTime ? new Date(form.eventDateTime) : new Date();
   const formattedDate = eventDateObj.toLocaleDateString('en-US', {
@@ -112,16 +106,12 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
    */
   const handleRemoveParticipant = (item: Friend) => {
     const updatedFriends = selectedFriends.filter((f) => f.id !== item.id && f.dbUuid !== item.id);
-    const newInvitedCount = (item.isHost ? 0 : (form.isHostSelected ? 1 : 0)) + updatedFriends.length;
     form.setSelectedFriends(updatedFriends);
     if (item.isHost) {
       form.setIsHostSelected(false);
     }
     if (form.setPriorityGuestIds && Array.isArray(form.priorityGuestIds)) {
       form.setPriorityGuestIds(form.priorityGuestIds.filter((id: string) => id !== item.id));
-    }
-    if (form.totalCapacity !== undefined && form.totalCapacity > newInvitedCount) {
-      form.setTotalCapacity(Math.max(2, newInvitedCount));
     }
 
     const savedDraft = getSavedDraftParticipants();
@@ -164,8 +154,9 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
     const fullOrderedList = [...going, ...waitlist].filter((f) => !f.isHost);
     form.setSelectedFriends(fullOrderedList);
     form.setPriorityGuestIds(going.filter((f) => !f.isHost).map((item) => item.id));
-    const maxAllowed = (form.isHostSelected ? 1 : 0) + fullOrderedList.length;
-    form.setTotalCapacity(Math.min(going.length, maxAllowed));
+    if (form.totalCapacity === undefined) {
+      form.setTotalCapacity(Math.max(2, going.length));
+    }
 
     saveDraftParticipants({
       joinedIds: going.map((f) => f.id),
@@ -195,7 +186,7 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
       onContinue={handleContinue}
       onParticipantsChange={handleParticipantsChange}
       onAddFriends={onAddFriends}
-      onAdjustCapacity={(val) => form.setTotalCapacity(Math.min(val, totalInvitedCount))}
+      onAdjustCapacity={(val) => form.setTotalCapacity(Math.max(2, val))}
       waitlistMode={currentWaitlistMode}
       onWaitlistModeChange={form.setWaitlistMode}
       showWaitlistMode={true}

@@ -3,8 +3,8 @@ import { Edit2 } from "lucide-react";
 
 interface CostBreakdownPopoverProps {
   totalCost?: number | null;
-  /** Total plan capacity (max_participants). Used to derive per-person cost for active plans. */
-  maxParticipants?: number | null;
+  /** Total plan capacity (plan_size). Used to derive per-person cost for active plans. */
+  planSize?: number | null;
   /** Attended participants count. Used to derive per-person cost for completed plans. */
   attendedParticipants?: number | null;
   isCompleted?: boolean;
@@ -18,7 +18,7 @@ interface CostBreakdownPopoverProps {
 
 export const CostBreakdownPopover: React.FC<CostBreakdownPopoverProps> = ({
   totalCost,
-  maxParticipants,
+  planSize,
   attendedParticipants,
   isCompleted = false,
   isOpen,
@@ -63,8 +63,8 @@ export const CostBreakdownPopover: React.FC<CostBreakdownPopoverProps> = ({
 
   const totalCostNum = totalCost !== undefined && totalCost !== null ? Number(totalCost) : 0;
   const divisor = isCompleted
-    ? (attendedParticipants !== undefined && attendedParticipants !== null ? Number(attendedParticipants) : Number(maxParticipants || 0))
-    : (maxParticipants !== undefined && maxParticipants !== null ? Number(maxParticipants) : 0);
+    ? (attendedParticipants !== undefined && attendedParticipants !== null ? Number(attendedParticipants) : Number(planSize || 0))
+    : (planSize !== undefined && planSize !== null ? Number(planSize) : 0);
 
   const formattedTotalCost =
     totalCostNum > 0 ? `₹${Math.round(totalCostNum)}` : "Free";
@@ -91,8 +91,8 @@ export const CostBreakdownPopover: React.FC<CostBreakdownPopoverProps> = ({
       className={`absolute ${positionClasses} ${alignClasses} z-50 min-w-[200px] p-3.5 bg-[#18181b]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl shadow-black/80 text-left font-sans select-none animate-in fade-in zoom-in-95 duration-150`}
     >
       <div className="flex items-center justify-between border-b border-white/[0.08] pb-2 mb-2.5">
-        <h4 className="text-[12px] font-bold text-white tracking-wide uppercase">
-          Cost Breakdown
+        <h4 className="text-[12px] font-bold text-white tracking-wide">
+          Cost
         </h4>
         {isHost && onEditCost && (
           <button
@@ -101,10 +101,10 @@ export const CostBreakdownPopover: React.FC<CostBreakdownPopoverProps> = ({
               onClose();
               onEditCost();
             }}
-            className="text-[11px] font-semibold text-[#FF6B2C] hover:text-[#ff8550] flex items-center gap-1 cursor-pointer transition active:scale-95"
+            className="text-white/80 hover:text-white flex items-center justify-center p-0.5 cursor-pointer transition active:scale-95"
+            aria-label="Edit cost"
           >
-            <Edit2 className="w-3 h-3" />
-            <span>Edit</span>
+            <Edit2 className="w-3.5 h-3.5 text-white" />
           </button>
         )}
       </div>
@@ -114,7 +114,7 @@ export const CostBreakdownPopover: React.FC<CostBreakdownPopoverProps> = ({
           <span className="text-[12px] text-zinc-400 font-medium">
             Total Plan Cost
           </span>
-          <span className="text-[13px] text-white font-bold font-mono">
+          <span className="text-[13px] text-white font-bold font-sans">
             {formattedTotalCost}
           </span>
         </div>
@@ -123,7 +123,7 @@ export const CostBreakdownPopover: React.FC<CostBreakdownPopoverProps> = ({
           <span className="text-[12px] text-zinc-400 font-medium">
             Per Person
           </span>
-          <span className="text-[13px] text-emerald-400 font-bold font-mono">
+          <span className="text-[13px] text-emerald-400 font-bold font-sans">
             {formattedPerPerson}
           </span>
         </div>

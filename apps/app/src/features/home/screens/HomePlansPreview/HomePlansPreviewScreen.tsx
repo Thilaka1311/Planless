@@ -502,7 +502,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
                     <CostBreakdownPopover
                       totalCost={rawDbPlan?.total_cost}
-                      maxParticipants={rawDbPlan?.max_participants}
+                      planSize={rawDbPlan?.plan_size}
                       isOpen={isCostPopoverOpen}
                       onClose={() => setIsCostPopoverOpen(false)}
                       isHost={false}

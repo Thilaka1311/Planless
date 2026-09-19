@@ -1,6 +1,7 @@
 import React from "react";
-import { Bell, Search, Crown, History, X } from "lucide-react";
+import { Bell, Search, Crown, History, X, Users } from "lucide-react";
 import { UserProfile, NotificationItem } from "../core/types";
+import { useFriendshipStore } from "../features/friendships/state/FriendshipContext";
 
 interface HomeHeaderProps {
   userProfile: UserProfile;
@@ -14,6 +15,8 @@ interface HomeHeaderProps {
   showPastIcon?: boolean;
   onTogglePast?: () => void;
   isPastActive?: boolean;
+  showFriendsIcon?: boolean;
+  onToggleFriends?: () => void;
   title?: string;
   scrollY?: number;
   hideNotificationsIcon?: boolean;
@@ -32,11 +35,15 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
   showPastIcon = false,
   onTogglePast,
   isPastActive = false,
+  showFriendsIcon = false,
+  onToggleFriends,
   title = "Planless",
   scrollY = 0,
   hideNotificationsIcon = false,
   className = "",
 }) => {
+  const { incomingRequests } = useFriendshipStore();
+  const hasIncomingRequests = incomingRequests && incomingRequests.length > 0;
   const actionButtonClass = (isActive: boolean) =>
     `w-9.5 h-9.5 rounded-full flex items-center justify-center relative cursor-pointer transition-all active:scale-95 ${
       isActive
@@ -68,6 +75,18 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
       {/* Right Column: Compact Action Utility Group */}
       <div className="flex-1 flex items-center justify-end z-10">
         <div className="flex items-center gap-0.5">
+          {showFriendsIcon && onToggleFriends && (
+            <button
+              onClick={onToggleFriends}
+              aria-label="Friends"
+              className={actionButtonClass(false)}
+            >
+              <Users className="w-5 h-5 stroke-[2]" />
+              {hasIncomingRequests && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#EF4444] ring-2 ring-[#050505]" />
+              )}
+            </button>
+          )}
           {showPastIcon && onTogglePast && (
             <button
               onClick={onTogglePast}

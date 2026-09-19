@@ -1113,7 +1113,7 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
             {/* 3. Centered Payer Avatar */}
             <div className="pt-[22px] pb-0.5">
               <UserAvatar
-                src={payerIsMe ? (userProfile?.profile_photo_path || payerPhoto) : payerPhoto}
+                src={payerIsMe ? ((userProfile as any)?.profile_photo_path || payerPhoto) : payerPhoto}
                 alt={payerName}
                 size="w-16 h-16"
                 className="ring-2 ring-white/10 shadow-lg mx-auto"
