@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2 } from "lucide-react";
 import { useToast } from "../../../shared/contexts/ToastContext";
 import { buildInviteUrl } from "../services/planInviteService";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
@@ -3280,8 +3280,16 @@ interface GuidedCapacityAdjustmentBottomSheetProps {
   title?: string;
   subtitle?: string;
   ctaLabel?: string;
+  planAvatar?: string | null;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
+  plan?: Plan | null;
+  initialSelectedIds?: string[];
   onConfirm: (selectedUserIds: string[]) => Promise<void> | void;
   onClose: () => void;
+  onBack?: () => void;
 }
 
 export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustmentBottomSheetProps> = ({
@@ -3292,18 +3300,26 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
   title: customTitle,
   subtitle: customSubtitle,
   ctaLabel: customCtaLabel,
+  planAvatar,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
+  plan,
+  initialSelectedIds,
   onConfirm,
   onClose,
+  onBack,
 }) => {
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds || []);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedIds([]);
+      setSelectedIds(initialSelectedIds || []);
       setIsSubmitting(false);
     }
-  }, [isOpen]);
+  }, [isOpen, initialSelectedIds]);
 
   if (!isOpen) return null;
 
@@ -3342,6 +3358,11 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
     ? 'Select the participant(s) to move to Going.'
     : 'Select who should move to the waitlist.');
 
+  const resolvedCover = planAvatar || planCoverImage || plan?.coverImage || (plan as any)?.cover_image;
+  const resolvedCategory = planCategory || plan?.category;
+  const resolvedSubcategory = planSubcategory || (plan as any)?.subcategory;
+  const resolvedPlanId = planId || plan?.dbUuid || plan?.id;
+
   return (
     <div
       onClick={onClose}
@@ -3352,6 +3373,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
         zIndex: 100,
         display: 'flex',
         alignItems: 'flex-end',
+        justifyContent: 'center',
         animation: 'fadeIn 0.2s ease-out',
       }}
     >
@@ -3359,6 +3381,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
+          maxWidth: '100%',
           maxHeight: '85vh',
           background: '#1C1C1E',
           borderTopLeftRadius: 20,
@@ -3373,13 +3396,24 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
       >
         <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.2)', margin: '0 auto 12px' }} />
 
-        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 4px', textAlign: 'center' }}>
-          {title}
-        </h3>
-
-        <p style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.5)', textAlign: 'center', margin: '0 0 14px', lineHeight: 1.4 }}>
-          {subtitle}
-        </p>
+        {/* Header with Title and Optional Back Button */}
+        <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' }}>
+          {onBack && (
+            <button
+              id="guided-capacity-back-btn"
+              type="button"
+              onClick={onBack}
+              className="p-1 -ml-1 text-white hover:text-white/80 active:scale-95 transition cursor-pointer flex items-center justify-center shrink-0"
+              title="Back"
+              aria-label="Back to Plan Size"
+            >
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
+          )}
+          <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: '#FFFFFF', lineHeight: 1.25 }} className="truncate">
+            {title}
+          </h3>
+        </div>
 
         {/* Candidate Selection List matching Add Participants screen styling */}
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', marginBottom: 14, maxHeight: '45vh' }}>
@@ -3435,11 +3469,6 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
           })}
         </div>
 
-        {/* Dynamic Selection Count Label */}
-        <div style={{ textAlign: 'center', marginBottom: 8, fontSize: 12, color: 'rgba(255, 255, 255, 0.45)', fontWeight: 500 }}>
-          {selectedIds.length} {selectedIds.length === 1 ? 'participant' : 'participants'} selected
-        </div>
-
         <button
           type="button"
           onClick={handleConfirm}
@@ -3447,7 +3476,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
           style={{
             width: '100%',
             padding: '14px',
-            borderRadius: 14,
+            borderRadius: 9999,
             background: isReady ? '#FF6B2C' : 'rgba(255, 255, 255, 0.1)',
             color: isReady ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
             fontSize: 14,
@@ -3461,7 +3490,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
             ? 'Updating...'
             : isReady
             ? (customCtaLabel || (mode === 'demote' ? 'Move to Waitlist' : mode === 'promote' ? 'Move to Join' : 'Continue'))
-            : `Select ${remainingNeeded} more participant${remainingNeeded > 1 ? 's' : ''}`}
+            : `Select ${remainingNeeded} participant${remainingNeeded === 1 ? '' : 's'}`}
         </button>
       </div>
     </div>

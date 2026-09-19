@@ -122,7 +122,7 @@ export default function MainApp({
     }
   }, [activeTab]);
 
-  // Synchronize route and URL with activeTab and selectedPlanId
+  // Synchronize route and URL with activeTab, selectedPlanId, and selectedChatPlanId
   const isFirstRouteSync = React.useRef(true);
   React.useEffect(() => {
     localStorage.setItem("planless_active_tab", activeTab);
@@ -135,6 +135,9 @@ export default function MainApp({
         const matchedPlan = findPlanBySlugOrId(plans, selectedPlanId);
         const routePlanParam = matchedPlan ? (matchedPlan.slug || getPlanSlug(matchedPlan, plans)) : selectedPlanId;
         navigateToRoute({ tab: activeTab, selectedPlanId: routePlanParam }, { replace: isInitial });
+      } else if (activeTab === "chats" && selectedChatPlanId) {
+        localStorage.removeItem("planless_selected_plan_id");
+        navigateToRoute({ tab: "chats", selectedChatPlanId }, { replace: isInitial });
       } else {
         localStorage.removeItem("planless_selected_plan_id");
         // On initial load, preserve /join/:token so it isn't prematurely replaced by /home
@@ -144,7 +147,7 @@ export default function MainApp({
         navigateToRoute({ tab: activeTab }, { replace: isInitial });
       }
     }
-  }, [activeTab, selectedPlanId, plans, initialRoute.inviteToken, pendingInviteToken]);
+  }, [activeTab, selectedPlanId, selectedChatPlanId, plans, initialRoute.inviteToken, pendingInviteToken]);
 
   // Listen for external / popstate route changes
   React.useEffect(() => {

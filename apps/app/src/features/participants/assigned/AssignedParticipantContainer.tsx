@@ -8,7 +8,7 @@ import { useFriendshipStore } from '../../friendships/state/FriendshipContext';
 import { getCompleteCurrentUserFriends } from '../../friendships/api/friendships';
 import { usePlansStore } from '../../plans/state/PlansContext';
 import { supabase } from '../../../../lib/supabaseClient';
-import { Split, Merge } from 'lucide-react';
+import { Split, Merge, ArrowLeft } from 'lucide-react';
 import { DiscoveryImages } from '../../../IMGfromDB/PlanImages';
 import {
   PlanIsFullBottomSheet,
@@ -407,6 +407,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     planCost: number;
   } | null>(null);
 
+  const [reopenPlanSizeCapacity, setReopenPlanSizeCapacity] = useState<number | null>(null);
   const [localCapacity, setLocalCapacity] = useState<number | null>(null);
 
   useEffect(() => {
@@ -2066,6 +2067,8 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         onRejoinAddToWaitlist={effectiveIsHost ? handleRejoinAddToWaitlist : undefined}
         onRejoinRemoveFromPlan={effectiveIsHost ? handleRejoinRemoveFromPlan : undefined}
         isCompletedPlan={isCompletedPlan}
+        initialCapacityOverride={reopenPlanSizeCapacity}
+        onPlanSizeSheetDismissed={() => setReopenPlanSizeCapacity(null)}
       />
 
       {isPickerOpen && (
@@ -2174,7 +2177,16 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
               } to move to the waitlist.`
         }
         ctaLabel={guidedAdjustmentState?.mode === 'promote' ? 'Move to Join' : 'Move to Waitlist'}
+        plan={plan}
+        initialSelectedIds={pendingCapacityAdjustmentSession?.selectedUserIds || []}
         onConfirm={handleConfirmGuidedAdjustment}
+        onBack={() => {
+          const target = guidedAdjustmentState?.targetCapacity;
+          setGuidedAdjustmentState(null);
+          if (target !== undefined && target !== null) {
+            setReopenPlanSizeCapacity(target);
+          }
+        }}
         onClose={() => {
           setGuidedAdjustmentState(null);
           setPendingCapacityAdjustmentSession(null);
@@ -2207,6 +2219,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
             ? 'Select one participant from the waitlist to swap into the Going group.'
             : 'Select a participant from the waitlist before removing them.'
         }
+        plan={plan}
         onConfirm={handleConfirmSwap}
         onClose={() => setSwapState(null)}
       />
@@ -2252,6 +2265,29 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
             </div>
 
             <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              {pendingCapacityAdjustmentSession && pendingCapacityAdjustmentSession.requiredCount > 0 && (
+                <button
+                  type="button"
+                  disabled={isSubmittingPlanFeeUpdate}
+                  onClick={() => {
+                    if (isSubmittingPlanFeeUpdate) return;
+                    setShowUpdatePlanFeeModal(false);
+                    setPendingCapacityTarget(null);
+                    setSelectedPlanFeeOption(null);
+                    setGuidedAdjustmentState({
+                      mode: pendingCapacityAdjustmentSession.mode,
+                      targetCapacity: pendingCapacityAdjustmentSession.targetCapacity,
+                      requiredCount: pendingCapacityAdjustmentSession.requiredCount,
+                      candidates: pendingCapacityAdjustmentSession.candidates,
+                    });
+                  }}
+                  className="p-1 -ml-1 text-white hover:text-white/80 active:scale-95 transition cursor-pointer flex items-center justify-center shrink-0"
+                  title="Back"
+                  aria-label="Back to Move Participants"
+                >
+                  <ArrowLeft className="w-5 h-5 text-white" />
+                </button>
+              )}
               <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
                 <DiscoveryImages
                   src={plan.coverImage || (plan as any).cover_image || (matchedDbPlan as any)?.cover_image}

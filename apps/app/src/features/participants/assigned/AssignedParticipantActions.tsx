@@ -385,7 +385,7 @@ export const AssignedParticipantActions: React.FC<AssignedParticipantActionsProp
                       onClick={() => {
                         executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));
                       }}
-                      style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(245,158,11,0.08)', border: 'none', borderRadius: 12, color: '#F59E0B', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                      style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(245,158,11,0.08)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
                     >
                       Make Host
                     </button>

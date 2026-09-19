@@ -59,6 +59,21 @@ This file stores durable lessons, corrections, architectural invariants, and wor
 
 ---
 
+## 8. First-Try Defect Isolation & Router Synchronization Invariants
+
+* **Lesson**: When waitlist reordering was performed inside `PlanChatScreen`, the user was booted back to `ChatsScreen`. Previous attempts mistakenly diagnosed this as a local Framer Motion gesture conflict, missing that the reorder RPC updated `plans` in `PlansContext`, which triggered a route synchronization `useEffect` in `MainApp.tsx` that omitted `selectedChatPlanId` and called `navigateToRoute({ tab: 'chats' })`, resetting `selectedChatPlanId` to null and unmounting `PlanChatScreen`.
+* **Rules**:
+  1. **Router Synchronization Invariant**: In `MainApp.tsx` and any route synchronization effects, every active sub-route state (`selectedChatPlanId`, `selectedPlanId`) must be strictly preserved across store updates (`plans`, `profile`, `friendships`). Never default to bare root tab paths (`/chats`, `/plans`) when a child detail view is open.
+  2. **4-Tier Action Lifecycle Tracing**: When an in-screen action causes an unexpected navigation or dismiss, trace the full stack before proposing a fix:
+     - Tier 1: Local DOM gesture/pointer events and bubbling.
+     - Tier 2: State mutations and API/RPC completions.
+     - Tier 3: Global store subscribers and router synchronization `useEffect` hooks.
+     - Tier 4: Root-level conditional rendering gates (`{selectedChatPlanId && <PlanChatScreen />}`).
+  3. **Honor User Clues & File Tags Literally**: If the user tags `ChatsScreen.tsx` and says "it's going back to the main chat screen", investigate how `ChatsScreen` became visible (i.e. parent unmount) rather than assuming an internal component page flick.
+  4. **Preserve Working Visuals**: When resolving behavioral regressions, never alter or replace an already working visual interaction/animation unless explicitly requested.
+
+---
+
 ## Adding New Learned Rules
 
 When Thilak makes a correction or an architectural invariant is established, append it using this format:
@@ -68,3 +83,4 @@ When Thilak makes a correction or an architectural invariant is established, app
 * **Lesson**: What happened or what was corrected.
 * **Rule**: The concrete invariant or rule to follow in all future sessions.
 ```
+

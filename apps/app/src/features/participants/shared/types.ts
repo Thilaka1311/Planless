@@ -84,6 +84,7 @@ export interface SharedParticipantScreenProps {
   isCompletedPlan?: boolean;
   initialOpenPlanSizeSheet?: boolean;
   onPlanSizeSheetDismissed?: () => void;
+  initialCapacityOverride?: number | null;
 }
 
 export type ParticipantManagementScreenProps = SharedParticipantScreenProps;

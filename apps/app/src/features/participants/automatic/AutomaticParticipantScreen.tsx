@@ -320,14 +320,16 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         {(activeTab === 'going' || activeTab === 'invited') && (
           <GoingSection
             goingList={displayGoing}
-            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, mode === 'wizard' ? 'invited' : ((item.rsvpStatus === 'INVITED' || item.isAccepted === false) ? 'invited' : 'going')) : undefined}
+            isHost={effectiveIsHost}
+            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, mode === 'wizard' ? 'invited' : ((item.rsvpStatus === 'INVITED' || item.isAccepted === false) ? 'invited' : 'going')) : (item) => setViewProfileUserId(item.dbUuid || item.id)}
             showIndex={false}
           />
         )}
         {activeTab === 'waitlist' && (
           <WaitlistSection
             waitlist={displayWaitlist}
-            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'waitlist') : undefined}
+            isHost={effectiveIsHost}
+            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'waitlist') : (item) => setViewProfileUserId(item.dbUuid || item.id)}
             onAddFriends={effectiveIsHost ? onAddFriends : undefined}
             reorderable={false}
             showIndex={true}
@@ -340,7 +342,8 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
               <StackingFriends
                 key={item.id}
                 item={item}
-                onClick={effectiveIsHost ? () => handleItemTap(item, 'skipped') : undefined}
+                isHost={effectiveIsHost}
+                onClick={effectiveIsHost ? () => handleItemTap(item, 'skipped') : () => setViewProfileUserId(item.dbUuid || item.id)}
               />
             ))}
           </div>
@@ -417,8 +420,8 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         }}
       />
 
-      {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
-      {!isCompletedPlan && mode !== 'wizard' && (currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
+      {/* Sticky/Floating Action Button — Bottom Right */}
+      {!isCompletedPlan && mode !== 'wizard' && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
         <button
           type="button"
           onClick={() => onAddFriends(activeTab)}
@@ -427,7 +430,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
             bottom: 'calc(2.25rem + env(safe-area-inset-bottom, 0px))',
             right: 'calc(2rem + env(safe-area-inset-right, 0px))',
           }}
-          className="fixed z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-200 cursor-pointer pointer-events-auto select-none"
+          className="absolute z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-200 cursor-pointer pointer-events-auto select-none"
         >
           <UserPlus className="w-5 h-5 text-white" />
         </button>

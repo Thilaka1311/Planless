@@ -569,21 +569,6 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                       }`}>
                         {person.name}
                       </span>
-                      {(person.rsvp_status === 'REJOINED' || (person.leave_requested && person.rsvp_status !== 'SKIPPED')) && (
-                        <span
-                          title={person.rsvp_status === 'REJOINED' ? "Requested to rejoin" : "Requested to leave"}
-                          style={{
-                            fontSize: 14,
-                            fontWeight: 700,
-                            color: '#F59E0B',
-                            lineHeight: 1,
-                            flexShrink: 0,
-                            fontFamily: 'Inter, sans-serif',
-                          }}
-                        >
-                          !
-                        </span>
-                      )}
                     </div>
                     {activeTab === 'skipped' && person.skipReason && (
                       <span className="text-[11px] font-medium text-white/50 truncate max-w-[100px] text-right font-sans">
@@ -848,21 +833,6 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                           }`}>
                             {person.name}
                           </span>
-                          {(person.rsvp_status === 'REJOINED' || (person.leave_requested && person.rsvp_status !== 'SKIPPED')) && (
-                            <span
-                              title={person.rsvp_status === 'REJOINED' ? "Requested to rejoin" : "Requested to leave"}
-                              style={{
-                                fontSize: 14,
-                                fontWeight: 700,
-                                color: '#F59E0B',
-                                lineHeight: 1,
-                                flexShrink: 0,
-                                fontFamily: 'Inter, sans-serif',
-                              }}
-                            >
-                              !
-                            </span>
-                          )}
                         </div>
                         {activeTab === 'skipped' && person.skipReason && (
                           <span className="text-[11px] font-medium text-white/50 truncate max-w-[100px] text-right font-sans">
@@ -892,23 +862,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                   className="w-full py-2.5 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] active:scale-[0.98] border border-white/10 transition flex items-center justify-center gap-2 text-xs font-semibold text-white/90 cursor-pointer shadow-sm"
                 >
                   <Users className="w-4 h-4 text-white/70" />
-                  <span className="flex items-center gap-1.5">
-                    <span>Manage Participants</span>
-                    {hasPendingParticipantAction && (
-                      <span
-                        title="Pending participant request"
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 700,
-                          color: '#F59E0B',
-                          lineHeight: 1,
-                          fontFamily: 'Inter, sans-serif',
-                        }}
-                      >
-                        !
-                      </span>
-                    )}
-                  </span>
+                  <span>Manage Participants</span>
                 </button>
               </div>
             )}

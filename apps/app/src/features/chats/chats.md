@@ -30,7 +30,7 @@ The **Chats** feature is the real-time group communication and coordination hub 
 ### 3. Entering a Plan Chat (`onSelectChatPlan`)
 * The user taps a plan card from the directory.
 * `ChatsScreen` calls `onSelectChatPlan(planId)`.
-* `MainApp.tsx` sets `selectedChatPlanId = planId` and pushes the route state (`tab: "chats", selectedChatPlanId: planId`).
+* `MainApp.tsx` sets `selectedChatPlanId = planId` and pushes the route state (`tab: "chats", selectedChatPlanId: planId`). Route synchronization in `MainApp.tsx` strictly preserves `selectedChatPlanId` across all store updates (`plans`, `dbPlanParticipants`), ensuring in-plan actions (such as waitlist reordering) do not dismiss `PlanChatScreen` or navigate back to `ChatsScreen`.
 * `<PlanChatScreen />` mounts full screen, defaulting to Page 1 ("Chat") of its horizontal motion pager.
 
 ### 4. Reading and Streaming Messages

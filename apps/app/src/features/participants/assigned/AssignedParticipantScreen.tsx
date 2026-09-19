@@ -88,10 +88,19 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   isCompletedPlan,
   initialOpenPlanSizeSheet,
   onPlanSizeSheetDismissed,
+  initialCapacityOverride,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
   const [isCapacitySheetOpen, setIsCapacitySheetOpen] = useState(false);
+  const [draftCapacityOverride, setDraftCapacityOverride] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (initialCapacityOverride !== undefined && initialCapacityOverride !== null) {
+      setDraftCapacityOverride(initialCapacityOverride);
+      setIsCapacitySheetOpen(true);
+    }
+  }, [initialCapacityOverride]);
 
   useEffect(() => {
     if (initialOpenPlanSizeSheet) {
@@ -575,12 +584,13 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       />
 
       {/* List content — Assigned Mode */}
-      <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 16, flex: 1, overflowY: 'auto' }}>
+      <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 16, flex: 1, overflowY: activeTab === 'waitlist' ? 'visible' : 'auto' }}>
         {(activeTab === 'going' || activeTab === 'invited') && (
           <>
             {displayGoing.length > 0 ? (
               <GoingSection
                 goingList={displayGoing}
+                isHost={effectiveIsHost}
                 onItemTap={(item) => handleItemTap(item, 'going')}
                 showIndex={false}
               />
@@ -599,6 +609,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             {displayWaitlist.length > 0 ? (
               <WaitlistSection
                 waitlist={displayWaitlist}
+                isHost={effectiveIsHost}
                 onItemTap={(item) => handleItemTap(item, 'waitlist')}
                 onAddFriends={effectiveIsHost ? onAddFriends : undefined}
                 onReorder={mode === 'wizard' ? (newWait) => {
@@ -630,6 +641,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
               <StackingFriends
                 key={item.id}
                 item={item}
+                isHost={effectiveIsHost}
                 onClick={() => handleItemTap(item, 'skipped')}
               />
             ))}
@@ -693,7 +705,11 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
       <EditCapacityBottomSheet
         isOpen={isCapacitySheetOpen}
-        capacity={mode === 'wizard' ? Math.min(capacity ?? displayGoing.length, totalInvitedCount) : (capacity ?? 2)}
+        capacity={
+          mode === 'wizard'
+            ? Math.min(capacity ?? displayGoing.length, totalInvitedCount)
+            : (draftCapacityOverride ?? capacity ?? 2)
+        }
         joinedCount={displayGoing.length}
         waitlistedCount={displayWaitlist.length}
         invitedCount={mode === 'wizard' ? totalInvitedCount : (displayGoing.length + displayWaitlist.length + (externalInvitedList?.length || 0))}
@@ -701,6 +717,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
         maxCapacity={mode === 'wizard' ? totalInvitedCount : (maxCapacity ?? Math.max(2, displayGoing.length + displayWaitlist.length + (externalInvitedList?.length || 0)))}
         limitToInvitedCount={true}
         onCapacityChange={(newCap) => {
+          setDraftCapacityOverride(null);
           if (onAdjustCapacity) {
             const activeCount = displayGoing.length + displayWaitlist.length + (externalInvitedList?.length || 0);
             const capped = Math.min(newCap, mode === 'wizard' ? totalInvitedCount : (maxCapacity ?? Math.max(2, activeCount)));
@@ -708,18 +725,20 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           }
         }}
         onAddParticipants={() => {
+          setDraftCapacityOverride(null);
           setIsCapacitySheetOpen(false);
           onPlanSizeSheetDismissed?.();
           onAddFriends?.(mode === 'wizard' ? 'invited' : activeTab);
         }}
         onClose={() => {
+          setDraftCapacityOverride(null);
           setIsCapacitySheetOpen(false);
           onPlanSizeSheetDismissed?.();
         }}
       />
 
-      {/* Sticky/Floating Action Button — Bottom Right (Only on Page 0 / Participants tab) */}
-      {!isCompletedPlan && mode !== 'wizard' && (currentPage === undefined || currentPage === 0) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
+      {/* Sticky/Floating Action Button — Bottom Right */}
+      {!isCompletedPlan && mode !== 'wizard' && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
         <button
           type="button"
           onClick={() => onAddFriends(activeTab)}
@@ -728,7 +747,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
             bottom: 'calc(2.25rem + env(safe-area-inset-bottom, 0px))',
             right: 'calc(2rem + env(safe-area-inset-right, 0px))',
           }}
-          className="fixed z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-200 cursor-pointer pointer-events-auto select-none"
+          className="absolute z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-200 cursor-pointer pointer-events-auto select-none"
         >
           <UserPlus className="w-5 h-5 text-white" />
         </button>
