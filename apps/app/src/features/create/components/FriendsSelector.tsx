@@ -26,6 +26,7 @@ interface StepWhoProps {
   isHostSelected?: boolean;
   onToggleHostSelection?: () => void;
   isReplacementMode?: boolean;
+  isAddParticipantMode?: boolean;
   leavingParticipant?: { name: string; avatar?: string | null } | null;
   selectedReplacementFriend?: any | null;
 
@@ -70,6 +71,7 @@ export const StepWho: React.FC<StepWhoProps> = ({
   isHostSelected = true,
   onToggleHostSelection,
   isReplacementMode = false,
+  isAddParticipantMode = false,
   leavingParticipant = null,
   selectedReplacementFriend = null,
 }) => {
@@ -114,7 +116,7 @@ export const StepWho: React.FC<StepWhoProps> = ({
   const isItemDisabled = (item: ParticipantItem): boolean =>
     !!disabledUserIds?.has(item.id);
 
-  // Selected avatar strip displays host ("You") + selected friends
+  // Selected avatar strip displays host ("You") + selected friends in Create flow, or newly selected friends only in Add Participant flow
   const displaySelectedItems = selectedFriends;
   const hostAvatar =
     userProfile?.avatar ||
@@ -122,7 +124,12 @@ export const StepWho: React.FC<StepWhoProps> = ({
     userProfile?.profilePhoto ||
     userProfile?.profile_photo_path ||
     '';
-  const totalCountWithHost = (displaySelectedItems?.length || 0) + 1;
+  const badgeCount = isAddParticipantMode
+    ? displaySelectedItems.length
+    : (displaySelectedItems?.length || 0) + (isHostSelected ? 1 : 0);
+  const shouldShowSelectedStrip = !isReplacementMode && (
+    isAddParticipantMode ? displaySelectedItems.length > 0 : true
+  );
   const selectedStripRef = React.useRef<HTMLDivElement>(null);
   const prevCountRef = React.useRef(displaySelectedItems.length);
 
@@ -143,28 +150,30 @@ export const StepWho: React.FC<StepWhoProps> = ({
       <div className="flex flex-col flex-1 min-h-0">
 
         {/* ── Selected avatar strip — single source of truth for selection ── */}
-        {!isReplacementMode && (
+        {shouldShowSelectedStrip && (
           <div className="bg-transparent pb-2 border-b border-white/[0.08] flex items-center justify-between animate-fade-in select-none w-full gap-3">
             <div
               ref={selectedStripRef}
               className="flex-1 flex items-center gap-3.5 overflow-x-auto scrollbar-none py-1 min-w-0"
             >
-              {/* Host / "You" — always first avatar, permanently selected, no X remove button */}
-              <div key="host-you" className="flex flex-col items-center shrink-0 relative w-13">
-                <div className="relative">
-                  <UserAvatar
-                    src={hostAvatar}
-                    alt="You"
-                    size="w-12 h-12"
-                    className="border border-white/10"
-                  />
+              {/* Host / "You" — in Create Plan flow, always first avatar; omitted in Add Participant mode */}
+              {!isAddParticipantMode && isHostSelected && (
+                <div key="host-you" className="flex flex-col items-center shrink-0 relative w-13">
+                  <div className="relative">
+                    <UserAvatar
+                      src={hostAvatar}
+                      alt="You"
+                      size="w-12 h-12"
+                      className="border border-white/10"
+                    />
+                  </div>
+                  <div className="flex flex-col items-center w-full mt-1.5 min-h-[20px]">
+                    <span className="text-[10px] font-semibold text-zinc-400 truncate w-full text-center">
+                      You
+                    </span>
+                  </div>
                 </div>
-                <div className="flex flex-col items-center w-full mt-1.5 min-h-[20px]">
-                  <span className="text-[10px] font-semibold text-zinc-400 truncate w-full text-center">
-                    You
-                  </span>
-                </div>
-              </div>
+              )}
 
               {/* Selected friends */}
               {displaySelectedItems.map((item) => {
@@ -204,7 +213,7 @@ export const StepWho: React.FC<StepWhoProps> = ({
             {/* Selected Count Orange Circular Badge */}
             <div className="shrink-0 flex items-center justify-center pr-1 pl-1">
               <div className="w-6 h-6 rounded-full bg-[#FF6B2C] text-white font-bold text-[12px] flex items-center justify-center shadow-md select-none">
-                {totalCountWithHost}
+                {badgeCount}
               </div>
             </div>
           </div>

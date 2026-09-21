@@ -1532,13 +1532,26 @@ export function usePlanParticipants({
     const isAssigned = waitlistMode === 'ASSIGNED';
 
     setDbPlanParticipants(prev => {
-      const currentWaitlist = prev.filter(pp => {
-        if (pp.plan_id !== planUuid && pp.plan_id !== planId) return false;
-        if (pp.rsvp_status === 'SKIPPED') return false;
-        const group = (pp as any).assigned_group || (pp as any).assignedGroup;
-        return group === 'WAITLIST' || (!group && pp.rsvp_status === 'WAITLISTED');
-      });
-      calculatedWaitlistPos = currentWaitlist.reduce((max, p) => Math.max(max, p.waitlist_position || 0), 0) + 1;
+      // Find the waitlist participant being swapped into Going
+      const waitlistPp = prev.find(
+        pp =>
+          (pp.plan_id === planUuid || pp.plan_id === planId) &&
+          (pp.user_id === resolvedWaitlistUuid || pp.user_id === waitlistParticipantUserUuid)
+      );
+
+      // The participant moved from Joined -> Waitlist must inherit the exact waitlist_position
+      // of the participant who was moved from Waitlist -> Joined.
+      if (waitlistPp?.waitlist_position != null) {
+        calculatedWaitlistPos = waitlistPp.waitlist_position;
+      } else {
+        const currentWaitlist = prev.filter(pp => {
+          if (pp.plan_id !== planUuid && pp.plan_id !== planId) return false;
+          if (pp.rsvp_status === 'SKIPPED') return false;
+          const group = (pp as any).assigned_group || (pp as any).assignedGroup;
+          return group === 'WAITLIST' || (!group && pp.rsvp_status === 'WAITLISTED');
+        });
+        calculatedWaitlistPos = currentWaitlist.reduce((max, p) => Math.max(max, p.waitlist_position || 0), 0) + 1;
+      }
 
       const outgoingPp = prev.find(
         pp => (pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedGoingUuid || pp.user_id === goingParticipantUserUuid)
@@ -1546,7 +1559,7 @@ export function usePlanParticipants({
       outgoingNextRsvp = outgoingPp?.rsvp_status === 'JOINED' ? 'WAITLISTED' : (outgoingPp?.rsvp_status || 'WAITLISTED');
 
       return prev.map(pp => {
-        // GOING → WAITLIST
+        // GOING → WAITLIST (inherits exact waitlist_position)
         if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedGoingUuid || pp.user_id === goingParticipantUserUuid)) {
           return {
             ...pp,
@@ -1556,7 +1569,7 @@ export function usePlanParticipants({
             responded_at: pp.responded_at || new Date().toISOString()
           };
         }
-        // WAITLIST → GOING
+        // WAITLIST → GOING (clears waitlist_position and becomes GOING)
         if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedWaitlistUuid || pp.user_id === waitlistParticipantUserUuid)) {
           const nextStatus = pp.rsvp_status === 'WAITLISTED' ? 'JOINED' : pp.rsvp_status;
           return {
@@ -1628,15 +1641,17 @@ export function usePlanParticipants({
       }
       */
 
-      renumberWaitlistPositions(planUuid).catch(() => {});
       // Recalculate wallet splits: a swap changes who is in Going
       recalculateWalletExpenses(planUuid).catch(err =>
         console.error("[swapParticipants] recalculateWalletExpenses failed:", err)
       );
+
+      await refreshPlans(["plan_participants"]);
     } catch (err) {
       console.error("[swapParticipants] Error during atomic swap, rolling back optimistic state:", err);
       // Roll back to pre-swap snapshot
       setDbPlanParticipants(snapshotBefore);
+      await refreshPlans(["plan_participants"]);
       throw err;
     }
   }, [plans, dbUsers, dbPlanParticipants, resolveUserUuid, refreshPlans, setDbPlanParticipants]);

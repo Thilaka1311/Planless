@@ -43,7 +43,7 @@ The **Participants** feature is Planless's core attendee orchestration and roste
 * Host can drag and drop participants in the `Waitlist` tab to reorder priority. `onReorderWaitlistComplete` updates `waitlist_position` values in Postgres.
 * Host taps a participant row to open `AssignedParticipantActions`:
   * Can manually move users between `Going` and `Waitlist`.
-  * Can swap a joined participant with a waitlisted participant.
+  * Can swap a joined participant with a waitlisted participant. The participant moved from Joined → Waitlist inherits the exact `waitlist_position` of the participant who moved from Waitlist → Joined (e.g. swapping with #2 gives the demoted participant #2, without appending to the end or recalculating independent order).
   * Can adjust capacity via the header Plan Size adjuster (`[ 👥 N ]`), opening `EditCapacityBottomSheet`. If capacity is increased and waitlisted guests exist, the host selects which candidates move to Joined (`GuidedCapacityAdjustmentBottomSheet`), rather than automatic promotion. If capacity is decreased below joined count, the host selects which joined members move to the waitlist.
 
 ### 5. Inviting Additional Participants

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Check, X, CreditCard, Inbox, CalendarCheck, Hourglass, Coffee, Sparkles } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
+import { subTabVariants } from "../../../../shared/transitions/motionTokens";
 import { Plan, DbPlanParticipant } from "../../../../core/types";
 import { normalizeStatus } from "../../../../../lib/participantStatus";
 import { formatPlanDate } from "../../../../../lib/mappers";
@@ -366,11 +367,20 @@ export const PlansScreen = React.memo(({
 
         {/* Active Tab Screen Area */}
         <div className="flex-1 flex flex-col">
-          {plansFilter === 'JOINED' && renderGroupedPlans(joinedPlans)}
-
-          {plansFilter === 'WAITLISTED' && renderGroupedPlans(waitlistedPlans)}
-
-          {plansFilter === 'SKIPPED' && renderGroupedPlans(skippedPlans)}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={plansFilter}
+              variants={subTabVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="flex-1 flex flex-col"
+            >
+              {plansFilter === 'JOINED' && renderGroupedPlans(joinedPlans)}
+              {plansFilter === 'WAITLISTED' && renderGroupedPlans(waitlistedPlans)}
+              {plansFilter === 'SKIPPED' && renderGroupedPlans(skippedPlans)}
+            </motion.div>
+          </AnimatePresence>
         </div>
 
       </div>

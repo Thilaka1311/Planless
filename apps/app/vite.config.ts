@@ -51,8 +51,10 @@ export default defineConfig(() => {
         },
         workbox: {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-          // Precache static assets like CSS, JS, HTML and common images
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // Precache static assets like CSS, JS, HTML, fonts, and core images
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,otf,ttf}'],
+          // Exclude unused or non-core static files from precache
+          globIgnores: ['**/navkis_matchday.png'],
           // Exclude Supabase to ensure Realtime, Auth, and DB endpoints remain network-live
           navigateFallbackDenylist: [
             /^\/api\//,
@@ -77,6 +79,32 @@ export default defineConfig(() => {
               handler: 'NetworkOnly',
               options: {
                 cacheName: 'supabase-local-network-only',
+              },
+            },
+            // Cache Google Fonts stylesheets with StaleWhileRevalidate
+            {
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'google-fonts-stylesheets',
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            // Cache Google Fonts webfont files with CacheFirst (1 year max age)
+            {
+              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-webfonts',
+                expiration: {
+                  maxEntries: 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
               },
             },
           ]

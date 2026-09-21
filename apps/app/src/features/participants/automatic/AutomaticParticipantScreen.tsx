@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserPlus } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { subTabVariants } from '../../../shared/transitions/motionTokens';
 import { SharedParticipantScreenProps, Friend, ParticipantTab } from '../shared/types';
 import { ParticipantHeader } from '../shared/ParticipantHeader';
 import { PlanSizeCard } from '../shared/PlanSizeCard';
@@ -63,6 +65,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   pendingLeaveRequests,
   currentPage,
   onInviteSkipped,
+  onRejoinAddToPlan,
   onRejoinAddToJoined,
   onRejoinAddToWaitlist,
   onRejoinRemoveFromPlan,
@@ -317,37 +320,48 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
 
       {/* List content — Automatic Queue (No drag & drop / reordering) */}
       <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 8, flex: 1, overflowY: 'auto' }}>
-        {(activeTab === 'going' || activeTab === 'invited') && (
-          <GoingSection
-            goingList={displayGoing}
-            isHost={effectiveIsHost}
-            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, mode === 'wizard' ? 'invited' : ((item.rsvpStatus === 'INVITED' || item.isAccepted === false) ? 'invited' : 'going')) : (item) => setViewProfileUserId(item.dbUuid || item.id)}
-            showIndex={false}
-          />
-        )}
-        {activeTab === 'waitlist' && (
-          <WaitlistSection
-            waitlist={displayWaitlist}
-            isHost={effectiveIsHost}
-            onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'waitlist') : (item) => setViewProfileUserId(item.dbUuid || item.id)}
-            onAddFriends={effectiveIsHost ? onAddFriends : undefined}
-            reorderable={false}
-            showIndex={true}
-            useParticipantPosition={true}
-          />
-        )}
-        {activeTab === 'skipped' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-            {displaySkipped.map((item) => (
-              <StackingFriends
-                key={item.id}
-                item={item}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={activeTab === 'invited' ? 'going' : activeTab}
+            variants={subTabVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', flex: 1 }}
+          >
+            {(activeTab === 'going' || activeTab === 'invited') && (
+              <GoingSection
+                goingList={displayGoing}
                 isHost={effectiveIsHost}
-                onClick={effectiveIsHost ? () => handleItemTap(item, 'skipped') : () => setViewProfileUserId(item.dbUuid || item.id)}
+                onItemTap={effectiveIsHost ? (item) => handleItemTap(item, mode === 'wizard' ? 'invited' : ((item.rsvpStatus === 'INVITED' || item.isAccepted === false) ? 'invited' : 'going')) : (item) => setViewProfileUserId(item.dbUuid || item.id)}
+                showIndex={false}
               />
-            ))}
-          </div>
-        )}
+            )}
+            {activeTab === 'waitlist' && (
+              <WaitlistSection
+                waitlist={displayWaitlist}
+                isHost={effectiveIsHost}
+                onItemTap={effectiveIsHost ? (item) => handleItemTap(item, 'waitlist') : (item) => setViewProfileUserId(item.dbUuid || item.id)}
+                onAddFriends={effectiveIsHost ? onAddFriends : undefined}
+                reorderable={false}
+                showIndex={true}
+                useParticipantPosition={true}
+              />
+            )}
+            {activeTab === 'skipped' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                {displaySkipped.map((item) => (
+                  <StackingFriends
+                    key={item.id}
+                    item={item}
+                    isHost={effectiveIsHost}
+                    onClick={effectiveIsHost ? () => handleItemTap(item, 'skipped') : () => setViewProfileUserId(item.dbUuid || item.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {mode === 'wizard' && onContinue && (
@@ -380,6 +394,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           onKeepPaymentLeaveParticipant={onKeepPaymentLeaveParticipant}
           onInviteSkipped={onInviteSkipped ? (item) => onInviteSkipped(item) : undefined}
           onViewProfile={(item) => setViewProfileUserId(item.dbUuid || item.id)}
+          onAddToPlan={onRejoinAddToPlan || onRejoinAddToJoined || onMoveToGoing}
           onAddToJoined={onRejoinAddToJoined || onMoveToGoing}
           onAddToWaitlist={onRejoinAddToWaitlist}
           onRemoveFromPlan={onRejoinRemoveFromPlan || onRemoveParticipant}
@@ -390,6 +405,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       <FriendProfileViewerBottomSheet
         friendUserId={viewProfileUserId}
         onClose={() => setViewProfileUserId(null)}
+        source="plan"
       />
 
       <EditCapacityBottomSheet

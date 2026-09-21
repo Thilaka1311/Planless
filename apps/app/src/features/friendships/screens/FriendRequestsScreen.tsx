@@ -207,6 +207,7 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
           setSelectedSentUserForViewer(null);
           setSelectedIncomingUserForViewer(null);
         }}
+        source="requests"
       />
     </motion.div>
   );

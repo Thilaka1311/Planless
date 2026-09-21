@@ -590,6 +590,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         <FriendProfileViewerBottomSheet
           friendUserId={selectedProfileUserId}
           onClose={() => setSelectedProfileUserId(null)}
+          source="preview"
         />
       </div>
     );
@@ -873,6 +874,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
       <FriendProfileViewerBottomSheet
         friendUserId={selectedProfileUserId}
         onClose={() => setSelectedProfileUserId(null)}
+        source="preview"
       />
     </div>
   );

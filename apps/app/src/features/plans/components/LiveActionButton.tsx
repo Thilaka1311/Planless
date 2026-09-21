@@ -23,7 +23,8 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
 }) => {
   if (!myParticipantRecord && !isCancelled && !isCompleted) return null;
 
-  const status = myParticipantRecord ? normalizeStatus(myParticipantRecord.rsvp_status) : undefined;
+  const rawRsvp = myParticipantRecord?.rsvp_status || myParticipantRecord?.joinState || myParticipantRecord?.rsvpStatus;
+  const status = myParticipantRecord ? normalizeStatus(rawRsvp) : undefined;
   const skipReason = myParticipantRecord?.skip_reason;
 
   let text = '';

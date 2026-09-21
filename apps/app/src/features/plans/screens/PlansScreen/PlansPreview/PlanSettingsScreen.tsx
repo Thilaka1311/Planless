@@ -1,14 +1,22 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { ArrowLeft, Crown, Users, Plus, Check, Settings, LogOut } from "lucide-react";
+import { ArrowLeft, Crown, Users, Plus, Check } from "lucide-react";
 import { Plan, UserProfile } from "../../../../../core/types";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
 import { normalizeStatus } from "../../../../../../lib/participantStatus";
 import { DiscoveryImages } from "../../../../../IMGfromDB/PlanImages";
 import { getPlanCover } from "../../../config/planCoverImages";
 import { usePlansStore } from "../../../state/PlansContext";
-import { MakeAnotherParticipantHostBottomSheet, CancelPlanBottomSheet } from "../../../components/BottomSheets";
+import {
+  MakeAnotherParticipantHostBottomSheet,
+  CancelPlanBottomSheet,
+  LeavePlanBottomSheet,
+  CancelLeaveRequestBottomSheet,
+  CancelRejoinRequestBottomSheet,
+  RejoinPlanBottomSheet,
+} from "../../../components/BottomSheets";
+import { LiveActionButton } from "../../../components/LiveActionButton";
 import { EditPlanImageScreen } from "./EditPlanImageScreen";
-import { cleanPlanId } from "../../../utils/planUtils";
+import { cleanPlanId, parsePlanDateTime } from "../../../utils/planUtils";
 import { supabase } from "../../../../../../lib/supabaseClient";
 
 interface PlanSettingsScreenProps {
@@ -16,6 +24,7 @@ interface PlanSettingsScreenProps {
   userProfile: UserProfile;
   isCreatorHost?: boolean;
   isPlanSettingsForParticipant?: boolean;
+  myParticipantRecord?: any;
   mode?: "host" | "participant";
   onBack: () => void;
   onUpdateSettings?: (settings: {
@@ -38,6 +47,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   userProfile,
   isCreatorHost,
   isPlanSettingsForParticipant: propIsPlanSettingsForParticipant,
+  myParticipantRecord: propMyParticipantRecord,
   mode: propMode,
   onBack,
   onUpdateSettings,
@@ -229,9 +239,30 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     return allParticipants.filter((p) => !hostIds.has(p.id));
   }, [allParticipants, hostIds]);
 
-  const { requestHostLeaveWithReplacement, stopHostingWithReplacement } = usePlansStore();
+  const {
+    requestHostLeaveWithReplacement,
+    stopHostingWithReplacement,
+    requestPaidPlanLeave,
+    cancelPaidPlanLeaveRequest,
+    cancelRejoinRequest,
+    rejoinPlan,
+  } = usePlansStore();
+
   const [isPromotingToLeave, setIsPromotingToLeave] = useState(false);
   const [hostReplacementMode, setHostReplacementMode] = useState<'leave' | 'stop_hosting'>('leave');
+
+  const [showLeavePlanSheet, setShowLeavePlanSheet] = useState(false);
+  const [showCancelLeaveRequestSheet, setShowCancelLeaveRequestSheet] = useState(false);
+  const [showCancelRejoinRequestSheet, setShowCancelRejoinRequestSheet] = useState(false);
+  const [showRejoinSheet, setShowRejoinSheet] = useState(false);
+  const [isCancellingLeaveRequest, setIsCancellingLeaveRequest] = useState(false);
+  const [isCancellingRejoinRequest, setIsCancellingRejoinRequest] = useState(false);
+  const [isRejoining, setIsRejoining] = useState(false);
+
+  const hasCost = useMemo(() => {
+    const rawCost = (plan as any)?.total_cost ?? (plan as any)?.cost ?? (plan as any)?.totalCost ?? 0;
+    return Number(rawCost) > 0;
+  }, [plan]);
 
   const eligibleGoingParticipants = useMemo(() => {
     return members
@@ -269,7 +300,72 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     });
   }, [members, activeUserUuid]);
 
-  const isLeaveRequested = myParticipantRecord?.leave_requested === true || (myParticipantRecord as any)?.leaveRequested === true;
+  const resolvedParticipantRecord = propMyParticipantRecord || myParticipantRecord;
+
+  const effectiveParticipantRecord = useMemo(() => {
+    const isHost = !isPlanSettingsForParticipant;
+    if (isHost) {
+      return {
+        ...(resolvedParticipantRecord || {}),
+        role: "HOST",
+        isHost: true,
+        rsvp_status: "JOINED",
+      };
+    }
+    if (!resolvedParticipantRecord) {
+      return undefined;
+    }
+    return {
+      ...resolvedParticipantRecord,
+      rsvp_status: resolvedParticipantRecord.rsvp_status || (resolvedParticipantRecord as any).joinState || (resolvedParticipantRecord as any).status || "JOINED",
+      role: resolvedParticipantRecord.role || "PARTICIPANT",
+      isHost: false,
+    };
+  }, [isPlanSettingsForParticipant, resolvedParticipantRecord]);
+
+  const isLeaveRequested = Boolean(
+    resolvedParticipantRecord?.leave_requested === true ||
+    (resolvedParticipantRecord as any)?.leaveRequested === true
+  );
+
+  const isCancelled = Boolean((plan?.status || "").toUpperCase() === "CANCELLED");
+  const isCompleted = Boolean((plan?.status || "").toUpperCase() === "COMPLETED");
+  const planDateTime = plan ? parsePlanDateTime(plan) : new Date();
+  const isPastPlan = Boolean(plan && planDateTime.getTime() < new Date().setHours(0, 0, 0, 0));
+  const showExclamation = Boolean(!isPlanSettingsForParticipant && isPastPlan && !isCancelled && !isCompleted);
+
+  const handleBadgeClick = () => {
+    if (isCompleted) {
+      return;
+    }
+    if (!isPlanSettingsForParticipant) {
+      // Host: opens existing Manage Plan bottom sheet
+      setShowManagePlanSheet(true);
+      return;
+    }
+
+    const currentStatus = normalizeStatus(effectiveParticipantRecord?.rsvp_status);
+    const leaveRequested = Boolean(effectiveParticipantRecord?.leave_requested);
+
+    if (currentStatus === "JOINED") {
+      if (leaveRequested) {
+        setShowCancelLeaveRequestSheet(true);
+      } else {
+        if (isSoleHost) {
+          setHostReplacementMode('leave');
+          setShowPromoteHostToLeaveModal(true);
+        } else {
+          setShowLeavePlanSheet(true);
+        }
+      }
+    } else if (currentStatus === "WAITLISTED") {
+      setShowLeavePlanSheet(true);
+    } else if (currentStatus === "REJOINED") {
+      setShowCancelRejoinRequestSheet(true);
+    } else if (currentStatus === "SKIPPED" && effectiveParticipantRecord?.skip_reason === "LEFT") {
+      setShowRejoinSheet(true);
+    }
+  };
 
   const executeLeavePlanFlow = async () => {
     if (isLeaveRequested) {
@@ -277,7 +373,11 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     }
     setIsLeaving(true);
     try {
-      if (onLeavePlan) {
+      if (hasCost) {
+        await requestPaidPlanLeave(plan.id);
+        setShowLeavePlanSheet(false);
+        onBack();
+      } else if (onLeavePlan) {
         await onLeavePlan();
         onBack();
       } else if (onRemoveParticipant) {
@@ -285,7 +385,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         onBack();
       }
     } catch (err) {
-      // error handled silently
+      console.error("[PlanSettingsScreen executeLeavePlanFlow] error:", err);
     } finally {
       setIsLeaving(false);
     }
@@ -411,7 +511,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         </h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-6 pb-12">
+      <div className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-6 pb-28">
         <div className="flex flex-col items-center justify-center pt-2 pb-6 text-center border-b border-white/10">
           <div
             onClick={!isPlanSettingsForParticipant ? () => setShowEditImageScreen(true) : undefined}
@@ -599,49 +699,16 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           </div>
         </div>
 
-        {/* ========================================== */}
-        {/* SECTION 3 — ACTIONS */}
-        {/* ========================================== */}
-        <div className="pt-2 space-y-3 px-1">
-          {isPlanSettingsForParticipant ? (
-            /* Participant: red Leave Plan button */
-            <button
-              type="button"
-              disabled={isLeaving}
-              onClick={() => {
-                if (isSoleHost) {
-                  setHostReplacementMode('leave');
-                  setShowPromoteHostToLeaveModal(true);
-                } else {
-                  executeLeavePlanFlow();
-                }
-              }}
-              className="w-full py-2.5 flex items-center gap-3.5 transition cursor-pointer active:scale-[0.99] group text-left"
-            >
-              <div className="w-9 h-9 rounded-full bg-red-500/10 flex items-center justify-center group-hover:scale-105 transition flex-shrink-0">
-                <LogOut className="w-4.5 h-4.5 text-red-500" />
-              </div>
-              <span className="text-sm font-semibold text-red-500 tracking-wide">
-                {isLeaving ? "Leaving Plan..." : "Leave Plan"}
-              </span>
-            </button>
-          ) : (
-            /* Host: white Manage This Plan button */
-            <button
-              type="button"
-              onClick={() => setShowManagePlanSheet(true)}
-              className="w-full py-2.5 flex items-center gap-3.5 transition cursor-pointer active:scale-[0.99] group text-left"
-            >
-              <div className="w-9 h-9 rounded-full bg-white/[0.07] flex items-center justify-center text-white group-hover:scale-105 transition flex-shrink-0">
-                <Settings className="w-4.5 h-4.5 text-white" />
-              </div>
-              <span className="text-sm font-semibold text-white tracking-wide">
-                Manage This Plan
-              </span>
-            </button>
-          )}
-        </div>
       </div>
+
+      {/* ── Centered Live Action / Status Badge ── */}
+      <LiveActionButton
+        myParticipantRecord={effectiveParticipantRecord}
+        isCancelled={isCancelled}
+        isCompleted={isCompleted}
+        showExclamation={showExclamation}
+        onClick={handleBadgeClick}
+      />
 
       {/* ── Participant Action Bottom Sheet for Host Cards in Plan Settings ── */}
       {!isPlanSettingsForParticipant && selectedHost && (
@@ -906,6 +973,82 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           onBack();
         }}
         onClose={() => setShowManagePlanSheet(false)}
+      />
+
+      {/* Leave Plan Bottom Sheet */}
+      <LeavePlanBottomSheet
+        isOpen={showLeavePlanSheet}
+        isSkipping={isLeaving}
+        isSubmitting={isLeaving}
+        isPaid={hasCost}
+        plan={plan}
+        onConfirm={async () => {
+          setShowLeavePlanSheet(false);
+          if (isSoleHost) {
+            setHostReplacementMode('leave');
+            setShowPromoteHostToLeaveModal(true);
+          } else {
+            await executeLeavePlanFlow();
+          }
+        }}
+        onClose={() => setShowLeavePlanSheet(false)}
+      />
+
+      {/* Cancel Leave Request Bottom Sheet */}
+      <CancelLeaveRequestBottomSheet
+        isOpen={showCancelLeaveRequestSheet}
+        isSubmitting={isCancellingLeaveRequest}
+        onConfirm={async () => {
+          setIsCancellingLeaveRequest(true);
+          try {
+            await cancelPaidPlanLeaveRequest(plan.id);
+            setShowCancelLeaveRequestSheet(false);
+          } catch (err) {
+            console.error("[PlanSettingsScreen] Cancel leave request failed:", err);
+          } finally {
+            setIsCancellingLeaveRequest(false);
+          }
+        }}
+        onClose={() => setShowCancelLeaveRequestSheet(false)}
+      />
+
+      {/* Cancel Rejoin Request Bottom Sheet */}
+      <CancelRejoinRequestBottomSheet
+        isOpen={showCancelRejoinRequestSheet}
+        isSubmitting={isCancellingRejoinRequest}
+        plan={plan}
+        onConfirm={async () => {
+          setIsCancellingRejoinRequest(true);
+          try {
+            await cancelRejoinRequest(plan.id);
+            setShowCancelRejoinRequestSheet(false);
+          } catch (err) {
+            console.error("[PlanSettingsScreen] Cancel rejoin request failed:", err);
+          } finally {
+            setIsCancellingRejoinRequest(false);
+          }
+        }}
+        onClose={() => setShowCancelRejoinRequestSheet(false)}
+      />
+
+      {/* Rejoin Plan Bottom Sheet */}
+      <RejoinPlanBottomSheet
+        isOpen={showRejoinSheet}
+        isRejoining={isRejoining}
+        plan={plan}
+        isFull={Boolean(planCapacity && totalJoinedOrWaitlisted >= planCapacity)}
+        onConfirm={async () => {
+          setIsRejoining(true);
+          try {
+            await rejoinPlan(plan.id, userProfile);
+            setShowRejoinSheet(false);
+          } catch (err) {
+            console.error("[PlanSettingsScreen] Rejoin plan failed:", err);
+          } finally {
+            setIsRejoining(false);
+          }
+        }}
+        onClose={() => setShowRejoinSheet(false)}
       />
 
       {/* Promote a New Host Before Leaving / Stopping Hosting Modal (Sole Host Guard) */}

@@ -19,10 +19,12 @@ import { useHoldToAccept } from "../../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "../../components/HoldToAccept";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
 import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
-import { JoinPlanConfirmationBottomSheet, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet } from "../../../plans/components/BottomSheets";
+import { JoinPlanConfirmationBottomSheet, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet, InvitedPlanActionsBottomSheet } from "../../../plans/components/BottomSheets";
+import { LiveActionButton } from "../../../plans/components/LiveActionButton";
 import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
 import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../../plans/utils/planUtils";
+import { getPlanPreviewCtaState } from "../../../plans/utils/planPreviewCtaUtils";
 import { PlanChatScreen } from "../../../chats/screens/PlanChatScreen";
 import { PlanDetailsScreen as PlanBalancesScreen } from "../../../wallet/screens/PlanBalances";
 
@@ -81,6 +83,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const [showManageTeams, setShowManageTeams] = useState(false);
   const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
   const [showPlanBalancesScreen, setShowPlanBalancesScreen] = useState(false);
+  const [showPlanActionsSheet, setShowPlanActionsSheet] = useState(false);
 
   const resolvedUserUuid = userProfile.dbUuid || activeUserId || "";
 
@@ -156,27 +159,106 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const urgencyColor = rsvp.color;
 
   const maxSpots = useMemo(() => {
+    const raw =
+      rawDbPlan?.plan_size ??
+      selectedPlan?.plan_size ??
+      (selectedPlan as any)?.planSize ??
+      selectedPlan?.capacity ??
+      selectedPlan?.joinLimit ??
+      selectedPlan?.maxSpots;
+    if (raw !== undefined && raw !== null && Number(raw) > 0) return Number(raw);
     if (!selectedPlan) return 8;
-    return selectedPlan.maxSpots || (selectedPlan.category === "movies" ? 10 : selectedPlan.category === "sports" ? 14 : 8);
-  }, [selectedPlan]);
+    return selectedPlan.category === "movies" ? 10 : selectedPlan.category === "sports" ? 14 : 8;
+  }, [rawDbPlan, selectedPlan]);
 
   const currentCount = useMemo(() => {
     if (!selectedPlan) return 0;
-    return selectedPlan.members.filter((m) => m.joinState === "JOINED").length;
+    return selectedPlan.members.filter((m) => {
+      const status = normalizeStatus(m.joinState || (m as any).rsvp_status);
+      return status === "JOINED" || m.role === "HOST" || m.isHost === true;
+    }).length;
   }, [selectedPlan]);
-
-  const isFull = currentCount >= maxSpots;
 
   const myMemberEntry = useMemo(() => {
     if (!selectedPlan) return null;
     return selectedPlan.members.find(
-      (m) => m.userId === userProfile.user_id || (userProfile.dbUuid && m.userUuid === userProfile.dbUuid)
+      (m) =>
+        m.userId === userProfile.user_id ||
+        (userProfile.dbUuid && m.userUuid === userProfile.dbUuid) ||
+        (userProfile.user_id && m.userUuid === userProfile.user_id) ||
+        (resolvedUserUuid && (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid))
     );
-  }, [selectedPlan, userProfile]);
+  }, [selectedPlan, userProfile, resolvedUserUuid]);
+
+  const myParticipantRecord = useMemo(() => {
+    if (!selectedPlan || !resolvedUserUuid) return null;
+    const planUuid = (selectedPlan as any)?.dbUuid || selectedPlan.id;
+    return (
+      dbPlanParticipants.find(
+        (pp) =>
+          (pp.plan_id === planUuid || pp.plan_id === selectedPlan.id) &&
+          (pp.user_id === resolvedUserUuid || pp.user_id === userProfile.user_id)
+      ) || null
+    );
+  }, [dbPlanParticipants, selectedPlan, resolvedUserUuid, userProfile.user_id]);
+
+  const effectiveParticipantRecord = useMemo(() => {
+    if (myParticipantRecord) {
+      return {
+        ...myParticipantRecord,
+        rsvp_status: myParticipantRecord.rsvp_status || "INVITED",
+      };
+    }
+    if (myMemberEntry) {
+      return {
+        ...myMemberEntry,
+        rsvp_status: myMemberEntry.joinState || (myMemberEntry as any).rsvp_status || "INVITED",
+      };
+    }
+    return { rsvp_status: "INVITED" };
+  }, [myParticipantRecord, myMemberEntry]);
+
+  const isAssignedMode = useMemo(() => {
+    const rawMode =
+      rawDbPlan?.participant_filtering ||
+      selectedPlan?.participantFiltering ||
+      selectedPlan?.participant_filtering ||
+      (selectedPlan as any)?.waitlist_mode ||
+      'AUTOMATIC';
+    return String(rawMode).trim().toUpperCase() === 'ASSIGNED';
+  }, [rawDbPlan, selectedPlan]);
+
+  const assignedGroup = useMemo(() => {
+    const rawGroup =
+      myParticipantRecord?.assigned_group ||
+      (myParticipantRecord as any)?.assignedGroup ||
+      myMemberEntry?.assignedGroup ||
+      (myMemberEntry as any)?.assigned_group;
+    if (!rawGroup) return null;
+    const upper = String(rawGroup).trim().toUpperCase();
+    if (upper === 'WAITLIST' || upper === 'WAITLISTED') return 'WAITLIST';
+    if (upper === 'GOING') return 'GOING';
+    return upper;
+  }, [myParticipantRecord, myMemberEntry]);
 
   const isParticipant = Boolean(myMemberEntry && myMemberEntry.joinState === "JOINED");
   const alreadySkipped = Boolean(myMemberEntry && myMemberEntry.joinState === "SKIPPED");
   const isWaitlist = Boolean(myMemberEntry && myMemberEntry.joinState === "WAITLISTED");
+
+  // CTA logic source of truth:
+  // - Assigned plans: participant's assigned_group (GOING -> Join Plan, WAITLIST -> Join Waitlist, capacity does not override)
+  // - Automatic plans: current capacity (joined_count < plan_size -> Join Plan, joined_count >= plan_size -> Join Waitlist)
+  const ctaState = useMemo(() => {
+    return getPlanPreviewCtaState({
+      isAssignedMode,
+      assignedGroup,
+      joinedCount: currentCount,
+      planSize: maxSpots,
+      alreadySkipped,
+    });
+  }, [isAssignedMode, assignedGroup, currentCount, maxSpots, alreadySkipped]);
+
+  const isFull = ctaState.isWaitlistTarget;
 
   const isDeadlinePassed = useMemo(() => {
     if (!selectedPlan?.response_deadline_at) return false;
@@ -252,6 +334,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     if (!selectedPlan || isJoiningDirect) return;
     const planToJoin = selectedPlan;
     setShowJoinConfirmation(false);
+    setShowPlanActionsSheet(false);
 
     const isRejoin = alreadySkipped && activeUserId;
 
@@ -280,12 +363,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     setShowJoinConfirmation(true);
   }, [selectedPlan, isJoiningDirect]);
 
-  const myParticipantRecord = useMemo(() => {
-    if (!selectedPlan || !resolvedUserUuid) return null;
-    return dbPlanParticipants.find(
-      (pp) => pp.plan_id === selectedPlan.id && pp.user_id === resolvedUserUuid
-    ) || null;
-  }, [dbPlanParticipants, selectedPlan, resolvedUserUuid]);
 
   const [showSkipConfirmation, setShowSkipConfirmation] = useState(false);
   const [showCancelLeaveRequestConfirmation, setShowCancelLeaveRequestConfirmation] = useState(false);
@@ -321,6 +398,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     if (!selectedPlan || !activeUserId || isSkipping) return;
     const planToSkip = selectedPlan;
     setShowSkipConfirmation(false);
+    setShowPlanActionsSheet(false);
 
     if (setShowLeftSuccess) {
       setShowLeftSuccess(planToSkip.id);
@@ -375,6 +453,24 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     }
   }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, isSoleHost]);
 
+  const handleLiveActionClick = useCallback(() => {
+    const rawRsvp = effectiveParticipantRecord?.rsvp_status || (effectiveParticipantRecord as any)?.joinState;
+    const status = normalizeStatus(rawRsvp);
+    if (status === 'INVITED') {
+      setShowPlanActionsSheet(true);
+    } else if (status === 'JOINED') {
+      if ((effectiveParticipantRecord as any)?.leave_requested) {
+        setShowCancelLeaveRequestConfirmation(true);
+      } else if (isSoleHost) {
+        setShowHostLeaveReplacementSheet(true);
+      } else {
+        setShowLeavePlanConfirm(true);
+      }
+    } else {
+      setShowPlanActionsSheet(true);
+    }
+  }, [effectiveParticipantRecord, isSoleHost]);
+
   if (!selectedPlan) return null;
 
   if (showPlanSettingsScreen) {
@@ -384,6 +480,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         userProfile={userProfile}
         isCreatorHost={isCreatorHost}
         isPlanSettingsForParticipant={!isCreatorHost}
+        myParticipantRecord={myParticipantRecord}
         onBack={() => setShowPlanSettingsScreen(false)}
         onUpdateSettings={async (newSettings) => {
           await updatePlanSettings(selectedPlan.id, newSettings);
@@ -518,49 +615,18 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       </div>
 
       {/* 2. SCROLLABLE PARTICIPANT SECTION ONLY */}
-      <div id="immersive-plan-scroll-content" className="no-hold px-6 flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div id="immersive-plan-scroll-content" className="no-hold px-6 flex-1 min-h-0 flex flex-col overflow-hidden pb-20">
         {selectedPlan && (
           <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} variant="flat" />
         )}
       </div>
 
-
-
-      {!isParticipant && (
-        <div id="immersive-actions-dock" className="no-hold px-6 pt-3 pb-6 z-30 relative bg-[#050505] border-t border-white/[0.08] flex-shrink-0 flex flex-col gap-3">
-          {/* Primary Action Button: Join Plan (Brand Orange CTA matching Go to Plans) */}
-          <button
-            id="immersive-join-btn"
-            type="button"
-            onClick={handleJoinDirect}
-            disabled={isJoiningDirect || isWaitlist}
-            className="w-full py-2.5 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white font-sans font-semibold text-[15px] tracking-tight transition-all duration-150 flex items-center justify-center text-center cursor-pointer shadow-md shadow-[#FF6B2C]/20 border border-[#FF6B2C]/20 disabled:opacity-40"
-          >
-            {isJoiningDirect
-              ? "Joining…"
-              : isWaitlist
-                ? "Waitlisted"
-                : isFull
-                  ? "Join Waitlist"
-                  : alreadySkipped
-                    ? "Rejoin Plan"
-                    : "Join Plan"}
-          </button>
-
-          {/* Secondary Action Link: Skip */}
-          <button
-            id="immersive-skip-btn"
-            type="button"
-            onClick={handleSkip}
-            disabled={isSkipping}
-            className="w-full py-1 flex items-center justify-center text-center transition-colors cursor-pointer disabled:opacity-40"
-          >
-            <span className="text-[14px] font-sans font-medium text-zinc-400 hover:text-white tracking-wide">
-              {isSkipping ? "Skipping…" : "Skip"}
-            </span>
-          </button>
-        </div>
-      )}
+      {/* Bottom Live-Plan Action CTA for Invited Users ("You're Invited") */}
+      <LiveActionButton
+        myParticipantRecord={effectiveParticipantRecord}
+        className="no-hold z-40"
+        onClick={handleLiveActionClick}
+      />
 
       {/* Hold-to-Join Overlay */}
       <AnimatePresence>
@@ -615,11 +681,23 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         )}
       </AnimatePresence>
 
+      <InvitedPlanActionsBottomSheet
+        isOpen={showPlanActionsSheet}
+        plan={selectedPlan}
+        joinCtaText={ctaState.ctaText}
+        isJoining={isJoiningDirect}
+        isSkipping={isSkipping}
+        onJoin={handleConfirmJoinDirect}
+        onSkip={handleConfirmSkip}
+        onClose={() => setShowPlanActionsSheet(false)}
+      />
+
       <JoinPlanConfirmationBottomSheet
         isOpen={showJoinConfirmation}
-        costText={costText}
+        costText={isFull ? null : costText}
         planTitle={selectedPlan?.title}
         isJoining={isJoiningDirect}
+        isWaitlist={isFull}
         onConfirm={handleConfirmJoinDirect}
         onClose={() => setShowJoinConfirmation(false)}
       />

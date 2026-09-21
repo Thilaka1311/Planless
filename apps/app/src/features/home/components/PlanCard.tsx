@@ -146,13 +146,53 @@ export function formatDeadlineFull(deadlineStr: string | null | undefined, now: 
   }
 }
 
-const GLASS_BG = {
-  background: 'rgba(12, 12, 16, 0.78)',
-  backdropFilter: 'blur(24px)',
-  WebkitBackdropFilter: 'blur(24px)',
-  border: '1px solid rgba(255,255,255,0.10)',
-  boxShadow: '0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)',
-};
+function buildBubblePath({
+  width,
+  height,
+  tailX,
+  tailHeight = 7,
+  tailWidth = 10,
+  rtl = 12,
+  rtr = 14,
+  rbr = 15,
+  rbl = 15,
+}: {
+  width: number;
+  height: number;
+  tailX: number;
+  tailHeight?: number;
+  tailWidth?: number;
+  rtl?: number;
+  rtr?: number;
+  rbr?: number;
+  rbl?: number;
+}) {
+  const Th = tailHeight;
+  const H = height;
+  const W = width;
+  const halfTail = tailWidth / 2;
+  const tipR = 0.75;
+
+  const x1 = tailX - halfTail;
+  const x2 = tailX + halfTail;
+
+  return [
+    `M ${rtl} ${Th}`,
+    `L ${x1} ${Th}`,
+    `C ${x1 + halfTail * 0.42} ${Th}, ${tailX - 1.2} 1.8, ${tailX - tipR} ${tipR}`,
+    `Q ${tailX} 0, ${tailX + tipR} ${tipR}`,
+    `C ${tailX + 1.2} 1.8, ${x2 - halfTail * 0.42} ${Th}, ${x2} ${Th}`,
+    `L ${W - rtr} ${Th}`,
+    `A ${rtr} ${rtr} 0 0 1 ${W} ${Th + rtr}`,
+    `L ${W} ${H - rbr}`,
+    `A ${rbr} ${rbr} 0 0 1 ${W - rbr} ${H}`,
+    `L ${rbl} ${H}`,
+    `A ${rbl} ${rbl} 0 0 1 0 ${H - rbl}`,
+    `L 0 ${Th + rtl}`,
+    `A ${rtl} ${rtl} 0 0 1 ${rtl} ${Th}`,
+    'Z',
+  ].join(' ');
+}
 
 function GlassPopover({
   title,
@@ -163,30 +203,131 @@ function GlassPopover({
   body?: string;
   side: 'left' | 'right';
 }) {
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [size, setSize] = React.useState<{ width: number; height: number }>({
+    width: side === 'left' ? 74 : 180,
+    height: body ? 58 : 38,
+  });
+
+  React.useLayoutEffect(() => {
+    if (!contentRef.current) return;
+    const updateSize = () => {
+      if (contentRef.current) {
+        const rect = contentRef.current.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          setSize({
+            width: Math.ceil(rect.width),
+            height: Math.ceil(rect.height),
+          });
+        }
+      }
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(contentRef.current);
+    return () => ro.disconnect();
+  }, [title, body]);
+
+  const rawClipId = React.useId();
+  const clipId = `speech_bubble_${rawClipId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+
+  const tailHeight = 7;
+  const tailWidth = 10;
+  const halfTail = tailWidth / 2;
+
+  const H_body = Math.max(16, size.height - tailHeight);
+  const maxR = Math.floor(H_body / 2);
+  const rtl = Math.min(side === 'left' ? 12 : 14, maxR);
+  const rtr = Math.min(side === 'left' ? 14 : 12, maxR);
+  const rbr = Math.min(15, maxR);
+  const rbl = Math.min(15, maxR);
+
+  const safeMinX = rtl + halfTail + 1;
+  const safeMaxX = Math.max(safeMinX, size.width - rtr - halfTail - 1);
+  const rawTx = side === 'left' ? 18 : size.width - 28;
+  const Tx = Math.max(safeMinX, Math.min(safeMaxX, rawTx));
+
+  const pathD = buildBubblePath({
+    width: size.width,
+    height: size.height,
+    tailX: Tx,
+    tailHeight,
+    tailWidth,
+    rtl,
+    rtr,
+    rbr,
+    rbl,
+  });
+
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.94, y: -4 }}
+      initial={{ opacity: 0, scale: 0.93, y: -4 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.94, y: -4 }}
-      transition={{ duration: 0.18, ease: 'easeOut' }}
-      className="absolute top-12 z-50 w-max max-w-[240px] whitespace-nowrap rounded-[16px] px-3.5 py-2.5 pointer-events-auto"
+      exit={{ opacity: 0, scale: 0.93, y: -4 }}
+      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+      className="absolute top-[40px] z-50 pointer-events-auto select-none"
       style={{
-        ...GLASS_BG,
         ...(side === 'left' ? { left: 0 } : { right: 0 }),
+        transformOrigin: `${Tx}px 0px`,
+        filter: 'drop-shadow(0 12px 28px rgba(0, 0, 0, 0.65)) drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35))',
       }}
     >
-      {/* Anchored Pointer */}
+      {/* Background layer clipped to continuous speech-bubble shape with backdrop blur */}
       <div
-        className="absolute -top-[6px] w-[11px] h-[11px] rotate-45 pointer-events-none"
+        className="absolute inset-0 pointer-events-none"
         style={{
-          background: 'rgba(12, 12, 16, 0.78)',
-          borderTop: '1.2px solid rgba(255,255,255,0.10)',
-          borderLeft: '1.2px solid rgba(255,255,255,0.10)',
-          ...(side === 'left' ? { left: '13px' } : { right: '28px' }),
+          clipPath: `url(#${clipId})`,
+          WebkitClipPath: `url(#${clipId})`,
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
         }}
       />
-      <p className="text-[12.5px] font-semibold text-white leading-none">{title}</p>
-      {body && <p className="text-[11.5px] font-normal text-white/70 leading-none mt-2">{body}</p>}
+
+      {/* Unified outer SVG container rendering the continuous bubble + integrated pointer border */}
+      <svg
+        width={size.width}
+        height={size.height}
+        className="absolute inset-0 overflow-visible pointer-events-none"
+        style={{ width: size.width, height: size.height }}
+      >
+        <defs>
+          <clipPath id={clipId}>
+            <path d={pathD} />
+          </clipPath>
+          <linearGradient id={`${clipId}_stroke`} x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="rgba(255, 255, 255, 0.22)" />
+            <stop offset="100%" stopColor="rgba(255, 255, 255, 0.08)" />
+          </linearGradient>
+        </defs>
+        <path
+          d={pathD}
+          fill="rgba(14, 14, 18, 0.82)"
+          stroke={`url(#${clipId}_stroke)`}
+          strokeWidth="1"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+
+      {/* Padded text content inside the organic speech bubble */}
+      <div
+        ref={contentRef}
+        className="relative z-10 w-max max-w-[240px] whitespace-nowrap"
+        style={{
+          paddingTop: '13px', // 7px tail + 6px breathing room
+          paddingBottom: '9px',
+          paddingLeft: '14px',
+          paddingRight: '14px',
+        }}
+      >
+        <p className="text-[12.5px] font-semibold text-white leading-tight tracking-[-0.01em]">
+          {title}
+        </p>
+        {body && (
+          <p className="text-[11.5px] font-medium text-white/70 leading-tight mt-1.5 tracking-[-0.01em]">
+            {body}
+          </p>
+        )}
+      </div>
     </motion.div>
   );
 }
@@ -512,15 +653,9 @@ export const PlanCard: React.FC<PlanCardProps> = ({
   const isParticipant = isJoined || isHost;
 
   return (
-    <motion.div
+    <div
       ref={cardRef}
       id={`plan-card-${plan.id}`}
-      animate={{
-        scale: isHolding ? 0.97 : 1,
-      }}
-      transition={{
-        scale: { type: 'spring', stiffness: 350, damping: 25 },
-      }}
       onPointerDown={startHolding}
       onPointerMove={handlePointerMove}
       onPointerUp={stopHolding}
@@ -549,8 +684,7 @@ export const PlanCard: React.FC<PlanCardProps> = ({
 
       {/* Top Row Badges of the event poster */}
       <div
-        className="absolute top-4 left-4 right-4 flex justify-between items-center pointer-events-none z-20 select-none transition-opacity duration-75"
-        style={{ opacity: isHolding ? Math.max(0.08, 1 - (holdProgress / 100) * 0.92) : 1 }}
+        className="absolute top-4 left-4 right-4 flex justify-between items-center pointer-events-none z-20 select-none"
       >
         {/* LEFT: category icon circle — tappable for popover */}
         <div className="relative flex items-center gap-2">
@@ -617,7 +751,6 @@ export const PlanCard: React.FC<PlanCardProps> = ({
         plan={plan}
         userProfile={userProfile}
         isHolding={isHolding}
-        holdProgress={holdProgress}
         planTitle={displayActivityName}
         formattedDateAndTime={formattedDateAndTime}
         setSelectedPlan={setSelectedPlan}
@@ -689,6 +822,6 @@ export const PlanCard: React.FC<PlanCardProps> = ({
           </div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 };

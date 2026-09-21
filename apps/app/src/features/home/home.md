@@ -38,7 +38,7 @@ The **Home** feature is the primary invitation and discovery feed in Planless. I
 * The user presses and holds anywhere on the card surface (outside interactive elements with `.no-hold`).
 * **Gesture Tracking (`useHoldToAccept`)**:
   * An initial 400ms delay prevents accidental taps from triggering the hold animation.
-  * Once active, the card scales down slightly (`0.97`), the background blurs and dims, and `<HoldToAcceptOverlay />` displays a circular SVG progress ring (0% to 100%), percentage counter, plan title, location pin, host avatar with name, and per-person cost.
+  * Once active, the screen dims once via a smooth transition (`<HoldToAcceptOverlay />` with semi-transparent backdrop blur), keeping the card and plan details card completely stable in position and layout, while the circular SVG progress ring (0% to 100%), percentage counter, plan title, location pin, host avatar with name, and per-person cost run smoothly on top.
   * **Holding to completion (1400ms)**:
     * *If plan has open spots*: Sets success mode to `"join"`, displays an emerald checkmark overlay ("JOINED"), dispatches payment and join notifications, opens payment success feedback, and invokes `handleToggleJoin(planId)`.
     * *If plan is at capacity*: Sets success mode to `"waitlist"`, displays an amber checkmark overlay ("WAITLISTED"), dispatches waitlist notifications, and invokes `waitlistPlan(planId, userProfile)`.
@@ -221,10 +221,21 @@ A plan appears in the Home feed if and only if all of the following conditions h
 * **No-Hold Targets**: Elements with CSS class `.no-hold`, `<button>`, `<input>`, or `<a>` bypass hold gesture listeners.
 
 ### Capacity & Waitlist Rules
-* `capacity = plan.maxSpots || plan.capacity || (movies ? 10 : sports ? 14 : 8)`.
-* `joinedCount = members.filter(m => m.joinState === 'JOINED').length`.
+* `capacity = plan.plan_size || plan.maxSpots || plan.capacity || (movies ? 10 : sports ? 14 : 8)`.
+* `joinedCount = members.filter(m => m.joinState === 'JOINED' || m.role === 'HOST' || m.isHost).length`.
 * **Automatic Mode**: If `joinedCount >= capacity`, the plan is marked full (`isFull = true`). Completing the hold action invokes `waitlistPlan` instead of `joinPlan`, setting status to `'WAITLISTED'` and assigning the next `waitlist_position`.
 * **Assigned Mode**: If `participant_filtering === 'ASSIGNED'`, the host's pre-assigned group in `assigned_group` dictates whether the user becomes `'JOINED'` or `'WAITLISTED'`, regardless of join timing.
+
+### Plan Preview CTA Rules (`getPlanPreviewCtaState`)
+* **Assigned Plans**:
+  * Uses the participant's `assigned_group` as the strict source of truth.
+  * `assigned_group === 'GOING'` → shows `Join Plan` (or `Rejoin Plan` if skipped).
+  * `assigned_group === 'WAITLIST'` → shows `Join Waitlist` (or `Rejoin Waitlist` if skipped).
+  * General plan capacity does not override this placement.
+* **Automatic Plans**:
+  * Determines the CTA strictly from current capacity:
+  * `joined_count < plan_size` → shows `Join Plan` (or `Rejoin Plan` if skipped).
+  * `joined_count >= plan_size` → shows `Join Waitlist` (or `Rejoin Waitlist` if skipped).
 
 ---
 

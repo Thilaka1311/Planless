@@ -90,8 +90,8 @@ export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      style={{ backgroundColor: `rgba(0, 0, 0, ${0.55 + (holdProgress / 100) * 0.37})` }}
+      transition={{ duration: 0.24, ease: "easeOut" }}
+      style={{ backgroundColor: "rgba(0, 0, 0, 0.65)" }}
       className="absolute inset-0 backdrop-blur-[2px] flex flex-col items-center justify-center z-30 pointer-events-none"
     >
       {/* Inner container to shift content stack slightly upward (approx 44px) for premium look */}

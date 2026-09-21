@@ -19,6 +19,7 @@ interface AutomaticWaitlistActionsProps {
   onKeepPaymentLeaveParticipant?: (participantId: string) => void;
   onInviteSkipped?: (item: Friend) => Promise<void> | void;
   onViewProfile?: (item: Friend) => void;
+  onAddToPlan?: (item: Friend) => void;
   onAddToJoined?: (item: Friend) => void;
   onAddToWaitlist?: (item: Friend) => void;
   onRemoveFromPlan?: (item: Friend) => void;
@@ -41,6 +42,7 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
   onKeepPaymentLeaveParticipant,
   onInviteSkipped,
   onViewProfile,
+  onAddToPlan,
   onAddToJoined,
   onAddToWaitlist,
   onRemoveFromPlan,
@@ -128,11 +130,13 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
         {/* ── REJOINED PARTICIPANT FLOW ── */}
         {isRejoined ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {/* 1. Add to Joined */}
+            {/* 1. Add to Plan */}
             <button
               onClick={() => {
                 executeActionWithImmediateDismiss(() => {
-                  if (onAddToJoined) {
+                  if (onAddToPlan) {
+                    onAddToPlan(selectedItem);
+                  } else if (onAddToJoined) {
                     onAddToJoined(selectedItem);
                   } else if (onMoveToGoing) {
                     onMoveToGoing(selectedItem);
@@ -152,35 +156,10 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
                 textAlign: 'left',
               }}
             >
-              Add to Joined
+              Add to Plan
             </button>
 
-            {/* 2. Add to Waitlist */}
-            <button
-              onClick={() => {
-                executeActionWithImmediateDismiss(() => {
-                  if (onAddToWaitlist) {
-                    onAddToWaitlist(selectedItem);
-                  }
-                });
-              }}
-              style={{
-                width: '100%',
-                padding: '14px',
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: 'none',
-                borderRadius: 12,
-                color: '#FFFFFF',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              Add to Waitlist
-            </button>
-
-            {/* 3. Remove from plan */}
+            {/* 2. Remove from Plan */}
             <button
               onClick={() => {
                 executeActionWithImmediateDismiss(() => {
@@ -204,7 +183,7 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
                 textAlign: 'left',
               }}
             >
-              Remove from plan
+              Remove from Plan
             </button>
 
             <button
@@ -328,11 +307,7 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
                     isHostUser && (!selectedItem.isHost || onDemoteHost) && (
                       <button
                         onClick={() => {
-                          if (sheetType === 'going') {
-                            executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
-                          } else {
-                            onShowConfirmRemove(true);
-                          }
+                          executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
                         }}
                         style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
                       >

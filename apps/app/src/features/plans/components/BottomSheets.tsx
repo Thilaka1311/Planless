@@ -744,6 +744,7 @@ interface JoinPlanConfirmationBottomSheetProps {
   costText: string | null;
   planTitle?: string;
   isJoining: boolean;
+  isWaitlist?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }
@@ -753,6 +754,7 @@ export const JoinPlanConfirmationBottomSheet: React.FC<JoinPlanConfirmationBotto
   costText,
   planTitle,
   isJoining,
+  isWaitlist = false,
   onConfirm,
   onClose,
 }) => {
@@ -782,9 +784,13 @@ export const JoinPlanConfirmationBottomSheet: React.FC<JoinPlanConfirmationBotto
             {/* Title & Share Amount Wording */}
             <div className="space-y-1.5 pt-0.5">
               <h3 className="text-[19px] font-bold text-white tracking-tight leading-snug">
-                Join {planTitle || "Plan"}?
+                {isWaitlist ? "Join Waitlist?" : `Join ${planTitle || "Plan"}?`}
               </h3>
-              {formattedCost ? (
+              {isWaitlist ? (
+                <p className="text-[13px] text-zinc-400 font-medium tracking-wide">
+                  You’ll be notified when a spot opens up.
+                </p>
+              ) : formattedCost ? (
                 <p className="text-[13.5px] text-zinc-400 font-medium tracking-wide">
                   Your share is <span className="text-[#FF6B2C] font-semibold">{formattedCost}</span>.
                 </p>
@@ -804,7 +810,7 @@ export const JoinPlanConfirmationBottomSheet: React.FC<JoinPlanConfirmationBotto
                 onClick={onConfirm}
                 className="w-full py-3 px-4 rounded-xl text-[13.5px] font-bold text-white bg-[#FF6B2C]/15 hover:bg-[#FF6B2C]/25 active:scale-[0.98] transition-all border border-[#FF6B2C]/40 disabled:opacity-50 tracking-wide shadow-sm"
               >
-                {isJoining ? "Joining…" : "Join Plan"}
+                {isJoining ? "Joining…" : isWaitlist ? "Join Waitlist" : "Join Plan"}
               </button>
 
               <button
@@ -900,6 +906,184 @@ export const SkipPlanConfirmationDialog: React.FC<SkipPlanConfirmationDialogProp
   );
 };
 
+
+// ----------------------------------------------------------------------
+// 1D. INVITED PLAN ACTIONS BOTTOM SHEET
+// ----------------------------------------------------------------------
+interface InvitedPlanActionsBottomSheetProps {
+  isOpen: boolean;
+  plan?: Plan | any | null;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
+  joinCtaText: string;
+  isJoining?: boolean;
+  isSkipping?: boolean;
+  onJoin: () => void;
+  onSkip: () => void;
+  onClose: () => void;
+}
+
+export const InvitedPlanActionsBottomSheet: React.FC<InvitedPlanActionsBottomSheetProps> = ({
+  isOpen,
+  plan,
+  planTitle,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
+  joinCtaText,
+  isJoining = false,
+  isSkipping = false,
+  onJoin,
+  onSkip,
+  onClose,
+}) => {
+  const resolvedTitle = plan?.title || planTitle || "Plan";
+  const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
+  const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
+  const resolvedCategory = plan?.category || planCategory;
+  const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
+
+  const isLoading = Boolean(isJoining || isSkipping);
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
+
+            {/* Plan Identity Header matching Chat Screen / Plan Actions visual hierarchy */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={resolvedCover}
+                  planId={resolvedPlanId}
+                  category={resolvedCategory}
+                  subcategory={resolvedSubcategory}
+                  screen="Plan Actions Avatar"
+                  alt={resolvedTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {resolvedTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  Plan Actions
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="px-4 pt-4 flex flex-col gap-2.5">
+              {/* Option 1: Join Plan or Join Waitlist */}
+              <button
+                id="plan_actions_join_btn"
+                type="button"
+                disabled={isLoading}
+                onClick={onJoin}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#FFFFFF',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: isLoading ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  opacity: isJoining ? 0.5 : 1,
+                }}
+              >
+                {isJoining ? "Joining…" : joinCtaText}
+              </button>
+
+              {/* Option 2: Skip Plan */}
+              <button
+                id="plan_actions_skip_btn"
+                type="button"
+                disabled={isLoading}
+                onClick={onSkip}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#EF4444',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: isLoading ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  opacity: isSkipping ? 0.5 : 1,
+                }}
+              >
+                {isSkipping ? "Skipping…" : "Skip Plan"}
+              </button>
+
+              {/* Option 3: Cancel */}
+              <button
+                id="plan_actions_cancel_btn"
+                type="button"
+                onClick={onClose}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  marginTop: 4,
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
+
+export const PlanActionsBottomSheet = InvitedPlanActionsBottomSheet;
 
 // ----------------------------------------------------------------------
 // 1E. CANCEL LEAVE REQUEST BOTTOM SHEET (Phase 1)
@@ -1478,6 +1662,10 @@ export function getRSVPValidationError(
 
   const planDateTime = new Date(year, month - 1, day, hour, minute, 0, 0);
 
+  if (!tempRSVPOption) {
+    return null;
+  }
+
   let rsvpDateTime: Date;
   if (tempRSVPOption === '< 1 Hour') {
     rsvpDateTime = new Date(planDateTime.getTime() - 1 * 60 * 60 * 1000);
@@ -1486,28 +1674,6 @@ export function getRSVPValidationError(
   } else if (tempRSVPOption === '< 24 Hours') {
     rsvpDateTime = new Date(planDateTime.getTime() - 24 * 60 * 60 * 1000);
   } else {
-    // Implicit "Plan Start" when tempRSVPOption is null
-    rsvpDateTime = new Date(planDateTime.getTime());
-  }
-
-  if (isLiveEditing) {
-    // When editing an already live plan:
-    // The RSVP deadline cannot be moved backwards earlier than the currently saved RSVP deadline.
-    // If no offset option is selected, the implicit Plan Start deadline is checked against current saved RSVP deadline.
-    // If an offset option is selected, it also cannot resolve earlier than the current saved RSVP deadline.
-    if (currentSavedRsvpDeadline) {
-      const savedDeadline = new Date(currentSavedRsvpDeadline);
-      if (!isNaN(savedDeadline.getTime())) {
-        if (rsvpDateTime.getTime() < savedDeadline.getTime() - 59000) {
-          return 'RSVP deadline cannot be earlier than current deadline.';
-        }
-      }
-    }
-    return null;
-  }
-
-  // Create Plan validation (initial flow):
-  if (!tempRSVPOption) {
     return null;
   }
 
@@ -1522,7 +1688,7 @@ export function getRSVPValidationError(
 export function getPlanDateTimeValidationError(
   tempDate: string,
   tempTime: string,
-  isLiveEditing: boolean = false,
+  _isLiveEditing: boolean = false,
   minDate?: string
 ): string | null {
   if (!tempDate || !tempTime) {
@@ -1539,12 +1705,6 @@ export function getPlanDateTimeValidationError(
   const effectiveMin = minDate || getTodayDateString();
   if (tempDate < effectiveMin) {
     return 'Plan date cannot be in the past.';
-  }
-
-  // When editing an already live/posted plan, clock time is NOT rejected as in the past:
-  // User can change the time freely for any valid calendar date (today or future).
-  if (isLiveEditing) {
-    return null;
   }
 
   const planDateTime = new Date(year, month - 1, day, hour, minute, 0, 0);
@@ -1855,39 +2015,16 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                   >
                     <div style={{ borderTop: "1px solid rgba(255, 255, 255, 0.04)", marginBottom: 6 }} />
                     {(() => {
-                      const getCandidateRsvpDate = (opt: string): Date | null => {
-                        if (!tempDate || !tempTime) return null;
-                        const [year, month, day] = tempDate.split('-').map(Number);
-                        const [hour, minute] = tempTime.split(':').map(Number);
-                        if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hour) || isNaN(minute)) return null;
-                        const planDateTime = new Date(year, month - 1, day, hour, minute, 0, 0);
-                        if (opt === '< 1 Hour') return new Date(planDateTime.getTime() - 1 * 60 * 60 * 1000);
-                        if (opt === '< 12 Hours') return new Date(planDateTime.getTime() - 12 * 60 * 60 * 1000);
-                        if (opt === '< 24 Hours') return new Date(planDateTime.getTime() - 24 * 60 * 60 * 1000);
-                        return planDateTime;
-                      };
-
-                      const savedDeadline = currentSavedRsvpDeadline ? new Date(currentSavedRsvpDeadline) : null;
                       const rsvpOptions = ['< 1 Hour', '< 12 Hours', '< 24 Hours'];
 
                       return rsvpOptions.map((opt) => {
                         const isSelected = tempRSVPOption === opt;
-                        const optCandidate = getCandidateRsvpDate(opt);
-                        const isOptDisabled = Boolean(
-                          isLiveEditing &&
-                          savedDeadline &&
-                          !isNaN(savedDeadline.getTime()) &&
-                          optCandidate &&
-                          optCandidate.getTime() < savedDeadline.getTime() - 59000
-                        );
 
                         return (
                           <button
                             key={opt}
                             type="button"
-                            disabled={isOptDisabled}
                             onClick={() => {
-                              if (isOptDisabled) return;
                               onTempRSVPOptionChange(isSelected ? null : opt);
                             }}
                             style={{
@@ -1896,7 +2033,7 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                               borderRadius: 8,
                               border: "none",
                               background: isSelected ? "rgba(255, 255, 255, 0.08)" : "transparent",
-                              color: isSelected ? "#FFFFFF" : isOptDisabled ? "#52525B" : "#A1A1AA",
+                              color: isSelected ? "#FFFFFF" : "#A1A1AA",
                               fontSize: 13,
                               fontFamily: "Inter, sans-serif",
                               fontWeight: 500,
@@ -1904,8 +2041,8 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                               alignItems: "center",
                               padding: "0 10px",
                               gap: 12,
-                              cursor: isOptDisabled ? "not-allowed" : "pointer",
-                              opacity: isOptDisabled ? 0.35 : 1,
+                              cursor: "pointer",
+                              opacity: 1,
                               transition: "all 0.15s ease",
                             }}
                           >
@@ -2808,6 +2945,9 @@ export interface RemoveGoingParticipantBottomSheetProps {
   hasWaitlist?: boolean;
   goingCount?: number;
   waitlistCount?: number;
+  planSize?: number;
+  title?: string;
+  subtitle?: string;
   onDecreaseCapacity: () => void;
   onReplaceParticipant?: () => void;
   onCancelPlan?: () => void;
@@ -2820,6 +2960,9 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
   hasWaitlist: rawHasWaitlist,
   goingCount,
   waitlistCount,
+  planSize,
+  title,
+  subtitle,
   onDecreaseCapacity,
   onReplaceParticipant,
   onCancelPlan,
@@ -2827,7 +2970,8 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
 }) => {
   if (!isOpen || !participant) return null;
   const hasWaitlist = waitlistCount !== undefined ? waitlistCount > 0 : !!rawHasWaitlist;
-  const canDecreaseCapacity = goingCount === undefined || goingCount > 2;
+  const effectiveCapacity = planSize !== undefined ? planSize : goingCount;
+  const canDecreaseCapacity = effectiveCapacity === undefined || effectiveCapacity > 2;
 
   return (
     <div
@@ -2866,9 +3010,11 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
           <UserAvatar src={participant.avatar} alt={participant.name} size="w-10 h-10" />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 16, fontWeight: 600, color: '#FFFFFF', letterSpacing: '-0.01em' }}>Remove participant</span>
+            <span style={{ fontSize: 16, fontWeight: 600, color: '#FFFFFF', letterSpacing: '-0.01em' }}>
+              {title || 'Remove participant'}
+            </span>
             <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)', marginTop: 2, lineHeight: 1.4 }}>
-              How would you like to handle their spot?
+              {subtitle || 'How would you like to handle their spot?'}
             </span>
           </div>
         </div>
@@ -3696,6 +3842,8 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
   );
 };
 
-
-
-
+// ----------------------------------------------------------------------
+// 17. UPDATE PLAN FEE BOTTOM SHEET
+// ----------------------------------------------------------------------
+export { UpdatePlanFeeBottomSheet } from "./UpdatePlanFeeBottomSheet";
+export type { UpdatePlanFeeBottomSheetProps } from "./UpdatePlanFeeBottomSheet";

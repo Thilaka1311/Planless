@@ -30,7 +30,9 @@ import { UserProfile, Plan } from "../../../../../core/types";
 import { usePlansStore } from "../../../state/PlansContext";
 import { useLivePlan } from "../../../hooks/useLivePlan";
 import { supabase } from "../../../../../../lib/supabaseClient";
-import { normalizeStatus } from "../../../../../../lib/participantStatus";
+import { normalizeStatus, sortGoingParticipants } from "../../../../../../lib/participantStatus";
+import { memberToAssignedFriend } from "../../../../participants/assigned/AssignedParticipantContainer";
+import { Friend } from "../../../../participants/shared/types";
 import { getPlanCover } from "../../../config/planCoverImages";
 import { formatPlanDate } from "../../../../../../lib/mappers";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
@@ -42,6 +44,7 @@ import PlanCompletionModal from "../../../../../shared/modals/PlanCompletionModa
 import { ParticipantToggleBar } from "../../../../home/components/PlanDetailsCard";
 import { useLiveCountdown, formatDeadlineFull, rsvpUrgencyStyles } from "../../../../home/components/PlanCard";
 import { useRSVPDeadline } from "../../../utils/rsvpFormatter";
+import { getPlanPreviewCtaState } from "../../../utils/planPreviewCtaUtils";
 import { InlineParticipantView } from "../../../components/InlineParticipantView";
 import { HeroHeader } from "../../../components/HeroHeader";
 import { HeroMetadataCard } from "../../../components/HeroMetadataCard";
@@ -70,6 +73,8 @@ import {
   EditDetailsBottomSheet,
   JoinPlanConfirmationBottomSheet,
   EditCapacityBottomSheet,
+  GuidedCapacityAdjustmentBottomSheet,
+  UpdatePlanFeeBottomSheet,
   SharePlanLinkBottomSheet,
 } from "../../../components/BottomSheets";
 import { SetCostScreen } from "../../../components/SetCost";
@@ -585,6 +590,26 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [editTotalCostInput, setEditTotalCostInput] = useState<string>("");
 
   const [isEditingCapacitySheetOpen, setIsEditingCapacitySheetOpen] = useState(false);
+  const [draftCapacityOverride, setDraftCapacityOverride] = useState<number | null>(null);
+  const [guidedAdjustmentState, setGuidedAdjustmentState] = useState<{
+    mode: 'promote' | 'demote';
+    targetCapacity: number;
+    requiredCount: number;
+    candidates: Friend[];
+  } | null>(null);
+  const [pendingCapacityAdjustmentSession, setPendingCapacityAdjustmentSession] = useState<{
+    originalCapacity: number;
+    targetCapacity: number;
+    mode: 'promote' | 'demote';
+    requiredCount: number;
+    candidates: Friend[];
+    selectedUserIds: string[];
+    planCost: number;
+  } | null>(null);
+  const [showUpdatePlanFeeModal, setShowUpdatePlanFeeModal] = useState(false);
+  const [pendingCapacityTarget, setPendingCapacityTarget] = useState<number | null>(null);
+  const [isSubmittingPlanFeeUpdate, setIsSubmittingPlanFeeUpdate] = useState(false);
+  const [selectedPlanFeeOption, setSelectedPlanFeeOption] = useState<'split_current_cost' | 'keep_cost_per_person' | null>(null);
   const [showSharePlanLinkSheet, setShowSharePlanLinkSheet] = useState(false);
 
   const [isEditingDetailsSheetOpen, setIsEditingDetailsSheetOpen] = useState(false);
@@ -762,32 +787,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       console.error("Failed to update plan details:", err);
     } finally {
       setIsSavingDetails(false);
-    }
-  };
-
-  const handleCapacityChange = async (newCapacity: number) => {
-    if (newCapacity < 2) {
-      console.warn(`[handleCapacityChange] Attempted capacity ${newCapacity} below minimum 2. Ignoring.`);
-      return;
-    }
-    if (createMode) {
-      onAdjustCapacity?.(newCapacity);
-    } else if (selectedPlan?.id) {
-      try {
-        await updatePlanDetails(selectedPlan.id, { plan_size: newCapacity });
-      } catch (err: any) {
-        console.error("Failed to update plan capacity:", {
-          message: err?.message || String(err),
-          code: err?.code,
-          details: err?.details,
-          hint: err?.hint,
-          planId: selectedPlan?.id,
-          attemptedPlanSize: newCapacity,
-          planSize: currentPlanSize,
-          rawError: err,
-        });
-        throw err;
-      }
     }
   };
 
@@ -1094,6 +1093,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       });
   }, [selectedPlan?.members, resolvedUserUuid]);
 
+
   const participantManagementMode = isHost
     ? "host"
     : selectedPlan?.allowParticipantInvites
@@ -1134,12 +1134,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     });
   }, [allGoingMembers, planAssignments]);
 
-  const isFull = useMemo(() => {
-    if (!selectedPlan) return false;
-    const limit = selectedPlan.joinLimit || selectedPlan.capacity || 0;
-    const acceptedCount = selectedPlan.members.filter(m => m.joinState === "JOINED").length;
-    return limit > 0 && acceptedCount >= limit && selectedPlan.waitlistEnabled;
-  }, [selectedPlan]);
+
 
   const alreadySkipped = normalizeStatus(myParticipantRecord?.rsvp_status) === "SKIPPED";
 
@@ -1213,6 +1208,460 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     return `₹${perPersonFormatted} / person`;
   }, [hasCost, currentTotalCost, rawDbPlan, selectedPlan]);
 
+  const rawWaitlistMode =
+    selectedPlan?.participantFiltering ||
+    (selectedPlan as any)?.participant_filtering ||
+    (selectedPlan as any)?.waitlist_mode ||
+    (selectedPlan as any)?.waitlistMode ||
+    (selectedPlan as any)?.waitlist_type ||
+    (selectedPlan as any)?.waitlistType ||
+    'AUTOMATIC';
+
+  const isAssigned = typeof rawWaitlistMode === 'string' && rawWaitlistMode.toLowerCase() === 'assigned';
+
+  const assignedGroup = useMemo(() => {
+    const rawGroup =
+      myParticipantRecord?.assigned_group ||
+      (myParticipantRecord as any)?.assignedGroup;
+    if (!rawGroup) return null;
+    const upper = String(rawGroup).trim().toUpperCase();
+    if (upper === 'WAITLIST' || upper === 'WAITLISTED') return 'WAITLIST';
+    if (upper === 'GOING') return 'GOING';
+    return upper;
+  }, [myParticipantRecord]);
+
+  const ctaState = useMemo(() => {
+    const acceptedCount = selectedPlan?.members
+      ? selectedPlan.members.filter(
+          m => normalizeStatus(m.joinState || (m as any).rsvp_status) === "JOINED" || m.role === 'HOST' || m.isHost === true
+        ).length
+      : 0;
+    return getPlanPreviewCtaState({
+      isAssignedMode: isAssigned,
+      assignedGroup,
+      joinedCount: acceptedCount,
+      planSize: currentPlanSize || 2,
+      alreadySkipped,
+    });
+  }, [selectedPlan, isAssigned, assignedGroup, currentPlanSize, alreadySkipped]);
+
+  const isFull = ctaState.isWaitlistTarget;
+
+  const totalActiveParticipants = useMemo(() => {
+    return (selectedPlan?.members || []).filter(
+      (m: any) => normalizeStatus(m.joinState || m.rsvp_status) !== 'SKIPPED'
+    ).length;
+  }, [selectedPlan?.members]);
+
+  const previewMaxCapacity = useMemo(() => {
+    const stored = currentPlanSize || 2;
+    return Math.max(stored, Math.max(2, totalActiveParticipants));
+  }, [currentPlanSize, totalActiveParticipants]);
+
+  const previewGoingList: Friend[] = useMemo(() => {
+    if (!selectedPlan?.members) return [];
+    const hostId = selectedPlan.hostId || (selectedPlan as any).host_id || (selectedPlan as any).created_by || '';
+    const rawList = selectedPlan.members
+      .filter((m: any) => {
+        const id = m.userUuid || m.userId || m.user_id || m.id || m.dbUuid;
+        const dbPp = (dbPlanParticipants || []).find(
+          (pp: any) =>
+            isParticipantInPlan(pp) &&
+            (pp.user_id === id ||
+              pp.user_id === m.userUuid ||
+              pp.user_id === m.userId ||
+              pp.user_id === m.user_id ||
+              pp.user_id === m.dbUuid)
+        );
+        const status = dbPp
+          ? normalizeStatus(dbPp.rsvp_status)
+          : normalizeStatus(m.joinState || m.rsvp_status);
+        if (status === 'SKIPPED' || status === 'REJOINED') return false;
+
+        const dbGroup = dbPp?.assigned_group;
+        const rawMGroup = m.assignedGroup || m.assigned_group;
+        const group =
+          typeof dbGroup === 'string'
+            ? dbGroup.toUpperCase()
+            : typeof rawMGroup === 'string'
+            ? rawMGroup.toUpperCase()
+            : '';
+
+        return group === 'GOING' || group === 'JOINED' || (!group && (status === 'JOINED' || status === 'INVITED' || m.role === 'HOST' || m.isHost));
+      })
+      .map((m: any) =>
+        memberToAssignedFriend(
+          m,
+          hostId,
+          activeUserId || resolvedUserUuid || '',
+          dbPlanParticipants || [],
+          selectedPlan.id,
+          (selectedPlan as any).dbUuid,
+          planUuid
+        )
+      );
+    return sortGoingParticipants(rawList, activeUserId || resolvedUserUuid);
+  }, [selectedPlan, dbPlanParticipants, isParticipantInPlan, activeUserId, resolvedUserUuid, planUuid]);
+
+  const previewWaitlistList: Friend[] = useMemo(() => {
+    if (!selectedPlan?.members) return [];
+    const hostId = selectedPlan.hostId || (selectedPlan as any).host_id || (selectedPlan as any).created_by || '';
+    const rawList = selectedPlan.members
+      .filter((m: any) => {
+        const id = m.userUuid || m.userId || m.user_id || m.id || m.dbUuid;
+        const dbPp = (dbPlanParticipants || []).find(
+          (pp: any) =>
+            isParticipantInPlan(pp) &&
+            (pp.user_id === id ||
+              pp.user_id === m.userUuid ||
+              pp.user_id === m.userId ||
+              pp.user_id === m.user_id ||
+              pp.user_id === m.dbUuid)
+        );
+        const status = dbPp
+          ? normalizeStatus(dbPp.rsvp_status)
+          : normalizeStatus(m.joinState || m.rsvp_status);
+        if (status === 'SKIPPED' || status === 'REJOINED') return false;
+
+        const dbGroup = dbPp?.assigned_group;
+        const rawMGroup = m.assignedGroup || m.assigned_group;
+        const group =
+          typeof dbGroup === 'string'
+            ? dbGroup.toUpperCase()
+            : typeof rawMGroup === 'string'
+            ? rawMGroup.toUpperCase()
+            : '';
+
+        return group === 'WAITLIST' || status === 'WAITLISTED';
+      })
+      .map((m: any) =>
+        memberToAssignedFriend(
+          m,
+          hostId,
+          activeUserId || resolvedUserUuid || '',
+          dbPlanParticipants || [],
+          selectedPlan.id,
+          (selectedPlan as any).dbUuid,
+          planUuid
+        )
+      );
+
+    return [...rawList].sort((a, b) => {
+      const posA = a.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
+      const posB = b.waitlistPosition ?? Number.MAX_SAFE_INTEGER;
+      if (posA !== posB) return posA - posB;
+      const queueA = a.joinedQueueAt ? new Date(a.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
+      const queueB = b.joinedQueueAt ? new Date(b.joinedQueueAt).getTime() : Number.MAX_SAFE_INTEGER;
+      if (queueA !== queueB) return queueA - queueB;
+      return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+    });
+  }, [selectedPlan, dbPlanParticipants, isParticipantInPlan, activeUserId, resolvedUserUuid, planUuid]);
+
+  const handleCapacityChange = useCallback(
+    async (newCapacity: number) => {
+      if (newCapacity < 2) {
+        console.warn(`[handleCapacityChange] Attempted capacity ${newCapacity} below minimum 2. Ignoring.`);
+        return;
+      }
+      if (createMode) {
+        onAdjustCapacity?.(newCapacity);
+        return;
+      }
+      if (!selectedPlan?.id) return;
+
+      const clampedVal = Math.min(previewMaxCapacity, Math.max(2, newCapacity));
+      if (clampedVal === currentPlanSize) return;
+
+      let planCost = Number(selectedPlan.total_cost || 0);
+      if (planCost <= 0 && isUuid(selectedPlan.id)) {
+        try {
+          const { data: expRow } = await (supabase as any)
+            .from('wallet_expenses')
+            .select('total_amount')
+            .eq('plan_id', selectedPlan.id)
+            .or('expense_type.eq.PLAN_EXPENSE,message_id.is.null')
+            .maybeSingle();
+
+          if (expRow && Number(expRow.total_amount || 0) > 0) {
+            planCost = Number(expRow.total_amount);
+          }
+        } catch (err) {
+          console.error('[PlansPreviewScreen handleCapacityChange] Error checking wallet_expenses:', err);
+        }
+      }
+
+      if (isAssigned) {
+        if (clampedVal > currentPlanSize) {
+          const goingUserIds = new Set(previewGoingList.map((g) => g.dbUuid || g.id));
+          const eligibleWaitlist = previewWaitlistList.filter((w) => !goingUserIds.has(w.dbUuid || w.id));
+          const availableSpots = clampedVal - previewGoingList.length;
+          const requiredCount = Math.min(availableSpots, eligibleWaitlist.length);
+
+          if (requiredCount > 0) {
+            setIsEditingCapacitySheetOpen(false);
+            setPendingCapacityAdjustmentSession({
+              originalCapacity: currentPlanSize,
+              targetCapacity: clampedVal,
+              mode: 'promote',
+              requiredCount,
+              candidates: eligibleWaitlist,
+              selectedUserIds: [],
+              planCost,
+            });
+            setGuidedAdjustmentState({
+              mode: 'promote',
+              targetCapacity: clampedVal,
+              requiredCount,
+              candidates: eligibleWaitlist,
+            });
+            return;
+          }
+
+          if (planCost > 0) {
+            setIsEditingCapacitySheetOpen(false);
+            setPendingCapacityTarget(clampedVal);
+            setPendingCapacityAdjustmentSession({
+              originalCapacity: currentPlanSize,
+              targetCapacity: clampedVal,
+              mode: 'promote',
+              requiredCount: 0,
+              candidates: [],
+              selectedUserIds: [],
+              planCost,
+            });
+            setSelectedPlanFeeOption(null);
+            setShowUpdatePlanFeeModal(true);
+            return;
+          }
+
+          setIsEditingCapacitySheetOpen(false);
+          try {
+            await updatePlanDetails(selectedPlan.id, { plan_size: clampedVal }, { autoPromote: false });
+          } catch (err: any) {
+            console.error('[PlansPreviewScreen handleCapacityChange] Error updating capacity:', err);
+          }
+          return;
+        }
+
+        if (clampedVal < currentPlanSize) {
+          const nonHostGoing = previewGoingList.filter((f) => {
+            const uId = f.dbUuid || f.id;
+            return !(f.isHost && activeUserId && uId === activeUserId);
+          });
+          const requiredCount = previewGoingList.length - clampedVal;
+
+          if (requiredCount > 0 && nonHostGoing.length > 0) {
+            const count = Math.min(requiredCount, nonHostGoing.length);
+            setIsEditingCapacitySheetOpen(false);
+            setPendingCapacityAdjustmentSession({
+              originalCapacity: currentPlanSize,
+              targetCapacity: clampedVal,
+              mode: 'demote',
+              requiredCount: count,
+              candidates: nonHostGoing,
+              selectedUserIds: [],
+              planCost,
+            });
+            setGuidedAdjustmentState({
+              mode: 'demote',
+              targetCapacity: clampedVal,
+              requiredCount: count,
+              candidates: nonHostGoing,
+            });
+            return;
+          }
+
+          if (planCost > 0) {
+            setIsEditingCapacitySheetOpen(false);
+            setPendingCapacityTarget(clampedVal);
+            setPendingCapacityAdjustmentSession({
+              originalCapacity: currentPlanSize,
+              targetCapacity: clampedVal,
+              mode: 'demote',
+              requiredCount: 0,
+              candidates: [],
+              selectedUserIds: [],
+              planCost,
+            });
+            setSelectedPlanFeeOption(null);
+            setShowUpdatePlanFeeModal(true);
+            return;
+          }
+
+          setIsEditingCapacitySheetOpen(false);
+          try {
+            await updatePlanDetails(selectedPlan.id, { plan_size: clampedVal }, { autoPromote: false });
+          } catch (err: any) {
+            console.error('[PlansPreviewScreen handleCapacityChange] Error updating capacity:', err);
+          }
+          return;
+        }
+      } else {
+        // Automatic mode
+        if (planCost > 0) {
+          setIsEditingCapacitySheetOpen(false);
+          setPendingCapacityTarget(clampedVal);
+          setPendingCapacityAdjustmentSession({
+            originalCapacity: currentPlanSize,
+            targetCapacity: clampedVal,
+            mode: clampedVal > currentPlanSize ? 'promote' : 'demote',
+            requiredCount: 0,
+            candidates: [],
+            selectedUserIds: [],
+            planCost,
+          });
+          setSelectedPlanFeeOption(null);
+          setShowUpdatePlanFeeModal(true);
+          return;
+        }
+
+        setIsEditingCapacitySheetOpen(false);
+        try {
+          await updatePlanDetails(selectedPlan.id, { plan_size: clampedVal }, { autoPromote: true });
+        } catch (err: any) {
+          console.error('[PlansPreviewScreen handleCapacityChange] Error updating capacity:', err);
+        }
+      }
+    },
+    [
+      createMode,
+      onAdjustCapacity,
+      selectedPlan,
+      previewMaxCapacity,
+      currentPlanSize,
+      isAssigned,
+      previewGoingList,
+      previewWaitlistList,
+      activeUserId,
+      updatePlanDetails,
+    ]
+  );
+
+  const handleConfirmGuidedAdjustment = useCallback(
+    async (selectedUserIds: string[]) => {
+      if (!guidedAdjustmentState || !pendingCapacityAdjustmentSession || !selectedPlan?.id) return;
+      const { mode, targetCapacity } = guidedAdjustmentState;
+      const planCost = pendingCapacityAdjustmentSession.planCost;
+
+      const updatedSession = {
+        ...pendingCapacityAdjustmentSession,
+        selectedUserIds,
+      };
+      setPendingCapacityAdjustmentSession(updatedSession);
+      setGuidedAdjustmentState(null);
+
+      if (planCost > 0) {
+        setPendingCapacityTarget(targetCapacity);
+        setSelectedPlanFeeOption(null);
+        setShowUpdatePlanFeeModal(true);
+      } else {
+        try {
+          await updatePlanDetails(selectedPlan.id, { plan_size: targetCapacity }, { autoPromote: false });
+          if (mode === 'promote') {
+            for (const uId of selectedUserIds) {
+              await moveParticipantToGoing(selectedPlan.id, uId, { bypassCapacityCheck: true });
+            }
+          } else if (mode === 'demote') {
+            for (const uId of selectedUserIds) {
+              await moveParticipantToWaitlist(selectedPlan.id, uId);
+            }
+          }
+        } catch (err: any) {
+          console.error('[PlansPreviewScreen handleConfirmGuidedAdjustment] Commit error:', err);
+        } finally {
+          setPendingCapacityAdjustmentSession(null);
+          setDraftCapacityOverride(null);
+        }
+      }
+    },
+    [
+      guidedAdjustmentState,
+      pendingCapacityAdjustmentSession,
+      selectedPlan?.id,
+      updatePlanDetails,
+      moveParticipantToGoing,
+      moveParticipantToWaitlist,
+    ]
+  );
+
+  const handleSelectAndApplyPlanFeeOption = useCallback(
+    async (option: 'split_current_cost' | 'keep_cost_per_person') => {
+      if (pendingCapacityTarget === null || !selectedPlan?.id || isSubmittingPlanFeeUpdate) return;
+
+      setSelectedPlanFeeOption(option);
+      setIsSubmittingPlanFeeUpdate(true);
+      const targetCap = pendingCapacityTarget;
+      const planCost =
+        pendingCapacityAdjustmentSession?.planCost && pendingCapacityAdjustmentSession.planCost > 0
+          ? pendingCapacityAdjustmentSession.planCost
+          : Number(selectedPlan.total_cost || 0);
+      const currentPerPerson = currentPlanSize > 0 ? Math.round((planCost / currentPlanSize) * 100) / 100 : 0;
+
+      let targetTotalCost = planCost;
+      if (option === 'keep_cost_per_person') {
+        targetTotalCost = Math.round(targetCap * currentPerPerson * 100) / 100;
+      }
+
+      try {
+        const session = pendingCapacityAdjustmentSession;
+
+        setShowUpdatePlanFeeModal(false);
+        setPendingCapacityTarget(null);
+        setPendingCapacityAdjustmentSession(null);
+        setSelectedPlanFeeOption(null);
+        setDraftCapacityOverride(null);
+
+        if (isAssigned) {
+          await updatePlanDetails(
+            selectedPlan.id,
+            {
+              plan_size: targetCap,
+              total_cost: targetTotalCost,
+            },
+            { autoPromote: false }
+          );
+
+          if (session && session.selectedUserIds.length > 0) {
+            if (session.mode === 'promote') {
+              for (const uId of session.selectedUserIds) {
+                await moveParticipantToGoing(selectedPlan.id, uId, { bypassCapacityCheck: true });
+              }
+            } else if (session.mode === 'demote') {
+              for (const uId of session.selectedUserIds) {
+                await moveParticipantToWaitlist(selectedPlan.id, uId);
+              }
+            }
+          }
+        } else {
+          await updatePlanDetails(
+            selectedPlan.id,
+            {
+              plan_size: targetCap,
+              total_cost: targetTotalCost,
+            },
+            { autoPromote: true }
+          );
+        }
+      } catch (err: any) {
+        console.error('[PlansPreviewScreen handleSelectAndApplyPlanFeeOption] Failed:', err);
+      } finally {
+        setIsSubmittingPlanFeeUpdate(false);
+      }
+    },
+    [
+      pendingCapacityTarget,
+      selectedPlan?.id,
+      selectedPlan?.total_cost,
+      isSubmittingPlanFeeUpdate,
+      pendingCapacityAdjustmentSession,
+      currentPlanSize,
+      isAssigned,
+      updatePlanDetails,
+      moveParticipantToGoing,
+      moveParticipantToWaitlist,
+    ]
+  );
+
   const isManagementExpired = useMemo(() => {
     if (!selectedPlan) return false;
     const rawScheduled = (selectedPlan as any).scheduled_at || rawDbPlan?.scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt;
@@ -1248,7 +1697,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [participantAddSearchQuery, setParticipantAddSearchQuery] = useState("");
   const [participantAddSelectedFriendIds, setParticipantAddSelectedFriendIds] = useState<string[]>([]);
   const [participantAddFetchedFriends, setParticipantAddFetchedFriends] = useState<any[]>([]);
-  const [allDbUsers, setAllDbUsers] = useState<any[]>([]);
   const [isSubmittingParticipantInvites, setIsSubmittingParticipantInvites] = useState(false);
 
   useEffect(() => {
@@ -1257,14 +1705,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     let isMounted = true;
     (async () => {
       try {
-        const [friendsList, usersRes] = await Promise.all([
-          getCompleteCurrentUserFriends(resolvedUserUuid),
-          supabase.from("users").select("id, public_id, full_name, profile_photo_path, bio")
-        ]);
-
+        const friendsList = await getCompleteCurrentUserFriends(resolvedUserUuid);
         if (isMounted) {
           if (friendsList) setParticipantAddFetchedFriends(friendsList);
-          if (usersRes?.data) setAllDbUsers(usersRes.data);
         }
       } catch (err) {
         console.error("[PlansPreviewScreen] Error fetching friends for participant invite:", err);
@@ -1308,6 +1751,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     const list: any[] = [];
     const seen = new Set<string>();
 
+    // Show only the current user's friends — not all database users
     (participantAddFetchedFriends || []).forEach((f: any) => {
       const fId = f.id || f.dbUuid || f.user_id;
       if (fId && !seen.has(fId)) {
@@ -1322,22 +1766,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       }
     });
 
-    (allDbUsers || []).forEach((u: any) => {
-      const uId = u.id || u.public_id;
-      if (uId && !seen.has(uId)) {
-        seen.add(uId);
-        list.push({
-          id: u.id,
-          dbUuid: u.id,
-          name: u.full_name || u.name || "",
-          username: (u.full_name || "").toLowerCase().replace(/\s+/g, ""),
-          avatar: u.profile_photo_path || u.profile_photo || "",
-        });
-      }
-    });
-
     return list;
-  }, [participantAddFetchedFriends, allDbUsers]);
+  }, [participantAddFetchedFriends]);
 
   const availableFriendsForParticipant = useMemo(() => {
     const seenIds = new Set<string>();
@@ -1670,6 +2100,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         userProfile={userProfile}
         isCreatorHost={isCreatorHost}
         isPlanSettingsForParticipant={!isHost}
+        myParticipantRecord={myParticipantRecord}
         onBack={() => setShowPlanSettingsScreen(false)}
         onUpdateSettings={async (newSettings) => {
           await updatePlanSettings(selectedPlan.id, newSettings);
@@ -1697,7 +2128,13 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           }
           await updatePlanDetails(targetPlanId, { cover_image: `${targetPlanId}.webp`, skipDbWrite: true });
         }}
-        onLeavePlan={handleSkip}
+        onLeavePlan={async () => {
+          if (hasCost) {
+            await handleConfirmPaidLeaveRequest();
+          } else {
+            await handleSkipConfirm();
+          }
+        }}
         onCancelPlan={handleDitchConfirm}
       />
     );
@@ -1865,12 +2302,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                           disabled={!isHost || isCancelled || isCompleted}
                           onClick={() => {
                             if (!isHost || isCancelled || isCompleted) return;
-                            if (createMode) {
-                              setIsEditingCapacitySheetOpen(true);
-                            } else {
-                              setOpenParticipantManagementWithPlanSize(true);
-                              setShowParticipantManagement(true);
-                            }
+                            setIsEditingCapacitySheetOpen(true);
                           }}
                           className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
                         >
@@ -2325,9 +2757,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       {/* ---------------- 🚪 LEAVE PLAN CONFIRMATION SHEET ---------------- */}
       <JoinPlanConfirmationBottomSheet
         isOpen={showJoinConfirmation}
-        costText={costText}
+        costText={isFull ? null : costText}
         planTitle={selectedPlan?.title}
         isJoining={isJoiningDirect}
+        isWaitlist={isFull}
         onConfirm={handleConfirmJoinDirect}
         onClose={() => setShowJoinConfirmation(false)}
       />
@@ -2569,46 +3002,134 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onClose={() => setIsEditingDetailsSheetOpen(false)}
       />
 
-      {/* ---------------- 👥 EDIT CAPACITY / PLAN SIZE BOTTOM SHEET (Create Mode Only) ---------------- */}
-      {createMode && (
-        <EditCapacityBottomSheet
-          isOpen={isHost && isEditingCapacitySheetOpen}
-          capacity={currentPlanSize}
-          invitedCount={plan?.members?.length}
-          joinedCount={
-            selectedPlan?.members?.filter(
-              (m) =>
-                m.assignedGroup === 'GOING' ||
-                (m.assignedGroup as string)?.toLowerCase() === 'going' ||
-                m.joinState === 'JOINED' ||
-                m.role === 'HOST' ||
-                m.isHost
-            )?.length
-          }
-          waitlistedCount={
-            selectedPlan?.members?.filter(
-              (m) =>
-                m.assignedGroup === 'WAITLIST' ||
-                (m.assignedGroup as string)?.toLowerCase() === 'waitlisted' ||
-                m.joinState === 'WAITLISTED'
-            )?.length
-          }
-          minCapacity={2}
-          maxCapacity={plan?.members ? plan.members.length : undefined}
-          onCapacityChange={handleCapacityChange}
-          onIncrement={onIncrementCapacity}
-          onDecrement={onDecrementCapacity}
-          onAddParticipants={() => {
-            setIsEditingCapacitySheetOpen(false);
+      {/* ---------------- 👥 EDIT CAPACITY / PLAN SIZE BOTTOM SHEET ---------------- */}
+      <EditCapacityBottomSheet
+        isOpen={isHost && isEditingCapacitySheetOpen}
+        capacity={draftCapacityOverride ?? currentPlanSize}
+        invitedCount={createMode ? plan?.members?.length : totalActiveParticipants}
+        joinedCount={
+          selectedPlan?.members?.filter(
+            (m: any) =>
+              m.assignedGroup === 'GOING' ||
+              (m.assignedGroup as string)?.toLowerCase() === 'going' ||
+              m.joinState === 'JOINED' ||
+              m.role === 'HOST' ||
+              m.isHost
+          )?.length
+        }
+        waitlistedCount={
+          selectedPlan?.members?.filter(
+            (m: any) =>
+              m.assignedGroup === 'WAITLIST' ||
+              (m.assignedGroup as string)?.toLowerCase() === 'waitlisted' ||
+              m.joinState === 'WAITLISTED'
+          )?.length
+        }
+        minCapacity={2}
+        maxCapacity={createMode ? (plan?.members ? plan.members.length : undefined) : previewMaxCapacity}
+        limitToInvitedCount={createMode ? true : isAssigned}
+        onCapacityChange={handleCapacityChange}
+        onIncrement={onIncrementCapacity}
+        onDecrement={onDecrementCapacity}
+        onAddParticipants={() => {
+          setIsEditingCapacitySheetOpen(false);
+          setDraftCapacityOverride(null);
+          if (createMode) {
             if (onAddParticipants) {
               onAddParticipants();
             } else if (onEditParticipants) {
               onEditParticipants();
             }
-          }}
-          onClose={() => setIsEditingCapacitySheetOpen(false)}
-        />
-      )}
+          } else {
+            setShowParticipantAddPicker(true);
+          }
+        }}
+        onClose={() => {
+          setIsEditingCapacitySheetOpen(false);
+          setDraftCapacityOverride(null);
+        }}
+      />
+
+      {/* ---------------- 👥 GUIDED CAPACITY ADJUSTMENT (Move to Join / Move to Waitlist) ---------------- */}
+      <GuidedCapacityAdjustmentBottomSheet
+        isOpen={Boolean(guidedAdjustmentState)}
+        mode={guidedAdjustmentState?.mode || 'promote'}
+        requiredCount={guidedAdjustmentState?.requiredCount || 1}
+        candidates={guidedAdjustmentState?.candidates || []}
+        title={guidedAdjustmentState?.mode === 'promote' ? 'Move to Join' : 'Move to Waitlist'}
+        subtitle={
+          guidedAdjustmentState?.mode === 'promote'
+            ? `Select ${guidedAdjustmentState.requiredCount} ${
+                guidedAdjustmentState.requiredCount === 1 ? 'participant' : 'participants'
+              } to move to Going.`
+            : `Select ${guidedAdjustmentState?.requiredCount || 1} ${
+                guidedAdjustmentState?.requiredCount === 1 ? 'participant' : 'participants'
+              } to move to the waitlist.`
+        }
+        ctaLabel={guidedAdjustmentState?.mode === 'promote' ? 'Move to Join' : 'Move to Waitlist'}
+        plan={selectedPlan}
+        initialSelectedIds={pendingCapacityAdjustmentSession?.selectedUserIds || []}
+        onConfirm={handleConfirmGuidedAdjustment}
+        onBack={() => {
+          const target = guidedAdjustmentState?.targetCapacity;
+          setGuidedAdjustmentState(null);
+          if (target !== undefined && target !== null) {
+            setDraftCapacityOverride(target);
+            setIsEditingCapacitySheetOpen(true);
+          }
+        }}
+        onClose={() => {
+          setGuidedAdjustmentState(null);
+          setPendingCapacityAdjustmentSession(null);
+          setPendingCapacityTarget(null);
+          setDraftCapacityOverride(null);
+        }}
+      />
+
+      {/* ---------------- 💰 UPDATE PLAN FEE / COST MODAL ---------------- */}
+      <UpdatePlanFeeBottomSheet
+        isOpen={showUpdatePlanFeeModal && pendingCapacityTarget !== null}
+        plan={selectedPlan}
+        targetCapacity={pendingCapacityTarget}
+        currentCapacity={currentPlanSize}
+        currentTotalCost={
+          pendingCapacityAdjustmentSession?.planCost && pendingCapacityAdjustmentSession.planCost > 0
+            ? pendingCapacityAdjustmentSession.planCost
+            : Number(selectedPlan?.total_cost || 0)
+        }
+        isSubmitting={isSubmittingPlanFeeUpdate}
+        selectedOption={selectedPlanFeeOption}
+        onSelectOption={handleSelectAndApplyPlanFeeOption}
+        onBack={() => {
+          if (isSubmittingPlanFeeUpdate) return;
+          setShowUpdatePlanFeeModal(false);
+          setPendingCapacityTarget(null);
+          setSelectedPlanFeeOption(null);
+          if (pendingCapacityAdjustmentSession && pendingCapacityAdjustmentSession.requiredCount > 0) {
+            setGuidedAdjustmentState({
+              mode: pendingCapacityAdjustmentSession.mode,
+              targetCapacity: pendingCapacityAdjustmentSession.targetCapacity,
+              requiredCount: pendingCapacityAdjustmentSession.requiredCount,
+              candidates: pendingCapacityAdjustmentSession.candidates,
+            });
+          } else {
+            const target = pendingCapacityAdjustmentSession?.targetCapacity;
+            if (target !== undefined && target !== null) {
+              setDraftCapacityOverride(target);
+            }
+            setIsEditingCapacitySheetOpen(true);
+          }
+        }}
+        onClose={() => {
+          if (!isSubmittingPlanFeeUpdate) {
+            setShowUpdatePlanFeeModal(false);
+            setPendingCapacityTarget(null);
+            setSelectedPlanFeeOption(null);
+            setPendingCapacityAdjustmentSession(null);
+            setDraftCapacityOverride(null);
+          }
+        }}
+      />
 
       {/* ---------------- 🔗 SHARE PLAN LINK BOTTOM SHEET ---------------- */}
       <SharePlanLinkBottomSheet

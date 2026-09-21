@@ -206,6 +206,53 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     [targetPlanUuid, plan.id, (plan as any).dbUuid, matchedDbPlan]
   );
 
+  const getParticipantRsvpStatus = useCallback(
+    (m: any) => {
+      const id = m.userId || m.userUuid || m.user_id || m.id || m.dbUuid;
+      const dbPp = (dbPlanParticipants || []).find((pp: any) => {
+        if (!isParticipantInPlan(pp)) return false;
+        return (
+          pp.user_id === id ||
+          pp.user_id === m.userUuid ||
+          pp.user_id === m.userId ||
+          pp.user_id === m.user_id ||
+          pp.user_id === m.dbUuid
+        );
+      });
+      const rawStatus = dbPp ? dbPp.rsvp_status : m.joinState || m.rsvp_status;
+      return normalizeStatus(rawStatus);
+    },
+    [dbPlanParticipants, isParticipantInPlan]
+  );
+
+  const activeInvitedAndJoinedCount = useMemo(() => {
+    const visitedUserIds = new Set<string>();
+    let count = 0;
+
+    (members || []).forEach((m: any) => {
+      const id = m.userId || m.userUuid || m.user_id || m.id || m.dbUuid;
+      if (!id || visitedUserIds.has(id)) return;
+      visitedUserIds.add(id);
+
+      const status = getParticipantRsvpStatus(m);
+      if (status === 'INVITED' || status === 'JOINED') {
+        count++;
+      }
+    });
+
+    (dbPlanParticipants || []).forEach((pp: any) => {
+      if (!isParticipantInPlan(pp) || !pp.user_id || visitedUserIds.has(pp.user_id)) return;
+      visitedUserIds.add(pp.user_id);
+
+      const status = normalizeStatus(pp.rsvp_status);
+      if (status === 'INVITED' || status === 'JOINED') {
+        count++;
+      }
+    });
+
+    return count;
+  }, [members, dbPlanParticipants, isParticipantInPlan, getParticipantRsvpStatus]);
+
   const [planFeeTotalCostOverride, setPlanFeeTotalCostOverride] = useState<number | null>(null);
   const [showHostLeaveReplacementSheet, setShowHostLeaveReplacementSheet] = useState(false);
   const [hostReplacementMode, setHostReplacementMode] = useState<'leave' | 'stop_hosting'>('leave');
@@ -1291,22 +1338,52 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     setPendingPromoteToGoing(null);
   }, []);
 
-  const handleConfirmPendingPromote = useCallback(() => {
+  const handleConfirmPendingPromote = useCallback(async () => {
     if (!pendingPromoteToGoing) return;
     const friend = pendingPromoteToGoing;
     const newCap = Math.max(capacity + 1, goingMembers.length + 1);
     const clampedVal = Math.min(maxCapacity, Math.max(2, newCap));
 
     setPendingPromoteToGoing(null);
-    setPendingCapacityTarget(clampedVal);
-    setPendingCostAction({
-      type: 'increase_and_promote',
-      friend,
-      targetCapacity: clampedVal,
-    });
-    setSelectedPlanFeeOption(null);
-    setShowUpdatePlanFeeModal(true);
-  }, [pendingPromoteToGoing, capacity, goingMembers.length, maxCapacity]);
+
+    const hasCost = planFeeCurrentTotal > 0;
+    if (hasCost) {
+      setPendingCapacityTarget(clampedVal);
+      setPendingCostAction({
+        type: 'increase_and_promote',
+        friend,
+        targetCapacity: clampedVal,
+      });
+      setSelectedPlanFeeOption(null);
+      setShowUpdatePlanFeeModal(true);
+      return;
+    }
+
+    try {
+      if (onUpdatePlanCapacity) {
+        await onUpdatePlanCapacity(plan.id, clampedVal, { autoPromote: false });
+      }
+      setLocalGoingList(null);
+      setLocalWaitlist(null);
+      await onMoveToGoing(plan.id, friend.dbUuid || friend.id, {
+        bypassCapacityCheck: true,
+      });
+    } catch (err: any) {
+      console.error('[AssignedParticipantContainer handleConfirmPendingPromote] error:', err);
+    } finally {
+      setLocalGoingList(null);
+      setLocalWaitlist(null);
+    }
+  }, [
+    pendingPromoteToGoing,
+    capacity,
+    goingMembers.length,
+    maxCapacity,
+    planFeeCurrentTotal,
+    onUpdatePlanCapacity,
+    plan.id,
+    onMoveToGoing,
+  ]);
 
   const handleOpenSwapTargetPicker = useCallback(() => {
     if (!pendingPromoteToGoing) return;
@@ -1321,21 +1398,47 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     setPendingMoveToWaitlist(null);
   }, []);
 
-  const handleConfirmDecreaseCapacityForWaitlist = useCallback(() => {
+  const handleConfirmDecreaseCapacityForWaitlist = useCallback(async () => {
     if (!pendingMoveToWaitlist) return;
     const friend = pendingMoveToWaitlist;
     const targetCapacity = Math.max(2, capacity - 1);
 
     setPendingMoveToWaitlist(null);
-    setPendingCapacityTarget(targetCapacity);
-    setPendingCostAction({
-      type: 'decrease_and_demote',
-      friend,
-      targetCapacity,
-    });
-    setSelectedPlanFeeOption(null);
-    setShowUpdatePlanFeeModal(true);
-  }, [pendingMoveToWaitlist, capacity]);
+
+    const hasCost = planFeeCurrentTotal > 0;
+    if (hasCost) {
+      setPendingCapacityTarget(targetCapacity);
+      setPendingCostAction({
+        type: 'decrease_and_demote',
+        friend,
+        targetCapacity,
+      });
+      setSelectedPlanFeeOption(null);
+      setShowUpdatePlanFeeModal(true);
+      return;
+    }
+
+    try {
+      if (onUpdatePlanCapacity) {
+        await onUpdatePlanCapacity(plan.id, targetCapacity);
+      }
+      setLocalGoingList(null);
+      setLocalWaitlist(null);
+      await onMoveToWaitlist(plan.id, friend.dbUuid || friend.id);
+    } catch (err: any) {
+      console.error('[AssignedParticipantContainer handleConfirmDecreaseCapacityForWaitlist] error:', err);
+    } finally {
+      setLocalGoingList(null);
+      setLocalWaitlist(null);
+    }
+  }, [
+    pendingMoveToWaitlist,
+    capacity,
+    planFeeCurrentTotal,
+    onUpdatePlanCapacity,
+    plan.id,
+    onMoveToWaitlist,
+  ]);
 
   const handleOpenWaitlistSwapPicker = useCallback(() => {
     if (!pendingMoveToWaitlist) return;
@@ -1361,9 +1464,11 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
   );
 
   const [pendingRemoveGoing, setPendingRemoveGoing] = useState<Friend | null>(null);
+  const [isForcedDecreaseRemoval, setIsForcedDecreaseRemoval] = useState(false);
 
   const handleCancelPendingRemoveGoing = useCallback(() => {
     setPendingRemoveGoing(null);
+    setIsForcedDecreaseRemoval(false);
   }, []);
 
   const handleConfirmDecreaseCapacityForRemoveGoing = useCallback(async () => {
@@ -1371,6 +1476,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     const friend = pendingRemoveGoing;
     const targetCapacity = Math.max(2, capacity - 1);
     setPendingRemoveGoing(null);
+    setIsForcedDecreaseRemoval(false);
 
     const hasCost = planFeeCurrentTotal > 0;
     if (hasCost) {
@@ -1397,6 +1503,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     if (!pendingRemoveGoing) return;
     const userId = pendingRemoveGoing.dbUuid || pendingRemoveGoing.id;
     setPendingRemoveGoing(null);
+    setIsForcedDecreaseRemoval(false);
     setLocalReplaceTargetUserId(userId);
     setIndividuallySelectedFriendIds([]);
     setShowAddFriendsPicker(true);
@@ -1420,6 +1527,17 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         return;
       }
 
+      // Case 1: INVITED + JOINED = plan_size -> removing a participant must require plan size to decrease
+      if (activeInvitedAndJoinedCount === capacity && capacity > 2) {
+        setIsForcedDecreaseRemoval(true);
+        setPendingRemoveGoing(friend);
+        return;
+      }
+
+      setIsForcedDecreaseRemoval(false);
+
+      // Case 2: INVITED + JOINED > plan_size -> use existing removal flow without forcing a plan-size decrease
+      // Other cases: keep existing normal removal behavior
       const isGoing = goingList.some((g) => (g.dbUuid || g.id) === friendId);
       if (isGoing) {
         setPendingRemoveGoing(friend);
@@ -1432,7 +1550,16 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         setLocalCapacity(null);
       }
     },
-    [plan.id, goingList, onRemoveParticipant, resolvedUserUuid, userProfile?.user_id, handleLeavePlan]
+    [
+      plan.id,
+      goingList,
+      onRemoveParticipant,
+      resolvedUserUuid,
+      userProfile?.user_id,
+      handleLeavePlan,
+      activeInvitedAndJoinedCount,
+      capacity,
+    ]
   );
 
   const handleMoveToInvited = useCallback(
@@ -1507,6 +1634,8 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         return;
       }
 
+      setLocalGoingList(null);
+      setLocalWaitlist(null);
       try {
         if (type === 'swap') {
           if (!onSwapParticipants) throw new Error('swap is not supported');
@@ -1521,6 +1650,9 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         setSwapState(null);
       } catch (err: any) {
         console.error('[AssignedParticipantContainer handleConfirmSwap] Error:', err);
+      } finally {
+        setLocalGoingList(null);
+        setLocalWaitlist(null);
       }
     },
     [swapState, plan.id, onSwapParticipants, onRemoveAndReplaceWithWaitlist]
@@ -2157,8 +2289,17 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         hasWaitlist={waitlistList.length > 0}
         goingCount={goingMembers.length}
         waitlistCount={waitlistList.length}
+        planSize={capacity}
+        title={isForcedDecreaseRemoval ? 'Decrease Plan Size' : undefined}
+        subtitle={
+          isForcedDecreaseRemoval
+            ? `Plan size will decrease from ${capacity} to ${Math.max(2, capacity - 1)}.`
+            : undefined
+        }
         onDecreaseCapacity={handleConfirmDecreaseCapacityForRemoveGoing}
-        onReplaceParticipant={handleOpenRemoveGoingReplacePickerFull}
+        onReplaceParticipant={
+          isForcedDecreaseRemoval ? undefined : handleOpenRemoveGoingReplacePickerFull
+        }
         onCancelPlan={onCancelPlan ? () => onCancelPlan(plan.id) : undefined}
         onClose={handleCancelPendingRemoveGoing}
       />

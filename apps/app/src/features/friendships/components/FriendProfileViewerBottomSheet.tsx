@@ -8,6 +8,7 @@ import { useFriendshipStore } from "../state/FriendshipContext";
 interface FriendProfileViewerBottomSheetProps {
   friendUserId: string | null;
   onClose: () => void;
+  source?: "friends" | "plan" | "preview" | "discover" | "requests" | (string & {});
 }
 
 interface FriendProfileData {
@@ -22,6 +23,7 @@ interface FriendProfileData {
 export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomSheetProps> = ({
   friendUserId,
   onClose,
+  source,
 }) => {
   const {
     friends,
@@ -83,6 +85,14 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
 
     return { type: "NONE" as const, friendshipId: null };
   }, [friendUserId, friends, incomingRequests, outgoingRequests]);
+
+  const shouldShowAction = useMemo(() => {
+    if (isSelfProfile) return false;
+    if (relationship.type === "ACCEPTED") {
+      return source === "friends";
+    }
+    return true;
+  }, [isSelfProfile, relationship.type, source]);
 
   useEffect(() => {
     if (!friendUserId) {
@@ -231,7 +241,7 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
                 </div>
 
                 {/* 5. Dynamic Relationship Action Buttons */}
-                {!isSelfProfile && (
+                {shouldShowAction && (
                   <div className="mt-6 w-full space-y-2">
                     {relationship.type === "PENDING_INCOMING" ? (
                       <div className="flex gap-2.5 w-full">
@@ -273,7 +283,7 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
                           className="flex items-center justify-center gap-2 active:scale-[0.99] transition cursor-pointer disabled:opacity-50"
                         >
                           <X className="w-4 h-4 flex-shrink-0" />
-                          <span>Reject</span>
+                          <span>Decline</span>
                         </button>
                       </div>
                     ) : (

@@ -37,7 +37,7 @@ interface ParticipantToggleBarProps {
   setIsExpanded?: (val: boolean | ((prev: boolean) => boolean)) => void;
 }
 
-export const ParticipantToggleBar: React.FC<ParticipantToggleBarProps> = ({
+const ParticipantToggleBarComponent: React.FC<ParticipantToggleBarProps> = ({
   plan,
   userProfile,
   isHolding = false,
@@ -228,19 +228,13 @@ export const ParticipantToggleBar: React.FC<ParticipantToggleBarProps> = ({
   const isOverlayOpen = selectedPlanId === plan.id || selectedPlanId === plan.dbUuid;
 
   return (
-    <motion.div
+    <div
       onClick={handleCardClick}
-      layout
       className="mx-3 mb-6 z-10 relative select-none cursor-pointer overflow-hidden rounded-[24px] px-4 py-4 border border-white/10 shadow-lg no-hold"
       style={{
         background: 'rgba(0, 0, 0, 0.32)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
-        opacity: isHolding ? Math.max(0.08, 1 - (holdProgress / 100) * 0.92) : 1,
-      }}
-      transition={{
-        duration: 0.28,
-        ease: [0.25, 1, 0.5, 1],
       }}
     >
       <div className="flex flex-col text-left w-full">
@@ -343,9 +337,11 @@ export const ParticipantToggleBar: React.FC<ParticipantToggleBarProps> = ({
           )}
         </AnimatePresence>
       </div>
-    </motion.div>
+    </div>
   );
 };
+
+export const ParticipantToggleBar = React.memo(ParticipantToggleBarComponent);
 
 
 

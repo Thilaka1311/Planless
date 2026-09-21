@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserPlus } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { subTabVariants } from '../../../shared/transitions/motionTokens';
 import { SharedParticipantScreenProps, Friend, ParticipantTab } from '../shared/types';
 import { ParticipantHeader } from '../shared/ParticipantHeader';
 import { PlanSizeCard } from '../shared/PlanSizeCard';
@@ -585,68 +587,79 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
       {/* List content — Assigned Mode */}
       <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 16, flex: 1, overflowY: activeTab === 'waitlist' ? 'visible' : 'auto' }}>
-        {(activeTab === 'going' || activeTab === 'invited') && (
-          <>
-            {displayGoing.length > 0 ? (
-              <GoingSection
-                goingList={displayGoing}
-                isHost={effectiveIsHost}
-                onItemTap={(item) => handleItemTap(item, 'going')}
-                showIndex={false}
-              />
-            ) : (
-              <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
-                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', textAlign: 'center' }}>
-                  {activeTab === 'invited' ? 'No invited participants.' : 'No participants in Joined.'}
-                </span>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={activeTab === 'invited' ? 'going' : activeTab}
+            variants={subTabVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            style={{ display: 'flex', flexDirection: 'column', gap: 16, width: '100%', flex: 1 }}
+          >
+            {(activeTab === 'going' || activeTab === 'invited') && (
+              <>
+                {displayGoing.length > 0 ? (
+                  <GoingSection
+                    goingList={displayGoing}
+                    isHost={effectiveIsHost}
+                    onItemTap={(item) => handleItemTap(item, 'going')}
+                    showIndex={false}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
+                    <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', textAlign: 'center' }}>
+                      {activeTab === 'invited' ? 'No invited participants.' : 'No participants in Joined.'}
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'waitlist' && (
+              <>
+                {displayWaitlist.length > 0 ? (
+                  <WaitlistSection
+                    waitlist={displayWaitlist}
+                    isHost={effectiveIsHost}
+                    onItemTap={(item) => handleItemTap(item, 'waitlist')}
+                    onAddFriends={effectiveIsHost ? onAddFriends : undefined}
+                    onReorder={mode === 'wizard' ? (newWait) => {
+                      const renumbered = renumberWaitlist(newWait);
+                      setInternalWaitlist(renumbered);
+                      persistParticipantState(internalGoingList, renumbered);
+                    } : (effectiveIsHost ? onReorderWaitlist : undefined)}
+                    onReorderComplete={mode === 'wizard' ? (newWait) => {
+                      const renumbered = renumberWaitlist(newWait);
+                      setInternalWaitlist(renumbered);
+                      persistParticipantState(internalGoingList, renumbered);
+                    } : (effectiveIsHost ? onReorderWaitlistComplete : undefined)}
+                    reorderable={mode === 'wizard' || (effectiveIsHost && Boolean(onReorderWaitlist))}
+                    showIndex={true}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
+                    <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', textAlign: 'center' }}>
+                      No participants in Waitlist.
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'skipped' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                {displaySkipped.map((item) => (
+                  <StackingFriends
+                    key={item.id}
+                    item={item}
+                    isHost={effectiveIsHost}
+                    onClick={() => handleItemTap(item, 'skipped')}
+                  />
+                ))}
               </div>
             )}
-          </>
-        )}
-
-        {activeTab === 'waitlist' && (
-          <>
-            {displayWaitlist.length > 0 ? (
-              <WaitlistSection
-                waitlist={displayWaitlist}
-                isHost={effectiveIsHost}
-                onItemTap={(item) => handleItemTap(item, 'waitlist')}
-                onAddFriends={effectiveIsHost ? onAddFriends : undefined}
-                onReorder={mode === 'wizard' ? (newWait) => {
-                  const renumbered = renumberWaitlist(newWait);
-                  setInternalWaitlist(renumbered);
-                  persistParticipantState(internalGoingList, renumbered);
-                } : (effectiveIsHost ? onReorderWaitlist : undefined)}
-                onReorderComplete={mode === 'wizard' ? (newWait) => {
-                  const renumbered = renumberWaitlist(newWait);
-                  setInternalWaitlist(renumbered);
-                  persistParticipantState(internalGoingList, renumbered);
-                } : (effectiveIsHost ? onReorderWaitlistComplete : undefined)}
-                reorderable={mode === 'wizard' || (effectiveIsHost && Boolean(onReorderWaitlist))}
-                showIndex={true}
-              />
-            ) : (
-              <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
-                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.3)', textAlign: 'center' }}>
-                  No participants in Waitlist.
-                </span>
-              </div>
-            )}
-          </>
-        )}
-
-        {activeTab === 'skipped' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-            {displaySkipped.map((item) => (
-              <StackingFriends
-                key={item.id}
-                item={item}
-                isHost={effectiveIsHost}
-                onClick={() => handleItemTap(item, 'skipped')}
-              />
-            ))}
-          </div>
-        )}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {mode === 'wizard' && onContinue && (
@@ -701,6 +714,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       <FriendProfileViewerBottomSheet
         friendUserId={viewProfileUserId}
         onClose={() => setViewProfileUserId(null)}
+        source="plan"
       />
 
       <EditCapacityBottomSheet

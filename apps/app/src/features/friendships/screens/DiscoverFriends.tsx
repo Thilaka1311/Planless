@@ -179,6 +179,7 @@ export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
       <FriendProfileViewerBottomSheet
         friendUserId={selectedUserForViewer?.userId || null}
         onClose={() => setSelectedUserForViewer(null)}
+        source="discover"
       />
 
       {/* PHOTO ZOOM MODAL */}

@@ -46,6 +46,7 @@ import {
   extractInviteTokenFromPath,
   resolveInviteDestination,
 } from "./features/plans/services/planInviteService";
+import { tabVariants, screenModalVariants } from "./shared/transitions/motionTokens";
 
 interface MainAppProps {
   userProfile: UserProfile;
@@ -527,224 +528,312 @@ export default function MainApp({
     <div className="w-full h-full bg-[#050505] flex flex-col justify-between relative overflow-hidden select-none">
 
       {/* ---------------- FIGMA ALIGNED HEADER ---------------- */}
-      {activeTab === "home" && (
-        <HomeHeader
-          userProfile={userProfile}
-          setActiveTab={handleTabChange}
-          pendingMemoryCount={pendingMemoryCount}
-          showFriendsIcon={true}
-          onToggleFriends={() => setShowFriendsScreen(true)}
-        />
-      )}
+      <AnimatePresence mode="wait" initial={false}>
+        {activeTab === "home" && (
+          <motion.div
+            key="header-home"
+            variants={tabVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            <HomeHeader
+              userProfile={userProfile}
+              setActiveTab={handleTabChange}
+              pendingMemoryCount={pendingMemoryCount}
+              showFriendsIcon={true}
+              onToggleFriends={() => setShowFriendsScreen(true)}
+            />
+          </motion.div>
+        )}
 
-      {activeTab === "plans" && (
-        <HomeHeader
-          userProfile={userProfile}
-          setActiveTab={handleTabChange}
-          pendingMemoryCount={pendingMemoryCount}
-          showSearch={true}
-          onToggleSearch={() => setShowPlansSearchScreen(true)}
-          showHostedIcon={true}
-          onToggleHosted={() => setShowHostedPlansScreen(prev => !prev)}
-          isHostedActive={showHostedPlansScreen}
-          title={showHostedPlansScreen ? "Hosted Plans" : "Plans"}
-          scrollY={plansScrollY}
-          hideNotificationsIcon={true}
-        />
-      )}
+        {activeTab === "plans" && (
+          <motion.div
+            key="header-plans"
+            variants={tabVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            <HomeHeader
+              userProfile={userProfile}
+              setActiveTab={handleTabChange}
+              pendingMemoryCount={pendingMemoryCount}
+              showSearch={true}
+              onToggleSearch={() => setShowPlansSearchScreen(true)}
+              showHostedIcon={true}
+              onToggleHosted={() => setShowHostedPlansScreen(prev => !prev)}
+              isHostedActive={showHostedPlansScreen}
+              title={showHostedPlansScreen ? "Hosted Plans" : "Plans"}
+              scrollY={plansScrollY}
+              hideNotificationsIcon={true}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ---------------- MAIN APP SCREEN FRAME BODY ---------------- */}
       <main
         id="app_tab_content_wrapper"
         className="flex-1 relative overflow-hidden p-0"
       >
-        {/* TAB 1: HOME PANEL */}
-        {activeTab === "home" && (
-          <HomeScreen
-            discoverablePlans={discoverablePlans}
-            userProfile={userProfile}
-            interestedPlanIds={interestedPlanIds}
-            setSelectedPlan={setSelectedPlanId}
-            selectedPlan={selectedPlanId}
-            setPaymentConfirmationPlan={setPaymentConfirmationPlanId}
-            walletBalance={walletBalance}
-            handleToggleJoin={handleToggleJoin}
-            setShowPaymentSuccess={setShowPaymentSuccessId}
-            setShowWaitlistSuccess={setShowWaitlistSuccessId}
-            setShowLeftSuccess={setShowLeftSuccessId}
-            setNotifications={setNotifications}
-            activeCardId={activeCardId}
-            setActiveCardId={setActiveCardId}
-            handleSnoozePlan={handleSnoozePlan}
-            handleWaitlistPlan={(planId) => waitlistPlan(planId, userProfile)}
-            homeFeedRef={homeFeedRef}
-            selectedPlanId={selectedPlanId}
-            onNavigateToCreate={() => handleTabChange("create")}
-          />
-        )}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={activeTab}
+            variants={tabVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="w-full h-full flex flex-col flex-1 relative overflow-hidden"
+          >
+            {/* TAB 1: HOME PANEL */}
+            {activeTab === "home" && (
+              <HomeScreen
+                discoverablePlans={discoverablePlans}
+                userProfile={userProfile}
+                interestedPlanIds={interestedPlanIds}
+                setSelectedPlan={setSelectedPlanId}
+                selectedPlan={selectedPlanId}
+                setPaymentConfirmationPlan={setPaymentConfirmationPlanId}
+                walletBalance={walletBalance}
+                handleToggleJoin={handleToggleJoin}
+                setShowPaymentSuccess={setShowPaymentSuccessId}
+                setShowWaitlistSuccess={setShowWaitlistSuccessId}
+                setShowLeftSuccess={setShowLeftSuccessId}
+                setNotifications={setNotifications}
+                activeCardId={activeCardId}
+                setActiveCardId={setActiveCardId}
+                handleSnoozePlan={handleSnoozePlan}
+                handleWaitlistPlan={(planId) => waitlistPlan(planId, userProfile)}
+                homeFeedRef={homeFeedRef}
+                selectedPlanId={selectedPlanId}
+                onNavigateToCreate={() => handleTabChange("create")}
+              />
+            )}
 
-        {/* TAB 2: PLANS — PREMIUM ACTIVITY HUB & HOSTED DESTINATION */}
-        {activeTab === "plans" && (
-          <PlansScreen
-            setSelectedPlanId={setSelectedPlanId}
-            skippedByPlanId={skippedByPlanId}
-            plansFilter={plansFilter}
-            setPlansFilter={setPlansFilter}
-            onScroll={setPlansScrollY}
-          />
-        )}
+            {/* TAB 2: PLANS — PREMIUM ACTIVITY HUB & HOSTED DESTINATION */}
+            {activeTab === "plans" && (
+              <PlansScreen
+                setSelectedPlanId={setSelectedPlanId}
+                skippedByPlanId={skippedByPlanId}
+                plansFilter={plansFilter}
+                setPlansFilter={setPlansFilter}
+                onScroll={setPlansScrollY}
+              />
+            )}
 
-        {/* TAB 3: SPONTANEOUS CREATOR - INSTANT PRODUCTIVITY AESTHETICS */}
-        {activeTab === "create" && (
-          <CreateMVP
-            setActiveTab={handleTabChange}
-            onToggleBottomNav={setChildrenWantBottomNavHidden}
-            setPlansFilter={setPlansFilter}
-          />
-        )}
+            {/* TAB 3: SPONTANEOUS CREATOR - INSTANT PRODUCTIVITY AESTHETICS */}
+            {activeTab === "create" && (
+              <CreateMVP
+                setActiveTab={handleTabChange}
+                onToggleBottomNav={setChildrenWantBottomNavHidden}
+                setPlansFilter={setPlansFilter}
+              />
+            )}
 
-        {/* TAB 4: CHATS — PLAN CONVERSATIONS */}
-        {activeTab === "chats" && (
-          <ChatsScreen
-            setActiveTab={handleTabChange}
-            onSelectChatPlan={(planId) => {
-              setSelectedChatPlanId(planId);
-              navigateToRoute({ tab: "chats", selectedChatPlanId: planId });
-            }}
-            onScroll={setPlansScrollY}
-          />
-        )}
+            {/* TAB 4: CHATS — PLAN CONVERSATIONS */}
+            {activeTab === "chats" && (
+              <ChatsScreen
+                setActiveTab={handleTabChange}
+                onSelectChatPlan={(planId) => {
+                  setSelectedChatPlanId(planId);
+                  navigateToRoute({ tab: "chats", selectedChatPlanId: planId });
+                }}
+                onScroll={setPlansScrollY}
+              />
+            )}
 
-        {/* TAB: WALLET */}
-        {activeTab === "wallet" && (
-          <WalletScreen
-            setActiveTab={handleTabChange}
-            setSelectedPlanId={setSelectedPlanId}
-            onToggleBottomNav={setChildrenWantBottomNavHidden}
-          />
-        )}
+            {/* TAB: WALLET */}
+            {activeTab === "wallet" && (
+              <WalletScreen
+                setActiveTab={handleTabChange}
+                setSelectedPlanId={setSelectedPlanId}
+                onToggleBottomNav={setChildrenWantBottomNavHidden}
+              />
+            )}
 
-        {/* TAB 5: PROFILE & ACCOUNT MANAGEMENT */}
-        {activeTab === "profile" && (
-          <ProfileScreen
-            onLogout={onLogout}
-            setSelectedPlanId={setSelectedPlanId}
-            setShowDepositModal={setShowDepositModal}
-            onToggleBottomNav={setChildrenWantBottomNavHidden}
-            onOpenPastPlans={() => setShowPastPlansScreen(true)}
-          />
-        )}
+            {/* TAB 5: PROFILE & ACCOUNT MANAGEMENT */}
+            {activeTab === "profile" && (
+              <ProfileScreen
+                onLogout={onLogout}
+                setSelectedPlanId={setSelectedPlanId}
+                setShowDepositModal={setShowDepositModal}
+                onToggleBottomNav={setChildrenWantBottomNavHidden}
+                onOpenPastPlans={() => setShowPastPlansScreen(true)}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
       {/* ---------------- ACTIVE DETAILED OVERLAY POPUP (PLAN DETAILS) ---------------- */}
-      {selectedPlanId && (
-        <DetailedPlanModal
-          planId={selectedPlanId}
-          activeTab={selectedPlanSource === "chat" ? "chat" : activeTab}
-          onClose={() => {
-            setSelectedPlanId(null);
-            localStorage.removeItem("planless_selected_plan_id");
-            if (selectedPlanSource === "chat" && selectedChatPlanId) {
-              // Stay in same Plan Chat screen when returning from Plan Preview
-              setSelectedPlanSource("list");
-            } else {
-              setSelectedPlanSource("list");
-            }
-          }}
-          userProfile={userProfile}
-          activeUserId={activeUserId}
-          onOpenChat={(planId) => {
-            setSelectedPlanId(null);
-            localStorage.removeItem("planless_selected_plan_id");
-            setSelectedChatPlanId(planId);
-          }}
-          setShowPaymentSuccess={setShowPaymentSuccessId}
-          setShowWaitlistSuccess={setShowWaitlistSuccessId}
-          setShowLeftSuccess={setShowLeftSuccessId}
-          onLeavePlan={() => {
-            setSelectedPlanId(null);
-            localStorage.removeItem("planless_selected_plan_id");
-          }}
-          onPlanCancelled={() => {
-            setSelectedPlanId(null);
-            localStorage.removeItem("planless_selected_plan_id");
-            setShowCancelConfirmation(true);
-          }}
-          />
-      )}
-
-
-
+      <AnimatePresence>
+        {selectedPlanId && (
+          <motion.div
+            key="detailed-plan-modal"
+            variants={screenModalVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 z-[60]"
+          >
+            <DetailedPlanModal
+              planId={selectedPlanId}
+              activeTab={selectedPlanSource === "chat" ? "chat" : activeTab}
+              onClose={() => {
+                setSelectedPlanId(null);
+                localStorage.removeItem("planless_selected_plan_id");
+                if (selectedPlanSource === "chat" && selectedChatPlanId) {
+                  // Stay in same Plan Chat screen when returning from Plan Preview
+                  setSelectedPlanSource("list");
+                } else {
+                  setSelectedPlanSource("list");
+                }
+              }}
+              userProfile={userProfile}
+              activeUserId={activeUserId}
+              onOpenChat={(planId) => {
+                setSelectedPlanId(null);
+                localStorage.removeItem("planless_selected_plan_id");
+                setSelectedChatPlanId(planId);
+              }}
+              setShowPaymentSuccess={setShowPaymentSuccessId}
+              setShowWaitlistSuccess={setShowWaitlistSuccessId}
+              setShowLeftSuccess={setShowLeftSuccessId}
+              onLeavePlan={() => {
+                setSelectedPlanId(null);
+                localStorage.removeItem("planless_selected_plan_id");
+              }}
+              onPlanCancelled={() => {
+                setSelectedPlanId(null);
+                localStorage.removeItem("planless_selected_plan_id");
+                setShowCancelConfirmation(true);
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ---------------- 👥 FRIENDS SCREEN ---------------- */}
-      {showFriendsScreen && (
-        <div className="fixed inset-0 z-50 bg-[#000000] flex flex-col">
-          <FriendshipsScreen onBack={() => setShowFriendsScreen(false)} />
-        </div>
-      )}
+      <AnimatePresence>
+        {showFriendsScreen && (
+          <motion.div
+            key="friends-screen"
+            variants={screenModalVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 z-50 bg-[#000000] flex flex-col"
+          >
+            <FriendshipsScreen onBack={() => setShowFriendsScreen(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ---------------- 🔍 SEARCH YOUR PLANS SCREEN ---------------- */}
-      {showPlansSearchScreen && (
-        <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col">
-          <SearchYourPlansScreen
-            onBack={() => setShowPlansSearchScreen(false)}
-            setSelectedPlanId={(id) => {
-              setSelectedPlanSource("list");
-              setSelectedPlanId(id);
-              setShowPlansSearchScreen(false);
-            }}
-          />
-        </div>
-      )}
+      <AnimatePresence>
+        {showPlansSearchScreen && (
+          <motion.div
+            key="plans-search-screen"
+            variants={screenModalVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 z-50 bg-[#050505] flex flex-col"
+          >
+            <SearchYourPlansScreen
+              onBack={() => setShowPlansSearchScreen(false)}
+              setSelectedPlanId={(id) => {
+                setSelectedPlanSource("list");
+                setSelectedPlanId(id);
+                setShowPlansSearchScreen(false);
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ---------------- 📜 PAST PLANS SCREEN ---------------- */}
-      {showPastPlansScreen && (
-        <PastPlans
-          onBack={() => setShowPastPlansScreen(false)}
-          setSelectedPlanId={(id) => {
-            setSelectedPlanSource("list");
-            setSelectedPlanId(id);
-            setShowPastPlansScreen(false);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {showPastPlansScreen && (
+          <motion.div
+            key="past-plans-screen"
+            variants={screenModalVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 z-50 bg-[#050505] flex flex-col"
+          >
+            <PastPlans
+              onBack={() => setShowPastPlansScreen(false)}
+              setSelectedPlanId={(id) => {
+                setSelectedPlanSource("list");
+                setSelectedPlanId(id);
+                setShowPastPlansScreen(false);
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ---------------- 👑 HOSTED PLANS SCREEN ---------------- */}
-      {showHostedPlansScreen && (
-        <HostedPlansScreen
-          onBack={() => setShowHostedPlansScreen(false)}
-          setSelectedPlanId={(id) => {
-            setSelectedPlanSource("list");
-            setSelectedPlanId(id);
-            setShowHostedPlansScreen(false);
-          }}
-          onTogglePast={() => {
-            setShowHostedPlansScreen(false);
-            setShowPastPlansScreen(true);
-          }}
-          onToggleSearch={() => {
-            setShowHostedPlansScreen(false);
-            setShowPlansSearchScreen(true);
-          }}
-          onScroll={setPlansScrollY}
-        />
-      )}
+      <AnimatePresence>
+        {showHostedPlansScreen && (
+          <motion.div
+            key="hosted-plans-screen"
+            variants={screenModalVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 z-50 bg-[#050505] flex flex-col"
+          >
+            <HostedPlansScreen
+              onBack={() => setShowHostedPlansScreen(false)}
+              setSelectedPlanId={(id) => {
+                setSelectedPlanSource("list");
+                setSelectedPlanId(id);
+                setShowHostedPlansScreen(false);
+              }}
+              onTogglePast={() => {
+                setShowHostedPlansScreen(false);
+                setShowPastPlansScreen(true);
+              }}
+              onToggleSearch={() => {
+                setShowHostedPlansScreen(false);
+                setShowPlansSearchScreen(true);
+              }}
+              onScroll={setPlansScrollY}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ---------------- 💬 PLAN CHAT SCREEN ---------------- */}
-      {selectedChatPlanId && (
-        <PlanChatScreen
-          planId={selectedChatPlanId}
-          onBack={() => {
-            setSelectedChatPlanId(null);
-            navigateToRoute({ tab: "chats" });
-          }}
-          onOpenPlanDetails={() => {
-            const planId = selectedChatPlanId;
-            setSelectedPlanSource("chat");
-            setSelectedPlanId(planId);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {selectedChatPlanId && (
+          <motion.div
+            key="plan-chat-screen"
+            variants={screenModalVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="fixed inset-0 z-50"
+          >
+            <PlanChatScreen
+              planId={selectedChatPlanId}
+              onBack={() => {
+                setSelectedChatPlanId(null);
+                navigateToRoute({ tab: "chats" });
+              }}
+              onOpenPlanDetails={() => {
+                const planId = selectedChatPlanId;
+                setSelectedPlanSource("chat");
+                setSelectedPlanId(planId);
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
 
 

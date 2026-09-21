@@ -37,7 +37,9 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
 
   const totalSelectedCount = isReplacementMode
     ? (selectedReplacementFriend ? 1 : 0)
-    : ((form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0));
+    : isAddParticipantMode
+      ? (form.selectedFriends?.length || 0)
+      : ((form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0));
   const requiredSize = isReplacementMode ? 1 : (isAddParticipantMode ? 1 : (form.totalCapacity || 2));
   const isRequirementMet = isReplacementMode ? Boolean(selectedReplacementFriend) : (totalSelectedCount >= requiredSize);
 
@@ -177,6 +179,7 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
             }
           }}
           isReplacementMode={isReplacementMode}
+          isAddParticipantMode={isAddParticipantMode}
           leavingParticipant={leavingParticipant}
           selectedReplacementFriend={selectedReplacementFriend}
         />

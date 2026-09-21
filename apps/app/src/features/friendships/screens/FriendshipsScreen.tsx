@@ -285,6 +285,7 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
       <FriendProfileViewerBottomSheet
         friendUserId={selectedFriendForViewer?.userId || null}
         onClose={() => setSelectedFriendForViewer(null)}
+        source="friends"
       />
 
       {/* PHOTO ZOOM MODAL */}

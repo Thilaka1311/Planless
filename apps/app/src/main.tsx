@@ -21,10 +21,12 @@ import './index.css';
 import { registerSW } from 'virtual:pwa-register';
 import planlessLogo from './assets/planless_logo.png';
 import { preloadImage } from './shared/imaging/preloadImage';
+import { preloadCoreStaticAssets } from './shared/assets/coreStaticAssets';
 
-// Module-level eager warmup: start fetching and decoding Planless logo immediately on bundle evaluation
+// Module-level eager warmup: start fetching and decoding Planless logo and core static assets
 if (typeof window !== "undefined") {
   preloadImage(planlessLogo);
+  preloadCoreStaticAssets();
 }
 
 interface ErrorBoundaryProps {

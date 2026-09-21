@@ -12,6 +12,8 @@ import { Split, Merge } from 'lucide-react';
 import { DiscoveryImages } from '../../../IMGfromDB/PlanImages';
 import {
   MakeAnotherParticipantHostBottomSheet,
+  PlanIsFullBottomSheet,
+  RemoveGoingParticipantBottomSheet,
 } from '../../plans/components/BottomSheets';
 import { isUuid } from '../../plans/utils/planUtils';
 
@@ -187,10 +189,76 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
     [targetPlanUuid, plan.id, (plan as any).dbUuid, matchedDbPlan]
   );
 
+
+
   const [planFeeTotalCostOverride, setPlanFeeTotalCostOverride] = useState<number | null>(null);
   const [showHostLeaveReplacementSheet, setShowHostLeaveReplacementSheet] = useState(false);
   const [hostReplacementMode, setHostReplacementMode] = useState<'leave' | 'stop_hosting'>('leave');
   const [isSubmittingHostReplacement, setIsSubmittingHostReplacement] = useState(false);
+
+  const [pendingRemoveParticipant, setPendingRemoveParticipant] = useState<Friend | null>(null);
+  const [pendingCostAction, setPendingCostAction] = useState<{
+    type: 'decrease_and_remove' | 'increase_and_rejoin';
+    friend: Friend;
+    targetCapacity: number;
+  } | null>(null);
+  const [pendingRejoinCapacityFriend, setPendingRejoinCapacityFriend] = useState<Friend | null>(null);
+
+  const currentJoinedCount = useMemo(() => {
+    const visitedUserIds = new Set<string>();
+    let count = 0;
+
+    (members || []).forEach((m: any) => {
+      const id = m.userId || m.userUuid || m.user_id || m.id || m.dbUuid;
+      if (!id || visitedUserIds.has(id)) return;
+      const isHostRole = m.isHost === true || (m.role || '').toUpperCase() === 'HOST';
+      const status = normalizeStatus(m.joinState || m.rsvp_status);
+      if (status === 'JOINED' || isHostRole) {
+        visitedUserIds.add(id);
+        count++;
+      }
+    });
+
+    (dbPlanParticipants || []).forEach((pp: any) => {
+      if (!isParticipantInPlan(pp) || !pp.user_id || visitedUserIds.has(pp.user_id)) return;
+      const isHostRole = (pp.role || '').toUpperCase() === 'HOST';
+      const status = normalizeStatus(pp.rsvp_status);
+      if (status === 'JOINED' || isHostRole) {
+        visitedUserIds.add(pp.user_id);
+        count++;
+      }
+    });
+
+    return count;
+  }, [members, dbPlanParticipants, isParticipantInPlan]);
+
+  const activeInvitedAndJoinedCount = useMemo(() => {
+    const visitedUserIds = new Set<string>();
+    let count = 0;
+
+    (members || []).forEach((m: any) => {
+      const id = m.userId || m.userUuid || m.user_id || m.id || m.dbUuid;
+      if (!id || visitedUserIds.has(id)) return;
+      visitedUserIds.add(id);
+
+      const status = normalizeStatus(m.joinState || m.rsvp_status);
+      if (status === 'INVITED' || status === 'JOINED') {
+        count++;
+      }
+    });
+
+    (dbPlanParticipants || []).forEach((pp: any) => {
+      if (!isParticipantInPlan(pp) || !pp.user_id || visitedUserIds.has(pp.user_id)) return;
+      visitedUserIds.add(pp.user_id);
+
+      const status = normalizeStatus(pp.rsvp_status);
+      if (status === 'INVITED' || status === 'JOINED') {
+        count++;
+      }
+    });
+
+    return count;
+  }, [members, dbPlanParticipants, isParticipantInPlan]);
 
   const resolvedUserUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId || '';
 
@@ -900,12 +968,73 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
     ? eventDateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
     : undefined;
 
+  const handleRejoinAddToPlan = useCallback(
+    async (friend: Friend) => {
+      const friendId = friend.dbUuid || friend.id;
+      // 1. Check current number of JOINED participants against current plan_size (capacity)
+      if (currentJoinedCount < capacity) {
+        // 2. If available capacity: add directly to JOINED and complete rejoin flow
+        try {
+          await resolveRejoinedParticipant(plan.id, friendId, 'JOINED');
+        } catch (err: any) {
+          console.error('[AutomaticParticipantContainer handleRejoinAddToPlan] error:', err);
+        }
+      } else {
+        // 3. If plan is already at capacity: show existing capacity decision flow (Increase Plan Size / Add to Waitlist)
+        setPendingRejoinCapacityFriend(friend);
+      }
+    },
+    [currentJoinedCount, capacity, plan.id, resolveRejoinedParticipant]
+  );
+
+  const handleIncreaseCapacityAndRejoin = useCallback(async () => {
+    if (!pendingRejoinCapacityFriend) return;
+    const friend = pendingRejoinCapacityFriend;
+    const friendId = friend.dbUuid || friend.id;
+    const targetCapacity = capacity + 1;
+    setPendingRejoinCapacityFriend(null);
+
+    const hasCost = planFeeCurrentTotal > 0;
+    if (hasCost) {
+      setPendingCapacityTarget(targetCapacity);
+      setPendingCostAction({
+        type: 'increase_and_rejoin',
+        friend,
+        targetCapacity,
+      });
+      setSelectedPlanFeeOption(null);
+      setShowUpdatePlanFeeModal(true);
+      return;
+    }
+
+    try {
+      if (onUpdatePlanCapacity) {
+        await onUpdatePlanCapacity(plan.id, targetCapacity, { autoPromote: false });
+      }
+      await resolveRejoinedParticipant(plan.id, friendId, 'JOINED');
+    } catch (err: any) {
+      console.error('[AutomaticParticipantContainer handleIncreaseCapacityAndRejoin] error:', err);
+    }
+  }, [pendingRejoinCapacityFriend, capacity, planFeeCurrentTotal, onUpdatePlanCapacity, plan.id, resolveRejoinedParticipant]);
+
+  const handleRejoinToWaitlistInstead = useCallback(async () => {
+    if (!pendingRejoinCapacityFriend) return;
+    const friend = pendingRejoinCapacityFriend;
+    const friendId = friend.dbUuid || friend.id;
+    setPendingRejoinCapacityFriend(null);
+    try {
+      await resolveRejoinedParticipant(plan.id, friendId, 'WAITLIST');
+    } catch (err: any) {
+      console.error('[AutomaticParticipantContainer handleRejoinToWaitlistInstead] error:', err);
+    }
+  }, [pendingRejoinCapacityFriend, plan.id, resolveRejoinedParticipant]);
+
   const handleMoveToGoing = useCallback(
     async (friend: Friend) => {
       const isRejoined =
         friend.rsvpStatus === 'REJOINED' || (friend as any).rsvp_status === 'REJOINED';
       if (isRejoined) {
-        await handleRejoinAddToJoined(friend);
+        await handleRejoinAddToPlan(friend);
         return;
       }
       try {
@@ -914,7 +1043,7 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
         console.error('[AutomaticParticipantContainer handleMoveToGoing] error:', err);
       }
     },
-    [plan.id, onMoveToGoing]
+    [plan.id, onMoveToGoing, handleRejoinAddToPlan]
   );
 
   const handleMoveToWaitlist = useCallback(
@@ -927,6 +1056,46 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
     },
     [plan.id, onMoveToWaitlist]
   );
+
+  const handleCancelPendingRemoveParticipant = useCallback(() => {
+    setPendingRemoveParticipant(null);
+  }, []);
+
+  const handleConfirmDecreaseCapacityForRemove = useCallback(async () => {
+    if (!pendingRemoveParticipant || !onUpdatePlanCapacity) return;
+    const friend = pendingRemoveParticipant;
+    const targetCapacity = Math.max(2, capacity - 1);
+    setPendingRemoveParticipant(null);
+
+    const hasCost = planFeeCurrentTotal > 0;
+    if (hasCost) {
+      setPendingCapacityTarget(targetCapacity);
+      setPendingCostAction({
+        type: 'decrease_and_remove',
+        friend,
+        targetCapacity,
+      });
+      setSelectedPlanFeeOption(null);
+      setShowUpdatePlanFeeModal(true);
+      return;
+    }
+
+    try {
+      await onUpdatePlanCapacity(plan.id, targetCapacity, { autoPromote: false });
+      await onRemoveParticipant(plan.id, friend.dbUuid || friend.id);
+    } catch (err: any) {
+      console.error('[AutomaticParticipantContainer handleConfirmDecreaseCapacityForRemove] error:', err);
+    }
+  }, [pendingRemoveParticipant, capacity, onUpdatePlanCapacity, plan.id, onRemoveParticipant, planFeeCurrentTotal]);
+
+  const handleOpenRemoveParticipantReplacePickerFull = useCallback(() => {
+    if (!pendingRemoveParticipant) return;
+    const userId = pendingRemoveParticipant.dbUuid || pendingRemoveParticipant.id;
+    setPendingRemoveParticipant(null);
+    setLocalReplaceTargetUserId(userId);
+    setIndividuallySelectedFriendIds([]);
+    setShowAddFriendsPicker(true);
+  }, [pendingRemoveParticipant]);
 
   const handleRemoveParticipant = useCallback(
     async (friend: Friend) => {
@@ -946,18 +1115,16 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
         return;
       }
 
-      const allActive = (plan.members || []).filter(
-        (m: any) => normalizeStatus(m.joinState || m.rsvp_status) !== 'SKIPPED'
-      );
-      const partition = partitionAutomaticParticipants(
-        allActive,
-        capacity,
-        resolvedUserUuid || userProfile?.user_id
-      );
-      const hasWaitlist = partition.waitlist.length > 0;
-      const invitedCount = allActive.length;
-      if (!hasWaitlist && capacity === invitedCount && capacity > 2) {
-        setLocalCapacity(Math.max(2, capacity - 1));
+      // Check if participant is in Going list (has an allocated spot)
+      const isGoing = partitioned.going.some((g) => {
+        const gId = g.dbUuid || g.id || (g as any).userId || (g as any).user_id;
+        const fId = friend.dbUuid || friend.id || (friend as any).userId || (friend as any).user_id;
+        return (gId && fId && gId === fId) || g.id === friend.id || (g.dbUuid && g.dbUuid === friend.dbUuid);
+      });
+
+      if (isGoing) {
+        setPendingRemoveParticipant(friend);
+        return;
       }
 
       try {
@@ -968,8 +1135,7 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
     },
     [
       plan.id,
-      plan.members,
-      capacity,
+      partitioned.going,
       onRemoveParticipant,
       resolvedUserUuid,
       userProfile?.user_id,
@@ -1146,14 +1312,25 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
     }
 
     try {
+      const action = pendingCostAction;
+
       setShowUpdatePlanFeeModal(false);
       setPendingCapacityTarget(null);
+      setPendingCostAction(null);
       setSelectedPlanFeeOption(null);
 
-      await onUpdatePlanCapacity(plan.id, targetCap, {
-        totalCost: targetTotalCost,
-        autoPromote: true,
-      });
+      if (action?.type === 'decrease_and_remove') {
+        await onUpdatePlanCapacity(plan.id, targetCap, { totalCost: targetTotalCost, autoPromote: false });
+        await onRemoveParticipant(plan.id, action.friend.dbUuid || action.friend.id);
+      } else if (action?.type === 'increase_and_rejoin') {
+        await onUpdatePlanCapacity(plan.id, targetCap, { totalCost: targetTotalCost, autoPromote: false });
+        await resolveRejoinedParticipant(plan.id, action.friend.dbUuid || action.friend.id, 'JOINED');
+      } else {
+        await onUpdatePlanCapacity(plan.id, targetCap, {
+          totalCost: targetTotalCost,
+          autoPromote: true,
+        });
+      }
     } catch (err: any) {
       console.error('[AutomaticParticipantContainer handleSelectAndApplyPlanFeeOption] Failed:', err);
     } finally {
@@ -1167,6 +1344,8 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
 
   const isAnyBottomSheetOpen = Boolean(
     isActionSheetOpen ||
+      Boolean(pendingRemoveParticipant) ||
+      Boolean(pendingRejoinCapacityFriend) ||
       showUpdatePlanFeeModal ||
       showHostLeaveReplacementSheet ||
       showAddFriendsPicker
@@ -1254,6 +1433,7 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
         onKeepPaymentLeaveParticipant={handleKeepPaymentLeaveParticipant}
         onInviteSkipped={effectiveIsHost ? handleInviteSkipped : undefined}
         onMoveToInvited={effectiveIsHost ? handleMoveToInvited : undefined}
+        onRejoinAddToPlan={effectiveIsHost ? handleRejoinAddToPlan : undefined}
         onRejoinAddToJoined={effectiveIsHost ? handleRejoinAddToJoined : undefined}
         onRejoinAddToWaitlist={effectiveIsHost ? handleRejoinAddToWaitlist : undefined}
         onRejoinRemoveFromPlan={effectiveIsHost ? handleRejoinRemoveFromPlan : undefined}
@@ -1300,12 +1480,47 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
         onClose={() => setShowHostLeaveReplacementSheet(false)}
       />
 
+      <RemoveGoingParticipantBottomSheet
+        isOpen={Boolean(pendingRemoveParticipant)}
+        participant={
+          pendingRemoveParticipant
+            ? { name: pendingRemoveParticipant.name, avatar: pendingRemoveParticipant.avatar }
+            : null
+        }
+        hasWaitlist={partitioned.waitlist.length > 0}
+        goingCount={partitioned.going.length}
+        waitlistCount={partitioned.waitlist.length}
+        planSize={capacity}
+        onDecreaseCapacity={handleConfirmDecreaseCapacityForRemove}
+        onReplaceParticipant={handleOpenRemoveParticipantReplacePickerFull}
+        onClose={handleCancelPendingRemoveParticipant}
+      />
+
+      <PlanIsFullBottomSheet
+        isOpen={Boolean(pendingRejoinCapacityFriend)}
+        pickerSelectedFriends={
+          pendingRejoinCapacityFriend
+            ? [
+                {
+                  id: pendingRejoinCapacityFriend.dbUuid || pendingRejoinCapacityFriend.id,
+                  name: pendingRejoinCapacityFriend.name,
+                  avatar: pendingRejoinCapacityFriend.avatar,
+                },
+              ]
+            : []
+        }
+        onIncreaseCapacity={handleIncreaseCapacityAndRejoin}
+        onInviteToWaitlist={handleRejoinToWaitlistInstead}
+        onClose={() => setPendingRejoinCapacityFriend(null)}
+      />
+
       {showUpdatePlanFeeModal && pendingCapacityTarget !== null && (
         <div
           onClick={() => {
             if (!isSubmittingPlanFeeUpdate) {
               setShowUpdatePlanFeeModal(false);
               setPendingCapacityTarget(null);
+              setPendingCostAction(null);
               setSelectedPlanFeeOption(null);
             }
           }}
@@ -1484,6 +1699,7 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
                   if (!isSubmittingPlanFeeUpdate) {
                     setShowUpdatePlanFeeModal(false);
                     setPendingCapacityTarget(null);
+                    setPendingCostAction(null);
                     setSelectedPlanFeeOption(null);
                   }
                 }}

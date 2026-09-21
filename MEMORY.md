@@ -93,6 +93,17 @@ This file stores durable lessons, corrections, architectural invariants, and wor
 
 ---
 
+## 10. UI Mode Parity & Action Sheet Invariants
+
+* **Lesson**: When asked to replicate the Assigned "Remove Participant" bottom sheet in Automatic participant management with the same 3 options ("Decrease Plan Size", "Replace Participant", "Cancel"), the agent retained an `if (activeInvitedAndJoinedCount === capacity)` branch. When tested on a full plan, this branch hijacked the sheet—changing its title to "Decrease Plan Size", altering the subtitle, hiding "Replace Participant", and rendering an unwanted destructive "Cancel Plan" button. This forced the user to repeat the request across multiple prompts with screenshots.
+* **Rules**:
+  1. **Strict UI Option & Flow Parity**: When asked to use the "exact same bottom sheet / modal with options X, Y, Z" from another flow/screen, treat the visual contract (avatar, title, subtitle, buttons) as an exact specification. Do NOT let hidden conditional branches or state math alter titles, hide requested action buttons, or change the flow unless explicitly instructed.
+  2. **Audit Action Sheet Props & Fallbacks**: When reusing multi-purpose sheet components (e.g. `RemoveGoingParticipantBottomSheet`), audit every prop passed (`title`, `subtitle`, `onCancelPlan`, etc.). Do NOT pass destructive fallback handlers (like `onCancelPlan`) to an action sheet unless that destructive option was explicitly requested.
+  3. **Verify Boundary & Real-World States**: Never assume a UI component renders correctly based only on one state. Check how it behaves under full capacity (`activeCount === capacity`), empty waitlists, and min capacity (`capacity === 2`) before declaring work complete.
+  4. **Reference Screen as Ground Truth**: When the user provides a reference screenshot or mentions an existing screen/sheet as the source of truth, compare the rendered component directly against that reference to ensure identical options and layout.
+
+---
+
 ## Adding New Learned Rules
 
 When Thilak makes a correction or an architectural invariant is established, append it using this format:
@@ -102,4 +113,5 @@ When Thilak makes a correction or an architectural invariant is established, app
 * **Lesson**: What happened or what was corrected.
 * **Rule**: The concrete invariant or rule to follow in all future sessions.
 ```
+
 
