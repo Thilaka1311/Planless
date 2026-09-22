@@ -683,7 +683,13 @@ export default function MainApp({
               onClose={() => {
                 setSelectedPlanId(null);
                 localStorage.removeItem("planless_selected_plan_id");
-                if (selectedPlanSource === "chat" && selectedChatPlanId) {
+                if (selectedPlanSource === "past_plans") {
+                  setShowPastPlansScreen(true);
+                  setSelectedPlanSource("list");
+                } else if (selectedPlanSource === "hosted") {
+                  setShowHostedPlansScreen(true);
+                  setSelectedPlanSource("list");
+                } else if (selectedPlanSource === "chat" && selectedChatPlanId) {
                   // Stay in same Plan Chat screen when returning from Plan Preview
                   setSelectedPlanSource("list");
                 } else {
@@ -767,7 +773,7 @@ export default function MainApp({
             <PastPlans
               onBack={() => setShowPastPlansScreen(false)}
               setSelectedPlanId={(id) => {
-                setSelectedPlanSource("list");
+                setSelectedPlanSource("past_plans");
                 setSelectedPlanId(id);
                 setShowPastPlansScreen(false);
               }}
@@ -790,7 +796,7 @@ export default function MainApp({
             <HostedPlansScreen
               onBack={() => setShowHostedPlansScreen(false)}
               setSelectedPlanId={(id) => {
-                setSelectedPlanSource("list");
+                setSelectedPlanSource("hosted");
                 setSelectedPlanId(id);
                 setShowHostedPlansScreen(false);
               }}

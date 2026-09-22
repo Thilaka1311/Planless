@@ -64,7 +64,7 @@ export default defineConfig(() => {
             /^\/realtime\/v1\//,
             /^\/functions\/v1\//,
             /.*supabase\.co.*/,
-            /.*ngrok-free\.dev.*/,
+            /.*\.ngrok(-free)?\.(app|dev).*/,
           ],
           runtimeCaching: [
             {

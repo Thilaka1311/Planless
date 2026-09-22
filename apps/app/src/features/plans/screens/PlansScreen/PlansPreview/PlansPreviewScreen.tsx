@@ -2397,9 +2397,12 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                               <IndianRupee className="w-4.5 h-4.5 text-emerald-400 flex-shrink-0" />
                               <div className="flex items-center gap-1.5">
                                 <span className="text-white text-[13px] font-semibold tracking-wide">
-                                  {hasCost && costText && costText !== "Free" ? costText.replace(/^₹\s*/, '') : "Free"}
+                                  {hasCost && currentTotalCost > 0
+                                    ? (currentTotalCost % 1 === 0
+                                        ? currentTotalCost.toLocaleString("en-IN")
+                                        : currentTotalCost.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+                                    : "Free"}
                                 </span>
-                                <span className="text-[#8E8E93] text-[11px] font-normal font-sans">per person</span>
                               </div>
                             </>
                           ) : (
@@ -2433,7 +2436,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                             setIsEditingCostSheetOpen(true);
                           }}
                           position="above"
-                          align="right"
+                          align={isCompleted ? "left" : "right"}
                         />
                       </div>
                     </div>
@@ -2871,6 +2874,13 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               members={selectedPlan?.members || []}
               hostId={selectedPlan.hostId || selectedPlan.creatorId || (selectedPlan as any).host_id || ""}
               planExpense={planExpense}
+              planTotalCost={currentTotalCost}
+              planTitle={selectedPlan?.title || ''}
+              planCoverImage={selectedPlan?.coverImage || (selectedPlan as any)?.cover_image || ''}
+              planId={(selectedPlan as any)?.dbUuid || selectedPlan?.id || ''}
+              planCategory={selectedPlan?.category || ''}
+              planSubcategory={(selectedPlan as any)?.subcategory || ''}
+              planCapacity={currentPlanSize}
               isSubmitting={isEndingPlan || isManagingCompletedParticipants}
               isCompletedMode={selectedPlan?.status === 'COMPLETED'}
               onConfirm={async (attendanceInput, expenseMode, usersToAdd, usersToRemove) => {
@@ -2916,6 +2926,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       {/* ---------------- ⚡ EARLY COMPLETE PLAN CONFIRMATION SHEET ---------------- */}
       <EarlyCompletePlanConfirmationBottomSheet
         isOpen={showEarlyEndPlanConfirm}
+        plan={selectedPlan}
         scheduledTimeText={formatPlanDate((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)}
         isSubmitting={false}
         onConfirm={() => {

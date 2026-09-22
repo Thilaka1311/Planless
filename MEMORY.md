@@ -104,6 +104,18 @@ This file stores durable lessons, corrections, architectural invariants, and wor
 
 ---
 
+## 11. Graphify-First Codebase Discovery & Targeted Inspection
+
+* **Lesson**: When asked to fix a simple navigation bug or modify a component, the agent broadly scanned directories, guessed paths, or ran multiple exploratory grep searches across unrelated screens, taking too long for what should have been a 1-minute targeted fix.
+* **Rule**:
+  1. **Graphify as Primary Discovery**: Always consult Graphify (`graphify-out/graph.json` or `graphify query`) as the first discovery step to locate exact components, callers, hooks, and dependencies rather than blindly guessing paths or scanning directories.
+  2. **Minimal Target Set**: Inspect only the files identified by Graphify. Do not read unrelated files or scan the repository when Graphify can map the relationship immediately.
+  3. **Strict Loop Order**:
+     $$\text{Request} \longrightarrow \text{Graphify Discovery} \longrightarrow \text{Identify Files} \longrightarrow \text{Read Only Relevant Files} \longrightarrow \text{Plan} \longrightarrow \text{Implement} \longrightarrow \text{Graphify Verification} \longrightarrow \text{Tests/Checks} \longrightarrow \text{Update Graphify}$$
+  4. **Post-Implementation Verification & Refresh**: After implementing, use Graphify to verify affected code relationships, run tests, and run incremental update (`/graphify . --update`) so the knowledge graph matches the current codebase.
+
+---
+
 ## Adding New Learned Rules
 
 When Thilak makes a correction or an architectural invariant is established, append it using this format:

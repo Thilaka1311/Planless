@@ -922,9 +922,8 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   keyboardOpen ? "pb-3.5" : "pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))]"
                 } flex items-center justify-center flex-shrink-0 border-t border-white/[0.06] select-none`}
               >
-                <div className="px-4 py-2 rounded-full bg-zinc-900/80 border border-white/[0.08] text-xs font-medium text-zinc-400 tracking-wide flex items-center gap-2 shadow-inner">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/80" />
-                  <span>Plan completed · Chat archived</span>
+                <div className="px-4 py-2 rounded-full bg-zinc-900/80 border border-white/[0.08] text-xs font-medium text-zinc-400 tracking-wide flex items-center justify-center shadow-inner">
+                  <span>Chat archived</span>
                 </div>
               </div>
             ) : (

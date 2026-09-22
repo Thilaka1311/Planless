@@ -1097,9 +1097,11 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const planUuid = matchedPlan?.dbUuid || planId;
     const nowIso = new Date().toISOString();
     const finalAttendedCount = res?.attended_participants ?? res?.final_count ?? attendanceInput.filter(a => a.attendance === 'ATTENDED').length;
+    const finalPlanSize = res?.plan_size ?? finalAttendedCount;
 
     updateLocalPlan(planUuid, {
       status: "COMPLETED",
+      plan_size: finalPlanSize,
       attended_participants: finalAttendedCount,
       attendedParticipants: finalAttendedCount,
       updated_at: nowIso,

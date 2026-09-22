@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { X, Check, Search } from "lucide-react";
+import { X, Check, Search, ArrowRight } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { PlanMember } from "../../../core/types";
 import { useFriendshipStore } from "../../friendships/state/FriendshipContext";
@@ -146,19 +146,22 @@ export const AttendanceSearch: React.FC<AttendanceSearchProps> = ({
         </div>
       </div>
 
-      {/* ── Main Friends Search List ── */}
-      <div className="flex-1 flex flex-col pt-3 pb-24 animate-fade-in min-h-0 relative select-none">
-        <div className="flex-1 flex flex-col space-y-1.5 overflow-y-auto scrollbar-none px-5 pt-1 pr-2 min-h-0">
+      {/* ── Main Friends Search List matching Add Participants style ── */}
+      <div className="flex-1 flex flex-col px-4 pt-0 pb-0 animate-fade-in min-h-0 relative select-none">
+        <div
+          className="flex-1 flex flex-col select-none overflow-y-auto scrollbar-none pr-0 min-h-0"
+          style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))' }}
+        >
           {searchResults.length === 0 ? (
             <div className="w-full py-12 text-center text-zinc-600 text-xs font-semibold">
               {searchQuery ? 'No friends found matching search' : 'No friends available'}
             </div>
           ) : (
-            searchResults.map((m) => {
+            searchResults.map((m, index) => {
               const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
               const isHostUser = m.isHost || m.role === 'HOST' || mId === hostId;
               const isAttended = isHostUser || attendanceState[mId] === 'ATTENDED';
-              const photo = m.avatar || (m as any).profile_photo;
+              const photo = m.avatar || (m as any).profile_photo || (m as any).profilePhoto;
               const name = m.name || 'Participant';
 
               return (
@@ -168,37 +171,38 @@ export const AttendanceSearch: React.FC<AttendanceSearchProps> = ({
                   onClick={() => onToggleAttendance(m)}
                   style={{
                     width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(255, 255, 255, 0.04)',
-                    background: 'rgba(255, 255, 255, 0.02)',
+                    padding: '11px 2px',
+                    borderBottom: index === searchResults.length - 1 ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+                    background: 'transparent',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    transition: 'all 0.2s',
+                    transition: 'opacity 0.2s',
                     cursor: 'pointer',
                     outline: 'none',
                   }}
                 >
-                  <div className="flex items-center gap-3 truncate">
+                  <div className="flex items-center gap-3.5 truncate">
                     <UserAvatar
                       src={photo}
                       alt={name}
-                      size="w-8 h-8"
+                      size="w-11 h-11"
                       className="shrink-0"
                     />
-                    <span className="block truncate text-xs font-bold text-white">
-                      {name}
-                    </span>
+                    <div className="truncate text-left">
+                      <span className="block truncate text-[15px] font-semibold text-white">
+                        {name}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Selected / Unselected Indicator */}
+                  {/* Selection circular check indicator matching Add Participants */}
                   {isAttended ? (
-                    <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-black shrink-0 shadow-sm">
-                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                    </div>
+                    <span className="w-6 h-6 rounded-full bg-[#FF6B2C] flex items-center justify-center shrink-0 shadow-sm">
+                      <Check className="w-4 h-4 text-white stroke-[3]" />
+                    </span>
                   ) : (
-                    <span className="w-4.5 h-4.5 rounded-full border-2 border-zinc-600 shrink-0" />
+                    <span className="w-6 h-6 rounded-full border border-white/20 shrink-0" />
                   )}
                 </button>
               );
@@ -207,41 +211,19 @@ export const AttendanceSearch: React.FC<AttendanceSearchProps> = ({
         </div>
       </div>
 
-      {/* ── Fixed Bottom CTA Button ── */}
-      <div
+      {/* Floating ArrowRight action button in bottom-right corner */}
+      <button
+        type="button"
+        onClick={onBack}
+        title="Done"
         style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          padding: '16px 20px',
-          background: 'linear-gradient(to top, #000000 80%, rgba(0,0,0,0))',
-          zIndex: 40,
-          paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
-          pointerEvents: 'auto'
+          bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))',
+          right: 'calc(1.25rem + env(safe-area-inset-right, 0px))',
         }}
+        className="fixed z-[75] w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-150 cursor-pointer pointer-events-auto select-none"
       >
-        <button
-          type="button"
-          onClick={onBack}
-          style={{
-            width: '100%',
-            height: 48,
-            borderRadius: 14,
-            border: 'none',
-            background: '#FFFFFF',
-            color: '#000000',
-            fontSize: 15,
-            fontWeight: 700,
-            cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-            transition: 'all 0.2s',
-            fontFamily: 'Inter, sans-serif'
-          }}
-        >
-          Done
-        </button>
-      </div>
+        <ArrowRight className="w-6 h-6 text-white stroke-[2.5]" />
+      </button>
     </div>
   );
 };

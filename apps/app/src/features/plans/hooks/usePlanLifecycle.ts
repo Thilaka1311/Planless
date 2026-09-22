@@ -404,6 +404,9 @@ new = ${planUpdate.cover_image}`);
       const res = await api.completePlan(planUuid, attendanceInput, opts?.expenseMode || 'NONE');
       console.log("[PLAN_COMPLETE_SUCCESS] Plan successfully marked completed:", res);
       
+      // Explicitly refresh plans, participants, and expenses to ensure local state updates
+      await refreshPlans(["plans", "plan_participants", "wallet_expenses"]);
+
       // System message for plan completion (fire and forget)
       insertSystemMessage(planUuid, "Plan completed", null).catch(msgErr => {
         console.warn("[PLAN_COMPLETE_WARNING] System message failed (non-critical):", msgErr);
@@ -415,7 +418,7 @@ new = ${planUpdate.cover_image}`);
       throw new Error(err.message || "Failed to complete plan");
     }
 
-  }, [plans, dbPlans, userId, resolveUserUuid, insertSystemMessage]);
+  }, [plans, dbPlans, userId, resolveUserUuid, insertSystemMessage, refreshPlans]);
 
   // ─── manageCompletedPlanParticipants ──────────────────────────────────────────
 

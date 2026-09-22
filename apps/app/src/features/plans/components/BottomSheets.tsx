@@ -1425,7 +1425,14 @@ export const CompletePlanConfirmationBottomSheet: React.FC<CompletePlanConfirmat
 // ----------------------------------------------------------------------
 interface EarlyCompletePlanConfirmationBottomSheetProps {
   isOpen: boolean;
-  scheduledTimeText: string;
+  scheduledTimeText?: string;
+  plan?: Plan | any | null;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
+  subtitle?: string;
   isSubmitting?: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -1434,10 +1441,29 @@ interface EarlyCompletePlanConfirmationBottomSheetProps {
 export const EarlyCompletePlanConfirmationBottomSheet: React.FC<EarlyCompletePlanConfirmationBottomSheetProps> = ({
   isOpen,
   scheduledTimeText,
+  plan,
+  planTitle,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
+  subtitle,
   isSubmitting = false,
   onConfirm,
   onClose,
 }) => {
+  const resolvedTitle = plan?.title || planTitle || "Plan";
+  const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
+  const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
+  const resolvedCategory = plan?.category || planCategory;
+  const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
+
+  const displaySubtitle =
+    subtitle ||
+    (scheduledTimeText
+      ? `Scheduled for ${scheduledTimeText} · Time updates to now`
+      : "Complete early · Plan time updates to now");
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -1466,29 +1492,71 @@ export const EarlyCompletePlanConfirmationBottomSheet: React.FC<EarlyCompletePla
               <div className="w-9 h-1 rounded-full bg-white/20" />
             </div>
 
-            <div className="px-5 pb-2 text-left">
-              <h2 className="text-[18px] font-bold text-white mb-2">Complete plan early?</h2>
-              <p className="text-[14px] text-white/55 leading-[1.55]">
-                This plan is scheduled for <span className="text-white font-medium">{scheduledTimeText}</span>. Since you're completing it now, the plan time will be updated to now.
-              </p>
+            {/* Plan Identity Header matching Plan Actions visual hierarchy */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={resolvedCover}
+                  planId={resolvedPlanId}
+                  category={resolvedCategory}
+                  subcategory={resolvedSubcategory}
+                  screen="Plan Actions Avatar"
+                  alt={resolvedTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {resolvedTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  {displaySubtitle}
+                </p>
+              </div>
             </div>
 
-            <div className="px-4 pt-5 flex flex-col gap-2.5">
+            <div className="px-4 pt-4 flex flex-col gap-2.5">
               <button
                 id="complete_plan_early_confirm_btn"
                 type="button"
-                onClick={onConfirm}
                 disabled={isSubmitting}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+                onClick={onConfirm}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#FFFFFF',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  opacity: isSubmitting ? 0.5 : 1,
+                }}
               >
                 {isSubmitting ? "Completing Plan…" : "Complete Plan"}
               </button>
 
               <button
+                id="complete_plan_early_cancel_btn"
                 type="button"
                 onClick={onClose}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform cursor-pointer"
-                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  marginTop: 8,
+                }}
               >
                 Cancel
               </button>

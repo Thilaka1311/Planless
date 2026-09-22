@@ -1,11 +1,13 @@
 import React, { useMemo } from "react";
-import { ChevronLeft, History } from "lucide-react";
+import { ArrowLeft, History } from "lucide-react";
+import { motion } from "motion/react";
 import { EmptyState } from "../../home/components/EmptyState";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../state/ProfileContext";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { normalizeStatus } from "../../../../lib/participantStatus";
+import { formatPlanDate } from "../../../../lib/mappers";
 
 interface PastPlansProps {
   onBack: () => void;
@@ -74,23 +76,6 @@ const getPlanDateTime = (plan: any): Date => {
   return targetDate;
 };
 
-const formatPlanDateParts = (dateObj: Date): { date: string; time: string } => {
-  if (isNaN(dateObj.getTime()) || dateObj.getTime() === 0) {
-    return { date: '', time: '' };
-  }
-  const month = dateObj.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-  const day = dateObj.getDate();
-  const date = `${month} ${day}`;
-
-  const time = dateObj.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-
-  return { date, time };
-};
-
 export const PastPlans: React.FC<PastPlansProps> = React.memo(({
   onBack,
   setSelectedPlanId,
@@ -121,23 +106,22 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
 
   return (
     <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none">
-      {/* Top Header */}
-      <div className="bg-black/40 backdrop-blur-xl border-b border-white/10 px-4 py-3.5 flex items-center justify-between flex-shrink-0 pt-[calc(0.875rem+env(safe-area-inset-top,0px))]">
+      {/* Header matching Planless navigation style */}
+      <div className="bg-[#050505] px-6 py-3.5 flex items-center gap-3 flex-shrink-0 pt-[calc(0.875rem+env(safe-area-inset-top,0px))]">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center justify-center text-white hover:text-white/80 active:scale-95 transition cursor-pointer p-1 -ml-1"
+          className="text-white/80 hover:text-white active:scale-95 transition cursor-pointer p-1 -ml-1 flex items-center justify-center"
         >
-          <ChevronLeft className="w-6 h-6" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-base font-bold text-white tracking-wide text-center">
+        <h1 className="text-base font-bold text-white tracking-wide text-left">
           Past Plans
         </h1>
-        <div className="w-6" />
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-4 pb-6">
+      <div className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-2 pb-6">
         {completedPlans.length === 0 ? (
           <EmptyState
             icon={<History className="w-8 h-8 text-zinc-500 stroke-[1.5]" />}
@@ -146,7 +130,7 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
             py="py-12"
           />
         ) : (
-          <div className="space-y-3.5">
+          <div className="space-y-2.5">
             {completedPlans.map((plan) => {
               const myMember = plan.members.find(m => {
                 const mId = m.userUuid || m.userId || (m as any).user_id || (m as any).id;
@@ -174,44 +158,48 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
                 statusColor = 'text-rose-400';
               }
 
-              const dateObj = getPlanDateTime(plan);
-              const dateParts = formatPlanDateParts(dateObj);
+              const timeLabel = formatPlanDate(plan.datetime || plan.createdAt);
 
               return (
-                <div
+                <motion.div
                   key={plan.id}
+                  layout
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
                   onClick={() => setSelectedPlanId?.(plan.id)}
-                  className="w-full flex items-center justify-between gap-3.5 py-2.5 cursor-pointer active:opacity-80 transition-all"
+                  className="w-full py-2.5 px-1 transition-all duration-150 cursor-pointer flex items-center justify-between group active:scale-[0.99] select-none text-left"
                 >
                   <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                    {/* Date + Time on the FAR LEFT */}
-                    <div className="w-[68px] min-w-[68px] flex flex-col justify-center shrink-0 text-left font-sans leading-tight">
-                      <span className="text-[12px] font-bold text-white tracking-wide uppercase">
-                        {dateParts.date}
-                      </span>
-                      <span className="text-[11px] font-medium text-zinc-400 mt-0.5">
-                        {dateParts.time}
-                      </span>
-                    </div>
-
-                    {/* Circular Plan Image */}
-                    <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-800 shrink-0 relative border border-white/10">
+                    {/* Thumbnail circle avatar */}
+                    <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.06] shadow-md flex-shrink-0 relative bg-zinc-955">
                       <DiscoveryImages
                         src={plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory)}
+                        planId={plan.dbUuid || plan.id}
                         category={plan.category}
+                        subcategory={(plan as any).subcategory}
+                        screen="Past Plans"
                         alt={plan.title}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover scale-100 group-hover:scale-105 transition-transform duration-200"
                       />
                     </div>
-                    <h3 className="text-sm font-bold text-white truncate flex-1 min-w-0">
-                      {plan.title}
-                    </h3>
+
+                    {/* Content details side-by-side */}
+                    <div className="min-w-0 flex-1 flex flex-col gap-0.5">
+                      <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate">
+                        {plan.title}
+                      </h3>
+                      <span className="text-[11px] text-[#8E8E93] font-sans font-medium">
+                        {timeLabel}
+                      </span>
+                    </div>
                   </div>
 
-                  <span className={`text-xs font-medium shrink-0 ${statusColor}`}>
+                  {/* Far Right: Status */}
+                  <span className={`text-xs font-medium shrink-0 ml-3 ${statusColor}`}>
                     {statusText}
                   </span>
-                </div>
+                </motion.div>
               );
             })}
           </div>
