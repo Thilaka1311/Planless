@@ -522,13 +522,21 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     persistParticipantState(res.nextGoing, res.nextWaitlist);
   };
 
-  useEffect(() => {
-    if (onBottomSheetStateChange) {
-      onBottomSheetStateChange(Boolean(selectedItem));
-    }
-  }, [selectedItem, onBottomSheetStateChange]);
-
   const effectiveIsHost = isHost !== undefined ? isHost : isHostUser;
+
+  const isAnyBottomSheetOpen = Boolean(
+    selectedItem ||
+    viewProfileUserId ||
+    (effectiveIsHost && isCapacitySheetOpen) ||
+    (affectedIndex >= 0 && affectedIndex < affectedHosts.length)
+  );
+
+  useEffect(() => {
+    onBottomSheetStateChange?.(isAnyBottomSheetOpen);
+    return () => {
+      onBottomSheetStateChange?.(false);
+    };
+  }, [isAnyBottomSheetOpen, onBottomSheetStateChange]);
 
   return (
     <div

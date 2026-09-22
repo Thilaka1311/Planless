@@ -72,6 +72,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   isCompletedPlan,
   initialOpenPlanSizeSheet,
   onPlanSizeSheetDismissed,
+  onBottomSheetStateChange,
 }) => {
   const isStandalone = displayMode === 'standalone';
 
@@ -256,6 +257,19 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
 
   const effectiveIsHost = isHost !== undefined ? isHost : isHostUser;
   const canParticipantInvite = managementMode !== 'host' && managementMode !== 'invite_only';
+
+  const isAnyBottomSheetOpen = Boolean(
+    (selectedItem && sheetType) ||
+    viewProfileUserId ||
+    (effectiveIsHost && isCapacitySheetOpen)
+  );
+
+  useEffect(() => {
+    onBottomSheetStateChange?.(isAnyBottomSheetOpen);
+    return () => {
+      onBottomSheetStateChange?.(false);
+    };
+  }, [isAnyBottomSheetOpen, onBottomSheetStateChange]);
 
   return (
     <div

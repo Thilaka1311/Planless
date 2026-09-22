@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { Minus, Plus, Users, UserPlus } from "lucide-react";
 
@@ -161,7 +162,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
         : `${effectiveGoingCount} going`;
   }
 
-  return (
+  const node = (
     <AnimatePresence>
       {isOpen && (
         <>
@@ -170,7 +171,12 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleClose}
-            className="fixed inset-0 bg-black/60 z-60 pointer-events-auto"
+            onTouchMove={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            style={{ touchAction: "none" }}
+            className="fixed inset-0 bg-black/60 z-[100] pointer-events-auto"
           />
           <motion.div
             initial={{ y: "100%" }}
@@ -194,7 +200,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
               background: "#1C1C1E",
               borderTopLeftRadius: 20,
               borderTopRightRadius: 20,
-              zIndex: 65,
+              zIndex: 105,
               padding: "16px 20px calc(32px + env(safe-area-inset-bottom, 0px))",
               color: "#FFFFFF",
               boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.3)",
@@ -353,6 +359,11 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
       )}
     </AnimatePresence>
   );
+
+  if (typeof document !== "undefined") {
+    return createPortal(node, document.body);
+  }
+  return node;
 };
 
 export const EditCapacityBottomSheet = PlanSizeBottomsheet;

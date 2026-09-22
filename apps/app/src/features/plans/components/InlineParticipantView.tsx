@@ -9,6 +9,7 @@ import { supabase } from '../../../../lib/supabaseClient';
 import { FriendProfileViewerBottomSheet } from '../../friendships/components/FriendProfileViewerBottomSheet';
 
 import { isUuid } from '../utils/planUtils';
+import { SegmentedStatusToggle, StatusTabItem } from './PlansDivider';
 
 type InlineTab = 'going' | 'invited' | 'waitlist' | 'skipped';
 
@@ -450,38 +451,13 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
 
   const completedCount = (plan as any).attended_participants ?? (plan as any).attendedParticipants ?? groups.going.length;
 
-  const getLiveTabActiveStyle = (key: InlineTab) => {
-    switch (key) {
-      case 'going':
-        return {
-          className: 'text-emerald-200 font-semibold',
-          style: {
-            backgroundColor: 'rgba(6, 78, 59, 0.85)',
-          },
-        };
-      case 'invited':
-        return {
-          className: 'text-zinc-200 font-semibold',
-          style: {
-            backgroundColor: 'rgba(39, 39, 42, 0.85)',
-          },
-        };
-      case 'waitlist':
-        return {
-          className: 'text-amber-200 font-semibold',
-          style: {
-            backgroundColor: 'rgba(120, 53, 15, 0.85)',
-          },
-        };
-      case 'skipped':
-        return {
-          className: 'text-rose-200 font-semibold',
-          style: {
-            backgroundColor: 'rgba(136, 19, 55, 0.85)',
-          },
-        };
-    }
-  };
+  const statusTabs: StatusTabItem<InlineTab>[] = useMemo(() => {
+    return tabs.map((tab) => ({
+      id: tab.key,
+      label: `${tab.label} (${tab.count})`,
+      statusType: tab.key,
+    }));
+  }, [tabs]);
 
   // Render streamlined view for normal participants on live plans, or if variant is explicitly flat:
   // Starts directly with status toggle, always expanded, no header row, no outer card box.
@@ -490,39 +466,24 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
 
     return (
       <div className="w-full text-left space-y-2 flex flex-col flex-1 min-h-0">
-        {tabs.length > 0 && (
+        {statusTabs.length > 0 && (
           <div className="w-full flex items-center justify-between gap-2 flex-shrink-0">
-            <div className="flex-1 flex items-center justify-center bg-[#0A0A0C]/90 border border-white/15 rounded-full overflow-hidden backdrop-blur-md shadow-inner">
-              {tabs.map((tab) => {
-                const isActive = activeTab === tab.key;
-                const activeStyle = getLiveTabActiveStyle(tab.key);
-
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveTab(tab.key)}
-                    style={isActive ? activeStyle.style : undefined}
-                    className={`flex-1 py-1.5 px-3 text-[11.5px] font-sans font-semibold tracking-wide transition-all duration-200 focus:outline-none flex items-center justify-center cursor-pointer select-none min-w-0 ${
-                      isActive
-                        ? `${activeStyle.className} rounded-full z-10 shadow-sm`
-                        : 'text-zinc-400 hover:text-zinc-200 bg-transparent hover:bg-white/[0.04]'
-                    }`}
-                  >
-                    <span className="truncate">{tab.label} ({tab.count})</span>
-                  </button>
-                );
-              })}
-            </div>
+            <SegmentedStatusToggle<InlineTab>
+              className="flex-1"
+              tabs={statusTabs}
+              selected={activeTab}
+              onSelect={(id) => setActiveTab(id)}
+              layoutId={`inline_participant_${plan.id}_active_pill`}
+            />
 
             {onManageParticipants && (
               <button
                 type="button"
                 onClick={onManageParticipants}
-                className="h-8 w-8 rounded-full bg-[#0A0A0C]/90 border border-white/15 text-white/80 hover:text-white transition flex items-center justify-center cursor-pointer shrink-0 shadow-inner"
+                className="h-10 w-10 rounded-[20px] bg-[#0A0A0C] border border-[#1A1A1A] text-white/80 hover:text-white transition flex items-center justify-center cursor-pointer shrink-0 shadow-sm"
                 title="Manage Participants"
               >
-                <Users className="w-3.5 h-3.5" />
+                <Users className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -720,76 +681,15 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
             <div className="w-full h-px bg-white/[0.06]" />
 
             {/* Segmented page divider toggle */}
-            {isCompletedPlan ? (
-              <>
-                {tabs.length > 1 && (
-                  <div className="px-4 pt-4">
-                    <div className="flex bg-[#0A0A0C] border border-[#1A1A1A] rounded-[24px] p-1 gap-1">
-                      {tabs.map(tab => {
-                        const isActive = activeTab === tab.key;
-                        const activeColor =
-                          tab.key === 'going'
-                            ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
-                            : tab.key === 'waitlist'
-                            ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
-                            : tab.key === 'skipped'
-                            ? 'text-rose-400 border-rose-500/30 bg-rose-500/10'
-                            : 'text-white border-white/10 bg-white/[0.04]';
-
-                        return (
-                          <button
-                            key={tab.key}
-                            type="button"
-                            onClick={() => setActiveTab(tab.key)}
-                            className={`flex-1 py-1.5 rounded-[18px] text-[10px] font-sans font-bold tracking-wide transition-all duration-300 focus:outline-none flex items-center justify-center cursor-pointer ${
-                              isActive
-                                ? `${activeColor} border shadow-md`
-                                : 'text-zinc-500 hover:text-zinc-300'
-                            }`}
-                          >
-                            <span className="truncate">{tab.label} ({tab.count})</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {tabs.length === 1 && (
-                  <div className="px-5 pt-4">
-                    <span className="text-[10px] font-sans font-black tracking-[0.14em] text-zinc-500 uppercase">
-                      {tabs[0].label} ({tabs[0].count})
-                    </span>
-                  </div>
-                )}
-              </>
-            ) : (
-              tabs.length > 0 && (
-                <div className="px-4 pt-3.5 pb-1">
-                  <div className="w-full flex items-center justify-center bg-[#0A0A0C]/80 border border-white/10 rounded-full p-1 gap-1 backdrop-blur-md shadow-inner">
-                    {tabs.map(tab => {
-                      const isActive = activeTab === tab.key;
-                      const activeStyle = getLiveTabActiveStyle(tab.key);
-
-                      return (
-                        <button
-                          key={tab.key}
-                          type="button"
-                          onClick={() => setActiveTab(tab.key)}
-                          style={isActive ? activeStyle.style : undefined}
-                          className={`flex-1 py-2 px-3 rounded-full text-[12px] font-sans font-semibold tracking-wide transition-all duration-300 focus:outline-none flex items-center justify-center cursor-pointer select-none ${
-                            isActive
-                              ? `${activeStyle.className}`
-                              : 'text-zinc-400 hover:text-zinc-200 border border-transparent bg-transparent'
-                          }`}
-                        >
-                          <span className="truncate">{tab.label} ({tab.count})</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )
+            {statusTabs.length > 0 && (
+              <div className="px-4 pt-3 pb-1">
+                <SegmentedStatusToggle<InlineTab>
+                  tabs={statusTabs}
+                  selected={activeTab}
+                  onSelect={(id) => setActiveTab(id)}
+                  layoutId={`inline_participant_acc_${plan.id}_active_pill`}
+                />
+              </div>
             )}
 
             {/* Participant list */}

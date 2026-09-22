@@ -1,6 +1,10 @@
 import React from 'react';
 import { Plus } from 'lucide-react';
 import { ParticipantTab } from './types';
+import {
+  SegmentedStatusToggle,
+  StatusTabItem,
+} from '../../plans/components/PlansDivider';
 
 interface ParticipantTabsProps {
   visibleTabs: ParticipantTab[];
@@ -23,114 +27,42 @@ export const ParticipantTabs: React.FC<ParticipantTabsProps> = ({
   onTabChange,
   onAddFriends,
 }) => {
-  const tabCount = visibleTabs.length;
-
-  if (tabCount === 0) {
+  if (visibleTabs.length === 0) {
     return null;
   }
 
-  const activeTabIndex = Math.max(0, visibleTabs.indexOf(activeTab));
-  const pillWidth = `calc(${100 / tabCount}% - 3px)`;
-  const pillLeft =
-    activeTabIndex === 0
-      ? '2px'
-      : `calc(${(activeTabIndex * 100) / tabCount}% + 1px)`;
+  const tabs: StatusTabItem<ParticipantTab>[] = visibleTabs.map((key) => {
+    let label = '';
+    if (key === 'invited') label = `Invited (${invitedCount})`;
+    if (key === 'going') label = `Going (${goingCount} / ${capacity})`;
+    if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
 
-  const tabLabelColor = (key: ParticipantTab) =>
-    activeTab === key ? '#FFFFFF' : '#8E8E93';
+    return {
+      id: key,
+      label,
+      statusType: key,
+    };
+  });
 
   return (
-    <div style={{ padding: '0 20px', margin: '16px 0 8px 0', flexShrink: 0 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          background: 'rgba(255, 255, 255, 0.05)',
-          borderRadius: 20,
-          padding: 3,
-          position: 'relative',
-          height: 38,
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: 3,
-            bottom: 3,
-            left: pillLeft,
-            width: pillWidth,
-            background: activeTab === 'going' ? '#064E3B' : 'rgba(255, 255, 255, 0.15)',
-            borderRadius: 17,
-            transition: 'all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.4)',
-            border: activeTab === 'going' ? '1px solid #059669' : '1px solid rgba(255,255,255,0.1)',
-          }}
-        />
-
-        {visibleTabs.map((key) => {
-          let label = '';
-          if (key === 'invited') label = `Invited (${invitedCount})`;
-          if (key === 'going') label = `Going (${goingCount} / ${capacity})`;
-          if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
-
-          return (
-            <button
-              key={key}
-              onClick={() => onTabChange(key)}
-              style={{
-                flex: 1,
-                border: 'none',
-                background: 'transparent',
-                color: tabLabelColor(key),
-                fontSize: 11.5,
-                fontWeight: activeTab === key ? 700 : 500,
-                cursor: 'pointer',
-                zIndex: 2,
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'color 0.2s ease',
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
-
-        {onAddFriends && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              height: '100%',
-              zIndex: 2,
-            }}
-          >
-            <button
-              onClick={onAddFriends}
-              title="Invite People"
-              style={{
-                height: '100%',
-                background: 'transparent',
-                border: 'none',
-                color: '#FFFFFF',
-                fontSize: 16,
-                fontWeight: 300,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'opacity 0.2s ease',
-              }}
-              className="w-9 opacity-100 flex items-center justify-center"
-            >
-              <Plus className="w-4 h-4 text-white" />
-            </button>
-          </div>
-        )}
-      </div>
+    <div className="px-5 my-4 shrink-0 flex items-center gap-2">
+      <SegmentedStatusToggle
+        className="flex-1"
+        tabs={tabs}
+        selected={activeTab}
+        onSelect={onTabChange}
+        layoutId="shared_participant_tabs_active_pill"
+      />
+      {onAddFriends && (
+        <button
+          onClick={onAddFriends}
+          title="Invite People"
+          type="button"
+          className="h-10 w-10 rounded-[20px] bg-[#0A0A0C] border border-[#1A1A1A] text-white/80 hover:text-white transition flex items-center justify-center cursor-pointer shrink-0 shadow-sm"
+        >
+          <Plus className="w-4 h-4 text-white" />
+        </button>
+      )}
     </div>
   );
 };

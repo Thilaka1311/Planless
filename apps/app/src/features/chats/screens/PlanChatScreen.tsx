@@ -106,6 +106,9 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
 
   const [isEditingPlanSize, setIsEditingPlanSize] = useState(false);
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
+  const [showAddCostSheet, setShowAddCostSheet] = useState(false);
+
+  const isAnySheetOpen = isBottomSheetOpen || showAddCostSheet;
 
   // ── Horizontal Motion Pager Hook ──
   const {
@@ -119,7 +122,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     initialPage: 1,
     totalPages: 2,
     keyboardOpen,
-    disabled: isEditingPlanSize || isBottomSheetOpen,
+    disabled: isEditingPlanSize || isAnySheetOpen,
   });
 
   const handleOpenReplacePicker = useCallback((targetUserId: string) => {
@@ -273,8 +276,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     }
   };
 
-  // Add Cost Bottom Sheet state
-  const [showAddCostSheet, setShowAddCostSheet] = useState(false);
+
 
   // Dynamic timeline event item (combines user messages and derived system events)
   interface TimelineItem {
@@ -501,31 +503,31 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     >
       {/* 1. INDEPENDENT FIXED HERO HEADER OVERLAY — Completely isolated from pager flex/resize */}
       {plan && (
-        <div className="absolute top-0 left-0 right-0 z-50 pointer-events-auto">
+        <div className={`absolute top-0 left-0 right-0 z-50 ${isAnySheetOpen ? "pointer-events-none select-none" : "pointer-events-auto"}`}>
           <HeroHeader
             title={plan.title}
             creatorName={isHost ? "You" : plan.creatorName}
             creatorAvatar={isHost ? userProfile?.avatar : plan.creatorAvatar}
             hosts={allHosts}
             viewerId={currentUserId}
-            onClose={onBack}
+            onClose={isAnySheetOpen ? undefined : onBack}
             isHost={isHost && !isCancelled}
             coverImage={plan.coverImage}
             category={plan.category}
             hideHostAttribution={true}
-            onHeaderPress={isBottomSheetOpen ? undefined : onOpenPlanDetails}
+            onHeaderPress={isAnySheetOpen ? undefined : onOpenPlanDetails}
             currentPage={currentPage}
-            onSelectPage={(pageIdx) => { if (!isBottomSheetOpen) goToPage(pageIdx); }}
-            onOpenParticipants={() => { if (!isBottomSheetOpen) goToPage(0); }}
-            onOpenExpenses={() => { if (!isBottomSheetOpen) setShowBalancesScreen(true); }}
-            onEditTitle={!isCancelled && !isBottomSheetOpen ? async (newTitle) => {
+            onSelectPage={(pageIdx) => { if (!isAnySheetOpen) goToPage(pageIdx); }}
+            onOpenParticipants={() => { if (!isAnySheetOpen) goToPage(0); }}
+            onOpenExpenses={() => { if (!isAnySheetOpen) setShowBalancesScreen(true); }}
+            onEditTitle={!isCancelled && !isAnySheetOpen ? async (newTitle) => {
               try {
                 await updatePlanDetails(plan.id, { title: newTitle });
               } catch (err) {
                 console.error("Failed to update title:", err);
               }
             } : undefined}
-            onOpenSettings={!isCancelled && !isBottomSheetOpen ? () => setShowSettingsScreen(true) : undefined}
+            onOpenSettings={!isCancelled && !isAnySheetOpen ? () => setShowSettingsScreen(true) : undefined}
           />
         </div>
       )}
@@ -534,7 +536,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden relative w-full touch-pan-y select-none pt-[calc(96px+env(safe-area-inset-top,0px))]"
-        style={{ touchAction: "pan-y" }}
+        style={{ touchAction: isAnySheetOpen ? "none" : "pan-y" }}
       >
         <motion.div
           {...pagerProps}

@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend } from './types';
 
@@ -41,9 +42,13 @@ export const RejoinPlanBottomSheet: React.FC<RejoinPlanBottomSheetProps> = ({
       });
   };
 
-  return (
+  const node = (
     <div
       onClick={onClose}
+      onTouchMove={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
       style={{
         position: 'fixed',
         inset: 0,
@@ -52,6 +57,7 @@ export const RejoinPlanBottomSheet: React.FC<RejoinPlanBottomSheetProps> = ({
         display: 'flex',
         alignItems: 'flex-end',
         animation: 'fadeIn 0.2s ease-out',
+        touchAction: 'none',
       }}
     >
       <div
@@ -172,4 +178,9 @@ export const RejoinPlanBottomSheet: React.FC<RejoinPlanBottomSheetProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(node, document.body);
+  }
+  return node;
 };
