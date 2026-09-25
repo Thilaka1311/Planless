@@ -39,12 +39,14 @@ interface CreateMVPProps {
   setActiveTab: (tab: "home" | "plans" | "create" | "wallet" | "profile") => void;
   onToggleBottomNav?: (hidden: boolean) => void;
   setPlansFilter?: (filter: "JOINED" | "WAITLISTED" | "SKIPPED") => void;
+  setSelectedPlanId?: (id: string | null) => void;
 }
 
 export const CreateMVP: React.FC<CreateMVPProps> = ({
   setActiveTab,
   onToggleBottomNav,
   setPlansFilter,
+  setSelectedPlanId,
 }) => {
   const { createPlan } = usePlansStore();
 
@@ -527,13 +529,20 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
   if (createPhase === "confirmation") {
     return (
       <CreatePlanConfirmation
+        planTitle={form.localTitle || "New Activity"}
+        planCoverImage={form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory)}
+        planId={postedPlanUuid}
         onCopyInviteLink={handleCopyInviteLink}
         isCopying={isCopying}
         isCopied={isCopied}
         onGoToPlans={() => {
+          const targetPlanId = postedPlanUuid;
           handleResetAll();
           if (setPlansFilter) setPlansFilter("JOINED");
-          navigateToRoute({ tab: "plans" });
+          if (targetPlanId && setSelectedPlanId) {
+            setSelectedPlanId(targetPlanId);
+          }
+          navigateToRoute({ tab: "plans", selectedPlanId: targetPlanId || undefined });
           setActiveTab("plans");
         }}
       />

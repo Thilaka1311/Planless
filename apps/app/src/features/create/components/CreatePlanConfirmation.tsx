@@ -1,8 +1,12 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { Check, Link, CheckCircle } from "lucide-react";
+import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 
 interface CreatePlanConfirmationProps {
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planId?: string | null;
   onCopyInviteLink?: () => void;
   isCopying?: boolean;
   isCopied?: boolean;
@@ -11,6 +15,9 @@ interface CreatePlanConfirmationProps {
 }
 
 export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
+  planTitle,
+  planCoverImage,
+  planId,
   onCopyInviteLink,
   isCopying = false,
   isCopied = false,
@@ -35,6 +42,28 @@ export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
 
   const springTransition = { type: "spring", stiffness: 420, damping: 28 } as const;
 
+  // 3-Stage Animation:
+  // Step 1: "tick" (checkmark only)
+  // Step 2: "avatar" (same circle transforms into plan avatar)
+  // Step 3: "content" (reveal remaining content: plan name, Plan Created!, Share, Go to Plans)
+  const [stage, setStage] = useState<"tick" | "avatar" | "content">(
+    prefersReducedMotion ? "content" : "tick"
+  );
+
+  useEffect(() => {
+    if (prefersReducedMotion) return;
+    const t1 = setTimeout(() => {
+      setStage("avatar");
+    }, 850);
+    const t2 = setTimeout(() => {
+      setStage("content");
+    }, 1350);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [prefersReducedMotion]);
+
   return (
     <motion.div
       className={`flex-1 flex flex-col justify-between relative h-full bg-[#050505] overflow-hidden text-left ${className}`}
@@ -43,10 +72,10 @@ export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
       transition={{ duration: 0.35 }}
     >
       {/* ─── Upper: Hero animation + text ─── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-8 gap-10">
-        {/* Success orb + ring + particles */}
+      <div className="flex-1 flex flex-col items-center justify-center px-8 gap-8 my-auto">
+        {/* Success orb + ring + particles + transform into avatar */}
         <div className="relative flex items-center justify-center">
-          {/* Expanding glow ring */}
+          {/* Expanding glow ring (Step 1) */}
           <motion.div
             className="absolute rounded-full border border-[#FF6B2C]/40"
             initial={prefersReducedMotion ? {} : { width: 80, height: 80, opacity: 0.6 }}
@@ -54,7 +83,7 @@ export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
             transition={{ duration: 1.1, ease: "easeOut", delay: 0.15 }}
           />
 
-          {/* Second subtler ring */}
+          {/* Second subtler ring (Step 1) */}
           <motion.div
             className="absolute rounded-full border border-[#FF6B2C]/20"
             initial={prefersReducedMotion ? {} : { width: 80, height: 80, opacity: 0.4 }}
@@ -62,7 +91,7 @@ export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
             transition={{ duration: 1.4, ease: "easeOut", delay: 0.2 }}
           />
 
-          {/* Particles */}
+          {/* Particles (Step 1) */}
           {!prefersReducedMotion &&
             PARTICLES.map((p, i) => {
               const rad = (p.angle * Math.PI) / 180;
@@ -79,89 +108,104 @@ export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
               );
             })}
 
-          {/* Main orb */}
+          {/* Main circular element: transforms from checkmark circle to plan avatar in-place */}
           <motion.div
-            className="relative w-24 h-24 bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 rounded-full flex items-center justify-center"
+            className="relative w-24 h-24 rounded-full overflow-hidden flex items-center justify-center border border-[#FF6B2C]/30 bg-[#FF6B2C]/10"
             style={{ boxShadow: "0 0 32px 0 rgba(255,107,44,0.18)" }}
             initial={prefersReducedMotion ? {} : { scale: 0.6, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ ...springTransition, delay: 0.05 }}
           >
-            {/* Check icon draws in */}
+            {/* Step 1: Check icon */}
             <motion.div
-              initial={prefersReducedMotion ? {} : { scale: 0, rotate: -30 }}
-              animate={{ scale: 1, rotate: 0 }}
-              transition={{ ...springTransition, delay: 0.2 }}
+              className="absolute inset-0 flex items-center justify-center z-10"
+              initial={prefersReducedMotion ? { opacity: 0 } : { scale: 0, rotate: -30, opacity: 1 }}
+              animate={stage === "tick" ? { scale: 1, rotate: 0, opacity: 1 } : { scale: 0.4, opacity: 0 }}
+              transition={{ duration: 0.35, ease: "easeInOut" }}
             >
               <Check className="w-11 h-11 text-[#FF6B2C] stroke-[2.5]" />
+            </motion.div>
+
+            {/* Step 2 & 3: Plan Avatar transforms in-place */}
+            <motion.div
+              className="absolute inset-0 w-full h-full z-20"
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={stage !== "tick" ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.85 }}
+              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <DiscoveryImages
+                src={planCoverImage}
+                planId={planId || undefined}
+                screen="Create Plan Confirmation"
+                alt={planTitle || "Plan"}
+                className="w-full h-full object-cover"
+              />
             </motion.div>
           </motion.div>
         </div>
 
-        {/* Text block */}
-        <div className="text-center space-y-3">
-          <motion.h2
-            className="text-3xl font-black text-white tracking-tight leading-none"
-            initial={prefersReducedMotion ? {} : { opacity: 0, y: 14 }}
+        {/* Content block: only revealed in Step 3 after avatar transformation */}
+        {stage === "content" && (
+          <motion.div
+            className="text-center space-y-2"
+            initial={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1], delay: 0.28 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
           >
-            Plan Created!
-          </motion.h2>
-          <motion.p
-            className="text-[13px] text-zinc-500 font-medium max-w-[240px] mx-auto leading-relaxed"
-            initial={prefersReducedMotion ? {} : { opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1], delay: 0.38 }}
-          >
-            Your plan is live. Share it with the people you want there.
-          </motion.p>
-        </div>
+            <h2 className="text-2xl font-black text-white tracking-tight leading-snug">
+              {planTitle || "Your Plan"}
+            </h2>
+            <p className="text-[17px] font-bold text-zinc-400 tracking-tight">
+              Plan Created!
+            </p>
+          </motion.div>
+        )}
       </div>
 
-      {/* ─── Actions Footer ─── */}
-      <motion.div
-        className="px-5 pb-10 pt-4 space-y-3 w-full"
-        initial={prefersReducedMotion ? {} : { opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1], delay: 0.48 }}
-      >
-        {/* Send Link — primary */}
-        <motion.button
-          type="button"
-          onClick={onCopyInviteLink}
-          disabled={isCopying}
-          className="w-full bg-[#FF6B2C] text-[#050505] py-4 rounded-2xl font-black text-[11px] tracking-widest uppercase flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer select-none"
-          style={{ boxShadow: "0 8px 28px rgba(255,107,44,0.28)" }}
-          whileTap={prefersReducedMotion ? {} : { scale: 0.97 }}
-          transition={springTransition}
+      {/* ─── Actions Footer: only revealed in Step 3 after avatar transformation ─── */}
+      {stage === "content" && (
+        <motion.div
+          className="px-5 pb-10 pt-4 flex flex-col items-center gap-3.5 w-full max-w-sm mx-auto"
+          initial={prefersReducedMotion ? {} : { opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
         >
-          {isCopied ? (
-            <>
-              <CheckCircle className="w-4 h-4 shrink-0" />
-              <span>Link Copied!</span>
-            </>
-          ) : (
-            <>
-              <Link className="w-4 h-4 shrink-0" />
-              <span>{isCopying ? "Generating..." : "Send Link"}</span>
-            </>
-          )}
-        </motion.button>
-
-        {/* Go to Plans — secondary */}
-        {onGoToPlans && (
+          {/* Share — primary CTA: pill-shaped, orange background, white text */}
           <motion.button
             type="button"
-            onClick={onGoToPlans}
-            className="w-full bg-transparent border border-white/10 text-zinc-400 hover:text-white hover:border-white/20 py-4 rounded-2xl font-bold text-[11px] tracking-widest uppercase flex items-center justify-center transition-colors cursor-pointer select-none"
-            whileTap={prefersReducedMotion ? {} : { scale: 0.97 }}
+            onClick={onCopyInviteLink}
+            disabled={isCopying}
+            className="w-full bg-[#FF6B2C] text-white py-4 rounded-full font-extrabold text-[12px] tracking-widest uppercase flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer select-none shadow-lg shadow-[#FF6B2C]/25"
+            whileTap={prefersReducedMotion ? {} : { scale: 0.98 }}
             transition={springTransition}
           >
-            Go to Plans
+            {isCopied ? (
+              <>
+                <CheckCircle className="w-4 h-4 shrink-0 text-white" />
+                <span>Link Copied!</span>
+              </>
+            ) : (
+              <>
+                <Link className="w-4 h-4 shrink-0 text-white" />
+                <span>{isCopying ? "Generating..." : "Share"}</span>
+              </>
+            )}
           </motion.button>
-        )}
-      </motion.div>
+
+          {/* Go to Plans — secondary CTA: text-only, no dark container background, no border */}
+          {onGoToPlans && (
+            <motion.button
+              type="button"
+              onClick={onGoToPlans}
+              className="w-full bg-transparent border-none text-zinc-400 hover:text-white py-2 font-bold text-[12px] tracking-widest uppercase flex items-center justify-center transition-colors cursor-pointer select-none mt-1"
+              whileTap={prefersReducedMotion ? {} : { scale: 0.98 }}
+              transition={springTransition}
+            >
+              Go to Plans
+            </motion.button>
+          )}
+        </motion.div>
+      )}
     </motion.div>
   );
 };

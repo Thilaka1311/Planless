@@ -4054,45 +4054,10 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
               <h2 className="text-[17px] font-bold text-white mb-1">
                 Share Plan Link
               </h2>
-              <p className="text-[13px] text-white/55 leading-[1.5]">
-                Invite people to this plan with a link.
-              </p>
             </div>
 
-            {/* Visible / Copyable Invite Link Box & Actions */}
+            {/* Actions: Copy Link & Cancel */}
             <div className="px-4 pt-3 flex flex-col gap-2.5">
-              <div
-                id="share_plan_link_box"
-                onClick={handleCopy}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "12px 14px",
-                  borderRadius: 14,
-                  background: "rgba(255, 255, 255, 0.05)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
-                  cursor: inviteUrl ? "pointer" : "default",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <Link2 style={{ width: 18, height: 18, color: "#FF6B2C", flexShrink: 0 }} />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <span
-                    style={{
-                      fontSize: 13,
-                      color: "rgba(255, 255, 255, 0.9)",
-                      wordBreak: "break-all",
-                      userSelect: "all",
-                      display: "block",
-                      lineHeight: 1.3,
-                    }}
-                  >
-                    {inviteUrl || "No plan selected"}
-                  </span>
-                </div>
-              </div>
-
               {/* Primary Action Button: "Copy Link" */}
               <button
                 id="share_plan_copy_link_btn"
