@@ -65,6 +65,7 @@ export default defineConfig(() => {
             /^\/storage\/v1\//,
             /^\/realtime\/v1\//,
             /^\/functions\/v1\//,
+            /^\/\.well-known\//,
             /.*supabase\.co.*/,
             /.*\.ngrok(-free)?\.(app|dev).*/,
           ],

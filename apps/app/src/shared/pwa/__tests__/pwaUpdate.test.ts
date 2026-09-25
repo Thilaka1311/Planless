@@ -4,6 +4,9 @@ import { pwaManager } from '../pwaService';
 
 describe('PWA Service and Update Lifecycle', () => {
   beforeEach(() => {
+    (globalThis as any).window = globalThis;
+    (globalThis as any).addEventListener = vi.fn();
+    (globalThis as any).removeEventListener = vi.fn();
     const store: Record<string, string> = {};
     (globalThis as any).sessionStorage = {
       getItem: (key: string) => store[key] ?? null,
@@ -51,13 +54,22 @@ describe('PWA Service and Update Lifecycle', () => {
     expect(sessionStorage.getItem('planless_update_dismissed')).toBeNull();
   });
 
-  it('calls registration.update() when checkForUpdate is executed', () => {
+  it('calls registration.update() when checkForUpdate is executed', async () => {
     const mockRegistration = {
       update: vi.fn().mockResolvedValue(undefined),
     };
     (pwaManager as any).registration = mockRegistration;
 
-    pwaManager.checkForUpdate();
+    Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+      value: {
+        getRegistration: vi.fn().mockResolvedValue(mockRegistration),
+        addEventListener: vi.fn(),
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    await pwaManager.checkForUpdate();
 
     expect(mockRegistration.update).toHaveBeenCalled();
   });

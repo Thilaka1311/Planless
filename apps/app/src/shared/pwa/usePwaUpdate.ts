@@ -14,6 +14,9 @@ export function usePwaUpdate() {
   useEffect(() => {
     return pwaManager.subscribe((hasUpdate) => {
       setNeedRefresh(hasUpdate);
+      if (hasUpdate) {
+        setIsDismissed(false);
+      }
     });
   }, []);
 
