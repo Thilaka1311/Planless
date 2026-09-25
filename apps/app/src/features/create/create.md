@@ -23,27 +23,30 @@ The **Create** feature is the plan authoring, customization, and publishing engi
 
 ### 3. Participant Selection (`createPhase === "who"`)
 * `<WhoIsComingScreen />` renders `<FriendsSelector />`.
-* The user searches friends by name/username, toggles individual friends, or selects pre-grouped circles.
-* Selected participants are staged in `useCreatePlanForm` state (`selectedFriends`, `individuallySelectedFriendIds`).
-* Tapping **Continue** advances to `"who-actually"`.
+* For users with friends:
+  * The user searches friends by name/username, toggles individual friends, or selects pre-grouped circles.
+  * Selected participants are staged in `useCreatePlanForm` state (`selectedFriends`, `individuallySelectedFriendIds`).
+  * Tapping **Continue** (floating right arrow) advances directly to `"review"`.
+* For users with zero friends:
+  * Shows the `"Who's coming?"` empty state (`UserRoundPlus` icon, `"No friends yet"` headline, `"Add Friends"` action button, and `"You can also invite people after creating the plan."` notice).
+  * Tapping `"Add Friends"` routes to `<FriendshipsScreen initialScreen="discover" />` allowing the user to search and discover people without losing their selected category.
+  * Tapping the floating arrow (`ArrowRight`) continues directly to the Create Plan review screen with the selected category preserved. Participant Management (`"who-actually"`) is bypassed for zero-friends users.
 
-### 4. Capacity & Waitlist Configuration (`createPhase === "who-actually"`)
-* `<WhoIsActuallyComing />` wraps `<ParticipantManagementScreen />` in creation mode.
-* The user chooses the **Participant Filtering Mode**:
-  * **Automatic ("First come, first served")**: Any invitee who accepts joins immediately until capacity is reached; subsequent acceptances enter the waitlist in order of response time.
-  * **Assigned ("Host decides")**: The host explicitly assigns invitees into "Going" (guaranteed spots) and "Waitlist" groups, and sets waitlist priority order.
-* The host configures plan capacity (`totalCapacity`) via `<PlanSizeBottomsheet />` (stepper constraint: 2–50).
-* Tapping **Continue** advances to `"review"`.
-
-### 5. Interactive Plan Review (`createPhase === "review"`)
+### 4. Interactive Plan Review (`createPhase === "review"`)
 * `<CreatePlanReview />` mounts `<PlansDetailsScreen />` in `createMode={true}`, providing a full WYSIWYG preview of the final plan card.
+* **No Limit Plan Capacity Model**:
+  * Every newly created Plan starts as **No limit**.
+  * The floating Hero Metadata Card displays `No limit` alongside the Users icon.
+  * Tapping `No limit` opens the existing Participant Management screen (`"who-actually"`, heading "New Activity").
+  * Navigating back from Participant Management returns directly to `"review"`, keeping selected participants intact.
 * **Inline Edits & Modal Adjustments**:
-  * **Title**: Tapping the title triggers inline editing or `<EditTitleModal />`.
+  * **Title**: Tapping the title triggers inline editing.
   * **Cover Image**: Tapping the cover opens device gallery (`pickImageFromGallery`) and launches `<PlanImageEditorModal />`. The modal exports both an original image (for hero/details) and a 4:5 cropped image (for feed card).
   * **Date & Time**: Tapping the datetime card opens `<WhenIsPlanScreen />` or native picker. The user can also configure the RSVP response deadline (e.g. "Plan start", "1 Hour before", "Custom").
   * **Location**: Tapping venue opens Google Places autocomplete search to resolve `place_id`, formatted address, and coordinates.
   * **Cost / Expense**: Tapping cost opens `<EditCostModal />` to set total estimated expenses.
-  * **Roster**: Tapping participants returns to `"who-actually"` or opens `<PlanSizeBottomsheet />`.
+  * **Roster / Capacity**: Tapping `No limit` in the Hero Metadata Card or the bottom action opens Participant Management (`"who-actually"`).
+
 
 ### 6. Publishing & Persistence (`handleHostPlanSubmit`)
 * The host taps **Host This Plan**.
@@ -132,13 +135,14 @@ The **Create** feature is the plan authoring, customization, and publishing engi
 | `CreateCategoryScreen` | `src/features/create/screens/CreateCategoryScreen.tsx` | Phase 0 screen. Displays category selection cards (Sports, Movies, Dining, Custom) and handles category selection. | Rendered by `CreateMVP` when `createPhase === "category"`. |
 | `WhoIsComingScreen` | `src/features/create/screens/WhoIsComingScreen.tsx` | Phase 1 screen. Renders search bar, friend list, and circle chips for selecting participants. | Renders `FriendsSelector`. Reads `AVAILABLE_FRIENDS` and passes selected items to `useCreatePlanForm`. |
 | `WhoIsActuallyComing` | `src/features/create/screens/WhoIsActuallyComing.tsx` | Phase 2 screen. Configures capacity, waitlist toggle, and Automatic vs. Assigned participant grouping. | Wraps `ParticipantManagementScreen` in creation mode. Manages `priorityGuestIds` and capacity syncing. |
-| `CreatePlanReview` | `src/features/create/screens/CreatePlanReview.tsx` | Phase 3 screen. Full WYSIWYG plan preview allowing inline edits to title, cover image, venue, datetime, cost, and capacity. | Mounts `PlansDetailsScreen(createMode=true)`. Uses `PlanImageEditorModal` and triggers final plan submission. |
+| `CreatePlanReview` | `src/features/create/screens/CreatePlanReview.tsx` | Phase 3 screen. Full WYSIWYG plan preview allowing inline edits to title, cover image, venue, datetime, cost, and capacity. Consumes local `form.totalCapacity` / `syntheticPlan.plan_size` immediately, dynamically rendering the numeric capacity (e.g. 4, 6) or "No limit" on the Hero Metadata Card without waiting for a database roundtrip. | Mounts `PlansDetailsScreen(createMode=true)`. Uses `PlanImageEditorModal` and triggers final plan submission. |
 | `WhenIsPlanScreen` | `src/features/create/screens/WhenIsPlanScreen.tsx` | Specialized scheduling screen with date/time wheel pickers, quick chips (Today, Tomorrow, Weekend), and RSVP deadline selector. | Invoked during edit date flow and legacy wizard. Uses `WheelPicker` and `RSVP`. |
 | `FriendsSelector` | `src/features/create/components/FriendsSelector.tsx` | Searchable participant picker with friend checkboxes, avatar resolution, and circle grouping chips. | Consumed by `WhoIsComingScreen`. Uses `FriendshipContext`. |
 | `PlanSizeBottomsheet` | `src/features/create/components/PlanSizeBottomsheet.tsx` | Modal bottom sheet stepper adjusting total plan capacity. Enters edit mode on open, adjusts freely with +/- buttons, enforces invite ceiling, and commits changes upon closing (backdrop tap, swipe-down, or drag handle) without a separate confirmation button. | Consumed across `WhoIsActuallyComing`, `CreatePlanReview`, `WhenIsPlanScreen`, and `ParticipantManagementScreen`. |
 | `PlanSizeSlider` | `src/features/create/components/PlanSizeSlider.tsx` | Custom horizontal track slider with draggable thumb for setting capacity count. | Used inside `WhenIsPlanScreen`. |
 | `PlanImageEditorModal` | `src/features/create/components/PlanImageEditorModal.tsx` | Dual-crop modal allowing hosts to position and crop an image into both 16:9 hero and 4:5 portrait formats. | Consumed by `CreatePlanReview` and `WhenIsPlanScreen`. Returns raw Blobs and object URLs. |
-| `ExitEditingDialog` | `src/features/create/components/ExitEditingDialog.tsx` | Confirmation modal prompted when a user attempts to discard an in-progress plan creation draft. | Triggers `clearCreatePlanDraft` on discard confirmation. |
+| `CreatePlanConfirmation` | `src/features/create/components/CreatePlanConfirmation.tsx` | Post-submission success screen rendered when `createPhase === "confirmation"`. Shows animated success orb with expanding glow rings and radial particles, headline "Plan Created!", invite link copy button (copy/copied state), and "Go to Plans" CTA. | Rendered by `CreateMVP` at the confirmation phase. Receives `onCopyInviteLink`, `isCopying`, `isCopied`, and `onGoToPlans` props. |
+| `DiscardPlanBottomSheet` | `src/features/plans/components/BottomSheets.tsx` | Plan Action confirmation bottom sheet prompted when exiting or discarding an in-progress plan creation draft. Matches Plan Actions architecture with Plan avatar/identity header, unsaved changes notice, and standard destructive action styling (`Discard`, text-only `Cancel`). | Triggered by exit/back controls in `CreateMVP` and `CreatePlanScreen`. |
 | `useCreatePlanForm` | `src/features/create/hooks/useCreatePlanForm.ts` | Central state hook managing all draft form fields, setters, derived values, and persistence triggers. | Instantiated once in `CreateMVP` / `CreatePlanScreen` and prop-drilled across child wizard screens. |
 | `draftParticipantStorage` | `src/features/create/utils/draftParticipantStorage.ts` | Synchronous `localStorage` persistence layer for form text, flags, dates, and participant ID arrays. | Used by `useCreatePlanForm`, `CreateMVP`, and `WhoIsActuallyComing`. |
 | `draftCoverStorage` | `src/features/create/utils/draftCoverStorage.ts` | Asynchronous `IndexedDB` persistence layer storing binary cover image Blobs across reloads without hitting `localStorage` size limits. | Invoked by `useCreatePlanForm` and `CreatePlanReview`. |

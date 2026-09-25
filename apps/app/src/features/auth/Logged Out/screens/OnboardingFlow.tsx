@@ -8,14 +8,20 @@ import { supabase } from "../../../../../lib/supabaseClient";
 import { resolveImage, ImageType } from "../../../../shared/imaging/imageResolver";
 import { useProfileUpload } from "../../../profile/hooks/useProfileUpload";
 
+
 import { Complicated, resetComplicatedAnimation } from "./Problem";
 import { Solution } from "./Solution";
+import { CreatePlanOnboarding } from "./CreatePlanOnboarding";
+import { JoinPlanOnboarding } from "./JoinPlanOnboarding";
 import { Planless } from "./Planless";
 import { EmailVerification } from "./Emailverification";
 import { resetPlanAnimation } from "../components/PlanAnimation";
+import { resetCreatePlanAnimation } from "../components/CreatePlanAnimation";
+import { resetJoinPlanAnimation } from "../components/JoinPlanAnimation";
 import { OnboardingHeader } from "../components/OnboardingHeader";
 import onboardingCups from "../../../../assets/Onboarding_cups.png";
 import { preloadImage } from "../../../../shared/imaging/preloadImage";
+
 
 interface OnboardingFlowProps {
   onComplete: (profile: UserProfile) => void;
@@ -26,7 +32,7 @@ interface OnboardingFlowProps {
 export type OnboardingStep = "ENTRY" | "LANDING" | "EMAIL_INPUT" | "OTP_INPUT" | "PROFILE_SETUP";
 
 export const ONBOARDING_SCREEN_KEY = "planless_onboarding_screen";
-export type PersistedOnboardingScreen = "planless" | "complicated" | "solution" | "login";
+export type PersistedOnboardingScreen = "planless" | "complicated" | "solution" | "create_plan" | "join_plan" | "login";
 
 function getInitialOnboardingState(initialStep: OnboardingStep): {
   step: OnboardingStep;
@@ -97,6 +103,10 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
         persistScreen("complicated");
       } else if (onboardingIndex === 1) {
         persistScreen("solution");
+      } else if (onboardingIndex === 2) {
+        persistScreen("create_plan");
+      } else if (onboardingIndex === 3) {
+        persistScreen("join_plan");
       }
     } else if (step === "EMAIL_INPUT" || step === "OTP_INPUT") {
       persistScreen("login");
@@ -149,14 +159,21 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
   }, [existingProfile]);
 
 
-  // Keyboard navigation for onboarding screens (0: Complicated, 1: Solution)
+  // Keyboard navigation for onboarding screens (0: Complicated, 1: Solution, 2: CreatePlan, 3: JoinPlan)
   useEffect(() => {
     if (step !== "LANDING") return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") {
-        if (onboardingIndex < 1) setOnboardingIndex((prev) => prev + 1);
+        if (onboardingIndex < 3) {
+          if (onboardingIndex === 2) resetJoinPlanAnimation();
+          setOnboardingIndex((prev) => prev + 1);
+        }
       } else if (e.key === "ArrowLeft") {
         if (onboardingIndex > 0) {
+          if (onboardingIndex === 3) {
+            resetJoinPlanAnimation();
+            resetCreatePlanAnimation();
+          }
           setOnboardingIndex((prev) => prev - 1);
         } else if (onboardingIndex === 0) {
           setStep("ENTRY");
@@ -173,6 +190,18 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
   };
 
   const handleSolutionNext = () => {
+    resetCreatePlanAnimation();
+    persistScreen("create_plan");
+    setOnboardingIndex(2);
+  };
+
+  const handleCreatePlanNext = () => {
+    resetJoinPlanAnimation();
+    persistScreen("join_plan");
+    setOnboardingIndex(3);
+  };
+
+  const handleJoinPlanNext = () => {
     persistScreen("login");
     setAuthSource("LANDING");
     setErrorMessage("");
@@ -180,9 +209,10 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
   };
 
   const handleEmailBack = () => {
-    persistScreen("solution");
+    resetJoinPlanAnimation();
+    persistScreen("join_plan");
     setErrorMessage("");
-    setOnboardingIndex(1);
+    setOnboardingIndex(3);
     setStep("LANDING");
   };
 
@@ -248,13 +278,39 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
       } else if (onboardingIndex === 1) {
         // solution.tsx
         if (diffX > 0) {
-          // Swipe LEFT -> onboarding email screen
+          // Swipe LEFT -> create_plan
           triggerTransition(() => handleSolutionNext());
         } else {
           // Swipe RIGHT -> complicated.tsx
           triggerTransition(() => {
             persistScreen("complicated");
             setOnboardingIndex(0);
+          });
+        }
+      } else if (onboardingIndex === 2) {
+        // create_plan
+        if (diffX > 0) {
+          // Swipe LEFT -> join_plan
+          triggerTransition(() => handleCreatePlanNext());
+        } else {
+          // Swipe RIGHT -> solution.tsx
+          triggerTransition(() => {
+            persistScreen("solution");
+            setOnboardingIndex(1);
+          });
+        }
+      } else if (onboardingIndex === 3) {
+        // join_plan
+        if (diffX > 0) {
+          // Swipe LEFT -> onboarding email screen
+          triggerTransition(() => handleJoinPlanNext());
+        } else {
+          // Swipe RIGHT -> create_plan: reset animation so it replays from start
+          triggerTransition(() => {
+            resetJoinPlanAnimation();
+            resetCreatePlanAnimation();
+            persistScreen("create_plan");
+            setOnboardingIndex(2);
           });
         }
       }
@@ -381,7 +437,7 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
           />
         )}
 
-        {/* 2. LANDING STEP: 2-SCREEN ONBOARDING FLOW (COMPLICATED -> SOLUTION -> LOGIN) */}
+        {/* 2. LANDING STEP: 4-SCREEN ONBOARDING FLOW */}
         {step === "LANDING" && (
           <motion.div
             key={`landing_step_${onboardingIndex}`}
@@ -396,10 +452,24 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
                 onTouchStart={handleTouchStart}
                 onTouchEnd={handleTouchEnd}
               />
-            ) : (
+            ) : onboardingIndex === 1 ? (
               <Solution
                 onGetStarted={handleSolutionNext}
                 onBack={() => setOnboardingIndex(0)}
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+              />
+            ) : onboardingIndex === 2 ? (
+              <CreatePlanOnboarding
+                onGetStarted={handleCreatePlanNext}
+                onBack={() => setOnboardingIndex(1)}
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+              />
+            ) : (
+              <JoinPlanOnboarding
+                onGetStarted={handleJoinPlanNext}
+                onBack={() => setOnboardingIndex(2)}
                 onTouchStart={handleTouchStart}
                 onTouchEnd={handleTouchEnd}
               />

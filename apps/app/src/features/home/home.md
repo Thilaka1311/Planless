@@ -117,13 +117,14 @@ The **Home** feature is the primary invitation and discovery feed in Planless. I
 | Component | File Path | Responsibilities | Key Relationships |
 |---|---|---|---|
 | `HomeScreen` | `src/features/home/screens/HomeScreen.tsx` | Root container for the Home tab. Manages active card index, deep-link target scrolling, modal return scroll restoration, and toggles empty state vs plan feed. | Receives store actions and feed data from `MainApp`. Renders `EmptyState` or `PlanStack`. |
-| `PlanStack` | `src/features/home/components/PlanFeed.tsx` | Full-height scroll container with CSS mandatory vertical snap. Handles mouse wheel page-snapping and active card index tracking. | Maps `plansToRender` to `PlanCard` components. Renders `EndCard` at the bottom. |
+| `PlanStack` | `src/features/home/components/PlanFeed.tsx` | Full-height scroll container with CSS mandatory vertical snap. Handles mouse wheel page-snapping and active card index tracking. Uses `useVerticalPager` for spring-physics page transitions. | Maps `plansToRender` to `PlanCard` components. Renders `EndCard` at the bottom. |
 | `EndCard` | `src/features/home/components/PlanFeed.tsx` | End-of-feed card displayed after all discoverable plans. Shows "You're all caught up" message and a "Create a Plan" button. | Invokes `onNavigateToCreate` passed from `HomeScreen` / `MainApp`. |
 | `PlanCard` | `src/features/home/components/PlanCard.tsx` | Individual full-screen snap card. Renders full-bleed cover image (`DiscoveryImages`), top category/deadline badges, glass popovers, participant strip, and completion overlays. | Hooks into `useLivePlan`, `usePlansStore`, and `useHoldToAccept`. Renders `ParticipantToggleBar` and `HoldToAcceptOverlay`. |
 | `ParticipantToggleBar` | `src/features/home/components/PlanDetailsCard.tsx` | Floating glass capsule at bottom of `PlanCard`. Displays plan title, date/time, and capacity progress bar. Expands to reveal avatar cluster and "View Participants →" button. | Uses `useProfileStore` to resolve participant photos; fetches missing user profiles directly from Supabase `users` table if needed. |
 | `HoldToAcceptOverlay` | `src/features/home/components/HoldToAccept.tsx` | Full-screen overlay visible during active hold gesture. Renders SVG radial progress ring, percentage text, location, host avatar/name, and dynamic cost text. | Consumes `useLivePlan`, `usePlansStore`, and `useProfileStore` to resolve host and cost details. |
 | `EmptyState` | `src/features/home/components/EmptyState.tsx` | Displayed when no discoverable plans exist. Contains a continuous looped animation morphing through category circles, Venn overlap, friend avatars, and calendar. | Triggers `onNavigateToCreate` on CTA button click. |
 | `useHoldToAccept` | `src/features/home/hooks/useHoldForStatus.ts` | Custom gesture hook managing pointer capture, 400ms start delay, 1400ms requestAnimationFrame progress loop, 350ms release decay, and downward drag snooze detection (>120px). | Triggers `handleToggleJoin`, `waitlistPlan`, and `setNotifications`. |
+| `useVerticalPager` | `src/features/home/hooks/useVerticalPager.ts` | Spring-physics vertical pager hook. Manages `pageY` motion value, container height measurement, `goToPage` transitions, and drag/pan gesture handling for smooth vertical swipe navigation between plan cards. | Consumed by `PlanStack` in `PlanFeed.tsx`. |
 | `HomePlansPreviewScreen` | `src/features/home/screens/HomePlansPreview/HomePlansPreviewScreen.tsx` | Detailed plan preview screen displayed inside `DetailedPlanModal` when a plan card is tapped from the Home feed. | Mounted by `src/components/common screens/DetailedPlanModal/index.tsx` when `activeTab === "home"`. |
 | `TimeRSVPCard` | `src/features/home/screens/HomePlansPreview/Components/TimeRSVPCard.tsx` | Compact glass card in `HomePlansPreviewScreen` displaying event date/time, cost, and countdown urgency indicator. | Uses `useRSVPDeadline` and `formatPlanDate`. |
 | `HomeHeader` | `src/components/HomeHeader.tsx` | Top navigation bar for the Home tab rendering the stylized "Planless" script logo and action shortcuts (Friends button with red request badge, search, hosted plans). | Rendered conditionally in `MainApp` when `activeTab === "home"` or `"plans"`. |
@@ -268,12 +269,13 @@ A plan appears in the Home feed if and only if all of the following conditions h
 ## 9. Important Files
 
 * `src/features/home/screens/HomeScreen.tsx`: Root container for the Home screen; manages focus, card index, and empty state toggle.
-* `src/features/home/components/PlanFeed.tsx`: Contains `PlanStack` and `EndCard`; handles scroll snapping and mouse wheel page transitions.
+* `src/features/home/components/PlanFeed.tsx`: Contains `PlanStack` and `EndCard`; handles scroll snapping and vertical pager transitions.
 * `src/features/home/components/PlanCard.tsx`: Core card component with hero cover image, countdown badges, popovers, and gesture hooks.
 * `src/features/home/components/PlanDetailsCard.tsx`: Contains `ParticipantToggleBar`, capacity progress bar, and expandable participant avatar cluster.
 * `src/features/home/components/HoldToAccept.tsx`: Visual overlay with circular SVG progress ring and host/venue metadata.
 * `src/features/home/components/EmptyState.tsx`: Looping multi-phase SVG animation and CTA button when feed is empty.
 * `src/features/home/hooks/useHoldForStatus.ts`: Gesture tracking hook for pointer down, hold progress, drag snooze, and status mutations.
+* `src/features/home/hooks/useVerticalPager.ts`: Spring-physics vertical pager hook consumed by `PlanStack` for smooth card-to-card navigation.
 * `src/features/home/screens/HomePlansPreview/HomePlansPreviewScreen.tsx`: Full-screen modal view of plan details accessed from the Home feed.
 * `src/features/plans/state/PlansContext.tsx`: Defines `getHomeFeedPlans()`, `joinPlan()`, `waitlistPlan()`, and feeds real-time plan state.
 * `src/features/plans/hooks/usePlanParticipants.ts`: Implements database mutations for joining, waitlisting, and updating `plan_participants`.

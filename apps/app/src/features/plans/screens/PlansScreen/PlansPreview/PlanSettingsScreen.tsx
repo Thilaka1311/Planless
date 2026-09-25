@@ -13,7 +13,9 @@ import {
   CancelLeaveRequestBottomSheet,
   CancelRejoinRequestBottomSheet,
   RejoinPlanBottomSheet,
+  InvitedPlanActionsBottomSheet,
 } from "../../../components/BottomSheets";
+import { getPlanPreviewCtaState } from "../../../utils/planPreviewCtaUtils";
 import { LiveActionButton } from "../../../components/LiveActionButton";
 import { EditPlanImageScreen } from "./EditPlanImageScreen";
 import { cleanPlanId, parsePlanDateTime } from "../../../utils/planUtils";
@@ -246,6 +248,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     cancelPaidPlanLeaveRequest,
     cancelRejoinRequest,
     rejoinPlan,
+    joinPlan,
+    skipPlan,
   } = usePlansStore();
 
   const [isPromotingToLeave, setIsPromotingToLeave] = useState(false);
@@ -255,6 +259,10 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   const [showCancelLeaveRequestSheet, setShowCancelLeaveRequestSheet] = useState(false);
   const [showCancelRejoinRequestSheet, setShowCancelRejoinRequestSheet] = useState(false);
   const [showRejoinSheet, setShowRejoinSheet] = useState(false);
+  const [showPlanActionsSheet, setShowPlanActionsSheet] = useState(false);
+  const [isJoiningDirect, setIsJoiningDirect] = useState(false);
+  const [isSkippingDirect, setIsSkippingDirect] = useState(false);
+  const [localParticipantOverride, setLocalParticipantOverride] = useState<any>(null);
   const [isCancellingLeaveRequest, setIsCancellingLeaveRequest] = useState(false);
   const [isCancellingRejoinRequest, setIsCancellingRejoinRequest] = useState(false);
   const [isRejoining, setIsRejoining] = useState(false);
@@ -300,7 +308,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     });
   }, [members, activeUserUuid]);
 
-  const resolvedParticipantRecord = propMyParticipantRecord || myParticipantRecord;
+  const resolvedParticipantRecord = localParticipantOverride || propMyParticipantRecord || myParticipantRecord;
 
   const effectiveParticipantRecord = useMemo(() => {
     const isHost = !isPlanSettingsForParticipant;
@@ -334,6 +342,74 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   const isPastPlan = Boolean(plan && planDateTime.getTime() < new Date().setHours(0, 0, 0, 0));
   const showExclamation = Boolean(!isPlanSettingsForParticipant && isPastPlan && !isCancelled && !isCompleted);
 
+  const isAssignedMode = Boolean((plan as any)?.waitlist_mode === "assigned" || (plan as any)?.waitlistMode === "assigned");
+  const assignedGroup = effectiveParticipantRecord?.assigned_group || (effectiveParticipantRecord as any)?.assignedGroup;
+  const currentCount = useMemo(() => {
+    return members.filter((m) => normalizeStatus(m.joinState || m.rsvp_status) === "JOINED").length;
+  }, [members]);
+  const planSize = (plan as any)?.plan_size || (plan as any)?.planSize || plan.maxSpots || 10;
+  const alreadySkipped = Boolean(effectiveParticipantRecord && normalizeStatus(effectiveParticipantRecord.rsvp_status) === "SKIPPED");
+
+  const ctaState = useMemo(() => {
+    return getPlanPreviewCtaState({
+      isAssignedMode,
+      assignedGroup,
+      joinedCount: currentCount,
+      planSize,
+      alreadySkipped,
+    });
+  }, [isAssignedMode, assignedGroup, currentCount, planSize, alreadySkipped]);
+
+  const handleConfirmJoin = async () => {
+    if (!plan || isJoiningDirect) return;
+    setIsJoiningDirect(true);
+    try {
+      setShowPlanActionsSheet(false);
+      const isWaitlist = ctaState.isWaitlistTarget;
+      const targetStatus = isWaitlist ? "WAITLISTED" : "JOINED";
+
+      setLocalParticipantOverride({
+        ...(resolvedParticipantRecord || {}),
+        rsvp_status: targetStatus,
+        joinState: targetStatus,
+        role: "PARTICIPANT",
+        isHost: false,
+      });
+
+      const isRejoin = alreadySkipped && activeUserUuid;
+      if (isRejoin) {
+        await rejoinPlan(plan.id, userProfile);
+      } else {
+        await joinPlan(plan.id, userProfile);
+      }
+    } catch (err) {
+      console.error("[PlanSettingsScreen] Join failed:", err);
+    } finally {
+      setIsJoiningDirect(false);
+    }
+  };
+
+  const handleConfirmSkip = async () => {
+    if (!plan || !activeUserUuid || isSkippingDirect) return;
+    setIsSkippingDirect(true);
+    try {
+      setShowPlanActionsSheet(false);
+
+      setLocalParticipantOverride({
+        ...(resolvedParticipantRecord || {}),
+        rsvp_status: "SKIPPED",
+        joinState: "SKIPPED",
+        skip_reason: "SKIPPED",
+      });
+
+      await skipPlan(plan.id, activeUserUuid);
+    } catch (err) {
+      console.error("[PlanSettingsScreen] Skip failed:", err);
+    } finally {
+      setIsSkippingDirect(false);
+    }
+  };
+
   const handleBadgeClick = () => {
     if (isCompleted) {
       return;
@@ -346,6 +422,11 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
     const currentStatus = normalizeStatus(effectiveParticipantRecord?.rsvp_status);
     const leaveRequested = Boolean(effectiveParticipantRecord?.leave_requested);
+
+    if (currentStatus === "INVITED") {
+      setShowPlanActionsSheet(true);
+      return;
+    }
 
     if (currentStatus === "JOINED") {
       if (leaveRequested) {
@@ -1049,6 +1130,18 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           }
         }}
         onClose={() => setShowRejoinSheet(false)}
+      />
+
+      {/* Invited Plan Actions Bottom Sheet ("Join Plan" / "Join Waitlist", "Skip Plan") */}
+      <InvitedPlanActionsBottomSheet
+        isOpen={showPlanActionsSheet}
+        plan={plan}
+        joinCtaText={ctaState.ctaText}
+        isJoining={isJoiningDirect}
+        isSkipping={isSkippingDirect}
+        onJoin={handleConfirmJoin}
+        onSkip={handleConfirmSkip}
+        onClose={() => setShowPlanActionsSheet(false)}
       />
 
       {/* Promote a New Host Before Leaving / Stopping Hosting Modal (Sole Host Guard) */}

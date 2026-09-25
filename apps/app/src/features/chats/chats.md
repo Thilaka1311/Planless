@@ -20,7 +20,8 @@ The **Chats** feature is the real-time group communication and coordination hub 
   * Strictly excludes `CANCELLED` and `COMPLETED` plans.
   * Sorts plans chronologically by `scheduled_at` ASC (plans occurring sooner appear first).
 * The screen displays a search bar and a list of chat preview cards:
-  * Each card shows the plan cover thumbnail, title, formatted scheduled date/time, participant count, and the most recent text message with relative attribution ("You: ..." vs. "Sender Name: ...").
+  * Each card shows the plan cover thumbnail, title, formatted scheduled date/time, participant count, the most recent text message with relative attribution ("You: ..." vs. "Sender Name: ..."), and an **unread badge** (orange pill count) when the plan has unread messages.
+  * Unread state is fetched via the `get_plan_unread_info` Supabase RPC and kept live via Realtime subscription on `plan_chat_reads` and local event emissions from `chatReads.ts`.
 * If no active plan conversations exist, renders `<EmptyState />` with a CTA directing to Home/Create.
 
 ### 2. Searching Active Chats
@@ -86,8 +87,9 @@ The **Chats** feature is the real-time group communication and coordination hub 
   * Scrollable column (`px-3 pt-0.5 pb-28 overflow-y-auto scrollbar-none flex-1 flex flex-col`) with `space-y-1`.
   * **Plan Chat Card**:
     * Dimensions & interaction: Fixed height `h-[70px] w-full px-2 py-2 rounded-xl flex items-center hover:bg-white/[0.03] active:bg-white/[0.05] active:scale-[0.99] cursor-pointer transition-all duration-150 select-none`.
-    * Leading thumbnail: 50x50px circular frame (`w-[50px] h-[50px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900`) containing `<DiscoveryImages />` plan cover image with subtle dark scrim (`bg-black/20 z-10`), scaling smoothly on hover (`group-hover:scale-105 transition-transform duration-200`).
-    * Metadata column: Vertical flex container (`flex flex-col justify-center space-y-0.5 min-w-0 flex-1`). Plan title in bold white (`font-sans font-semibold text-[14px] text-white tracking-wide truncate leading-snug`); subtitle preview in muted zinc (`font-sans text-[12px] text-zinc-400 truncate leading-tight`) showing either real-time sender attribution snippet (`SenderName: Message Content` / `You: Message Content`) or fallback creator attribution (`Hosted by HostName`).
+    * Leading thumbnail: 50x50px circular frame containing `<DiscoveryImages />` plan cover image.
+    * Metadata column: Plan title in bold white; subtitle preview showing sender attribution snippet or fallback creator attribution.
+    * **Unread Badge**: When `unreadCount > 0`, an orange pill (`bg-[#FF6B2C] text-white text-[11px] font-bold rounded-full min-w-[20px] h-[20px] px-1.5 flex items-center justify-center`) shows the count (capped at "99+"). The subtitle text color shifts to `text-zinc-200 font-medium` when unread, vs. `text-zinc-400` when read.
     * Motion transition: Animated entrance with Framer Motion (`layout`, `initial={{ opacity: 0, y: 4 }}`, `animate={{ opacity: 1, y: 0 }}`, duration 0.25s).
 * **Empty States**:
   * Zero involved plans: Centered `<EmptyState />` (`py-16`) with `<MessageSquare className="w-8 h-8 text-zinc-500 stroke-[1.5]" />`, title "No chats yet", and subtitle "Create or join a plan to start chatting with your group."
@@ -149,12 +151,14 @@ The **Chats** feature is the real-time group communication and coordination hub 
 
 | Component | File Path | Responsibilities | Key Relationships |
 |---|---|---|---|
-| `ChatsScreen` | `src/features/chats/screens/ChatsScreen.tsx` | Root directory screen for the Chats tab. Filters active user plans, displays search bar, fetches latest message previews, and subscribes to preview-level Realtime changes. | Rendered by `MainApp.tsx` when `activeTab === "chats"`. Passes selected plan ID to `onSelectChatPlan`. |
-| `PlanChatScreen` | `src/features/chats/screens/PlanChatScreen.tsx` | Full-screen conversation and coordination view. Owns hero header, horizontal pager container, chat timeline, message input, and modal triggers. | Mounted by `MainApp.tsx` when `selectedChatPlanId` is set. Embeds `HeroHeader`, `PlanParticipantManagementWrapper`, and uses `useChatCache`. |
-| `ActivityTimelineScreen` | `src/features/chats/screens/ActivityTimelineScreen.tsx` | Detailed event log screen (plan created, date changed, member joined/left). Currently unmounted / dormant due to plan activity caching pause. | Standalone component in codebase; uses `useTimestampReveal` and `useActivityCache`. |
-| `useChatCache` | `src/features/chats/hooks/useChatCache.ts` | Central in-memory store and subscription hook for plan messages. Provides optimistic inserts, rollbacks, real-time cache updates, and manual invalidation. | Consumed by `PlanChatScreen`. Subscribes to Supabase Realtime channel `plan_messages_room:<planUuid>`. |
+| `ChatsScreen` | `src/features/chats/screens/ChatsScreen.tsx` | Root directory screen for the Chats tab. Filters active user plans, displays search bar with unread badge per card, fetches latest message previews and unread counts via `get_plan_unread_info` RPC, and subscribes to preview-level and unread-level Realtime changes. | Rendered by `MainApp.tsx` when `activeTab === "chats"`. Passes selected plan ID to `onSelectChatPlan`. |
+| `PlanChatScreen` | `src/features/chats/screens/PlanChatScreen.tsx` | Full-screen conversation and coordination view. Owns hero header, horizontal pager container, chat timeline, message input, and modal triggers. Calls `markPlanChatAsRead` on mount/scroll. | Mounted by `MainApp.tsx` when `selectedChatPlanId` is set. Embeds `HeroHeader`, `PlanParticipantManagementWrapper`, and uses `useChatCache`. |
+| `ActivityTimelineScreen` | `src/features/chats/screens/ActivityTimelineScreen.tsx` | Detailed event log screen (plan created, date changed, member joined/left). Currently unmounted / dormant. | Standalone; uses `useTimestampReveal` and `useActivityCache`. |
+| `useChatCache` | `src/features/chats/hooks/useChatCache.ts` | Central in-memory store and subscription hook for plan messages. Provides optimistic inserts, rollbacks, real-time cache updates, and manual invalidation. Exports `markPlanChatReadInCache`. | Consumed by `PlanChatScreen`. Subscribes to Supabase Realtime channel `plan_messages_room:<planUuid>`. |
+| `useUnreadChatsCount` | `src/features/chats/hooks/useUnreadChatsCount.ts` | Calculates the total number of plan chats with unread messages (used for the navigation tab badge). Pure helper functions `calculateUnreadChatsCount` and `handleIncomingMessageToUnreadMap` are exported for testing. | Consumed by `MainApp.tsx` or navigation layer for tab badge. |
+| `chatReads.ts` | `src/features/chats/utils/chatReads.ts` | Utility for marking a plan chat as read: calls `mark_plan_chat_read` Supabase RPC, updates in-memory cache, and emits a local `planless:chat_read` event so `ChatsScreen` clears badges immediately without a network round-trip. | Consumed by `PlanChatScreen` on open. Exported: `markPlanChatAsRead`, `emitChatReadEvent`, `subscribeToChatReadEvents`. |
 | `useHorizontalPager` | `src/features/chats/hooks/useHorizontalPager.ts` | Custom touch gesture hook managing spring-physics horizontal swiping between Page 0 (Participants) and Page 1 (Chat). Includes keyboard detection lock and screen resize recalculations. | Consumed by `PlanChatScreen`. Controls `pageX` motion value. |
-| `useTimestampReveal` | `src/features/chats/hooks/useTimestampReveal.ts` | Gesture utility designed for overscroll timestamp revelation on activity cards with single-fire haptic feedback. | Used inside `ActivityTimelineScreen`. |
+| `useTimestampReveal` | `src/features/chats/hooks/useTimestampReveal.ts` | Gesture utility for overscroll timestamp revelation on activity cards with single-fire haptic feedback. | Used inside `ActivityTimelineScreen`. |
 
 ---
 
@@ -206,55 +210,33 @@ The **Chats** feature is the real-time group communication and coordination hub 
   * `created_at` (`timestamptz`, not null): Defaults to `now()`.
   * `updated_at` (`timestamptz`, nullable): Timestamp of modification.
 
-### 2. Relevant Database Enums
-* **`message_type`**:
-  * `'text'`: User chat message.
-  * `'system'`: Automated event notice.
-  * `'poll'`: Interactive poll message (schema present, UI dormant).
-  * `'cost'`: Structured expense card payload.
-* **`system_message_type`**:
-  * `'plan_created'`, `'participant_joined'`, `'participant_left'`, `'title_changed'`, `'description_changed'`, `'date_changed'`, `'time_changed'`, `'venue_changed'`, `'plan_cancelled'`, `'plan_restored'`, `'plan_completed'`.
+### 2. Table: `public.plan_chat_reads`
+* **Role in Feature**: Tracks each user's last-read position in each plan's chat, enabling per-plan unread badge counts.
+* **Key Columns** (as used in application):
+  * `user_id` (`uuid`, FK `users.id`): The reader.
+  * `plan_id` (`uuid`, FK `plans.id`): The plan chat being tracked.
+  * `last_read_message_id` (`uuid`, nullable): The UUID of the last message the user has read.
+  * `read_at` (`timestamptz`): When the user last opened the chat.
+* `anon` role can read this table (migration `20260922161500_allow_anon_plan_chat_reads.sql`).
 
-### 3. Row Level Security (RLS) Policies on `plan_messages`
-* **SELECT (`Allow plan participants to select messages`)**:
-  * Role: `authenticated`.
-  * Condition:
-    ```sql
-    EXISTS (
-      SELECT 1 FROM public.plan_participants
-       WHERE plan_participants.plan_id = plan_messages.plan_id
-         AND plan_participants.user_id = auth.uid()
-    )
-    ```
-  * Enforces that only confirmed or invited participants of the specific plan can read its conversation.
-* **INSERT (`Allow plan participants to insert messages`)**:
-  * Role: `authenticated`.
-  * Condition:
-    ```sql
-    (auth.uid() = sender_id) AND EXISTS (
-      SELECT 1 FROM public.plan_participants
-       WHERE plan_participants.plan_id = plan_messages.plan_id
-         AND plan_participants.user_id = auth.uid()
-    )
-    ```
-  * Enforces that the sender must be the authenticated user and must belong to the plan's participant roster.
-* **UPDATE (`Deny all updates on plan messages`)**:
-  * Role: `authenticated`.
-  * Condition: `USING (false) WITH CHECK (false)`. Messages are strictly immutable in the database.
-* **DELETE (`Deny all deletes on plan messages`)**:
-  * Role: `authenticated`.
-  * Condition: `USING (false)`. Deleting messages via client REST is denied.
+### 3. Relevant Database Enums
+* **`message_type`**: `'text'`, `'system'`, `'poll'` (dormant), `'cost'`.
+* **`system_message_type`**: `'plan_created'`, `'participant_joined'`, `'participant_left'`, `'title_changed'`, `'description_changed'`, `'date_changed'`, `'time_changed'`, `'venue_changed'`, `'plan_cancelled'`, `'plan_restored'`, `'plan_completed'`.
 
-### 4. Realtime Channels
-* **`public:plan_messages_chats_preview`**:
-  * Table: `public.plan_messages`.
-  * Event: `INSERT`.
-  * Purpose: Updates the latest message snippet and sender name on preview cards in `ChatsScreen`.
-* **`plan_messages_room:<planUuid>`**:
-  * Table: `public.plan_messages`.
-  * Filter: `plan_id=eq.<planUuid>`.
-  * Events: `*` (INSERT, UPDATE, DELETE).
-  * Purpose: Powers real-time multi-user message streaming inside `PlanChatScreen`.
+### 4. RPCs
+* **`get_plan_unread_info(p_user_id)`**: Called on `ChatsScreen` mount. Returns per-plan unread counts and latest message preview for the current user's involved plans.
+* **`mark_plan_chat_read(p_plan_id, p_message_id?, p_user_id?)`**: Called by `chatReads.ts` when a user opens a plan chat. Upserts the read position in `plan_chat_reads`.
+
+### 5. Row Level Security (RLS) Policies on `plan_messages`
+* **SELECT**: `authenticated` role; condition: user must exist in `plan_participants` for the plan.
+* **INSERT**: `authenticated` role; condition: `auth.uid() = sender_id` AND user in `plan_participants`.
+* **UPDATE**: Denied (`USING (false)`).
+* **DELETE**: Denied (`USING (false)`).
+
+### 6. Realtime Channels
+* **`public:plan_messages_chats_preview`**: Table `plan_messages`, event `INSERT`. Updates latest message snippet on `ChatsScreen` preview cards.
+* **`plan_messages_room:<planUuid>`**: Table `plan_messages`, filter `plan_id=eq.<planUuid>`, events `*`. Powers real-time streaming in `PlanChatScreen`.
+* **`public:plan_chat_reads:<userUuid>`**: Table `plan_chat_reads`, filter `user_id=eq.<userUuid>`, event `*`. Clears per-plan unread badges on `ChatsScreen` when reads are persisted.
 
 ---
 
@@ -304,9 +286,11 @@ The **Chats** feature is the real-time group communication and coordination hub 
 
 ## 9. Important Files
 
-* `src/features/chats/screens/ChatsScreen.tsx`: Primary chats directory listing active plan conversations with latest message previews.
+* `src/features/chats/screens/ChatsScreen.tsx`: Primary chats directory listing active plan conversations with latest message previews and unread badges.
 * `src/features/chats/screens/PlanChatScreen.tsx`: Main chatroom view featuring horizontal pager, message stream, and expense rendering.
 * `src/features/chats/hooks/useChatCache.ts`: Central in-memory message cache and Supabase Realtime channel subscriber.
+* `src/features/chats/hooks/useUnreadChatsCount.ts`: Calculates total unread chat count for navigation tab badge.
+* `src/features/chats/utils/chatReads.ts`: `markPlanChatAsRead` utility — calls `mark_plan_chat_read` RPC and emits local read events.
 * `src/features/chats/hooks/useHorizontalPager.ts`: Physics-based touch pager coordinating transitions between Participants and Chat pages.
 * `src/features/chats/screens/ActivityTimelineScreen.tsx`: Dormant activity log interface for historical plan events.
 * `src/features/chats/hooks/useTimestampReveal.ts`: Swipe gesture hook for revealing sliding timestamps.

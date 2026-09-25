@@ -217,4 +217,205 @@ describe('assignedCapacityLogic', () => {
     });
     expect(emptyWaitlistRes).toBeNull();
   });
+
+  describe('User-Required State & Capacity Split Test Suite', () => {
+    // 7 active participants (1 host + 6 friends)
+    const testHost: Friend = { id: 'host', dbUuid: 'host_uuid', name: 'You', avatar: '', isHost: true };
+    const sixFriends: Friend[] = [
+      { id: 'f1', dbUuid: 'u1', name: 'Aznan', avatar: '', rsvpStatus: 'INVITED' },
+      { id: 'f2', dbUuid: 'u2', name: 'Bhaavya', avatar: '', rsvpStatus: 'INVITED' },
+      { id: 'f3', dbUuid: 'u3', name: 'Jeppu', avatar: '', rsvpStatus: 'JOINED', isAccepted: true },
+      { id: 'f4', dbUuid: 'u4', name: 'Pranav', avatar: '', rsvpStatus: 'JOINED', isAccepted: true },
+      { id: 'f5', dbUuid: 'u5', name: 'RAAM', avatar: '', rsvpStatus: 'INVITED' },
+      { id: 'f6', dbUuid: 'u6', name: 'Thilaka Sundar', avatar: '', rsvpStatus: 'INVITED' },
+    ];
+
+    it('1. plan_size 5 / 7 active participants -> 5 Joined, 2 Waitlisted', () => {
+      const resolved = resolveAssignedParticipants({
+        userProfile: { dbUuid: 'host_uuid', name: 'You' },
+        isHostSelected: true,
+        selectedFriends: sixFriends,
+        capacity: 5,
+        savedDraft: null,
+      });
+
+      expect(resolved.going.length).toBe(5);
+      expect(resolved.waitlist.length).toBe(2);
+      expect(resolved.going[0].id).toBe('host');
+      expect(resolved.going[0].isHost).toBe(true);
+      expect(resolved.waitlist[0].waitlistPosition).toBe(1);
+      expect(resolved.waitlist[1].waitlistPosition).toBe(2);
+    });
+
+    it('2. plan_size 7 / 7 active participants -> 7 Joined, 0 Waitlisted', () => {
+      const resolved = resolveAssignedParticipants({
+        userProfile: { dbUuid: 'host_uuid', name: 'You' },
+        isHostSelected: true,
+        selectedFriends: sixFriends,
+        capacity: 7,
+        savedDraft: null,
+      });
+
+      expect(resolved.going.length).toBe(7);
+      expect(resolved.waitlist.length).toBe(0);
+      expect(resolved.going[0].id).toBe('host');
+    });
+
+    it('3. increase 5 -> 6 -> one waitlisted participant promoted', () => {
+      const initial = resolveAssignedParticipants({
+        userProfile: { dbUuid: 'host_uuid', name: 'You' },
+        isHostSelected: true,
+        selectedFriends: sixFriends,
+        capacity: 5,
+        savedDraft: null,
+      });
+
+      expect(initial.going.length).toBe(5);
+      expect(initial.waitlist.length).toBe(2);
+      const candidateToPromote = initial.waitlist[0];
+
+      const res = incrementAssignedPlanSize({
+        capacity: 5,
+        totalInvitedCount: 7,
+        goingList: initial.going,
+        waitlist: initial.waitlist,
+      });
+
+      expect(res).not.toBeNull();
+      expect(res!.nextCapacity).toBe(6);
+      expect(res!.nextGoing.length).toBe(6);
+      expect(res!.nextWaitlist.length).toBe(1);
+      expect(res!.nextGoing.some((f) => f.id === candidateToPromote.id)).toBe(true);
+      expect(res!.nextWaitlist[0].waitlistPosition).toBe(1);
+    });
+
+    it('4. decrease 6 -> 5 -> one Joined participant moved to Waitlist', () => {
+      const initial = resolveAssignedParticipants({
+        userProfile: { dbUuid: 'host_uuid', name: 'You' },
+        isHostSelected: true,
+        selectedFriends: sixFriends,
+        capacity: 6,
+        savedDraft: null,
+      });
+
+      expect(initial.going.length).toBe(6);
+      expect(initial.waitlist.length).toBe(1);
+
+      const res = decrementAssignedPlanSize({
+        capacity: 6,
+        goingList: initial.going,
+        waitlist: initial.waitlist,
+      });
+
+      expect(res).not.toBeNull();
+      expect(res!.nextCapacity).toBe(5);
+      expect(res!.nextGoing.length).toBe(5);
+      expect(res!.nextWaitlist.length).toBe(2);
+      // Waitlist positions must remain contiguous 1..N
+      expect(res!.nextWaitlist[0].waitlistPosition).toBe(1);
+      expect(res!.nextWaitlist[1].waitlistPosition).toBe(2);
+    });
+
+    it('5. INVITED participants remain INVITED when capacity changes', () => {
+      const initial = resolveAssignedParticipants({
+        userProfile: { dbUuid: 'host_uuid', name: 'You' },
+        isHostSelected: true,
+        selectedFriends: sixFriends,
+        capacity: 5,
+        savedDraft: null,
+      });
+
+      // Initially, waitlist has INVITED participants
+      expect(initial.waitlist[0].rsvpStatus).toBe('INVITED');
+
+      // Increase capacity: promote waitlist[0]
+      const inc = incrementAssignedPlanSize({
+        capacity: 5,
+        totalInvitedCount: 7,
+        goingList: initial.going,
+        waitlist: initial.waitlist,
+      })!;
+
+      const promoted = inc.nextGoing.find((f) => f.id === initial.waitlist[0].id);
+      expect(promoted).toBeDefined();
+      // Must not convert INVITED to JOINED purely due to capacity change
+      expect(promoted!.rsvpStatus).toBe('INVITED');
+
+      // Decrease capacity back to 5
+      const dec = decrementAssignedPlanSize({
+        capacity: 6,
+        goingList: inc.nextGoing,
+        waitlist: inc.nextWaitlist,
+      })!;
+
+      const demoted = dec.nextWaitlist.find((f) => f.id === promoted!.id);
+      expect(demoted).toBeDefined();
+      expect(demoted!.rsvpStatus).toBe('INVITED');
+    });
+
+    it('6. waitlist positions remain contiguous and correctly ordered', () => {
+      const initial = resolveAssignedParticipants({
+        userProfile: { dbUuid: 'host_uuid', name: 'You' },
+        isHostSelected: true,
+        selectedFriends: sixFriends,
+        capacity: 3,
+        savedDraft: null,
+      });
+
+      expect(initial.waitlist.length).toBe(4);
+      initial.waitlist.forEach((f, idx) => {
+        expect(f.waitlistPosition).toBe(idx + 1);
+      });
+
+      // Increase to 5
+      const inc = incrementAssignedPlanSize({
+        capacity: 3,
+        totalInvitedCount: 7,
+        goingList: initial.going,
+        waitlist: initial.waitlist,
+      })!;
+      const inc2 = incrementAssignedPlanSize({
+        capacity: 4,
+        totalInvitedCount: 7,
+        goingList: inc.nextGoing,
+        waitlist: inc.nextWaitlist,
+      })!;
+
+      expect(inc2.nextWaitlist.length).toBe(2);
+      expect(inc2.nextWaitlist[0].waitlistPosition).toBe(1);
+      expect(inc2.nextWaitlist[1].waitlistPosition).toBe(2);
+    });
+
+    it('7. host is never displaced', () => {
+      const initial = resolveAssignedParticipants({
+        userProfile: { dbUuid: 'host_uuid', name: 'You' },
+        isHostSelected: true,
+        selectedFriends: sixFriends,
+        capacity: 6,
+        savedDraft: null,
+      });
+
+      // Repeatedly decrease down to minimum capacity of 2
+      let currentGoing = initial.going;
+      let currentWaitlist = initial.waitlist;
+      let cap = 6;
+
+      while (cap > 2) {
+        const res = decrementAssignedPlanSize({
+          capacity: cap,
+          goingList: currentGoing,
+          waitlist: currentWaitlist,
+        })!;
+        expect(res.nextGoing.some((f) => f.id === 'host' && f.isHost)).toBe(true);
+        expect(res.nextGoing[0].id).toBe('host');
+        currentGoing = res.nextGoing;
+        currentWaitlist = res.nextWaitlist;
+        cap = res.nextCapacity;
+      }
+
+      expect(currentGoing.length).toBe(2);
+      expect(currentGoing[0].id).toBe('host');
+      expect(currentGoing[0].isHost).toBe(true);
+    });
+  });
 });

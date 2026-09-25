@@ -23,6 +23,7 @@ import paymentsRouter from "./routes/payments";
 import adminRouter from "./routes/admin";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import fs from "fs";
+import { spawn, type ChildProcess } from "child_process";
 import { getAppleAppSiteAssociation, getAndroidAssetLinks } from "./config/deepLinkConfig";
 
 
@@ -222,8 +223,31 @@ async function startServer() {
     const distPath = fs.existsSync(path.join(process.cwd(), "dist", "index.html"))
       ? path.join(process.cwd(), "dist")
       : path.resolve(__dirname, "../dist");
-    app.use(express.static(distPath));
+
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          // Never cache the service worker, HTML files, or webmanifest so browser can always detect updates
+          if (
+            filePath.endsWith("sw.js") ||
+            filePath.endsWith("index.html") ||
+            filePath.endsWith(".webmanifest")
+          ) {
+            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+          } else if (filePath.includes("/assets/")) {
+            // Hashed assets can be safely cached long-term
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          }
+        },
+      })
+    );
+
     app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
@@ -283,7 +307,83 @@ async function startServer() {
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Planless Fullstack App server booted on http://localhost:${PORT}`);
     // seedDefaultUsers();
+    if (env.NODE_ENV !== "production") {
+      ensureNgrokTunnel(PORT);
+    }
   });
+}
+
+let ngrokProcess: ChildProcess | null = null;
+
+async function getNgrokTunnelUrl(): Promise<string | null> {
+  try {
+    const res = await fetch("http://127.0.0.1:4040/api/tunnels");
+    if (res.ok) {
+      const data: any = await res.json();
+      const tunnel = data.tunnels?.find((t: any) => t.proto === "https") || data.tunnels?.[0];
+      return tunnel?.public_url || null;
+    }
+  } catch {}
+  return null;
+}
+
+async function ensureNgrokTunnel(port: number) {
+  if (process.env.DISABLE_NGROK === "true") return;
+
+  // 1. Check if ngrok is already running on 4040
+  let url = await getNgrokTunnelUrl();
+  if (url) {
+    console.log(`\n🚀 [ngrok] Public tunnel active: ${url}\n`);
+    return;
+  }
+
+  // 2. Spawn ngrok process
+  try {
+    ngrokProcess = spawn("ngrok", ["http", String(port)], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    ngrokProcess.on("error", (err) => {
+      console.warn(`[ngrok] Could not launch ngrok: ${err.message}`);
+    });
+
+    ngrokProcess.on("exit", (code) => {
+      if (code !== 0 && code !== null) {
+        console.warn(`[ngrok] Process exited with code ${code}`);
+      }
+      ngrokProcess = null;
+    });
+
+    const cleanup = () => {
+      if (ngrokProcess && !ngrokProcess.killed) {
+        try {
+          ngrokProcess.kill("SIGTERM");
+        } catch {}
+      }
+    };
+    process.once("SIGINT", () => {
+      cleanup();
+      process.exit(0);
+    });
+    process.once("SIGTERM", () => {
+      cleanup();
+      process.exit(0);
+    });
+    process.once("exit", cleanup);
+
+    // 3. Poll for the tunnel URL up to 10 seconds
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      url = await getNgrokTunnelUrl();
+      if (url) {
+        console.log(`\n🚀 [ngrok] Public tunnel active: ${url}\n`);
+        return;
+      }
+    }
+    console.warn("[ngrok] Tunnel started but public URL not resolved yet. Check http://127.0.0.1:4040");
+  } catch (err: any) {
+    console.warn(`[ngrok] Failed to launch ngrok: ${err.message}`);
+  }
 }
 
 startServer();

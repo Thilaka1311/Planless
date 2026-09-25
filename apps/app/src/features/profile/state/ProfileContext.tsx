@@ -418,11 +418,26 @@ export const ProfileProvider = ({
   );
 };
 
+const DEFAULT_PROFILE_STORE: ProfileState = {
+  userProfile: null,
+  setUserProfile: () => {},
+  activeUserId: "you",
+  activeUserUuid: "you",
+  isAdmin: false,
+  dbUsers: [],
+  setDbUsers: () => {},
+  updateProfile: async () => {},
+  updateProfileName: async () => false,
+  updateProfileBio: async () => false,
+  updateProfileAvatar: async () => false,
+};
+
 export const useProfileStore = () => {
   const context = useContext(ProfileContext);
   if (context === undefined) {
-    throw new Error("useProfileStore must be used within a ProfileProvider");
+    return DEFAULT_PROFILE_STORE;
   }
   return context;
 };
+
 

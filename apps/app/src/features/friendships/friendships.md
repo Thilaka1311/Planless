@@ -16,35 +16,31 @@ The **Friendships** feature provides social graph connectivity and relationship 
 * User taps the **Friends** button in their Profile screen (`ProfileScreen.tsx`), which displays their current friend count and an indicator badge if pending incoming requests exist.
 * The application mounts `<FriendshipsScreen onBack={...} />`.
 * The main hub view displays:
-  * Top navigation bar with Back button, "Friends" title, and a Friend Requests shortcut icon (with red badge indicator if incoming requests exist).
+  * Top navigation bar with Back button, "Friends" title, followed by an ordered right action dock: `[Friend request text badge] [Discover Friends icon]`. The text badge displays the actual pending request count (`1 friend request`, `2 friend requests`, etc.) and conditionally hides when 0 requests are pending.
   * Inline `SearchBar` to search existing friends.
-  * When search query is empty: a prominent **Discover Friends** navigation row.
-  * Categorized **Friends** section displaying count and list of accepted friends.
+  * Alphabetically ordered **Friends** section (sorted case-insensitively by full name) displaying the list of accepted friends.
 
-### 2. Discovering and Adding Friends
-* User taps the **Discover Friends** row on the hub screen.
+### 2. Discovering Friends
+* User taps the **Discover People** icon in the header.
 * The view switches to `<DiscoverFriends />`.
-* All platform users (excluding the active user, current friends, and incoming request senders) are loaded and listed in alphabetical order.
+* All platform users except the active user are listed in alphabetical order.
 * User can search discoverable users by name or public username via `SearchBar`.
-* Next to each user row:
-  * If no request is active: **Add Friend** button (`UserPlus` icon). Tapping calls `sendFriendRequest(targetUserId)`. The row immediately switches to a **Cancel** state.
-  * If an outgoing request is already pending: **Cancel** button. Tapping calls `rejectFriendRequest(friendshipId)`, deleting the pending request row.
-* Tapping a user's avatar or name opens the `<FriendProfileViewerBottomSheet />`.
+* Rows display user avatar, full name, and bio without right-side action buttons.
+* Tapping anywhere on a user's row opens `<FriendProfileViewerBottomSheet />` where friend status is displayed and actions (add friend, cancel request, remove friend) can be performed.
 
 ### 3. Reviewing & Responding to Friend Requests
-* User taps the friend requests icon (`UserRoundCheck`) in the header of the main hub.
-* The view switches to `<FriendRequestsScreen />`.
+* User taps the friend requests icon (`UserRoundCheck`) in the header of the main hub or Discover People.
+* The view switches to `<FriendRequestsScreen />` (returning cleanly back to the originating screen upon dismissal).
 * **Incoming Requests**:
   * If pending incoming requests exist, each item shows the sender's avatar, name, and bio, with two action buttons:
     * **Accept** (green checkmark): Calls `acceptFriendRequest(friendshipId)`. Optimistically moves the user to the `friends` list, increments user's friends count via database trigger, and sets `status = 'ACCEPTED'` in Supabase.
     * **Reject** (red cross): Calls `rejectFriendRequest(friendshipId)`. Optimistically removes the item from incoming requests and deletes the record from the database.
   * If empty: shows a dashed placeholder ("No pending friend requests").
-* **Sent (Outgoing) Requests**:
-  * An expandable accordion ("Sent Requests (N)") lists pending requests sent by the active user.
-  * Tapping **Cancel** deletes the row via `rejectFriendRequest(friendshipId)`.
+* Note: The Friend Requests screen exclusively presents incoming requests. Underlying sent requests data and store methods remain available in `FriendshipContext` for other flows.
 
 ### 4. Viewing and Managing Friends
 * From the main hub (or search results):
+  * All friends and search results remain ordered alphabetically by full name (`localeCompare(..., undefined, { sensitivity: 'base' })`).
   * Tapping a friend row opens `<FriendProfileViewerBottomSheet />` displaying full photo, name, bio, total friend count, and a destructive **Remove Friend** action button.
   * Tapping **Remove Friend** deletes the friendship row from Supabase, updates local state, and decrements friend counts for both users via PostgreSQL triggers.
 
@@ -64,10 +60,9 @@ The **Friendships** feature provides social graph connectivity and relationship 
 ### Screen Layouts
 
 #### 1. Friends Hub Screen (`FriendshipsScreen.tsx`)
-* **Header**: Height `h-14` sticky header with `ArrowLeft` on the left, "Friends" title, and `UserRoundCheck` icon on the right with an absolute red dot indicator (`bg-[#EF4444]`) when `incomingRequests.length > 0`.
+* **Header**: Height `h-14` sticky header with `ArrowLeft` on the left, "Friends" title, and ordered right action dock: `[Friend request text badge] [Discover Friends icon]`. The text badge displays the actual pending request count (`1 friend request`, `2 friend requests`, etc.) and conditionally hides when 0 requests are pending.
 * **Search Bar**: Sticky container housing reusable `SearchBar` with placeholder "Search friends...".
-* **Discover Friends Row**: Appears below search bar when query is empty. Icon capsule with `UserRoundPlus`, title "Discover Friends", subtitle "Find and connect with people", and right-facing `ChevronRight`.
-* **Friends List Section**: Section label "Friends (N)".
+* **Friends List Section**: Alphabetically sorted friends list:
   * List items: 44px (`w-11 h-11`) circular `UserAvatar` with border `border-white/[0.06]`, bold title `text-sm text-zinc-200`, and single-line truncated bio.
   * Empty state: Centered round icon (`Users`) with text "No friends yet" / "No friends found".
 
@@ -76,18 +71,13 @@ The **Friendships** feature provides social graph connectivity and relationship 
 * **Incoming Section**:
   * Rows feature sender avatar and bio on the left, paired with two square action buttons (`w-9 h-9 rounded-xl`): green `Check` button and red `X` button.
   * Empty state: Dashed border container with `UserCheck` icon.
-* **Outgoing Accordion Section**:
-  * Expandable trigger bar with `ChevronDown` rotation (`rotate-180` when open).
-  * Outgoing rows display recipient details and a compact "Cancel" pill button (`bg-zinc-950 border-white/[0.04] text-zinc-400`).
 
 #### 3. Discover People Screen (`DiscoverFriends.tsx`)
-* **Header**: Height `h-14` header with `ArrowLeft` and title "Discover People".
+* **Header**: Height `h-14` header with `ArrowLeft`, title "Discover People", and `UserRoundCheck` with count badge when incoming requests exist.
 * **Search Bar**: Reusable `SearchBar` with auto-filtering across name and username.
 * **User List**:
-  * Rows display avatar, full name, and bio.
-  * Action button right-aligned:
-    * Unconnected: Compact pill button (`bg-zinc-900 text-white font-bold text-xs`) with `UserPlus` icon and label "Add Friend".
-    * Sent request: Muted pill button (`bg-zinc-950 text-zinc-400 border border-white/[0.04]`) with label "Cancel".
+  * Rows display avatar, full name, and bio in a single clickable card.
+  * Right-side buttons (`Add Friend`, `Cancel`, `Friends`) are removed to keep the list clean and browse-focused. Tapping any user row immediately launches the `<FriendProfileViewerBottomSheet />`.
 
 #### 4. Friend Profile Bottom Sheet (`FriendProfileViewerBottomSheet.tsx`)
 * **Container**: Anchored bottom sheet (`#1C1C1E`, rounded top corners `20px`, padding `16px 20px 32px`, bottom safe-area offset).

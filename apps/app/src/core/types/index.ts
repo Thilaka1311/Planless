@@ -110,6 +110,25 @@ export interface DbPlanMessage {
   updated_at?: string | null;
 }
 
+// 5c. PLAN_CHAT_READS TABLE (Tracks user read positions for unread counts)
+export interface DbPlanChatRead {
+  user_id: string;
+  plan_id: string;
+  last_read_message_id?: string | null;
+  last_read_at: string;
+  updated_at: string;
+}
+
+export interface DbChatSummary {
+  plan_id: string;
+  unread_count: number;
+  latest_message_id?: string | null;
+  latest_sender_id?: string | null;
+  latest_content?: string | null;
+  latest_created_at?: string | null;
+  latest_message_type?: string | null;
+}
+
 export type PlanActivityType =
   | 'participant_joined'
   | 'participant_waitlisted'

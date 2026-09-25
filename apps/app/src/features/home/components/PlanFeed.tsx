@@ -3,7 +3,7 @@ import { Sparkles, Plus } from "lucide-react";
 import { motion } from "motion/react";
 import { Plan, UserProfile, NotificationItem } from "../../../core/types";
 import { PlanCard } from "./PlanCard";
-import { usePlansStore } from "../../plans/state/PlansContext";
+import { useVerticalPager } from "../hooks/useVerticalPager";
 
 interface PlanStackProps {
   plansToRender: Plan[];
@@ -32,7 +32,7 @@ const EndCard: React.FC<{
   onNavigateToCreate?: () => void;
 }> = ({ hasPlans, onNavigateToCreate }) => {
   return (
-    <div className="h-full w-full snap-start snap-always relative rounded-[32px] overflow-hidden border border-white/[0.06] flex flex-col justify-center items-center bg-[#000000] shadow-2xl p-8 text-center select-none flex-shrink-0">
+    <div className="h-full w-full relative rounded-[32px] overflow-hidden border border-white/[0.06] flex flex-col justify-center items-center bg-[#000000] shadow-2xl p-8 text-center select-none flex-shrink-0">
       <div className="absolute inset-0 bg-[#000000] z-0" />
 
       <motion.div 
@@ -101,126 +101,124 @@ export const PlanStack: React.FC<PlanStackProps> = ({
     setExpandedCardId(null);
   }, [activeCardId]);
 
+  const totalPages = plansToRender.length + 1;
+
+  const targetPlanIndex = React.useMemo(() => {
+    if (!activeCardId || plansToRender.length === 0) return -1;
+    return plansToRender.findIndex(p =>
+      p.id === activeCardId ||
+      (p as any).dbUuid === activeCardId ||
+      (p as any).publicId === activeCardId ||
+      (p as any).public_id === activeCardId ||
+      (p as any).slug === activeCardId
+    );
+  }, [activeCardId, plansToRender]);
+
+  const resolvedInitialPage = targetPlanIndex >= 0 ? targetPlanIndex : (activeCardIndex || 0);
+
+  const {
+    currentPage,
+    pageY,
+    containerRef,
+    containerHeight,
+    goToPage,
+    pagerProps,
+    isDraggingRef,
+  } = useVerticalPager({
+    totalPages,
+    initialPage: resolvedInitialPage,
+    disabled: plansToRender.length === 0,
+    onPageChange: (index) => {
+      setActiveCardIndex(index);
+      const targetPlan = plansToRender[index];
+      if (targetPlan) {
+        setActiveCardId(targetPlan.id);
+      } else {
+        setActiveCardId("");
+      }
+    },
+  });
+
+  // Sync external homeFeedRef with our pager container
   React.useEffect(() => {
-    const el = homeFeedRef.current;
-    if (!el) return;
+    if (homeFeedRef && 'current' in homeFeedRef) {
+      (homeFeedRef as any).current = containerRef.current;
+    }
+  }, [homeFeedRef, containerRef]);
 
-    let isAnimating = false;
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-
-      if (isAnimating) return;
-
-      const N = plansToRender.length + 1;
-      if (N <= 1) return;
-
-      const clientHeight = el.clientHeight;
-      if (clientHeight <= 0) return;
-
-      const currentScrollTop = el.scrollTop;
-      const currentIndex = Math.round(currentScrollTop / clientHeight);
-
-      let targetIndex = currentIndex;
-      if (e.deltaY > 5) {
-        targetIndex = Math.min(N - 1, currentIndex + 1);
-      } else if (e.deltaY < -5) {
-        targetIndex = Math.max(0, currentIndex - 1);
-      }
-
-      if (targetIndex !== currentIndex) {
-        isAnimating = true;
-        el.scrollTo({
-          top: targetIndex * clientHeight,
-          behavior: "smooth",
-        });
-
-        setActiveCardIndex(targetIndex);
-        const targetPlan = plansToRender[targetIndex];
-        if (targetPlan) {
-          setActiveCardId(targetPlan.id);
-        } else {
-          setActiveCardId("");
-        }
-
-        setTimeout(() => {
-          isAnimating = false;
-        }, 500);
-      }
-    };
-
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => {
-      el.removeEventListener("wheel", handleWheel);
-    };
-  }, [plansToRender, setActiveCardId, setActiveCardIndex, homeFeedRef]);
+  // Synchronize programmatic index updates (e.g. from invite link)
+  React.useEffect(() => {
+    if (targetPlanIndex >= 0 && targetPlanIndex !== currentPage) {
+      goToPage(targetPlanIndex);
+    } else if (activeCardIndex !== currentPage && activeCardIndex >= 0 && activeCardIndex < totalPages) {
+      goToPage(activeCardIndex);
+    }
+  }, [activeCardIndex, targetPlanIndex, currentPage, goToPage, totalPages]);
 
   return (
     <div
       id="home_swipe_feed"
-      ref={homeFeedRef}
-      className="h-full w-full overflow-y-scroll snap-y snap-mandatory no-scrollbar"
-      style={{
-        scrollSnapType: "y mandatory",
-        WebkitOverflowScrolling: "touch",
-      }}
-      onScroll={(e) => {
-        const el = e.currentTarget;
-        const clientHeight = el.clientHeight;
-        if (clientHeight <= 0) return;
-        const index = Math.round(el.scrollTop / clientHeight);
-        const totalItems = plansToRender.length + 1;
-        if (index >= 0 && index < totalItems) {
-          if (index !== activeCardIndex) {
-            setActiveCardIndex(index);
-            const targetPlan = plansToRender[index];
-            if (targetPlan) {
-              setActiveCardId(targetPlan.id);
-            } else {
-              setActiveCardId("");
-            }
-          }
-        }
-      }}
+      ref={containerRef}
+      className="h-full w-full overflow-hidden relative touch-pan-x select-none"
+      style={{ touchAction: "pan-x" }}
     >
-      {plansToRender.map((plan) => (
-        <PlanCard
-          key={plan.id}
-          planId={plan.id}
-          userProfile={userProfile}
-          interestedPlanIds={interestedPlanIds}
-          setSelectedPlan={setSelectedPlan}
-          setPaymentConfirmationPlan={setPaymentConfirmationPlan}
-          walletBalance={walletBalance}
-          handleToggleJoin={handleToggleJoin}
-          setShowPaymentSuccess={setShowPaymentSuccess}
-          setShowWaitlistSuccess={setShowWaitlistSuccess}
-          setNotifications={setNotifications}
-          activeCardId={activeCardId}
-          selectedPlanId={selectedPlanId}
-          isExpanded={expandedCardId === plan.id}
-          setIsExpanded={(val) => {
-            setExpandedCardId((prev) => {
-              const currentIsExpanded = prev === plan.id;
-              const nextVal = typeof val === "function" ? (val as any)(currentIsExpanded) : val;
-              return nextVal ? plan.id : null;
-            });
-          }}
-          onSelectCard={(id) => {
-            setActiveCardId(id);
-            setExpandedCardId(null);
-            if (id) {
-              setSelectedPlan(id);
-            }
-          }}
-          handleSnoozePlan={handleSnoozePlan}
-          waitlistPlan={handleWaitlistPlan}
-        />
-      ))}
-      <EndCard
-        hasPlans={plansToRender.length > 0}
-        onNavigateToCreate={onNavigateToCreate}
-      />
+      <motion.div
+        {...pagerProps}
+        style={{ y: pageY, touchAction: "pan-x" }}
+        className="w-full flex flex-col"
+      >
+        {plansToRender.map((plan) => (
+          <div
+            key={plan.id}
+            id={`plan-card-${plan.id}`}
+            style={{ height: containerHeight > 0 ? `${containerHeight}px` : "100%" }}
+            className="w-full relative flex-shrink-0"
+          >
+            <PlanCard
+              planId={plan.id}
+              userProfile={userProfile}
+              interestedPlanIds={interestedPlanIds}
+              setSelectedPlan={setSelectedPlan}
+              setPaymentConfirmationPlan={setPaymentConfirmationPlan}
+              walletBalance={walletBalance}
+              handleToggleJoin={handleToggleJoin}
+              setShowPaymentSuccess={setShowPaymentSuccess}
+              setShowWaitlistSuccess={setShowWaitlistSuccess}
+              setNotifications={setNotifications}
+              activeCardId={activeCardId}
+              selectedPlanId={selectedPlanId}
+              isExpanded={expandedCardId === plan.id}
+              setIsExpanded={(val) => {
+                setExpandedCardId((prev) => {
+                  const currentIsExpanded = prev === plan.id;
+                  const nextVal = typeof val === "function" ? (val as any)(currentIsExpanded) : val;
+                  return nextVal ? plan.id : null;
+                });
+              }}
+              onSelectCard={(id) => {
+                if (isDraggingRef.current) return;
+                setActiveCardId(id);
+                setExpandedCardId(null);
+                if (id) {
+                  setSelectedPlan(id);
+                }
+              }}
+              handleSnoozePlan={handleSnoozePlan}
+              waitlistPlan={handleWaitlistPlan}
+            />
+          </div>
+        ))}
+        <div
+          id="plan-card-end"
+          style={{ height: containerHeight > 0 ? `${containerHeight}px` : "100%" }}
+          className="w-full relative flex-shrink-0"
+        >
+          <EndCard
+            hasPlans={plansToRender.length > 0}
+            onNavigateToCreate={onNavigateToCreate}
+          />
+        </div>
+      </motion.div>
     </div>
   );
 };

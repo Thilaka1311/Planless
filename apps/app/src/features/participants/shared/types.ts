@@ -46,7 +46,7 @@ export interface SharedParticipantScreenProps {
   onParticipantsChange?: (going: Friend[], waitlist: Friend[]) => void;
   onClose?: () => void;
   onAddFriends?: (targetTab?: ParticipantTab) => void;
-  onAdjustCapacity?: (newCapacity: number) => void;
+  onAdjustCapacity?: (newCapacity: number | null | undefined) => void;
   onMoveToGoing?: (friend: Friend) => Promise<void> | void;
   onMoveToWaitlist?: (friend: Friend) => Promise<void> | void;
   onMoveToInvited?: (friend: Friend) => Promise<void> | void;

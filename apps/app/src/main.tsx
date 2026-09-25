@@ -18,7 +18,10 @@ import { StrictMode, Component, ErrorInfo, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-import { registerSW } from 'virtual:pwa-register';
+import { pwaManager } from './shared/pwa/pwaService';
+
+// Initialize PWA lifecycle management and update listener
+pwaManager.init();
 import planlessLogo from './assets/planless_logo.png';
 import { preloadImage } from './shared/imaging/preloadImage';
 import { preloadCoreStaticAssets } from './shared/assets/coreStaticAssets';
@@ -81,21 +84,6 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 
     return this.props.children;
   }
-}
-
-if (import.meta.env.DEV && typeof window !== "undefined") {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      for (const registration of registrations) {
-        registration.unregister();
-      }
-    });
-    if ("caches" in window) {
-      caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
-    }
-  }
-} else if (typeof window !== "undefined") {
-  registerSW({ immediate: true });
 }
 
 createRoot(document.getElementById('root')!).render(

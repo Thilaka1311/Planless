@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from './types';
 import { formatSkipReason, getParticipantRsvpDisplayStatus, isJoinedRsvpParticipant } from '../../../../lib/participantStatus';
@@ -66,9 +67,13 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
     selectedItem.name === 'You'
   );
 
-  return (
+  const node = (
     <div
       onClick={onClose}
+      onTouchMove={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
       style={{
         position: 'fixed',
         inset: 0,
@@ -77,6 +82,7 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
         display: 'flex',
         alignItems: 'flex-end',
         animation: 'fadeIn 0.2s ease-out',
+        touchAction: 'none',
       }}
     >
       <div
@@ -214,4 +220,9 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(node, document.body);
+  }
+  return node;
 };

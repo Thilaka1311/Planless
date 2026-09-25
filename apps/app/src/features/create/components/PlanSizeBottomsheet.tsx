@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { Minus, Plus, Users, UserPlus } from "lucide-react";
 
 export interface PlanSizeBottomsheetProps {
   isOpen: boolean;
-  capacity?: number;
+  capacity?: number | null;
   invitedCount?: number;
   joinedCount?: number;
   waitlistedCount?: number;
@@ -12,7 +13,7 @@ export interface PlanSizeBottomsheetProps {
   maxCapacity?: number;
   limitToInvitedCount?: boolean;
   isAutomatic?: boolean;
-  onCapacityChange: (newCapacity: number) => void | Promise<void>;
+  onCapacityChange: (newCapacity: number | null) => void | Promise<void>;
   onIncrement?: () => void;
   onDecrement?: () => void;
   onSave?: () => void;
@@ -39,25 +40,31 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   onClose,
   onAddParticipants,
 }) => {
+  const isInitialNoLimit = capacity === null || capacity === undefined;
   const effectiveMaxCapacity =
     limitToInvitedCount && invitedCount !== undefined
       ? Math.max(minCapacity, Math.min(invitedCount, maxCapacity))
       : Math.max(minCapacity, maxCapacity);
-  const initialValidCapacity = Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity || minCapacity));
+  const initialValidCapacity: number | null = isInitialNoLimit
+    ? null
+    : Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity));
 
-  const [draftCapacity, setDraftCapacity] = useState<number>(initialValidCapacity);
+  const [draftCapacity, setDraftCapacity] = useState<number | null>(initialValidCapacity);
   const [showInviteHint, setShowInviteHint] = useState(false);
 
   // References to track open state, original value, and ensure single commit on close
   const prevIsOpenRef = useRef(false);
-  const originalCapacityRef = useRef<number>(initialValidCapacity);
-  const draftCapacityRef = useRef<number>(initialValidCapacity);
+  const originalCapacityRef = useRef<number | null>(initialValidCapacity);
+  const draftCapacityRef = useRef<number | null>(initialValidCapacity);
   const hasCommittedRef = useRef(false);
 
   // Sync draftCapacity when capacity prop changes or sheet opens
   useEffect(() => {
     if (isOpen && !prevIsOpenRef.current) {
-      const valid = Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity ?? minCapacity));
+      const isNoLim = capacity === null || capacity === undefined;
+      const valid: number | null = isNoLim
+        ? null
+        : Math.max(minCapacity, Math.min(effectiveMaxCapacity, capacity));
       setDraftCapacity(valid);
       draftCapacityRef.current = valid;
       originalCapacityRef.current = valid;
@@ -85,18 +92,32 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
     prevIsOpenRef.current = isOpen;
   }, [isOpen, capacity, effectiveMaxCapacity, minCapacity, onCapacityChange, onSave]);
 
-  const currentCapacity = Math.max(minCapacity, Math.min(effectiveMaxCapacity, draftCapacity));
+  const currentCapacity =
+    draftCapacity === null ? null : Math.max(minCapacity, Math.min(effectiveMaxCapacity, draftCapacity));
 
   const handleDecrement = () => {
     setShowInviteHint(false);
-    if (currentCapacity > minCapacity) {
-      const nextVal = currentCapacity - 1;
-      setDraftCapacity(nextVal);
-      draftCapacityRef.current = nextVal;
+    if (currentCapacity === null) {
+      return;
     }
+    if (currentCapacity <= minCapacity) {
+      // 2 -> No limit
+      setDraftCapacity(null);
+      draftCapacityRef.current = null;
+      return;
+    }
+    const nextVal = currentCapacity - 1;
+    setDraftCapacity(nextVal);
+    draftCapacityRef.current = nextVal;
   };
 
   const handleIncrement = () => {
+    if (currentCapacity === null) {
+      // No limit -> 2
+      setDraftCapacity(minCapacity);
+      draftCapacityRef.current = minCapacity;
+      return;
+    }
     if (currentCapacity >= effectiveMaxCapacity) {
       setShowInviteHint(true);
       return;
@@ -138,7 +159,10 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   };
 
   let capacitySummary: string;
-  if (isAutomatic) {
+  if (currentCapacity === null) {
+    const totalCount = invitedCount ?? joinedCount ?? 0;
+    capacitySummary = totalCount > 0 ? `${totalCount} going • No waitlist` : "Unlimited capacity";
+  } else if (isAutomatic) {
     const going = currentCapacity;
     const waitlisted = Math.max(0, (invitedCount ?? currentCapacity) - currentCapacity);
     capacitySummary = `${going} going • ${waitlisted} waitlisted`;
@@ -161,7 +185,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
         : `${effectiveGoingCount} going`;
   }
 
-  return (
+  const node = (
     <AnimatePresence>
       {isOpen && (
         <>
@@ -170,7 +194,12 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleClose}
-            className="fixed inset-0 bg-black/60 z-60 pointer-events-auto"
+            onTouchMove={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            style={{ touchAction: "none" }}
+            className="fixed inset-0 bg-black/60 z-[100] pointer-events-auto"
           />
           <motion.div
             initial={{ y: "100%" }}
@@ -194,7 +223,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
               background: "#1C1C1E",
               borderTopLeftRadius: 20,
               borderTopRightRadius: 20,
-              zIndex: 65,
+              zIndex: 105,
               padding: "16px 20px calc(32px + env(safe-area-inset-bottom, 0px))",
               color: "#FFFFFF",
               boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.3)",
@@ -269,7 +298,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
                 <button
                   type="button"
                   id="capacity_decrement_btn"
-                  disabled={currentCapacity <= minCapacity}
+                  disabled={currentCapacity === null}
                   onClick={handleDecrement}
                   className="w-12 h-12 rounded-full bg-white/[0.08] hover:bg-white/[0.14] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center justify-center text-white text-xl font-bold cursor-pointer"
                 >
@@ -277,18 +306,31 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
                 </button>
 
                 <div className="flex flex-col items-center gap-1">
-                  <span className="text-[28px] font-bold text-white leading-none tracking-tight">
-                    {currentCapacity}
-                  </span>
-                  <span className="text-[12px] text-white/40 font-medium">
-                    {currentCapacity === 1 ? "person" : "people"}
-                  </span>
+                  {currentCapacity === null ? (
+                    <>
+                      <span className="text-[26px] font-bold text-white leading-none tracking-tight">
+                        No limit
+                      </span>
+                      <span className="text-[12px] text-white/40 font-medium">
+                        Unlimited capacity
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[28px] font-bold text-white leading-none tracking-tight">
+                        {currentCapacity}
+                      </span>
+                      <span className="text-[12px] text-white/40 font-medium">
+                        people
+                      </span>
+                    </>
+                  )}
                 </div>
 
                 <button
                   type="button"
                   id="capacity_increment_btn"
-                  disabled={currentCapacity >= effectiveMaxCapacity}
+                  disabled={currentCapacity !== null && currentCapacity >= effectiveMaxCapacity}
                   onClick={handleIncrement}
                   className="w-12 h-12 rounded-full bg-white/[0.08] hover:bg-white/[0.14] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center justify-center text-white text-xl font-bold cursor-pointer"
                 >
@@ -353,6 +395,11 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
       )}
     </AnimatePresence>
   );
+
+  if (typeof document !== "undefined") {
+    return createPortal(node, document.body);
+  }
+  return node;
 };
 
 export const EditCapacityBottomSheet = PlanSizeBottomsheet;

@@ -404,6 +404,52 @@ export type Database = {
           },
         ]
       }
+      plan_chat_reads: {
+        Row: {
+          last_read_at: string
+          last_read_message_id: string | null
+          plan_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          last_read_at?: string
+          last_read_message_id?: string | null
+          plan_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          last_read_at?: string
+          last_read_message_id?: string | null
+          plan_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_chat_reads_last_read_message_id_fkey"
+            columns: ["last_read_message_id"]
+            isOneToOne: false
+            referencedRelation: "plan_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plan_chat_reads_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plan_chat_reads_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       plan_messages: {
         Row: {
           content: string
@@ -1048,7 +1094,7 @@ export type Database = {
       auto_promote_waitlist_for_assigned: {
         Args: {
           p_plan_id: string
-          p_vacated_group: Database["public"]["Enums"]["assigned_group_enum"]
+          p_vacated_group?: Database["public"]["Enums"]["assigned_group_enum"]
         }
         Returns: number
       }
@@ -1094,6 +1140,27 @@ export type Database = {
         Args: { p_plan_id: string }
         Returns: string
       }
+      get_plan_unread_info: {
+        Args: { p_plan_id: string; p_user_id: string }
+        Returns: {
+          first_unread_message_id: string
+          last_read_at: string
+          last_read_message_id: string
+          unread_count: number
+        }[]
+      }
+      get_user_chat_summaries: {
+        Args: { p_user_id?: string }
+        Returns: {
+          latest_content: string
+          latest_created_at: string
+          latest_message_id: string
+          latest_message_type: string
+          latest_sender_id: string
+          plan_id: string
+          unread_count: number
+        }[]
+      }
       insert_cost_expense: {
         Args: {
           p_message_id?: string
@@ -1129,6 +1196,7 @@ export type Database = {
         Args: { p_expense_id: string; p_user_id: string }
         Returns: boolean
       }
+      join_plan: { Args: { p_plan_id: string }; Returns: Json }
       leave_plan: { Args: { p_plan_id: string }; Returns: Json }
       manage_completed_plan_participants:
         | {
@@ -1148,6 +1216,10 @@ export type Database = {
             }
             Returns: Json
           }
+      mark_plan_chat_read: {
+        Args: { p_message_id?: string; p_plan_id: string }
+        Returns: undefined
+      }
       move_participant_to_waitlist_and_decrease_capacity: {
         Args: { p_plan_id: string; p_target_user_id: string }
         Returns: Json
@@ -1264,7 +1336,11 @@ export type Database = {
         Returns: Json
       }
       update_plan_capacity: {
-        Args: { p_plan_id: string; p_plan_size: number }
+        Args: {
+          p_auto_promote?: boolean
+          p_plan_id: string
+          p_plan_size: number
+        }
         Returns: Json
       }
     }

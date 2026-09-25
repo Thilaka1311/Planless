@@ -154,9 +154,6 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
     const fullOrderedList = [...going, ...waitlist].filter((f) => !f.isHost);
     form.setSelectedFriends(fullOrderedList);
     form.setPriorityGuestIds(going.filter((f) => !f.isHost).map((item) => item.id));
-    if (form.totalCapacity === undefined) {
-      form.setTotalCapacity(Math.max(2, going.length));
-    }
 
     saveDraftParticipants({
       joinedIds: going.map((f) => f.id),
@@ -186,7 +183,13 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
       onContinue={handleContinue}
       onParticipantsChange={handleParticipantsChange}
       onAddFriends={onAddFriends}
-      onAdjustCapacity={(val) => form.setTotalCapacity(Math.max(2, val))}
+      onAdjustCapacity={(val) => {
+        if (val === null || val === undefined) {
+          form.setTotalCapacity(undefined);
+        } else {
+          form.setTotalCapacity(Math.max(2, val));
+        }
+      }}
       waitlistMode={currentWaitlistMode}
       onWaitlistModeChange={form.setWaitlistMode}
       showWaitlistMode={true}

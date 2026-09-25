@@ -17,6 +17,7 @@ import {
   setStoredPendingInviteToken,
   clearStoredPendingInviteToken,
 } from "./features/plans/services/planInviteService";
+import { PwaUpdatePrompt } from "./shared/pwa/PwaUpdatePrompt";
 
 const WalletProviderComp = WalletProvider as React.ComponentType<{ children: React.ReactNode; userId?: string }>;
 const PlansProviderComp = PlansProvider as React.ComponentType<{ children: React.ReactNode; userId?: string }>;
@@ -30,11 +31,13 @@ export default function App() {
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const tokenFromPath = extractInviteTokenFromPath(window.location.pathname);
+    const storedToken = getStoredPendingInviteToken();
+    console.log('[INVITE_TRACE] App.tsx useState init: pathname=', window.location.pathname, '| tokenFromPath=', tokenFromPath, '| storedToken=', storedToken);
     if (tokenFromPath) {
       setStoredPendingInviteToken(tokenFromPath);
       return tokenFromPath;
     }
-    return getStoredPendingInviteToken();
+    return storedToken;
   });
 
   const [initialProfile, setInitialProfile] = useState<UserProfile | null>(() => {
@@ -227,11 +230,25 @@ function AppContent({
         };
         setUserProfile(mappedProfile);
         localStorage.setItem(localStorageKey, JSON.stringify(mappedProfile));
-        lastInitializedUserIdRef.current = authUser.id;
-        const storedToken = getStoredPendingInviteToken();
-        if (storedToken) {
-          setPendingInviteToken(storedToken);
+        localStorage.removeItem("planless_active_tab");
+        // Reset URL to /home so parseCurrentRoute() returns 'home' when MainApp mounts.
+        // Without this, a stale URL like /profile would make MainApp open on the profile tab.
+        if (typeof window !== "undefined" && window.location.pathname !== "/home" && window.location.pathname !== "/" && !window.location.pathname.startsWith("/join/")) {
+          window.history.replaceState(null, "", "/home");
         }
+        lastInitializedUserIdRef.current = authUser.id;
+        const pathToken = typeof window !== "undefined" ? extractInviteTokenFromPath(window.location.pathname) : null;
+        const storedToken = getStoredPendingInviteToken();
+        const effectiveToken = pathToken || storedToken;
+        console.log('[INVITE_TRACE] restoreSessionAndProfile: pathname=', window.location.pathname, '| pathToken=', pathToken, '| storedToken=', storedToken, '| effectiveToken=', effectiveToken);
+        if (pathToken) {
+          setStoredPendingInviteToken(pathToken);
+        }
+        if (effectiveToken) {
+          console.log('[INVITE_TRACE] restoreSessionAndProfile: setting pendingInviteToken =', effectiveToken);
+          setPendingInviteToken(effectiveToken);
+        }
+        console.log('[INVITE_TRACE] restoreSessionAndProfile: calling setAppState(ready), profile_completed=', dbProfile.profile_completed);
         setAppState(dbProfile.profile_completed ? "ready" : "unauthenticated");
       } else {
         setUserProfile(null);
@@ -299,12 +316,15 @@ function AppContent({
   const handleOnboardingComplete = (newProfile: UserProfile) => {
     setUserProfile(newProfile);
     localStorage.setItem(localStorageKey, JSON.stringify(newProfile));
+    // Always start on Home after completing onboarding/login
+    localStorage.removeItem("planless_active_tab");
     try {
       localStorage.removeItem("planless_onboarding_screen");
     } catch {}
 
     // Ensure any stored pending invite is active in state
     const storedToken = getStoredPendingInviteToken();
+    console.log('[INVITE_TRACE] handleOnboardingComplete: storedToken=', storedToken);
     if (storedToken) {
       setPendingInviteToken(storedToken);
     }
@@ -320,9 +340,15 @@ function AppContent({
     }
     setUserProfile(null);
     localStorage.removeItem(localStorageKey);
+    localStorage.removeItem("planless_active_tab");
     try {
       localStorage.removeItem("planless_onboarding_screen");
     } catch {}
+    // Reset URL to /home so that when MainApp remounts after next login,
+    // parseCurrentRoute() returns 'home' instead of the stale previous tab URL.
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", "/home");
+    }
     setAppState("unauthenticated");
   };
 
@@ -389,17 +415,24 @@ function AppContent({
 
   return (
     <div className="h-[100dvh] w-screen bg-[#050505] flex flex-col font-sans selection:bg-[#ff5e3a]/35 overflow-hidden">
+      <PwaUpdatePrompt />
       <div className="flex-1 w-full h-full z-10 overflow-hidden">
         {appState === "unauthenticated" ? (
-          <div className="w-full h-full bg-[#050505] flex flex-col relative">
-            <div className="flex-1 overflow-hidden relative">
-              <OnboardingFlow
-                onComplete={handleOnboardingComplete}
-                initialStep={(userProfile && lastInitializedUserIdRef.current) ? "PROFILE_SETUP" : "ENTRY"}
-                existingProfile={lastInitializedUserIdRef.current ? userProfile : null}
-              />
-            </div>
-          </div>
+          <PlansProviderComp key="plans-onboarding">
+            <FriendshipProvider>
+              <ToastProvider>
+                <div className="w-full h-full bg-[#050505] flex flex-col relative">
+                  <div className="flex-1 overflow-hidden relative">
+                    <OnboardingFlow
+                      onComplete={handleOnboardingComplete}
+                      initialStep={(userProfile && lastInitializedUserIdRef.current) ? "PROFILE_SETUP" : "ENTRY"}
+                      existingProfile={lastInitializedUserIdRef.current ? userProfile : null}
+                    />
+                  </div>
+                </div>
+              </ToastProvider>
+            </FriendshipProvider>
+          </PlansProviderComp>
         ) : (
           (() => {
             const providerKey = userProfile?.user_id || "anonymous";

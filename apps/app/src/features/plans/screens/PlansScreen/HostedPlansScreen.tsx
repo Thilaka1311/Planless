@@ -19,6 +19,7 @@ interface HostedPlansScreenProps {
   onTogglePast?: () => void;
   onToggleSearch?: () => void;
   onScroll?: (y: number) => void;
+  onNavigateToCreate?: () => void;
 }
 
 export const HostedPlansScreen = React.memo(({
@@ -27,6 +28,7 @@ export const HostedPlansScreen = React.memo(({
   onTogglePast,
   onToggleSearch,
   onScroll,
+  onNavigateToCreate,
 }: HostedPlansScreenProps) => {
   const { plans, dbPlanParticipants } = usePlansStore();
   const { userProfile, activeUserId } = useProfileStore();
@@ -252,7 +254,14 @@ export const HostedPlansScreen = React.memo(({
         <EmptyState
           icon={<Sparkles className="w-8 h-8 text-white stroke-[1.5]" />}
           title="You haven't hosted a plan yet"
-          description="Host a plan to see it here"
+          ctaButton={
+            <button
+              onClick={onNavigateToCreate}
+              className="py-3 px-7 bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-sans font-semibold text-[13.5px] tracking-wide rounded-full transition-all duration-200 active:scale-[0.98] cursor-pointer shadow-md shadow-[#FF6B2C]/20 flex items-center justify-center"
+            >
+              Host Plan
+            </button>
+          }
           py="py-12"
         />
       );

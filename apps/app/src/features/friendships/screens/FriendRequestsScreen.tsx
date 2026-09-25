@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { ArrowLeft, Check, UserCheck, X, ChevronDown } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { ArrowLeft, Check, UserCheck, X } from "lucide-react";
+import { motion } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { FriendProfileViewerBottomSheet } from "../components/FriendProfileViewerBottomSheet";
@@ -13,14 +13,11 @@ interface FriendRequestsScreenProps {
 export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBack, onZoomPhoto }) => {
   const {
     incomingRequests,
-    outgoingRequests,
     acceptFriendRequest,
     rejectFriendRequest,
     loading
   } = useFriendshipStore();
 
-  const [showSentRequests, setShowSentRequests] = useState(false);
-  const [selectedSentUserForViewer, setSelectedSentUserForViewer] = useState<{ friendshipId: string; userId: string } | null>(null);
   const [selectedIncomingUserForViewer, setSelectedIncomingUserForViewer] = useState<{ userId: string } | null>(null);
 
   const handleAccept = async (friendshipId: string, name: string) => {
@@ -36,14 +33,6 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
       await rejectFriendRequest(friendshipId);
     } catch (err: any) {
       console.error("[handleReject] Error:", err);
-    }
-  };
-
-  const handleCancelSentRequest = async (friendshipId: string, name: string) => {
-    try {
-      await rejectFriendRequest(friendshipId);
-    } catch (err: any) {
-      console.error("[handleCancelSentRequest] Error:", err);
     }
   };
 
@@ -72,15 +61,16 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
       </header>
 
       {/* CONTENT */}
-      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
+      <div className={`flex-1 overflow-y-auto px-5 py-5 ${incomingRequests.length === 0 ? "flex flex-col justify-center" : "space-y-6"}`}>
         {/* INCOMING REQUESTS SECTION */}
-        <div>
+        <div className={incomingRequests.length === 0 ? "flex-1 flex flex-col items-center justify-center" : ""}>
           {incomingRequests.length === 0 ? (
-            <div className="p-6 bg-[#0A0A0C]/50 border border-white/[0.02] border-dashed rounded-2xl text-center">
-              <div className="w-12 h-12 rounded-full bg-zinc-950 border border-white/[0.03] flex items-center justify-center text-zinc-600 mx-auto mb-3">
-                <UserCheck className="w-5 h-5" />
-              </div>
-              <p className="text-zinc-600 font-sans font-medium text-xs">No pending friend requests</p>
+            <div className="flex flex-col items-center justify-center text-center px-4 py-8">
+              <UserCheck className="w-8 h-8 text-zinc-600 stroke-[1.5] mb-3" />
+              <p className="text-zinc-400 font-sans font-medium text-sm">No pending friend requests</p>
+              <p className="text-zinc-600 text-xs mt-1 max-w-[240px]">
+                When someone sends you a friend request, it will appear here.
+              </p>
             </div>
           ) : (
             <div className="space-y-1">
@@ -135,76 +125,12 @@ export const FriendRequestsScreen: React.FC<FriendRequestsScreenProps> = ({ onBa
             </div>
           )}
         </div>
-
-        {/* OUTGOING / SENT REQUESTS SECTION */}
-        {outgoingRequests.length > 0 && (
-          <div className="border-t border-white/[0.04] pt-4">
-            <button
-              onClick={() => setShowSentRequests(!showSentRequests)}
-              className="w-full flex items-center justify-between py-2 text-zinc-400 hover:text-white transition cursor-pointer"
-            >
-              <span className="font-sans font-bold text-xs uppercase tracking-wider">
-                Sent Requests ({outgoingRequests.length})
-              </span>
-              <ChevronDown
-                className={`w-4 h-4 transition-transform duration-200 ${showSentRequests ? "rotate-180" : ""}`}
-              />
-            </button>
-            <AnimatePresence>
-              {showSentRequests && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="space-y-1 pt-2 overflow-hidden"
-                >
-                  {outgoingRequests.map((item) => (
-                    <div
-                      key={item.friendshipId}
-                      className="w-full py-2.5 px-1 hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl flex items-center justify-between transition"
-                    >
-                      <div
-                        onClick={() => setSelectedSentUserForViewer({ friendshipId: item.friendshipId, userId: item.recipient?.id })}
-                        className="flex items-center space-x-3.5 flex-1 pr-3 cursor-pointer group min-w-0"
-                      >
-                        <UserAvatar
-                          src={item.recipient?.profile_photo || ""}
-                          alt={item.recipient?.full_name || "User"}
-                          className="w-11 h-11 rounded-full border border-white/[0.06] object-cover transition-transform duration-200 group-hover:scale-105 flex-shrink-0"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <h4 className="font-sans font-bold text-sm text-zinc-300 group-hover:text-white transition truncate">
-                            {item.recipient?.full_name}
-                          </h4>
-                          <p className="text-[11.5px] font-sans font-medium text-zinc-500 line-clamp-1 truncate">
-                            {item.recipient?.bio || "Always spontaneous, never planless."}
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCancelSentRequest(item.friendshipId, item.recipient?.full_name || "User");
-                        }}
-                        className="px-3 py-1.5 bg-zinc-950 hover:bg-zinc-900 border border-white/[0.04] hover:border-white/[0.08] text-zinc-400 hover:text-white font-sans font-semibold text-[11px] rounded-lg transition active:scale-[0.97] cursor-pointer whitespace-nowrap flex-shrink-0"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
       </div>
 
-      {/* FRIEND PROFILE VIEWER BOTTOM SHEET (For Outgoing & Incoming Requests) */}
+      {/* FRIEND PROFILE VIEWER BOTTOM SHEET (For Incoming Requests) */}
       <FriendProfileViewerBottomSheet
-        friendUserId={selectedSentUserForViewer?.userId || selectedIncomingUserForViewer?.userId || null}
+        friendUserId={selectedIncomingUserForViewer?.userId || null}
         onClose={() => {
-          setSelectedSentUserForViewer(null);
           setSelectedIncomingUserForViewer(null);
         }}
         source="requests"

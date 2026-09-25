@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Crown, ArrowLeftRight, Check } from 'lucide-react';
+import { X, Crown, ArrowLeftRight, Check, UserRoundPlus } from 'lucide-react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 
 interface StepWhoProps {
@@ -29,6 +29,7 @@ interface StepWhoProps {
   isAddParticipantMode?: boolean;
   leavingParticipant?: { name: string; avatar?: string | null } | null;
   selectedReplacementFriend?: any | null;
+  onNavigateToDiscoverFriends?: () => void;
 
   // Optional plan details for the compact header
   localTitle?: string;
@@ -74,6 +75,7 @@ export const StepWho: React.FC<StepWhoProps> = ({
   isAddParticipantMode = false,
   leavingParticipant = null,
   selectedReplacementFriend = null,
+  onNavigateToDiscoverFriends,
 }) => {
   const totalParticipantsCount = totalInvitedCount + (isHostSelected ? 1 : 0);
 
@@ -222,9 +224,29 @@ export const StepWho: React.FC<StepWhoProps> = ({
         {/* ── Friends list — all participants with check indicators ── */}
         <div className="flex-1 flex flex-col select-none overflow-y-auto scrollbar-none pr-0 min-h-0" style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))' }}>
           {availableItems.length === 0 ? (
-            <div className="w-full py-8 text-center text-zinc-600 text-xs font-semibold select-none">
-              {searchPeopleQuery ? 'No friends matched your search' : 'No friends found'}
-            </div>
+            searchPeopleQuery ? (
+              <div className="w-full py-8 text-center text-zinc-600 text-xs font-semibold select-none">
+                No friends matched your search
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center select-none px-6 py-8">
+                <UserRoundPlus className="w-8 h-8 text-white stroke-[1.5] mb-3" />
+                <h3 className="text-[15px] font-semibold text-white mb-3">No friends yet</h3>
+                {onNavigateToDiscoverFriends && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToDiscoverFriends}
+                    className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-850 active:scale-95 border border-white/[0.08] text-white font-sans font-medium text-xs rounded-xl transition flex items-center gap-2 cursor-pointer shadow-lg"
+                  >
+                    <UserRoundPlus className="w-4 h-4 text-white/90" />
+                    <span>Add Friends</span>
+                  </button>
+                )}
+                <p className="text-[11.5px] text-zinc-500 font-sans font-normal mt-3 max-w-[240px] text-center">
+                  You can also invite people after creating the plan.
+                </p>
+              </div>
+            )
           ) : (
             availableItems.map((item, index) => {
               const disabled = isItemDisabled(item);

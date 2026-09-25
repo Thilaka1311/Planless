@@ -482,7 +482,7 @@ export interface PlansDetailsScreenProps {
   onAdjustDate?: (eventDateTime: Date, rsvpDateTime?: Date) => void;
   onAdjustCost?: (newCost: number) => void;
   onAdjustLocation?: (locationData: { place_id?: string | null; place_name?: string | null; place_address?: string | null; latitude?: number | null; longitude?: number | null; }) => void;
-  onAdjustCapacity?: (newCapacity: number) => void;
+  onAdjustCapacity?: (newCapacity: number | null | undefined) => void;
   onIncrementCapacity?: () => void;
   onDecrementCapacity?: () => void;
   onSubmit?: () => void;
@@ -1358,7 +1358,21 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   }, [selectedPlan, dbPlanParticipants, isParticipantInPlan, activeUserId, resolvedUserUuid, planUuid]);
 
   const handleCapacityChange = useCallback(
-    async (newCapacity: number) => {
+    async (newCapacity: number | null | undefined) => {
+      if (newCapacity === null || newCapacity === undefined) {
+        if (createMode) {
+          onAdjustCapacity?.(undefined as any);
+          return;
+        }
+        if (!selectedPlan?.id) return;
+        setIsEditingCapacitySheetOpen(false);
+        try {
+          await updatePlanDetails(selectedPlan.id, { plan_size: null }, { autoPromote: true });
+        } catch (err: any) {
+          console.error('[PlansPreviewScreen handleCapacityChange] Error updating capacity to null:', err);
+        }
+        return;
+      }
       if (newCapacity < 2) {
         console.warn(`[handleCapacityChange] Attempted capacity ${newCapacity} below minimum 2. Ignoring.`);
         return;
@@ -2294,7 +2308,26 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                       </button>
 
                       {/* Plan Size Indicator (Right side of Date & Time row / above Free) - Host-Only Interactive */}
-                      {Boolean(currentPlanSize) && (
+                      {createMode ? (
+                        <button
+                          type="button"
+                          id="hero_plan_size_btn"
+                          data-testid="hero_plan_size_indicator"
+                          disabled={!isHost || isCancelled || isCompleted}
+                          onClick={() => {
+                            if (!isHost || isCancelled || isCompleted) return;
+                            onEditParticipants?.();
+                          }}
+                          className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
+                        >
+                          <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
+                          <span>
+                            {rawDbPlan?.plan_size === null || (selectedPlan as any)?.plan_size === null
+                              ? "No limit"
+                              : (currentPlanSize || 2)}
+                          </span>
+                        </button>
+                      ) : (
                         <button
                           type="button"
                           id="hero_plan_size_btn"
@@ -2307,7 +2340,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                           className="flex items-center gap-1.5 text-white/90 font-sans font-semibold text-[13.5px] tracking-tight shrink-0 pl-2 hover:bg-white/[0.06] active:bg-white/[0.1] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
                         >
                           <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
-                          <span>{currentPlanSize}</span>
+                          <span>
+                            {rawDbPlan?.plan_size === null || (selectedPlan as any)?.plan_size === null
+                              ? "No limit"
+                              : (currentPlanSize || 2)}
+                          </span>
                         </button>
                       )}
                     </div>
@@ -2397,9 +2434,12 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                               <IndianRupee className="w-4.5 h-4.5 text-emerald-400 flex-shrink-0" />
                               <div className="flex items-center gap-1.5">
                                 <span className="text-white text-[13px] font-semibold tracking-wide">
-                                  {hasCost && costText && costText !== "Free" ? costText.replace(/^₹\s*/, '') : "Free"}
+                                  {hasCost && currentTotalCost > 0
+                                    ? (currentTotalCost % 1 === 0
+                                        ? currentTotalCost.toLocaleString("en-IN")
+                                        : currentTotalCost.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+                                    : "Free"}
                                 </span>
-                                <span className="text-[#8E8E93] text-[11px] font-normal font-sans">per person</span>
                               </div>
                             </>
                           ) : (
@@ -2433,7 +2473,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                             setIsEditingCostSheetOpen(true);
                           }}
                           position="above"
-                          align="right"
+                          align={isCompleted ? "left" : "right"}
                         />
                       </div>
                     </div>
@@ -2554,12 +2594,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 showExclamation={showExclamation}
                 className=""
                 onClick={
-                  isCompleted && isHost
-                    ? !isManagementExpired
-                      ? () => setShowAttendanceSheet(true)
-                      : undefined
-                    : isCompleted
-                      ? undefined
+                  isCompleted
+                    ? () => setShowCancelPlanConfirm(true)
                     : isHost && isCancelled
                       ? () => setShowRestorePlanConfirm(true)
                       : isHost
@@ -2833,10 +2869,23 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onConfirmCancel={async () => {
           setShowCancelPlanConfirm(false);
           try {
-            await cancelPlan(selectedPlan.id);
+            if (isCompleted) {
+              await updatePlanDetails(selectedPlan.id, { status: "CANCELLED" });
+            } else {
+              await cancelPlan(selectedPlan.id);
+            }
             onClose();
           } catch (err: any) {
             console.error("Failed to cancel plan:", err);
+          }
+        }}
+        onReopenPlan={async () => {
+          setShowCancelPlanConfirm(false);
+          try {
+            await updatePlanDetails(selectedPlan.id, { status: "LIVE" });
+            onClose();
+          } catch (err: any) {
+            console.error("Failed to reopen plan:", err);
           }
         }}
         onMarkAsComplete={() => {
@@ -2871,6 +2920,13 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               members={selectedPlan?.members || []}
               hostId={selectedPlan.hostId || selectedPlan.creatorId || (selectedPlan as any).host_id || ""}
               planExpense={planExpense}
+              planTotalCost={currentTotalCost}
+              planTitle={selectedPlan?.title || ''}
+              planCoverImage={selectedPlan?.coverImage || (selectedPlan as any)?.cover_image || ''}
+              planId={(selectedPlan as any)?.dbUuid || selectedPlan?.id || ''}
+              planCategory={selectedPlan?.category || ''}
+              planSubcategory={(selectedPlan as any)?.subcategory || ''}
+              planCapacity={currentPlanSize}
               isSubmitting={isEndingPlan || isManagingCompletedParticipants}
               isCompletedMode={selectedPlan?.status === 'COMPLETED'}
               onConfirm={async (attendanceInput, expenseMode, usersToAdd, usersToRemove) => {
@@ -2916,6 +2972,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       {/* ---------------- ⚡ EARLY COMPLETE PLAN CONFIRMATION SHEET ---------------- */}
       <EarlyCompletePlanConfirmationBottomSheet
         isOpen={showEarlyEndPlanConfirm}
+        plan={selectedPlan}
         scheduledTimeText={formatPlanDate((selectedPlan as any).scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt)}
         isSubmitting={false}
         onConfirm={() => {
@@ -3005,7 +3062,13 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       {/* ---------------- 👥 EDIT CAPACITY / PLAN SIZE BOTTOM SHEET ---------------- */}
       <EditCapacityBottomSheet
         isOpen={isHost && isEditingCapacitySheetOpen}
-        capacity={draftCapacityOverride ?? currentPlanSize}
+        capacity={
+          draftCapacityOverride != null
+            ? draftCapacityOverride
+            : (rawDbPlan?.plan_size === null || (selectedPlan as any)?.plan_size === null
+                ? null
+                : (currentPlanSize || 2))
+        }
         invitedCount={createMode ? plan?.members?.length : totalActiveParticipants}
         joinedCount={
           selectedPlan?.members?.filter(
@@ -3028,6 +3091,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         minCapacity={2}
         maxCapacity={createMode ? (plan?.members ? plan.members.length : undefined) : previewMaxCapacity}
         limitToInvitedCount={createMode ? true : isAssigned}
+        isAutomatic={!isAssigned}
         onCapacityChange={handleCapacityChange}
         onIncrement={onIncrementCapacity}
         onDecrement={onDecrementCapacity}
@@ -3137,6 +3201,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onClose={() => setShowSharePlanLinkSheet(false)}
         planId={selectedPlan ? cleanPlanId(selectedPlan.dbUuid || selectedPlan.id) : ""}
         userUuid={resolvedUserUuid}
+        plan={selectedPlan}
       />
 
       {/* Location bottom sheet removed – location editing is now inline */}

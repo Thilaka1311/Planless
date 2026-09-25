@@ -209,11 +209,11 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     const planUuid = matchedPlan?.dbUuid || planId;
 
     const oldCapacity = matchedPlan?.plan_size || matchedPlan?.joinLimit || matchedPlan?.capacity || matchedPlan?.maxSpots || 0;
-    const newCapacity = updates.plan_size !== undefined ? Math.max(1, updates.plan_size) : undefined;
+    const newCapacity = updates.plan_size !== undefined && updates.plan_size !== null ? Math.max(2, updates.plan_size) : null;
 
-    // Validate and clamp plan_size to at least 1
-    if (updates.plan_size !== undefined) {
-      updates.plan_size = Math.max(1, updates.plan_size);
+    // Validate and clamp plan_size to at least 2 when numeric; preserve null for No limit
+    if (updates.plan_size !== undefined && updates.plan_size !== null) {
+      updates.plan_size = Math.max(2, updates.plan_size);
     }
 
     // Persist updates to the plans table
@@ -256,42 +256,62 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     }
 
     if (planUpdate.plan_size !== undefined) {
-      const boundedPlanSize = Math.max(1, planUpdate.plan_size);
+      if (planUpdate.plan_size === null) {
+        const previousDbPlans = dbPlans;
+        if (setDbPlans) {
+          setDbPlans(prev => prev.map(p => {
+            if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+              return {
+                ...p,
+                plan_size: null,
+                planSize: null,
+                capacity: null,
+                joinLimit: null,
+                maxSpots: null,
+                ...(planUpdate.total_cost !== undefined ? { total_cost: planUpdate.total_cost, totalCost: planUpdate.total_cost } : {}),
+              };
+            }
+            return p;
+          }));
+        }
+      } else {
+        const boundedPlanSize = Math.max(2, planUpdate.plan_size);
 
-      const previousDbPlans = dbPlans;
-      if (setDbPlans) {
-        setDbPlans(prev => prev.map(p => {
-          if (p.id === planUuid || (p as any).dbUuid === planUuid) {
-            return {
-              ...p,
-              plan_size: boundedPlanSize,
-              planSize: boundedPlanSize,
-              capacity: boundedPlanSize,
-              joinLimit: boundedPlanSize,
-              maxSpots: boundedPlanSize,
-              ...(planUpdate.total_cost !== undefined ? { total_cost: planUpdate.total_cost, totalCost: planUpdate.total_cost } : {}),
-            };
-          }
-          return p;
-        }));
-      }
+        const previousDbPlans = dbPlans;
+        if (setDbPlans) {
+          setDbPlans(prev => prev.map(p => {
+            if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+              return {
+                ...p,
+                plan_size: boundedPlanSize,
+                planSize: boundedPlanSize,
+                capacity: boundedPlanSize,
+                joinLimit: boundedPlanSize,
+                maxSpots: boundedPlanSize,
+                ...(planUpdate.total_cost !== undefined ? { total_cost: planUpdate.total_cost, totalCost: planUpdate.total_cost } : {}),
+              };
+            }
+            return p;
+          }));
+        }
 
-      try {
-        await api.updatePlanCapacityRPC(planUuid, boundedPlanSize, options?.autoPromote);
-      } catch (err: any) {
-        console.error("[usePlanLifecycle.updatePlanDetails] updatePlanCapacityRPC failed:", {
-          message: err?.message || String(err),
-          code: err?.code,
-          details: err?.details,
-          hint: err?.hint,
-          planUuid,
-          attemptedPlanSize: boundedPlanSize,
-          rawError: err,
-        });
-        if (setDbPlans) setDbPlans(previousDbPlans);
-        throw err;
+        try {
+          await api.updatePlanCapacityRPC(planUuid, boundedPlanSize, options?.autoPromote);
+        } catch (err: any) {
+          console.error("[usePlanLifecycle.updatePlanDetails] updatePlanCapacityRPC failed:", {
+            message: err?.message || String(err),
+            code: err?.code,
+            details: err?.details,
+            hint: err?.hint,
+            planUuid,
+            attemptedPlanSize: boundedPlanSize,
+            rawError: err,
+          });
+          if (setDbPlans) setDbPlans(previousDbPlans);
+          throw err;
+        }
+        delete planUpdate.plan_size;
       }
-      delete planUpdate.plan_size;
     }
 
     const updatedCoverImage = updates.cover_image;
@@ -401,9 +421,17 @@ new = ${planUpdate.cover_image}`);
     }
 
     try {
+      const isCancelled = Boolean((matchedPlan?.status || "").toUpperCase() === "CANCELLED" || (matchedPlan?.status || "").toUpperCase() === "CANCELED");
+      if (isCancelled) {
+        await api.updatePlanDetails(planUuid, { status: "LIVE" });
+      }
+
       const res = await api.completePlan(planUuid, attendanceInput, opts?.expenseMode || 'NONE');
       console.log("[PLAN_COMPLETE_SUCCESS] Plan successfully marked completed:", res);
       
+      // Explicitly refresh plans, participants, and expenses to ensure local state updates
+      await refreshPlans(["plans", "plan_participants", "wallet_expenses"]);
+
       // System message for plan completion (fire and forget)
       insertSystemMessage(planUuid, "Plan completed", null).catch(msgErr => {
         console.warn("[PLAN_COMPLETE_WARNING] System message failed (non-critical):", msgErr);
@@ -415,7 +443,7 @@ new = ${planUpdate.cover_image}`);
       throw new Error(err.message || "Failed to complete plan");
     }
 
-  }, [plans, dbPlans, userId, resolveUserUuid, insertSystemMessage]);
+  }, [plans, dbPlans, userId, resolveUserUuid, insertSystemMessage, refreshPlans]);
 
   // ─── manageCompletedPlanParticipants ──────────────────────────────────────────
 

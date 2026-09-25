@@ -27,6 +27,8 @@ interface ProfileScreenProps {
   setShowDepositModal: (show: boolean) => void;
   onToggleBottomNav?: (hide: boolean) => void;
   onOpenPastPlans?: () => void;
+  onOpenFriends?: () => void;
+  setSelectedPlanSource?: (source: string) => void;
 }
 
 export const ProfileScreen = ({
@@ -35,6 +37,8 @@ export const ProfileScreen = ({
   setShowDepositModal,
   onToggleBottomNav,
   onOpenPastPlans,
+  onOpenFriends,
+  setSelectedPlanSource,
 }: ProfileScreenProps) => {
   const {
     userProfile,
@@ -225,7 +229,13 @@ export const ProfileScreen = ({
           {/* FRIENDS BUTTON */}
           <button
             type="button"
-            onClick={() => setActiveSheet('friends')}
+            onClick={() => {
+              if (onOpenFriends) {
+                onOpenFriends();
+              } else {
+                setActiveSheet('friends');
+              }
+            }}
             className="relative flex items-center gap-2.5 px-5 py-2.5 rounded-2xl bg-zinc-900/70 border border-white/[0.05] hover:border-white/[0.10] hover:bg-zinc-900 transition active:scale-[0.97] cursor-pointer group select-none mb-6"
           >
             <Users className="w-4 h-4 text-zinc-400 group-hover:text-white transition" />
@@ -304,6 +314,7 @@ export const ProfileScreen = ({
           <PastPlans
             onBack={() => setActiveSheet(null)}
             setSelectedPlanId={(id) => {
+              setSelectedPlanSource?.("past_plans");
               setSelectedPlanId(id);
               setActiveSheet(null);
             }}
@@ -405,7 +416,7 @@ export const ProfileScreen = ({
           </>
         )}
 
-        {/* 3. FRIENDS SCREEN */}
+        {/* 3. FRIENDS SCREEN (Fallback if onOpenFriends not provided) */}
         {activeSheet === 'friends' && (
           <FriendshipsScreen onBack={() => setActiveSheet(null)} />
         )}

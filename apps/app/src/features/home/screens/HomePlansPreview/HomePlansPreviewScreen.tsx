@@ -69,6 +69,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     updatePlanSettings,
     demoteHostToParticipant,
     leavePlan,
+    waitlistPlan,
   } = usePlansStore();
   const selectedPlan = useLivePlan(planId);
 
@@ -314,6 +315,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     setNotifications: () => { },
     activeCardId: planId,
     handleSnoozePlan: () => { },
+    waitlistPlan: waitlistPlan ? (id, up) => waitlistPlan(id, up) : undefined,
     isExpanded: false,
     setIsExpanded: () => { },
   });
@@ -522,15 +524,10 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 15 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
-      onPointerDown={startHolding}
-      onPointerMove={handlePointerMove}
-      onPointerUp={stopHolding}
-      onPointerLeave={cancelHolding}
-      onPointerCancel={cancelHolding}
       className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left select-none"
     >
       {/* 1. FIXED TOP CONTENT */}
-      <div id="immersive-plan-hero-wrapper" className="w-full flex-shrink-0 relative z-20 pb-[78px]">
+      <div id="immersive-plan-hero-wrapper" className="w-full flex-shrink-0 relative z-20 pb-[78px] no-hold">
         <div
           id="immersive-plan-hero-container"
           className="relative w-full h-[280px] flex flex-col justify-end overflow-visible flex-shrink-0 rounded-b-[2.5rem] border-b border-white/10"
@@ -615,7 +612,25 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       </div>
 
       {/* 2. SCROLLABLE PARTICIPANT SECTION ONLY */}
-      <div id="immersive-plan-scroll-content" className="no-hold px-6 flex-1 min-h-0 flex flex-col overflow-hidden pb-20">
+      <div
+        id="immersive-plan-scroll-content"
+        onPointerDown={startHolding}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopHolding}
+        onPointerLeave={cancelHolding}
+        onPointerCancel={cancelHolding}
+        onClickCapture={(e) => {
+          const target = e.target as HTMLElement;
+          if (target && (target.closest('.no-hold') || target.closest('button') || target.closest('input') || target.closest('a'))) {
+            return;
+          }
+          if (wasHoldActive.current) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
+        className="px-6 flex-1 min-h-0 flex flex-col overflow-hidden pb-20"
+      >
         {selectedPlan && (
           <InlineParticipantView plan={selectedPlan} activeUserId={activeUserId} isHost={isHost} variant="flat" />
         )}

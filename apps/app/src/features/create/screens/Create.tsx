@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { ChevronLeft, MapPin, Clock, Users, Check, Link, CheckCircle } from 'lucide-react';
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { Plan, NotificationItem } from "../../../core/types";
-import { buildInviteUrl } from "../../plans/services/planInviteService";
+import { buildInviteUrl, copyInviteUrlToClipboard } from "../../plans/services/planInviteService";
 
 // Hooks & utils
 import { useCreatePlanForm } from "../hooks/useCreatePlanForm";
@@ -17,6 +17,7 @@ import { WhenIsPlanScreen } from "./WhenIsPlanScreen";
 import { WhoIsComingScreen } from "./WhoIsComingScreen";
 import { WhoIsActuallyComing } from "./WhoIsActuallyComing";
 import { DiscardPlanBottomSheet } from "../../plans/components/BottomSheets";
+import { FriendshipsScreen } from "../../friendships/screens/FriendshipsScreen";
 
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
@@ -39,7 +40,7 @@ export const CreatePlanScreen = ({
   const { createPlan } = usePlansStore();
 
   // Flow states
-  const [createPhase, setCreatePhase] = useState<'category' | 'when' | 'who' | 'who-actually' | 'sports_select' | 'customizer' | 'review' | 'confirmation'>('category');
+  const [createPhase, setCreatePhase] = useState<'category' | 'when' | 'who' | 'who-actually' | 'sports_select' | 'customizer' | 'review' | 'confirmation' | 'discover-friends'>('category');
   const [lastSubScreen, setLastSubScreen] = useState<"sports" | "movies" | "dining" | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [postedPlanUuid, setPostedPlanUuid] = useState<string | null>(null);
@@ -54,9 +55,11 @@ export const CreatePlanScreen = ({
     setIsCopying(true);
     try {
       const url = buildInviteUrl(postedPlanUuid);
-      await navigator.clipboard.writeText(url);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 3000);
+      const copied = await copyInviteUrlToClipboard(url);
+      if (copied) {
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 3000);
+      }
     } catch (err) {
       console.error("[CreatePlanScreen] Copy invite failed:", err);
     } finally {
@@ -449,10 +452,22 @@ export const CreatePlanScreen = ({
         }}
         onContinue={() => {
           setReturnToWhoActually(false);
-          setCreatePhase('who-actually');
+          setCameFromReview(false);
+          setCreatePhase('review');
         }}
+        onNavigateToDiscoverFriends={() => setCreatePhase('discover-friends')}
         selectedCategory={selectedCategory}
         selectedSubcategory={selectedSubcategory}
+      />
+    );
+  }
+
+  // DISCOVER FRIENDS PHASE
+  if (createPhase === 'discover-friends') {
+    return (
+      <FriendshipsScreen
+        onBack={() => setCreatePhase('who')}
+        initialScreen="discover"
       />
     );
   }
@@ -464,12 +479,8 @@ export const CreatePlanScreen = ({
         form={form}
         selectedCategory={selectedCategory}
         onBack={() => {
-          if (cameFromReview) {
-            setCameFromReview(false);
-            setCreatePhase('review');
-          } else {
-            setCreatePhase('who');
-          }
+          setCameFromReview(false);
+          setCreatePhase('review');
         }}
         onContinue={() => {
           setCameFromReview(false);
@@ -516,6 +527,10 @@ export const CreatePlanScreen = ({
         {/* Discard Confirmation Bottom Sheet */}
         <DiscardPlanBottomSheet
           isOpen={showCancelConfirm}
+          planTitle={form.localTitle || "New Plan"}
+          planCoverImage={form.customOriginalImage || form.customCoverImage}
+          planCategory={selectedCategory}
+          planSubcategory={selectedSubcategory}
           onDiscard={() => {
             setShowCancelConfirm(false);
             setSelectedSubcategory(null);

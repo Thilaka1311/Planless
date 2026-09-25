@@ -8,12 +8,14 @@ interface NavigationFooterProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   homeBadgeCount: number;
+  chatsBadgeCount?: number;
 }
 
 export const NavigationFooter: React.FC<NavigationFooterProps> = ({
   activeTab,
   setActiveTab,
   homeBadgeCount,
+  chatsBadgeCount = 0,
 }) => {
   const { userProfile, activeUserUuid, activeUserId, dbUsers } = useProfileStore();
   const { incomingRequests } = useFriendshipStore();
@@ -70,7 +72,14 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
         onClick={() => { setActiveTab("chats"); }}
         className={`flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer ${activeTab === "chats" ? "text-[#ff8b66]" : "text-zinc-500 hover:text-zinc-300"}`}
       >
-        <MessageSquare className="w-6 h-6" />
+        <div className="relative">
+          <MessageSquare className="w-6 h-6" />
+          {chatsBadgeCount > 0 && (
+            <span className="absolute -top-1.5 -right-2 bg-[#f43f5e] text-white text-[8.5px] font-sans font-black w-4 h-4 rounded-full flex items-center justify-center shadow">
+              {chatsBadgeCount > 99 ? "99+" : chatsBadgeCount}
+            </span>
+          )}
+        </div>
         <span className="text-[10.5px] font-sans tracking-wide mt-1 font-medium">Chats</span>
       </button>
 

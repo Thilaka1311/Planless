@@ -3,6 +3,11 @@ import { AssignedParticipantScreen } from './AssignedParticipantScreen';
 import { Friend } from '../shared/types';
 import { PlanParticipantManagementWrapperProps } from '../shared/participantManagementTypes';
 import { normalizeStatus, sortGoingParticipants } from '../../../../lib/participantStatus';
+import {
+  formatAssignedGoingList,
+  formatAssignedWaitlist,
+  renumberWaitlist,
+} from './assignedCapacityLogic';
 import { WhoIsComingScreen } from '../../create/screens/WhoIsComingScreen';
 import { useFriendshipStore } from '../../friendships/state/FriendshipContext';
 import { getCompleteCurrentUserFriends } from '../../friendships/api/friendships';
@@ -1116,7 +1121,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
 
   const prioritizeCurrentUserAndSort = useCallback(
     (list: Friend[]) => {
-      return sortGoingParticipants(list, activeUserId);
+      return formatAssignedGoingList(list, activeUserId);
     },
     [activeUserId]
   );
@@ -1213,12 +1218,9 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     );
   }, [goingMembers, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id]);
 
-  const goingList: Friend[] = useMemo(() => {
-    return prioritizeCurrentUserAndSort(rawGoingList);
-  }, [rawGoingList, prioritizeCurrentUserAndSort]);
-
-  const waitlistList: Friend[] = useMemo(() => {
-    const rawList = waitlistMembers.map((m) =>
+  // Split rawGoingList and rawWaitlistList by capacity if capacity is finite
+  const { capacityAdjustedGoing, capacityAdjustedWaitlist } = useMemo(() => {
+    const rawWaitlist = waitlistMembers.map((m) =>
       memberToAssignedFriend(
         m,
         hostId,
@@ -1229,8 +1231,57 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         plan.id
       )
     );
-    return sortByWaitlistOrder(rawList);
-  }, [waitlistMembers, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id, sortByWaitlistOrder]);
+
+    if (!capacity || capacity <= 0 || isCompletedPlan) {
+      return { capacityAdjustedGoing: rawGoingList, capacityAdjustedWaitlist: rawWaitlist };
+    }
+
+    if (rawGoingList.length <= capacity) {
+      return { capacityAdjustedGoing: rawGoingList, capacityAdjustedWaitlist: rawWaitlist };
+    }
+
+    const hostPart = rawGoingList.filter((f) => f.isHost);
+    const nonHost = rawGoingList.filter((f) => !f.isHost);
+    const sortedNonHost = [...nonHost].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+    );
+
+    const availableSpots = Math.max(0, capacity - hostPart.length);
+    const keptNonHost = sortedNonHost.slice(0, availableSpots);
+    const demoted = sortedNonHost.slice(availableSpots).map((f) => ({
+      ...f,
+      assignedGroup: 'WAITLIST' as const,
+      rsvpStatus: f.rsvpStatus === 'JOINED' ? ('WAITLISTED' as const) : f.rsvpStatus,
+    }));
+
+    const nextGoing = [...hostPart, ...keptNonHost];
+    const nextWaitlist = renumberWaitlist([...rawWaitlist, ...demoted]);
+
+    return {
+      capacityAdjustedGoing: nextGoing,
+      capacityAdjustedWaitlist: nextWaitlist,
+    };
+  }, [
+    rawGoingList,
+    waitlistMembers,
+    hostId,
+    activeUserId,
+    dbPlanParticipants,
+    targetPlanUuid,
+    (plan as any).dbUuid,
+    plan.id,
+    capacity,
+    isCompletedPlan,
+  ]);
+
+  const goingList: Friend[] = useMemo(() => {
+    return prioritizeCurrentUserAndSort(capacityAdjustedGoing);
+  }, [capacityAdjustedGoing, prioritizeCurrentUserAndSort]);
+
+  const waitlistList: Friend[] = useMemo(() => {
+    const sorted = sortByWaitlistOrder(capacityAdjustedWaitlist);
+    return formatAssignedWaitlist(sorted, activeUserId);
+  }, [capacityAdjustedWaitlist, activeUserId, sortByWaitlistOrder]);
 
   const skippedList: Friend[] = useMemo(() => {
     const rawSkipped = allPlanMembers

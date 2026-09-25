@@ -213,21 +213,23 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               </h1>
             </button>
 
-            {/* Header action buttons — right side (Single Three-dot Overflow Menu) */}
+            {/* Header action button — right side: Direct Settings Action */}
             <div className="flex items-center gap-0.5 flex-shrink-0 -mr-2">
-              <button
-                id="immersive-plan-menu-btn"
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMenuOpen(true);
-                }}
-                className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
-                style={{ minWidth: "40px", minHeight: "40px" }}
-                title="Menu"
-              >
-                <MoreVertical className="w-5 h-5" />
-              </button>
+              {onOpenSettings && (
+                <button
+                  id="immersive-plan-settings-btn"
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenSettings();
+                  }}
+                  className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
+                  style={{ minWidth: "40px", minHeight: "40px" }}
+                  title="Settings"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -266,64 +268,6 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
             </div>
           )}
         </div>
-
-        {/* Inline Popover / Dropdown Menu for Plan Chat Header */}
-        <AnimatePresence>
-          {menuOpen && (
-            <div className="fixed inset-0 z-[100] pointer-events-auto">
-              {/* Invisible Backdrop for outside click dismiss */}
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMenuOpen(false);
-                }}
-                className="absolute inset-0 bg-transparent"
-              />
-
-              {/* Compact Inline Popover Card anchored near top-right menu button */}
-              <motion.div
-                initial={{ opacity: 0, scale: 0.92, y: -6 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.92, y: -6 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                onClick={(e) => e.stopPropagation()}
-                className="absolute top-[calc(3.25rem+env(safe-area-inset-top,0px))] right-4 min-w-[170px] bg-[#121216]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-1.5 z-10 flex flex-col space-y-0.5 text-left select-none"
-              >
-                {/* Share Plan Link */}
-                {onSharePlanLink && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onSharePlanLink();
-                    }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
-                  >
-                    <Share2 className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
-                    <span className="text-xs font-semibold text-white tracking-tight">
-                      Share Plan Link
-                    </span>
-                  </button>
-                )}
-
-                {/* Settings */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onOpenSettings?.();
-                  }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
-                >
-                  <Settings className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
-                  <span className="text-xs font-semibold text-white tracking-tight">
-                    Settings
-                  </span>
-                </button>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
       </div>
     );
   }

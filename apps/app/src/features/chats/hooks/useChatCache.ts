@@ -13,6 +13,14 @@ export interface ChatMessage {
   updated_at?: string | null;
 }
 
+export interface PlanUnreadInfo {
+  firstUnreadId: string | null;
+  latestUnreadId: string | null;
+  count: number;
+  lastReadAt: string | null;
+  lastReadMessageId: string | null;
+}
+
 interface PlanCacheItem<T> {
   data: T;
   loading: boolean;
@@ -23,6 +31,7 @@ interface PlanCacheStore {
   messages: Map<string, PlanCacheItem<ChatMessage[]>>;
   participants: Map<string, PlanCacheItem<DbPlanParticipant[]>>;
   activities: Map<string, PlanCacheItem<DbPlanActivity[]>>;
+  unreadInfo: Map<string, PlanUnreadInfo>;
 }
 
 // Module-level shared in-memory cache stores
@@ -30,6 +39,7 @@ const planCache: PlanCacheStore = {
   messages: new Map(),
   participants: new Map(),
   activities: new Map(),
+  unreadInfo: new Map(),
 };
 
 // Global listeners maps for reactive re-renders
@@ -37,12 +47,116 @@ const listeners = {
   messages: new Map<string, Set<() => void>>(),
   participants: new Map<string, Set<() => void>>(),
   activities: new Map<string, Set<() => void>>(),
+  unreadInfo: new Map<string, Set<() => void>>(),
 };
 
 const notifyListeners = (category: keyof PlanCacheStore, planUuid: string) => {
-  const categoryListeners = listeners[category].get(planUuid);
+  const categoryListeners = listeners[category]?.get(planUuid);
   if (categoryListeners) {
     categoryListeners.forEach((fn) => fn());
+  }
+};
+
+/**
+ * Access cached messages synchronously without triggering network fetch
+ */
+export const getCachedMessages = (planUuid: string): ChatMessage[] => {
+  if (!planUuid) return [];
+  return planCache.messages.get(planUuid)?.data || [];
+};
+
+/**
+ * Access cached unread info synchronously without triggering network fetch
+ */
+export const getCachedUnreadInfo = (planUuid: string): PlanUnreadInfo | undefined => {
+  if (!planUuid) return undefined;
+  return planCache.unreadInfo.get(planUuid);
+};
+
+/**
+ * Save or update cached unread info for a plan
+ */
+export const setCachedUnreadInfo = (planUuid: string, info: PlanUnreadInfo) => {
+  if (!planUuid) return;
+  planCache.unreadInfo.set(planUuid, info);
+  notifyListeners("unreadInfo", planUuid);
+};
+
+/**
+ * Reset unread info for a plan when marked as read
+ */
+export const markPlanChatReadInCache = (planUuid: string, latestMessageId?: string | null) => {
+  if (!planUuid) return;
+  const existing = planCache.unreadInfo.get(planUuid);
+  planCache.unreadInfo.set(planUuid, {
+    count: 0,
+    firstUnreadId: null,
+    latestUnreadId: null,
+    lastReadAt: new Date().toISOString(),
+    lastReadMessageId: latestMessageId || existing?.lastReadMessageId || null,
+  });
+  notifyListeners("unreadInfo", planUuid);
+};
+
+/**
+ * Append or update a message in cache in realtime (called globally across the app)
+ */
+export const appendMessageToCache = (newMsg: ChatMessage, currentUserId?: string) => {
+  if (!newMsg || !newMsg.plan_id) return;
+  const planUuid = newMsg.plan_id;
+
+  // 1. Update message list cache
+  let currentCache = planCache.messages.get(planUuid);
+  if (!currentCache) {
+    currentCache = {
+      data: [newMsg],
+      loading: false,
+      lastSynced: Date.now(),
+    };
+    planCache.messages.set(planUuid, currentCache);
+  } else {
+    const alreadyExists = currentCache.data.some(
+      (m) =>
+        m.id === newMsg.id ||
+        (m.id.startsWith("temp-") && m.content === newMsg.content && m.sender_id === newMsg.sender_id)
+    );
+
+    if (alreadyExists) {
+      currentCache.data = currentCache.data.map((m) =>
+        m.id.startsWith("temp-") && m.content === newMsg.content && m.sender_id === newMsg.sender_id
+          ? newMsg
+          : m
+      );
+    } else {
+      currentCache.data = [...currentCache.data, newMsg];
+    }
+    currentCache.lastSynced = Date.now();
+  }
+  notifyListeners("messages", planUuid);
+
+  // 2. Update unread cache if message is from another participant
+  const isFromOther = !currentUserId || newMsg.sender_id !== currentUserId;
+  const isEligible = ["text", "cost", "poll"].includes(newMsg.message_type);
+
+  if (isFromOther && isEligible) {
+    const unread = planCache.unreadInfo.get(planUuid);
+    if (unread) {
+      planCache.unreadInfo.set(planUuid, {
+        ...unread,
+        count: unread.count + 1,
+        firstUnreadId: unread.count === 0 ? newMsg.id : unread.firstUnreadId,
+        latestUnreadId: newMsg.id,
+      });
+    } else {
+      planCache.unreadInfo.set(planUuid, {
+        count: 1,
+        firstUnreadId: newMsg.id,
+        latestUnreadId: newMsg.id,
+        lastReadAt: null,
+        lastReadMessageId: null,
+      });
+    }
+    notifyListeners("unreadInfo", planUuid);
   }
 };
 
@@ -58,17 +172,21 @@ export const invalidatePlanCache = (planUuid?: string, category?: keyof PlanCach
       planCache.messages.delete(planUuid);
       planCache.participants.delete(planUuid);
       planCache.activities.delete(planUuid);
+      planCache.unreadInfo.delete(planUuid);
       notifyListeners("messages", planUuid);
       notifyListeners("participants", planUuid);
       notifyListeners("activities", planUuid);
+      notifyListeners("unreadInfo", planUuid);
     }
   } else {
     planCache.messages.clear();
     planCache.participants.clear();
     planCache.activities.clear();
+    planCache.unreadInfo.clear();
     listeners.messages.forEach((set) => set.forEach((fn) => fn()));
     listeners.participants.forEach((set) => set.forEach((fn) => fn()));
     listeners.activities.forEach((set) => set.forEach((fn) => fn()));
+    listeners.unreadInfo.forEach((set) => set.forEach((fn) => fn()));
   }
 };
 
@@ -106,14 +224,18 @@ export function useChatCache(targetPlanUuid: string) {
 
   const cachedState = targetPlanUuid ? planCache.messages.get(targetPlanUuid) : undefined;
   const messages = cachedState?.data || [];
-  const loading = cachedState ? cachedState.loading : true;
+  // If cache already has data, don't show loading screen - render cache-first immediately!
+  const loading = cachedState ? (cachedState.loading && cachedState.data.length === 0) : true;
 
   const fetchMessages = useCallback(
     async (force = false) => {
       if (!targetPlanUuid || isFetchingRef.current) return;
 
       const existing = planCache.messages.get(targetPlanUuid);
-      if (existing && !force && existing.lastSynced > 0) {
+      const now = Date.now();
+
+      // Don't spam fetches if synced less than 1.5 seconds ago
+      if (existing && !force && existing.lastSynced > 0 && now - existing.lastSynced < 1500) {
         return;
       }
 
@@ -138,12 +260,25 @@ export function useChatCache(targetPlanUuid: string) {
         if (error) {
           console.error("[useChatCache] Error fetching plan_messages:", error);
         } else if (data) {
+          const current = planCache.messages.get(targetPlanUuid);
+          const currentData = current?.data || [];
+          const optimisticMsgs = currentData.filter((m) => m.id.startsWith("temp-"));
+          const serverMsgs = data as ChatMessage[];
+          const merged = [...serverMsgs, ...optimisticMsgs];
+
+          const isDifferent =
+            currentData.length !== merged.length ||
+            (currentData.length > 0 && merged.length > 0 && currentData[currentData.length - 1].id !== merged[merged.length - 1].id);
+
           planCache.messages.set(targetPlanUuid, {
-            data: data as ChatMessage[],
+            data: merged,
             loading: false,
             lastSynced: Date.now(),
           });
-          notifyListeners("messages", targetPlanUuid);
+
+          if (isDifferent || !current || current.loading) {
+            notifyListeners("messages", targetPlanUuid);
+          }
         }
       } catch (err) {
         console.error("[useChatCache] Exception fetching plan_messages:", err);

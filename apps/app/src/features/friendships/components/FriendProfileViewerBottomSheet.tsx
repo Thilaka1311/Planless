@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { UserMinus, UserPlus, UserCheck, Users, X } from "lucide-react";
 import { supabase } from "../../../../lib/supabaseClient";
@@ -161,7 +162,7 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
 
   const isOpen = Boolean(friendUserId);
 
-  return (
+  const node = (
     <AnimatePresence>
       {isOpen && (
         <>
@@ -171,7 +172,12 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/70 z-[80] pointer-events-auto"
+            onTouchMove={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            style={{ touchAction: "none" }}
+            className="fixed inset-0 bg-black/70 z-[100] pointer-events-auto"
           />
 
           {/* Bottom Sheet Container */}
@@ -180,7 +186,7 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 260 }}
-            className="fixed bottom-0 left-0 right-0 z-[85] pointer-events-auto select-none"
+            className="fixed bottom-0 left-0 right-0 z-[105] pointer-events-auto select-none"
             style={{
               background: "#1C1C1E",
               borderTopLeftRadius: 20,
@@ -343,4 +349,9 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
       )}
     </AnimatePresence>
   );
+
+  if (typeof document !== "undefined") {
+    return createPortal(node, document.body);
+  }
+  return node;
 };

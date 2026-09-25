@@ -125,6 +125,7 @@ DECLARE
   v_final_attendance attendance_status;
   v_final_state rsvp_status;
   v_final_count INT;
+  v_old_plan_size INT;
   v_plan_expense RECORD;
   v_share NUMERIC;
   v_final_total_cost NUMERIC;
@@ -136,8 +137,8 @@ BEGIN
   END IF;
 
   -- 2. Verify plan exists and lock row
-  SELECT status, scheduled_at, rsvp_deadline, total_cost
-  INTO v_plan_status, v_scheduled_at, v_rsvp_deadline, v_final_total_cost
+  SELECT status, scheduled_at, rsvp_deadline, total_cost, plan_size
+  INTO v_plan_status, v_scheduled_at, v_rsvp_deadline, v_final_total_cost, v_old_plan_size
   FROM public.plans
   WHERE id = p_plan_id
   FOR UPDATE; 
@@ -242,25 +243,54 @@ BEGIN
   IF p_expense_mode IN ('SPLIT_ALL', 'KEEP_CURRENT_COST') AND v_final_count > 0 THEN
     SELECT * INTO v_plan_expense
     FROM public.wallet_expenses
-    WHERE plan_id = p_plan_id;
+    WHERE plan_id = p_plan_id
+      AND (expense_type = 'PLAN_EXPENSE' OR (message_id IS NULL AND (title = 'Plan Fee' OR title = 'Plan Expense')))
+    ORDER BY created_at ASC
+    LIMIT 1;
 
-    IF FOUND THEN
+    IF v_plan_expense.id IS NOT NULL THEN
       IF p_expense_mode = 'SPLIT_ALL' THEN
+        v_share := ROUND((v_plan_expense.total_amount / v_final_count)::numeric, 2);
         v_final_total_cost := v_plan_expense.total_amount;
       ELSIF p_expense_mode = 'KEEP_CURRENT_COST' THEN
-        SELECT COALESCE(SUM(initial_share), 0) INTO v_final_total_cost
-        FROM public.wallet_expense_participants
-        WHERE expense_id = v_plan_expense.id;
+        -- 1. Check existing cost_per_participant
+        SELECT cost_per_participant INTO v_share
+        FROM public.plan_participants
+        WHERE plan_id = p_plan_id AND cost_per_participant > 0
+        LIMIT 1;
+
+        -- 2. Check amount_owed in wallet_expense_participants
+        IF v_share IS NULL OR v_share <= 0 THEN
+          SELECT amount_owed INTO v_share
+          FROM public.wallet_expense_participants
+          WHERE expense_id = v_plan_expense.id AND amount_owed > 0
+          ORDER BY amount_owed DESC
+          LIMIT 1;
+        END IF;
+
+        -- 3. Check plan total_cost / old_plan_size
+        IF (v_share IS NULL OR v_share <= 0) AND v_old_plan_size > 0 THEN
+          v_share := ROUND((v_final_total_cost / v_old_plan_size)::numeric, 2);
+        END IF;
+
+        -- 4. Fallback: total_amount / final_count
+        IF v_share IS NULL OR v_share <= 0 THEN
+          v_share := ROUND((v_plan_expense.total_amount / v_final_count)::numeric, 2);
+        END IF;
+
+        v_final_total_cost := v_share * v_final_count;
+
+        UPDATE public.wallet_expenses
+        SET total_amount = v_final_total_cost,
+            updated_at = NOW()
+        WHERE id = v_plan_expense.id;
       END IF;
 
-      v_share := ROUND((v_final_total_cost / v_final_count), 2);
+      IF v_share IS NULL THEN
+        v_share := 0;
+      END IF;
 
-      UPDATE public.wallet_expenses
-      SET total_amount = v_final_total_cost,
-          split_type = 'EQUAL'::split_type,
-          updated_at = now()
-      WHERE id = v_plan_expense.id;
-
+      -- Reconcile participant obligations
       FOR v_participant IN
         SELECT user_id, final_attendance
         FROM public.plan_participants
@@ -268,38 +298,38 @@ BEGIN
       LOOP
         IF v_participant.final_attendance = 'ATTENDED'::attendance_status THEN
           INSERT INTO public.wallet_expense_participants (
-            expense_id, user_id, share_amount, initial_share, status, created_at, updated_at
+            expense_id, user_id, amount_owed, amount_paid, status, created_at, updated_at
           )
           VALUES (
-            v_plan_expense.id,
-            v_participant.user_id,
-            CASE WHEN v_participant.user_id = v_plan_expense.payer_id THEN 0.00 ELSE v_share END,
-            v_share,
-            'PENDING',
-            now(),
-            now()
+            v_plan_expense.id, v_participant.user_id, v_share, 0, 'PENDING', now(), now()
           )
-          ON CONFLICT (expense_id, user_id)
-          DO UPDATE SET
-            share_amount = CASE WHEN EXCLUDED.user_id = v_plan_expense.payer_id THEN 0.00 ELSE v_share END,
-            initial_share = v_share,
-            updated_at = now()
-          WHERE wallet_expense_participants.status != 'SETTLED';
+          ON CONFLICT (expense_id, user_id) DO UPDATE
+          SET amount_owed = EXCLUDED.amount_owed,
+              status = CASE 
+                 WHEN wallet_expense_participants.status = 'SETTLED' THEN 'SETTLED'
+                 WHEN wallet_expense_participants.amount_paid >= EXCLUDED.amount_owed THEN 'SETTLED'
+                 ELSE EXCLUDED.status 
+               END,
+              updated_at = now();
         ELSE
-          UPDATE public.wallet_expense_participants
-          SET share_amount = 0.00,
-              initial_share = 0.00,
-              updated_at = now()
-          WHERE expense_id = v_plan_expense.id
-            AND user_id = v_participant.user_id
-            AND status != 'SETTLED';
+          IF NOT EXISTS (
+            SELECT 1 FROM public.plan_participants 
+            WHERE plan_id = p_plan_id 
+              AND user_id = v_participant.user_id 
+              AND skip_reason = 'PAYMENT_KEPT'
+          ) THEN
+            DELETE FROM public.wallet_expense_participants
+            WHERE expense_id = v_plan_expense.id 
+              AND user_id = v_participant.user_id
+              AND status != 'SETTLED';
+          END IF;
         END IF;
       END LOOP;
 
     END IF;
   END IF;
 
-  -- 7. Update Plan Status & attended_participants & total_cost
+  -- 7. Update Plan Status, plan_size, attended_participants & total_cost
   IF now() < v_scheduled_at THEN
     v_scheduled_at := now();
     IF v_rsvp_deadline > v_scheduled_at THEN
@@ -309,6 +339,7 @@ BEGIN
 
   UPDATE public.plans
   SET status = 'COMPLETED'::plan_status,
+      plan_size = v_final_count,
       attended_participants = v_final_count,
       total_cost = v_final_total_cost,
       scheduled_at = v_scheduled_at,
@@ -320,6 +351,7 @@ BEGIN
     'success', true,
     'plan_id', p_plan_id,
     'status', 'COMPLETED',
+    'plan_size', v_final_count,
     'attended_participants', v_final_count,
     'final_count', v_final_count,
     'total_cost', v_final_total_cost,

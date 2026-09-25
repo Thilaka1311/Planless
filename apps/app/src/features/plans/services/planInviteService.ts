@@ -105,9 +105,12 @@ export async function claimPlanInviteRPC(
   }
 
   const client = customClient || supabase;
+  console.log('[INVITE_TRACE] claimPlanInviteRPC: calling RPC claim_plan_invite with p_plan_id=', planId.trim());
   const { data, error } = await client.rpc("claim_plan_invite" as any, {
     p_plan_id: planId.trim(),
   });
+
+  console.log('[INVITE_TRACE] claimPlanInviteRPC: raw response data=', JSON.stringify(data), '| error=', error ? JSON.stringify(error) : null);
 
   if (error) {
     console.error("[planInviteService] claimPlanInviteRPC failed:", error);
@@ -183,9 +186,12 @@ export async function resolveUserPlanParticipant(
     try {
       const { data: authData } = await client.auth.getUser();
       resolvedUserId = authData?.user?.id;
+      console.log('[INVITE_TRACE] resolveUserPlanParticipant: no userId passed, got from auth.getUser()=', resolvedUserId);
     } catch {
       // Ignore auth fetch error, checked below
     }
+  } else {
+    console.log('[INVITE_TRACE] resolveUserPlanParticipant: planId=', cleanId, '| userId=', resolvedUserId);
   }
 
   if (!resolvedUserId) {
@@ -199,6 +205,8 @@ export async function resolveUserPlanParticipant(
     .eq("plan_id", cleanId)
     .eq("user_id", resolvedUserId)
     .maybeSingle();
+
+  console.log('[INVITE_TRACE] resolveUserPlanParticipant: plan_participants query result: partData=', JSON.stringify(partData), '| partError=', partError ? JSON.stringify(partError) : null);
 
   if (!partError && partData) {
     const roleNorm = (partData.role || "").toUpperCase();
@@ -243,8 +251,41 @@ export async function resolveUserPlanParticipant(
 }
 
 /**
+ * Copies an invite URL to clipboard with cross-browser fallback support (desktop & mobile HTTP/HTTPS).
+ */
+export async function copyInviteUrlToClipboard(url: string): Promise<boolean> {
+  if (!url) return false;
+  if (typeof window !== "undefined" && navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(url);
+      return true;
+    } catch {
+      // Fall through to textarea fallback
+    }
+  }
+  if (typeof document !== "undefined") {
+    try {
+      const textArea = document.createElement("textarea");
+      textArea.value = url;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      textArea.style.left = "-999999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand("copy");
+      document.body.removeChild(textArea);
+      return successful;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
  * Resolves the destination for an invite link based on the user's participant state:
- * - NO_PARTICIPANT: Claims the invite atomically via RPC -> destination: HOME
+ * - NO_PARTICIPANT: Claims the invite atomically via RPC -> destination: PLAN_PREVIEW
  * - INVITED: Keeps INVITED unchanged -> destination: HOME
  * - JOINED, WAITLISTED, SKIPPED, HOST: Does not claim/modify state -> destination: PLAN_PREVIEW
  * - INACTIVE / NOT FOUND: destination: INVALID
@@ -282,14 +323,17 @@ export async function resolveInviteDestination(
     };
   }
 
-  // Case 1: No participant row
-  // Claim the invite. User becomes INVITED (or state determined by claim logic). Show on Home screen.
+  // Case: No participant row
+  // Claim the invite per invite_link.md:
+  // When a person opens an invite link without an existing participant row,
+  // their RSVP status must ALWAYS be INVITED -> destination: HOME.
   if (resolution.status === "NO_PARTICIPANT") {
     const claimResult = await claimPlanInviteRPC(resolution.planId, client);
     if (claimResult.success) {
+      const isWaitlisted = claimResult.rsvp_status === "WAITLISTED";
       return {
-        destination: "HOME",
-        status: "NO_PARTICIPANT",
+        destination: isWaitlisted ? "PLAN_PREVIEW" : "HOME",
+        status: (claimResult.rsvp_status as ParticipantResolutionStatus) || "INVITED",
         planId: resolution.planId,
         claimResult,
       };

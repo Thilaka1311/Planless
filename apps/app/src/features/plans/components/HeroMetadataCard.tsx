@@ -11,7 +11,7 @@ interface HeroMetadataCardProps {
   hasCost: boolean;
   costText?: string;
   totalCost?: number | null;
-  planSize?: number | null;
+  planSize?: number | string | null;
   isHost?: boolean;
   onEditCost?: () => void;
   onEditCapacity?: () => void;
@@ -92,14 +92,23 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
               {datetime ? formatPlanDate(datetime) : "Set a date"}
             </span>
           </div>
-          {Boolean(displayPlanSize) && (
+          {displayPlanSize === "No limit" ? (
+            <button
+              type="button"
+              onClick={onEditCapacity}
+              className="flex items-center gap-1.5 text-white/90 text-[11px] font-medium leading-none shrink-0 cursor-pointer hover:bg-white/[0.06] rounded p-1"
+            >
+              <Users className="w-3.5 h-3.5 text-white/50 flex-shrink-0" />
+              <span>No limit</span>
+            </button>
+          ) : Boolean(displayPlanSize) ? (
             <div
               className="flex items-center gap-1.5 text-white/90 text-[11px] font-medium leading-none shrink-0 select-none pointer-events-none"
             >
               <Users className="w-3.5 h-3.5 text-white/50 flex-shrink-0" />
               <span>{displayPlanSize}</span>
             </div>
-          )}
+          ) : null}
         </div>
         {hasCost && costText && costText !== "Free" ? (
           <div className="relative">
@@ -113,7 +122,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
             </button>
             <CostBreakdownPopover
               totalCost={totalCost}
-              planSize={planSize}
+              planSize={typeof planSize === 'number' ? planSize : null}
               isOpen={isCostPopoverOpen}
               onClose={() => setIsCostPopoverOpen(false)}
               isHost={isHost}

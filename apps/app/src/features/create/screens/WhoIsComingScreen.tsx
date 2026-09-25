@@ -16,6 +16,7 @@ interface WhoIsComingScreenProps {
   isReplacementMode?: boolean;
   leavingParticipant?: { name: string; avatar?: string | null } | null;
   selectedReplacementFriend?: any | null;
+  onNavigateToDiscoverFriends?: () => void;
 }
 
 export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
@@ -32,6 +33,7 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
   isReplacementMode = false,
   leavingParticipant = null,
   selectedReplacementFriend = null,
+  onNavigateToDiscoverFriends,
 }) => {
   const [showRemoveHostDialog, setShowRemoveHostDialog] = useState(false);
 
@@ -48,12 +50,12 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
 
       {/* ── Standardized Header Top Bar with Unified Pill Search ── */}
       <div
-        className="w-full shrink-0 px-2 flex items-center bg-[#000000] relative z-40 pt-2 pb-1"
+        className="w-full shrink-0 px-2 flex items-center gap-2 bg-[#000000] relative z-40 pt-2 pb-1"
         style={{ boxSizing: 'border-box' }}
       >
         {/* UNIFIED ELLIPTICAL / PILL-SHAPED SEARCH BOX */}
         <div
-          className="w-full flex items-center rounded-full bg-[#18181B] border border-white/[0.08] px-3.5 transition-all focus-within:border-white/20 focus-within:bg-[#202024]"
+          className="flex-1 flex items-center rounded-full bg-[#18181B] border border-white/[0.08] px-3.5 transition-all focus-within:border-white/20 focus-within:bg-[#202024]"
           style={{ height: '46px' }}
         >
           {/* BACK BUTTON INSIDE PILL */}
@@ -135,6 +137,7 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
             );
           })()}
         </div>
+
       </div>
 
       {/* ── Content Area ── */}
@@ -182,23 +185,22 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
           isAddParticipantMode={isAddParticipantMode}
           leavingParticipant={leavingParticipant}
           selectedReplacementFriend={selectedReplacementFriend}
+          onNavigateToDiscoverFriends={onNavigateToDiscoverFriends}
         />
 
-        {/* Floating ArrowRight action button in bottom-right corner */}
-        {isRequirementMet && (
-          <button
-            type="button"
-            onClick={onContinue}
-            title={confirmLabel || (isReplacementMode ? "Confirm Replacement" : "Continue")}
-            style={{
-              bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))',
-              right: 'calc(1.25rem + env(safe-area-inset-right, 0px))',
-            }}
-            className="fixed z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-150 cursor-pointer pointer-events-auto select-none"
-          >
-            <ArrowRight className="w-6 h-6 text-white stroke-[2.5]" />
-          </button>
-        )}
+        {/* Floating ArrowRight action button in bottom-right corner - always visible */}
+        <button
+          type="button"
+          onClick={onContinue}
+          title={confirmLabel || (isReplacementMode ? "Confirm Replacement" : "Continue")}
+          style={{
+            bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))',
+            right: 'calc(1.25rem + env(safe-area-inset-right, 0px))',
+          }}
+          className="fixed z-40 w-12 h-12 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 transition-all duration-150 cursor-pointer pointer-events-auto select-none"
+        >
+          <ArrowRight className="w-6 h-6 text-white stroke-[2.5]" />
+        </button>
       </div>
 
       {/* Remove Host Dialog */}

@@ -114,7 +114,7 @@ export const LiveActionButton: React.FC<LiveActionButtonProps> = ({
     return null;
   }
 
-  const isInteractive = Boolean(onClick && (!isCompleted || isHostRole));
+  const isInteractive = Boolean(onClick);
 
   return (
     <motion.div

@@ -60,6 +60,7 @@ export function useHoldToAccept({
     }
   }, [plan.id]);
 
+  const startXRef = useRef<number>(0);
   const startYRef = useRef<number>(0);
   const [dragY, setDragY] = useState<number>(0);
   const isDraggingRef = useRef<boolean>(false);
@@ -78,6 +79,13 @@ export function useHoldToAccept({
 
   const startHolding = (e: React.PointerEvent) => {
     wasHoldActive.current = false;
+    isDraggingRef.current = false;
+    hasHoldStartedRef.current = false;
+    isHoldTriggeredRef.current = false;
+    startYRef.current = 0;
+    startXRef.current = 0;
+    setDragY(0);
+
     if (e.pointerType === "mouse" && e.button !== 0) return;
 
     // Do not start hold if target is inside an interactive/no-hold element
@@ -106,6 +114,7 @@ export function useHoldToAccept({
     pointerDownTimeRef.current = performance.now();
     hasHoldStartedRef.current = false;
     isHoldTriggeredRef.current = false;
+    startXRef.current = e.clientX;
     startYRef.current = e.clientY;
     isDraggingRef.current = false;
     setDragY(0);
@@ -233,6 +242,7 @@ export function useHoldToAccept({
     activeTargetRef.current = null;
 
     const currentDragY = dragY;
+    startXRef.current = 0;
     startYRef.current = 0;
     setDragY(0);
 
@@ -281,7 +291,8 @@ export function useHoldToAccept({
   const handlePointerMove = (e: React.PointerEvent) => {
     if (startYRef.current === 0) return;
     const deltaY = e.clientY - startYRef.current;
-    if (Math.abs(deltaY) > 10) {
+    const deltaX = e.clientX - (startXRef.current || e.clientX);
+    if (Math.abs(deltaY) > 8 || Math.abs(deltaX) > 8) {
       isDraggingRef.current = true;
       wasHoldActive.current = true;
       if (holdDelayTimeoutRef.current) {
@@ -294,11 +305,12 @@ export function useHoldToAccept({
 
       if (activeTargetRef.current && pointerIdRef.current !== null) {
         try {
-          if (deltaY > 10) {
+          const isScrollContent = Boolean((e.target as HTMLElement)?.closest?.('#immersive-plan-scroll-content'));
+          if (deltaY > 10 && !isScrollContent) {
             // Downward drag (snooze): capture the pointer
             (activeTargetRef.current as HTMLElement).setPointerCapture(pointerIdRef.current);
           } else {
-            // Upward drag (scroll): release pointer capture immediately
+            // Upward drag or scrollable participant area: release pointer capture immediately
             (activeTargetRef.current as HTMLElement).releasePointerCapture(pointerIdRef.current);
           }
         } catch (err) {}
@@ -328,6 +340,7 @@ export function useHoldToAccept({
     activeTargetRef.current = null;
 
     const currentDragY = dragY;
+    startXRef.current = 0;
     startYRef.current = 0;
     setDragY(0);
 
@@ -339,6 +352,10 @@ export function useHoldToAccept({
     }
 
     setIsHolding(false);
+
+    if (hasHoldStartedRef.current) {
+      wasHoldActive.current = true;
+    }
 
     if (hasHoldStartedRef.current && progressRef.current < 1) {
       const startProgress = progressRef.current;

@@ -1,4 +1,5 @@
 import React, { useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from '../shared/types';
 import { formatSkipReason, getEffectiveParticipantState, getParticipantRsvpDisplayStatus, isJoinedRsvpParticipant } from '../../../../lib/participantStatus';
@@ -87,9 +88,13 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
     onClose();
   };
 
-  return (
+  const node = (
     <div
       onClick={handleClose}
+      onTouchMove={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
       style={{
         position: 'fixed',
         inset: 0,
@@ -98,6 +103,7 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
         display: 'flex',
         alignItems: 'flex-end',
         animation: 'fadeIn 0.2s ease-out',
+        touchAction: 'none',
       }}
     >
       <div
@@ -356,4 +362,9 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(node, document.body);
+  }
+  return node;
 };
