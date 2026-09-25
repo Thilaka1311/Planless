@@ -106,6 +106,11 @@ export function Planless({
             Already have an account
           </button>
         )}
+
+        {/* Build version indicator for production update verification */}
+        <div id="planless_build_version" className="text-[11px] text-zinc-600 font-mono tracking-wider text-center mt-1">
+          v2.0.1
+        </div>
       </motion.div>
     </div>
   );
