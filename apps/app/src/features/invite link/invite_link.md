@@ -4,7 +4,7 @@
 
 The **Invite Link** feature provides a direct URL-sharing mechanism for Planless events. It enables hosts (and authorized attendees) to generate, copy, and distribute deep links (`/join/:planId`) that allow recipients to discover, join, and RSVP to plans without requiring prior in-app friendship connections.
 
-* **Core Function**: Generates canonical plan invitation URLs (`https://planless.app/join/<plan_id>`). When opened by an existing user, the link immediately executes `claim_plan_invite` to add the plan to their Home feed as an `INVITED` or `WAITLISTED` card. When opened by a new visitor, the invite context is cached in `localStorage` across authentication and onboarding, automatically claiming the invite once the account is created.
+* **Core Function**: Generates canonical plan invitation URLs (`https://planless.app/join/<plan_id>`). When opened by an existing user, the link immediately executes `claim_plan_invite` to add the plan to their Home feed with `rsvp_status = 'INVITED'`. When opened by a new visitor, the invite context is cached in `localStorage` across authentication and onboarding, automatically claiming the invite once the account is created.
 * **Product Role**: Viral growth and frictionless distribution engine. Serves as the primary external gateway bringing outside users into active plans from WhatsApp, iMessage, Instagram, and SMS.
 * **Scope & Boundaries**: Manages link generation, deep-link token extraction, pending auth token persistence, and atomic invite claims. Does not alter plan details or manage attendance check-ins; after claiming, standard participant rules govern the user's interaction.
 
@@ -106,15 +106,12 @@ The **Invite Link** feature provides a direct URL-sharing mechanism for Planless
   ├── Validates: auth.uid() is not null
   ├── Locks plan: status must be 'LIVE'
   ├── Prevents host from claiming own plan
-  ├── Checks existing membership (Idempotent return if found)
-  └── Evaluates capacity & filtering:
-        ├── Case A (Capacity Available / Automatic):
-        │     • Inserts plan_participants (role = 'PARTICIPANT', rsvp_status = 'INVITED')
-        │     • Increments plans.invited_participants
-        │     • If plan_size == invited_count: increments plan_size by 1
-        └── Case B (Full Capacity & Assigned Filtering):
-              • Inserts plan_participants (role = 'PARTICIPANT', rsvp_status = 'WAITLISTED', assigned_group = 'WAITLIST')
-              • Assigns next contiguous waitlist_position
+  ├── Existing participant row found:
+  │     └── Preserves existing RSVP status (JOINED, WAITLISTED, SKIPPED, INVITED) without changes
+  └── No existing participant row:
+        ├── Always inserts plan_participants (role = 'PARTICIPANT', rsvp_status = 'INVITED', delivery_status = 'DELIVERED')
+        ├── Increments plans.invited_participants
+        └── Only if invited_participants == plan_size: increments plan_size by 1
             │
             ▼
  [Clear pending token from localStorage]
@@ -149,22 +146,106 @@ The **Invite Link** feature provides a direct URL-sharing mechanism for Planless
 ### 2. Affected Database Tables
 * **`public.plans`**:
   * `invited_participants`: Incremented by 1 for every new non-skipped claimant.
-  * `plan_size`: Incremented dynamically if the plan was configured with capacity equal to the invited count.
+  * `plan_size`: Incremented dynamically ONLY when the expansion condition is met (`invited_participants === current plan_size`). Never increments when someone joins a waitlisted or full plan.
 * **`public.plan_participants`**:
-  * Inserts new row with `role = 'PARTICIPANT'`, `rsvp_status = 'INVITED'`, and `delivery_status = 'DELIVERED'`.
-  * If plan is full and mode is `ASSIGNED`: inserts with `rsvp_status = 'WAITLISTED'`, `assigned_group = 'WAITLIST'`, and populated `waitlist_position`.
+  * **No existing row**: Inserts new row with `role = 'PARTICIPANT'`, `rsvp_status = 'INVITED'`, and `delivery_status = 'DELIVERED'`. This applies universally across all plan modes (Automatic, Assigned, etc.).
+  * **Existing row**: Retains the existing `rsvp_status` (`JOINED`, `WAITLISTED`, `SKIPPED`, `INVITED`) unchanged.
 
 ---
 
 ## 7. States & Rules
 
+### Invite Link Participant-State Behavior
+
+#### Core Rule
+```text
+No existing participant row
+        ↓
+Create participant row
+        ↓
+RSVP = INVITED
+
+Existing participant row
+        ↓
+Preserve existing RSVP status
+```
+
+* **New Participant Row**:
+  If the person does not already have a `plan_participants` row for that Plan and a new row is created because they opened the invite link:
+  → Their RSVP status must **ALWAYS** be `INVITED`.
+  This applies regardless of the Plan type or participant mode:
+  - Automatic
+  - Assigned
+  - Any other existing Plan configuration
+  Do NOT automatically put a newly invited person into:
+  - `JOINED`
+  - `WAITLISTED`
+  - `SKIPPED`
+  - Any other RSVP state
+
+* **Existing Participant Row**:
+  If the person already has a participant row for that Plan, preserve their existing state when they open the invite link:
+  - Already `JOINED` → show `JOINED`
+  - Already `WAITLISTED` → show `WAITLISTED`
+  - Already `SKIPPED` → show `SKIPPED`
+  - Already `INVITED` → show `INVITED`
+  Opening the invite link must not overwrite an existing participant's RSVP state.
+
 ### Link Claim Invariants
 * **Strict Idempotency**: Opening an invite link multiple times is completely safe. The RPC inspects existing rows; if the user is already `JOINED`, `WAITLISTED`, or `INVITED`, their existing status is preserved untouched.
 * **Live Status Requirement**: The target plan must have `status === 'LIVE'`. Plans in `OVERDUE`, `COMPLETED`, or `CANCELLED` throw an error.
 * **Host Restriction**: A plan's host cannot claim an invite link to their own plan (`is_plan_host` check).
-* **Automatic vs Assigned Handling**:
-  * In Automatic plans with open capacity, claimers become `INVITED`. Upon accepting, FCFS rules apply.
-  * In Assigned plans that are full, new claimers are automatically placed onto the waitlist (`assigned_group = 'WAITLIST'`).
+
+### Automatic Participant Join & Waitlist Invariants
+
+#### Join-Time Decision Tree (On Accept / Join)
+The capacity logic is evaluated dynamically **every time an actual participant joins** (e.g. via `join_plan` / Hold to Accept), never as a one-time check at plan creation:
+
+```text
+Automatic Participant joins
+        ↓
+Check current Plan size
+        ↓
+Check current invited participant count
+        ↓
+Check current joined/waitlist state
+        ↓
+Is there available capacity?
+   ├── Yes (joined_count < plan_size) → add participant normally (JOINED)
+   └── No  (joined_count >= plan_size) → waitlist participant (WAITLISTED)
+        ↓
+Only increase Plan size if:
+invited participants === current Plan size
+```
+
+* **Dynamic Join-Time Capacity Evaluation**: Every time an Automatic Participant accepts an invitation and executes `join_plan`, the database re-evaluates the Plan's active participant capacity and waitlist state.
+* **Join-Time Decision**:
+  * If there is available capacity (`joined_count < plan_size`) → add the participant normally (`JOINED`).
+  * If the Plan is full (`joined_count >= plan_size`) or a waitlist exists → put the participant on the waitlist (`rsvp_status = 'WAITLISTED'`, `joined_queue_at = now()`).
+* **Waitlist Never Inflates Plan Size**: The Plan size (`plan_size`) must remain strictly unchanged when someone is placed on the waitlist. Do NOT increase the Plan size just because someone joined the waitlist.
+* **Strict Capacity Expansion Condition**: The Plan size should only increase when the existing condition is met:
+  > The number of invited participants is equal to the current Plan size (`invited_participants === current Plan size`).
+  If that condition is not met (such as when a waitlist exists where `invited_participants > plan_size`, or when capacity is partially filled where `invited_participants < plan_size`), there is no reason to increase the Plan size.
+* **No Manual Status Overrides**: For Automatic Participants specifically, do not allow their RSVP/status to be manually changed or overridden via options (e.g. `forceStatus`). Their status is determined strictly by the automatic participant/join logic based on current Plan state at the moment they join.
+
+### 4. Invite-Link Navigation & Home Display Target Invariants
+
+* **Exact Plan Display Guarantee**: When a user opens an invite link for **Plan A** (`/join/:planId`), after the link flow completes and the user is navigated to Home, the Home screen must display **that exact Plan A**. The user must never be shown another, random, recent, or default top plan instead.
+* **End-to-End Token Preservation**:
+  * The Plan ID/token extracted from the invite link is preserved through all lifecycles:
+    - Fresh app launch
+    - App already open (in-memory navigation / `popstate` / `planless-navigation`)
+    - Session restoration
+    - Authentication and onboarding completion
+    - Invite claim RPC execution
+    - Home feed plans refresh
+* **Target Identity Retention**:
+  - `activeCardId` must be initialized immediately with the target invite token (from path, pending props, or local storage) rather than `null`.
+  - `HomeScreen` and `PlanFeed` must never overwrite `activeCardId` with `discoverablePlans[0]` while an invite target is resolving. If `discoverablePlans` has not yet received the target plan from the network or cache, `activeCardId` is retained so that it focuses the exact card the moment `discoverablePlans` updates.
+  - Plan matching must check canonical UUIDs and aliases (`p.id`, `p.dbUuid`, `p.publicId`, `p.public_id`, `p.slug`).
+  - `useVerticalPager` in `PlanFeed` calculates `resolvedInitialPage` directly matching `activeCardId` and triggers `goToPage` to navigate to that exact card upon resolution.
+* **Acceptance Invariant**:
+  $$\text{User opens link for Plan A} \implies \text{Home displays Plan A}$$
 
 ---
 
@@ -175,17 +256,19 @@ The **Invite Link** feature provides a direct URL-sharing mechanism for Planless
 * **`localStorage`**: Stores `planless_pending_invite_token` across browser redirects.
 
 ### Downstream Impact of Changes
-* **Home Feed (`HomeScreen.tsx`)**: Successful claims create an `INVITED` participant row, making the plan immediately visible on the recipient's Home screen.
+* **Home Feed (`HomeScreen.tsx`)**: Successful claims create an `INVITED` participant row, making the plan immediately visible on the recipient's Home screen as an actionable hero card ready for RSVP.
 * **Plan Capacity Recalculation**: Incrementing `plan_size` or `invited_participants` modifies the capacity denominators rendered across `WhoIsActuallyComing.tsx` and `PlanSizeCard.tsx`.
 
 ---
 
 ## 9. Important Files
 
-* `src/features/plans/services/planInviteService.ts`: Core link construction and claim service.
+* `src/features/plans/services/planInviteService.ts`: Core link construction and claim service with participant resolution.
 * `src/features/auth/Logged Out/screens/OnboardingFlow.tsx`: Auto-claims pending links post-onboarding.
 * `src/features/plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen.tsx`: Host link sharing trigger.
-* `supabase/migrations/20260915070942_migrate_max_participants_to_invited_participants.sql`: Authoritative PostgreSQL definition of `claim_plan_invite`.
+* `src/features/plans/hooks/usePlanParticipants.ts`: Client-side join flow protecting Automatic participants from manual status overrides.
+* `supabase/migrations/20260924093500_update_automatic_participants_join_flow.sql`: Initial join-time capacity re-evaluation and waitlist invariants.
+* `supabase/migrations/20260924094500_enforce_invite_link_always_invited_status.sql`: Authoritative PostgreSQL definition enforcing `rsvp_status = 'INVITED'` for all newly created rows upon opening invite links while strictly preserving existing participant state.
 
 ---
 

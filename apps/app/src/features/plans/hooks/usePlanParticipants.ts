@@ -364,11 +364,15 @@ export function usePlanParticipants({
       const isAssigned = filteringMode === 'ASSIGNED';
 
       let targetDbState: "JOINED" | "WAITLISTED" = "JOINED";
-      if (options?.forceStatus === "waitlist") {
+      if (!isAssigned) {
+        // AUTOMATIC mode: Status is strictly determined by capacity at join time.
+        // Manual override (e.g. forceStatus) is NOT allowed as part of this flow.
+        targetDbState = isWaitlistMode ? "WAITLISTED" : "JOINED";
+      } else if (options?.forceStatus === "waitlist") {
         targetDbState = "WAITLISTED";
       } else if (options?.forceStatus) {
         targetDbState = options.forceStatus === "going" ? "JOINED" : "WAITLISTED";
-      } else if (isAssigned) {
+      } else {
         // ASSIGNED mode: Position is determined BY THE HOST's assigned_group in DB, NOT by capacity or join order.
         const assignedGroup = (existingBefore as any)?.assigned_group || (existingBefore as any)?.assignedGroup;
         const preAssignedStatus = normalizeStatus(existingBefore?.rsvp_status);
@@ -377,9 +381,6 @@ export function usePlanParticipants({
         } else {
           targetDbState = "JOINED";
         }
-      } else {
-        // AUTOMATIC mode: First-come, first-served based on capacity limit.
-        targetDbState = isWaitlistMode ? "WAITLISTED" : "JOINED";
       }
 
       // Calculate new waitlist position if joining/rejoining waitlist
@@ -434,6 +435,10 @@ export function usePlanParticipants({
           responded_at: new Date().toISOString(),
           skip_reason: existingSr,
         });
+
+        if (rpcResult?.plan_size && setDbPlans) {
+          setDbPlans(prev => prev.map(p => (p.id === planUuid ? { ...p, plan_size: rpcResult.plan_size } : p)));
+        }
       } catch (rpcErr) {
         console.error("[joinPlan] joinPlanRPC failed:", rpcErr);
         await refreshPlans(["plan_participants"]);
@@ -457,7 +462,7 @@ export function usePlanParticipants({
 
     // 3. Sync state from DB (handled by realtime)
 
-  }, [plans, dbPlanParticipants, userId, resolveUserUuid, isUuid, handleParticipantStatusChange, promoteWaitlistIfSpotsAvailable, applyParticipantOptimisticUpdate]);
+  }, [plans, dbPlanParticipants, userId, resolveUserUuid, isUuid, handleParticipantStatusChange, promoteWaitlistIfSpotsAvailable, applyParticipantOptimisticUpdate, setDbPlans]);
 
   const leavePlan = useCallback(async (rawPlanId: string, leaverId: string) => {
     const planId = cleanPlanId(rawPlanId);

@@ -82,11 +82,11 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
     return {
       id: 'host',
       dbUuid: userProfile?.dbUuid || 'host',
-      name: userProfile?.name || 'You',
+      name: 'You',
       avatar: userProfile?.avatar || userProfile?.profile_photo || '',
       isHost: true,
     };
-  }, [isHostSelected, userProfile?.dbUuid, userProfile?.name, userProfile?.avatar, userProfile?.profile_photo]);
+  }, [isHostSelected, userProfile?.dbUuid, userProfile?.avatar, userProfile?.profile_photo]);
 
   const partitioned = useMemo(() => {
     if (isCompletedPlan) {
@@ -98,12 +98,34 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       };
     }
     if (mode === 'wizard') {
-      const allWizard = [...(hostItem ? [hostItem] : []), ...selectedFriends];
+      const activeId = (userProfile?.dbUuid || userProfile?.id || '').toLowerCase();
+      let currentUserItem: Friend | null = hostItem ? { ...hostItem, name: 'You' } : null;
+      const otherFriends: Friend[] = [];
+
+      for (const f of selectedFriends) {
+        const fid = String(f.dbUuid || f.id || '').toLowerCase();
+        const isUser = f.isHost || (Boolean(activeId) && fid === activeId) || f.name === 'You';
+        if (isUser && !currentUserItem) {
+          currentUserItem = { ...f, name: 'You', isHost: f.isHost ?? true };
+        } else if (!isUser) {
+          otherFriends.push(f);
+        }
+      }
+
+      // Sort everyone else alphabetically in ascending order (A to Z)
+      const sortedOthers = [...otherFriends].sort((a, b) => {
+        const nameA = a.name || (a as any).full_name || (a as any).username || '';
+        const nameB = b.name || (b as any).full_name || (b as any).username || '';
+        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+      });
+
+      const allWizard = currentUserItem ? [currentUserItem, ...sortedOthers] : sortedOthers;
+
       return {
         going: allWizard,
         waitlist: [],
         skipped: [],
-        goingJoinedCount: isHostSelected ? 1 : 0,
+        goingJoinedCount: currentUserItem ? 1 : 0,
       };
     }
     const allMembers = [
@@ -434,6 +456,10 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         isAutomatic={true}
         onCapacityChange={(newCap) => {
           if (onAdjustCapacity) {
+            if (newCap === null || newCap === undefined) {
+              onAdjustCapacity(null);
+              return;
+            }
             const activeCount = externalGoingList.length + externalWaitlist.length + externalInvitedList.length;
             const capped = Math.min(newCap, mode === 'wizard' ? totalInvitedCount : (maxCapacity ?? Math.max(2, activeCount)));
             onAdjustCapacity(capped);

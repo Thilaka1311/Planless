@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Crown, Users } from 'lucide-react';
 import { Plan } from '../../../core/types';
 import { normalizeStatus, sortGoingParticipants, formatSkipReason, partitionAutomaticParticipants } from '../../../../lib/participantStatus';
+import { formatAssignedGoingList, formatAssignedWaitlist } from '../../participants/assigned/assignedCapacityLogic';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { usePlansStore } from '../state/PlansContext';
 import { supabase } from '../../../../lib/supabaseClient';
@@ -284,8 +285,31 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         }
       }
 
-      // 6. Validate & sort waitlisted strictly by waitlist_position ASC
-      waitlist.forEach((entry) => {
+      // 6. Enforce capacity split for Assigned mode if capacity is finite
+      let effectiveGoing = going;
+      let effectiveWaitlist = waitlist;
+
+      if (!isCompletedPlan && maxCapacity > 0 && going.length > maxCapacity) {
+        const hostPart = going.filter((e) => e.isHost);
+        const nonHost = going.filter((e) => !e.isHost);
+        const sortedNonHost = [...nonHost].sort((a, b) =>
+          (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+        );
+
+        const availableSpots = Math.max(0, maxCapacity - hostPart.length);
+        const keptNonHost = sortedNonHost.slice(0, availableSpots);
+        const demoted = sortedNonHost.slice(availableSpots).map((e) => ({
+          ...e,
+          assignedGroup: 'waitlist',
+          rsvp_status: e.rsvp_status === 'JOINED' ? 'WAITLISTED' : e.rsvp_status,
+        }));
+
+        effectiveGoing = [...hostPart, ...keptNonHost];
+        effectiveWaitlist = [...waitlist, ...demoted];
+      }
+
+      // 7. Validate & sort waitlisted strictly by waitlist_position ASC
+      effectiveWaitlist.forEach((entry) => {
         const isWaitlistGroup = entry.assignedGroup === 'waitlisted' || entry.assignedGroup === 'waitlist';
         const hasNoPosition = entry.waitlistPosition === null || entry.waitlistPosition === undefined || typeof entry.waitlistPosition !== 'number';
         if (isWaitlistGroup && hasNoPosition && entry.name) {
@@ -297,16 +321,16 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         }
       });
 
-      const waitlistSorted = [...waitlist].sort((a, b) => {
+      const waitlistSorted = [...effectiveWaitlist].sort((a, b) => {
         const posA = typeof a.waitlistPosition === 'number' ? a.waitlistPosition : Number.MAX_SAFE_INTEGER;
         const posB = typeof b.waitlistPosition === 'number' ? b.waitlistPosition : Number.MAX_SAFE_INTEGER;
         return posA - posB;
-      });
+      }).map((e, idx) => ({ ...e, waitlistPosition: idx + 1 }));
 
       return {
-        going: prioritizeUserAndSortGoing(going),
+        going: formatAssignedGoingList(effectiveGoing, activeUserId),
         invited: [], // No invited section in assigned mode
-        waitlist: isCompletedPlan ? [] : waitlistSorted,
+        waitlist: isCompletedPlan ? [] : formatAssignedWaitlist(waitlistSorted, activeUserId),
         skipped: prioritizeUserAndSortGoing(skipped)
       };
     }
@@ -467,7 +491,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     return (
       <div className="w-full text-left space-y-2 flex flex-col flex-1 min-h-0">
         {statusTabs.length > 0 && (
-          <div className="w-full flex items-center justify-between gap-2 flex-shrink-0">
+          <div className="w-full flex items-center justify-between gap-2 flex-shrink-0 no-hold">
             <SegmentedStatusToggle<InlineTab>
               className="flex-1"
               tabs={statusTabs}

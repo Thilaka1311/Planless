@@ -15,6 +15,8 @@ interface HoldToAcceptOverlayProps {
   isFull: boolean;
   formattedDateAndTime: string;
   costText?: string | null;
+  plan?: Plan;
+  contentScale?: number;
 }
 
 export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
@@ -24,8 +26,11 @@ export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
   isFull,
   formattedDateAndTime,
   costText: propCostText,
+  plan: propPlan,
+  contentScale,
 }) => {
-  const plan = useLivePlan(planId);
+  const livePlan = useLivePlan(planId);
+  const plan = propPlan || livePlan;
   const { dbPlans } = usePlansStore();
   const { dbUsers } = useProfileStore();
 
@@ -95,7 +100,10 @@ export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
       className="absolute inset-0 backdrop-blur-[2px] flex flex-col items-center justify-center z-30 pointer-events-none"
     >
       {/* Inner container to shift content stack slightly upward (approx 44px) for premium look */}
-      <div className="flex flex-col items-center justify-center -translate-y-11">
+      <div
+        className={`flex flex-col items-center justify-center ${contentScale ? "-translate-y-5" : "-translate-y-11"}`}
+        style={contentScale ? { transform: `scale(${contentScale})`, transformOrigin: "center center" } : undefined}
+      >
         
         {/* Holding circular progress indicator ring with Planless orange glow */}
         <div className="relative w-28 h-28 flex items-center justify-center rounded-full shadow-[0_0_20px_rgba(255,107,44,0.15)] bg-black/10">

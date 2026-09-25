@@ -24,7 +24,7 @@ export const FriendshipProvider = ({ children }: { children: ReactNode }) => {
   const [friends, setFriends] = useState<any[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
   const [outgoingRequests, setOutgoingRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(() => Boolean(activeUserUuid));
 
   const friendCount = useMemo(() => friends.length, [friends]);
 

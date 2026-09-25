@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { ArrowLeft, ChevronRight, UserRoundPlus, Users, UserRoundCheck, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, UserRoundPlus, Users, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
@@ -14,9 +14,13 @@ import { SearchBar } from "../../../shared/components/SearchBar";
 
 interface FriendshipsScreenProps {
   onBack: () => void;
+  initialScreen?: "hub" | "requests" | "discover";
 }
 
-export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) => {
+export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({
+  onBack,
+  initialScreen = "hub",
+}) => {
   const { activeUserUuid } = useProfileStore();
   const {
     friends,
@@ -27,7 +31,8 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
   } = useFriendshipStore();
 
   // Navigation screen states
-  const [activeScreen, setActiveScreen] = useState<"hub" | "requests" | "discover">("hub");
+  const [activeScreen, setActiveScreen] = useState<"hub" | "requests" | "discover">(initialScreen);
+  const [requestsReturnScreen, setRequestsReturnScreen] = useState<"hub" | "discover">(initialScreen === "discover" ? "discover" : "hub");
   const [searchQuery, setSearchQuery] = useState("");
   const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; name: string } | null>(null);
   const [selectedFriendForViewer, setSelectedFriendForViewer] = useState<{ friendshipId: string; userId: string } | null>(null);
@@ -58,35 +63,36 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
     loadAllUsers();
   }, []);
 
-  // Compute discoverable users client-side (including users with outgoing requests so they can show Cancel)
+  // Compute discoverable users client-side: show EVERYONE except active user
   const discoverableUsers = useMemo(() => {
     if (!activeUserUuid) return [];
 
-    const friendIds = new Set(friends.map(f => f.friend?.id).filter(Boolean));
-    const incomingIds = new Set(incomingRequests.map(r => r.sender?.id).filter(Boolean));
-
     return allUsers
-      .filter(u => {
-        if (u.id === activeUserUuid) return false;
-        if (friendIds.has(u.id)) return false;
-        if (incomingIds.has(u.id)) return false;
-        return true;
-      })
+      .filter(u => u.id !== activeUserUuid)
       .map(u => ({
         ...u,
         profile_photo: u.profile_photo_path || u.profile_photo
       }))
-      .sort((a, b) => a.full_name.localeCompare(b.full_name));
-  }, [allUsers, friends, incomingRequests, activeUserUuid]);
+      .sort((a, b) => (a.full_name || "").localeCompare(b.full_name || "", undefined, { sensitivity: "base" }));
+  }, [allUsers, activeUserUuid]);
+
+  // Sort complete friend list alphabetically by display name (case-insensitive)
+  const sortedFriends = useMemo(() => {
+    return [...friends].sort((a, b) => {
+      const nameA = a.friend?.full_name || "";
+      const nameB = b.friend?.full_name || "";
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+    });
+  }, [friends]);
 
   // Compute filtered & ranked friends for inline search across all friends (Exact -> StartsWith -> Contains)
   const filteredFriends = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return friends;
+    if (!query) return sortedFriends;
 
     const matchesWithScore: { item: any; score: number }[] = [];
 
-    friends.forEach((item) => {
+    sortedFriends.forEach((item) => {
       const name = (item.friend?.full_name || "").toLowerCase();
       const username = (item.friend?.username || item.friend?.user_id || item.friend?.public_id || "").toLowerCase();
       const nameWords = name.split(/\s+/);
@@ -111,13 +117,13 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
       if (a.score !== b.score) {
         return a.score - b.score;
       }
-      const nameA = (a.item.friend?.full_name || "").toLowerCase();
-      const nameB = (b.item.friend?.full_name || "").toLowerCase();
-      return nameA.localeCompare(nameB);
+      const nameA = a.item.friend?.full_name || "";
+      const nameB = b.item.friend?.full_name || "";
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
     });
 
     return matchesWithScore.map((m) => m.item);
-  }, [searchQuery, friends]);
+  }, [searchQuery, sortedFriends]);
 
   const handleAddFriend = async (targetUserUuid: string, name: string) => {
     try {
@@ -140,7 +146,7 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
       {/* 1. MAIN FRIENDS HUB SCREEN */}
       {activeScreen === "hub" && (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
-          {/* STICKY HEADER (Back button, Friends title, Discover button) */}
+          {/* STICKY HEADER (Back button, Friends title, Discover button, Friend Requests button) */}
           <header className="h-14 shrink-0 bg-[#000000] px-5 flex items-center justify-between z-30 select-none relative">
             <div className="flex items-center space-x-3">
               <button
@@ -154,23 +160,36 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
                 <h1 className="font-sans font-bold text-xl text-white tracking-tight leading-none">Friends</h1>
               </div>
             </div>
-            <button
-              onClick={() => setActiveScreen("requests")}
-              className="w-9 h-9 -mr-1 flex items-center justify-center text-white/90 hover:text-white transition active:scale-95 cursor-pointer relative"
-              title="Friend Requests"
-            >
-              <UserRoundCheck className="w-5 h-5" />
+            <div className="flex items-center space-x-2 -mr-1">
               {incomingRequests.length > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#EF4444] ring-2 ring-black" />
+                <button
+                  id="btn-friend-requests-badge"
+                  onClick={() => {
+                    setRequestsReturnScreen("hub");
+                    setActiveScreen("requests");
+                  }}
+                  className="px-2.5 py-1 rounded-full bg-[#FF6B2C]/15 border border-[#FF6B2C]/30 text-[#FF854C] hover:bg-[#FF6B2C]/25 text-xs font-sans font-semibold tracking-tight transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
+                  title="Friend Requests"
+                >
+                  {incomingRequests.length} {incomingRequests.length === 1 ? "friend request" : "friend requests"}
+                </button>
               )}
-            </button>
+              <button
+                id="btn-discover-friends"
+                onClick={() => setActiveScreen("discover")}
+                className="w-9 h-9 flex items-center justify-center text-white/90 hover:text-white transition active:scale-95 cursor-pointer"
+                title="Discover Friends"
+              >
+                <UserRoundPlus className="w-5 h-5" />
+              </button>
+            </div>
           </header>
 
-          {/* SCROLLABLE CONTENT (Search bar, Discover Friends, Friends list) */}
-          <div className="flex-1 overflow-y-auto px-5 pt-0.5 pb-8 space-y-4">
+          {/* SCROLLABLE CONTENT (Search bar, Friends list) */}
+          <div className="flex-1 flex flex-col overflow-y-auto px-5 pt-0.5 pb-8">
             {/* SEARCH FRIENDS BAR (Scrolls with content) */}
             <div
-              className="pt-0.5 pb-1 select-none"
+              className="pt-0.5 pb-3 select-none shrink-0"
               style={{ boxSizing: 'border-box' }}
             >
               <SearchBar
@@ -182,52 +201,31 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
               />
             </div>
 
-            {/* 2. DISCOVER FRIENDS ROW (Hidden when searchQuery is non-empty) */}
-            {searchQuery === "" && (
-              <button
-                onClick={() => setActiveScreen("discover")}
-                className="w-full py-2.5 px-1 flex items-center justify-between hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl transition cursor-pointer text-left group"
-              >
-                <div className="flex items-center space-x-3.5 min-w-0 flex-1">
-                  <div className="w-11 h-11 flex items-center justify-center text-white/90 group-hover:text-white flex-shrink-0 transition-colors">
-                    <UserRoundPlus className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-sans font-bold text-sm text-zinc-100 group-hover:text-white transition truncate">
-                      Discover Friends
-                    </h3>
-                    <p className="text-[11.5px] font-sans font-medium text-zinc-500 mt-0.5 truncate">
-                      Find and connect with people
-                    </p>
-                  </div>
-                </div>
-
-                <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition flex-shrink-0 ml-2" />
-              </button>
-            )}
-
-            {/* 3. FRIENDS LIST */}
-            <div>
-              <div className="flex items-center justify-between mb-2 px-1">
-                <h3 className="text-[11px] font-sans font-bold uppercase tracking-wider text-zinc-500">
-                  Friends ({filteredFriends.length})
+            {/* 2. FRIENDS LIST */}
+            {filteredFriends.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center px-4 py-8">
+                <Users className="w-8 h-8 text-zinc-600 stroke-[1.5] mb-3" />
+                <h3 className="font-sans font-semibold text-sm text-zinc-300">
+                  {searchQuery ? "No friends found" : "No friends yet"}
                 </h3>
+                {searchQuery && (
+                  <p className="text-zinc-500 font-sans text-xs mt-1 max-w-[240px]">
+                    Try searching for a different name.
+                  </p>
+                )}
+                {!searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveScreen("discover")}
+                    className="mt-4 px-4 py-2.5 bg-zinc-900 hover:bg-zinc-850 active:scale-95 border border-white/[0.08] text-white font-sans font-medium text-xs rounded-xl transition flex items-center gap-2 cursor-pointer shadow-lg"
+                  >
+                    <UserRoundPlus className="w-4 h-4 text-white/90" />
+                    <span>Discover Friends</span>
+                  </button>
+                )}
               </div>
-
-              {filteredFriends.length === 0 ? (
-                <div className="py-8 px-4 text-center">
-                  <div className="w-12 h-12 rounded-full bg-zinc-950 border border-white/[0.03] flex items-center justify-center text-zinc-600 mx-auto mb-3">
-                    <Users className="w-5 h-5" />
-                  </div>
-                  <p className="text-zinc-500 font-sans font-medium text-xs">
-                    {searchQuery ? "No friends found" : "No friends yet"}
-                  </p>
-                  <p className="text-zinc-600 text-[11px] mt-1">
-                    {searchQuery ? "Try searching for a different name." : "Tap the icon at top right to discover people."}
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-1">
+            ) : (
+              <div className="space-y-1">
                   {filteredFriends.map((item) => (
                     <div
                       key={item.friendshipId}
@@ -253,7 +251,6 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
                   ))}
                 </div>
               )}
-            </div>
           </div>
         </div>
       )}
@@ -262,7 +259,7 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
       <AnimatePresence>
         {activeScreen === "requests" && (
           <FriendRequestsScreen
-            onBack={() => setActiveScreen("hub")}
+            onBack={() => setActiveScreen(requestsReturnScreen)}
             onZoomPhoto={setZoomedPhoto}
           />
         )}
@@ -274,9 +271,19 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({ onBack }) 
       <AnimatePresence>
         {activeScreen === "discover" && (
           <DiscoverFriends
-            onBack={() => setActiveScreen("hub")}
+            onBack={() => {
+              if (initialScreen === "discover") {
+                onBack();
+              } else {
+                setActiveScreen("hub");
+              }
+            }}
             discoverableUsers={discoverableUsers}
             onAddFriend={handleAddFriend}
+            onOpenRequests={() => {
+              setRequestsReturnScreen("discover");
+              setActiveScreen("requests");
+            }}
           />
         )}
       </AnimatePresence>

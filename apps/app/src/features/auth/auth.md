@@ -2,13 +2,16 @@
 
 ## 1. Overview
 
-The **Auth & Onboarding** feature is the user acquisition, education, and authentication gateway for Planless. It introduces new users to the app's value proposition through an animated onboarding carousel, handles passwordless authentication via Email OTP, and guides new signups through initial profile creation.
+The **Auth & Onboarding** feature is the user acquisition, education, and authentication gateway for Planless. It introduces new users to the app's value proposition through a 4-slide animated onboarding carousel, handles passwordless authentication via Email OTP, and guides new signups through initial profile creation.
 
-* **Core Function**: Delivers an integrated 4-stage funnel:
+* **Core Function**: Delivers an integrated 6-stage funnel:
   1. Entry welcome screen (`Planless.tsx`).
-  2. Problem/Solution animated onboarding carousel (`Problem.tsx` & `Solution.tsx`).
-  3. Passwordless 6-digit Email OTP authentication (`Emailverification.tsx`).
-  4. First-time profile setup (name, bio, profile photo upload).
+  2. Onboarding Slide 1 — Problem: chaotic chat animation (`Problem.tsx`).
+  3. Onboarding Slide 2 — Solution: RSVP plan animation (`Solution.tsx`).
+  4. Onboarding Slide 3 — Create Plan: animated plan creation demo (`CreatePlanOnboarding.tsx`).
+  5. Onboarding Slide 4 — Join Plan: animated hold-to-join demo (`JoinPlanOnboarding.tsx`).
+  6. Passwordless 6-digit Email OTP authentication (`Emailverification.tsx`).
+  7. First-time profile setup (name, bio, profile photo upload) — applies to new accounts only.
 * **Product Role**: Gatekeeper component rendered by `App.tsx` when no active Supabase auth session exists (`!session`). Upon successful verification, passes the authenticated `UserProfile` to initialize `ProfileContext` and render `MainApp.tsx`.
 * **Scope & Boundaries**: Manages identity verification, session tokens, and initial `public.users` row provisioning. Does not manage in-app profile editing (handled by `Profile` feature) or friend connections (handled by `Friendships` feature).
 
@@ -23,11 +26,14 @@ The **Auth & Onboarding** feature is the user acquisition, education, and authen
   * **"Get Started"**: Launches the value-proposition onboarding carousel (`step = 'LANDING'`).
   * **"Already have an account? Log in"**: Bypasses the onboarding carousel and navigates directly to email entry (`step = 'EMAIL_INPUT'`).
 
-### 2. Onboarding Carousel (`Problem.tsx` & `Solution.tsx`)
-* User swipes horizontally or taps the continue chevron to navigate between slides:
-  * **Slide 1: Problem ("Complicated")**: Plays micro-animations illustrating the friction of planning via standard messaging apps (`ChaoticChatAnimation.tsx` with endless group messages and dropouts).
-  * **Slide 2: Solution ("Planless")**: Demonstrates the Planless alternative (`PlanAnimation.tsx` and `ManageParticipantAnimation.tsx` showing clear RSVPs, capacity caps, and automatic waitlists).
-* Tapping **"Continue"** on Slide 2 transitions to email entry (`step = 'EMAIL_INPUT'`).
+### 2. Onboarding Carousel — 4 Slides (step = `LANDING`, `onboardingIndex` 0–3)
+* User swipes horizontally or taps the continue/Next button to advance through 4 sequential slides:
+  * **Slide 0 — Problem ("Complicated")**: Plays micro-animations illustrating the friction of planning via standard messaging apps (`ChaoticChatAnimation.tsx` with endless group messages and dropouts). `onboardingIndex = 0`.
+  * **Slide 1 — Solution ("Planless")**: Demonstrates the structured Planless alternative (`PlanAnimation.tsx` and `ManageParticipantAnimation.tsx`). `onboardingIndex = 1`.
+  * **Slide 2 — Create Plan**: Shows how to create a plan in a few taps (`CreatePlanAnimation`). Headline: *"Create a plan in just a few taps"*. CTA button ("Next") appears after animation completes. `onboardingIndex = 2`.
+  * **Slide 3 — Join Plan**: Shows friends joining a plan with one tap (`JoinPlanAnimation`). Headline: *"Friends see the plan and join with one tap"*. CTA button ("Next") appears after animation completes; tapping it advances to email entry. `onboardingIndex = 3`.
+* The carousel supports keyboard arrow navigation and horizontal touch-swipe. Swipe left advances; swipe right goes back. Backward swipe from Slide 0 returns to the `ENTRY` step.
+* Animation state is persisted and reset between sessions: each animation screen calls its own `isXAnimationCompleted()` check on mount to decide whether the CTA button is immediately visible (skip re-playing) or must wait for animation completion.
 
 ### 3. Submitting Email for OTP (`Emailverification.tsx` - Step 1)
 * User enters their email address into the input field.
@@ -82,12 +88,19 @@ The **Auth & Onboarding** feature is the user acquisition, education, and authen
   * Primary Button: Pill-shaped CTA (`w-full py-3 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-semibold text-sm shadow-md shadow-[#FF6B2C]/20`) with text "Get Started".
   * Secondary Text Button: Centered text link (`text-xs text-zinc-400 hover:text-white py-1 transition-colors`) reading "Already have an account? Log in".
 
-### Onboarding Carousel (`Problem.tsx` & `Solution.tsx`)
-* **Header**: Top utility bar (`OnboardingHeader.tsx`) with back arrow and progress dot indicators.
-* **Animated Illustrations**:
-  * Slide 1: `<ChaoticChatAnimation />` featuring staggered incoming chat bubbles, confused avatars, and red rejection notifications.
-  * Slide 2: `<PlanAnimation />` featuring a glossy plan card transforming with checkmarks and attendee slots filling up.
-* **Typography**: Large high-contrast headline (`text-2xl font-bold text-white tracking-tight`) paired with concise 2-line explanation paragraphs (`text-sm text-zinc-400`).
+### Onboarding Carousel — 4 Slides
+* **Header**: Top utility bar (`OnboardingHeader.tsx`) with back arrow. Persistent across all slides when `step !== 'ENTRY'`.
+* **Slide 0 — Problem**: `<ChaoticChatAnimation />` featuring staggered incoming chat bubbles, confused avatars, and red rejection notifications. Full-width animation area between headline and CTA.
+* **Slide 1 — Solution**: `<PlanAnimation />` and `<ManageParticipantAnimation />` showing structured plan card and attendee slot fills.
+* **Slide 2 — Create Plan** (`CreatePlanOnboarding.tsx`):
+  * Headline: *"Create a plan / in just a few taps"* (two-line, bold white, responsive size `text-[18px]` to `text-[24px]`).
+  * Full-viewport `<CreatePlanAnimation />` animation area.
+  * CTA: Full-width orange pill button ("Next", id: `btn_onboarding_cta_create_plan`) that fades in after animation completes (`initial={{ opacity: 0, y: 10 }}`, `duration: 0.45`).
+* **Slide 3 — Join Plan** (`JoinPlanOnboarding.tsx`):
+  * Headline: *"Friends see the plan / and join with one tap"* (same two-line responsive layout).
+  * Full-viewport `<JoinPlanAnimation />` animation area.
+  * CTA: Full-width orange pill button ("Next", id: `btn_onboarding_cta_join_plan`) that fades in after animation completes.
+* **Typography**: Large high-contrast headline across all slides (`text-2xl font-bold text-white tracking-tight`) paired with supporting copy.
 
 ### Email & OTP Screen (`Emailverification.tsx`)
 * **Container**: Clean, minimalist dark authentication box (`max-w-md mx-auto flex flex-col justify-between h-full px-6 py-8`).
@@ -111,14 +124,18 @@ The **Auth & Onboarding** feature is the user acquisition, education, and authen
 
 | Component | File Path | Responsibilities | Key Relationships |
 |---|---|---|---|
-| `OnboardingFlow` | `src/features/auth/Logged Out/screens/OnboardingFlow.tsx` | Master coordinator managing onboarding steps, step persistence, and user profile completion. | Mounted by `App.tsx` when logged out; passes finished `UserProfile` to `onComplete`. |
+| `OnboardingFlow` | `src/features/auth/Logged Out/screens/OnboardingFlow.tsx` | Master coordinator managing `step` state (`ENTRY`, `LANDING`, `EMAIL_INPUT`, `OTP_INPUT`, `PROFILE_SETUP`), `onboardingIndex` (0–3), touch/keyboard swipe navigation, and session persistence. | Mounted by `App.tsx` when logged out; passes finished `UserProfile` to `onComplete`. |
 | `Planless` | `src/features/auth/Logged Out/screens/Planless.tsx` | Welcome landing screen with brand logo, tagline, and entry buttons. | First step in `OnboardingFlow`. |
-| `Problem` | `src/features/auth/Logged Out/screens/Problem.tsx` | First onboarding slide explaining scheduling chaos. | Embeds `ChaoticChatAnimation`. |
-| `Solution` | `src/features/auth/Logged Out/screens/Solution.tsx` | Second onboarding slide showcasing Planless's structured plans. | Embeds `PlanAnimation` and `ManageParticipantAnimation`. |
+| `Problem` (exported as `Complicated`) | `src/features/auth/Logged Out/screens/Problem.tsx` | Onboarding slide 0 explaining scheduling chaos. | Embeds `ChaoticChatAnimation`. |
+| `Solution` | `src/features/auth/Logged Out/screens/Solution.tsx` | Onboarding slide 1 showcasing Planless's structured plans. | Embeds `PlanAnimation` and `ManageParticipantAnimation`. |
+| `CreatePlanOnboarding` | `src/features/auth/Logged Out/screens/CreatePlanOnboarding.tsx` | Onboarding slide 2 demonstrating plan creation flow. CTA button appears after animation completes. | Embeds `CreatePlanAnimation`. |
+| `JoinPlanOnboarding` | `src/features/auth/Logged Out/screens/JoinPlanOnboarding.tsx` | Onboarding slide 3 demonstrating how friends join a plan. CTA button ("Next") advances to email step. | Embeds `JoinPlanAnimation`. |
 | `EmailVerification` | `src/features/auth/Logged Out/screens/Emailverification.tsx` | Handles passwordless email entry, OTP sending, digit input, and token verification via Supabase Auth. | Dispatches `signInWithOtp` and `verifyOtp`. |
-| `OnboardingHeader` | `src/features/auth/Logged Out/components/OnboardingHeader.tsx` | Navigation bar with back chevron and progress indicators. | Shared across onboarding screens. |
+| `OnboardingHeader` | `src/features/auth/Logged Out/components/OnboardingHeader.tsx` | Navigation bar with back chevron. Rendered across all non-ENTRY onboarding steps. | Shared across onboarding screens. |
 | `ChaoticChatAnimation` | `src/features/auth/Logged Out/components/ChaoticChatAnimation.tsx` | Visual animation depicting unstructured chat noise. | Used in `Problem.tsx`. |
 | `PlanAnimation` | `src/features/auth/Logged Out/components/PlanAnimation.tsx` | Interactive animated plan card demonstrating live RSVP updates. | Used in `Solution.tsx`. |
+| `CreatePlanAnimation` | `src/features/auth/Logged Out/components/CreatePlanAnimation.tsx` | Animation demonstrating plan creation flow inside canonical frame with 1:1 proportional content canvas scaling (scale 0.70), `shrink-0 pt-6 sm:pt-7 box-border` canvas positioning for unclipped viewport alignment, `No limit` plan size, and direct transition to review (bypassing New Activity screen). Exports `isCreatePlanAnimationCompleted` and `resetCreatePlanAnimation`. | Used in `CreatePlanOnboarding.tsx`. |
+| `JoinPlanAnimation` | `src/features/auth/Logged Out/components/JoinPlanAnimation.tsx` | Animation demonstrating hold-to-join flow inside canonical frame with HoldToAcceptOverlay content proportionally scaled (scale 0.72) to 1:1 mobile screen proportions. Permanently freezes on terminal `JOINED` success state and reveals onboarding Next button. Cleanly resets on unmount/re-entry. Exports `isJoinPlanAnimationCompleted` and `resetJoinPlanAnimation`. | Used in `JoinPlanOnboarding.tsx`. |
 
 ---
 
@@ -219,11 +236,15 @@ The **Auth & Onboarding** feature is the user acquisition, education, and authen
 
 ## 9. Important Files
 
-* `src/features/auth/Logged Out/screens/OnboardingFlow.tsx`: Master coordinator for auth and onboarding.
+* `src/features/auth/Logged Out/screens/OnboardingFlow.tsx`: Master coordinator for auth and onboarding step/index state.
 * `src/features/auth/Logged Out/screens/Planless.tsx`: Entry welcome screen.
-* `src/features/auth/Logged Out/screens/Problem.tsx`: Onboarding slide 1 (problem).
-* `src/features/auth/Logged Out/screens/Solution.tsx`: Onboarding slide 2 (solution).
+* `src/features/auth/Logged Out/screens/Problem.tsx`: Onboarding slide 0 (Complicated — chaotic chat).
+* `src/features/auth/Logged Out/screens/Solution.tsx`: Onboarding slide 1 (Planless solution).
+* `src/features/auth/Logged Out/screens/CreatePlanOnboarding.tsx`: Onboarding slide 2 (Create Plan animation).
+* `src/features/auth/Logged Out/screens/JoinPlanOnboarding.tsx`: Onboarding slide 3 (Join Plan animation).
 * `src/features/auth/Logged Out/screens/Emailverification.tsx`: Email input and 6-digit OTP verification.
+* `src/features/auth/Logged Out/components/CreatePlanAnimation.tsx`: Create Plan animation + completion state helpers.
+* `src/features/auth/Logged Out/components/JoinPlanAnimation.tsx`: Join Plan animation + completion state helpers.
 * `src/features/profile/hooks/useProfileUpload.ts`: Hook for uploading user avatar photos to Supabase Storage.
 * `lib/supabaseClient.ts`: Supabase client initialization.
 

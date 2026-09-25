@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion } from "motion/react";
 import { supabase } from "../../../../../lib/supabaseClient";
 import { UserProfile } from "../../../../core/types";
@@ -94,6 +94,10 @@ export function EmailVerification({
   const otpBoxRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [resendCooldown, setResendCooldown] = useState(0);
 
+  const isOtpComplete = useMemo(() => {
+    return otpDigits.every((digit) => digit.trim().length === 1);
+  }, [otpDigits]);
+
   // Status & Error
   const [checkingUser, setCheckingUser] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -103,40 +107,105 @@ export function EmailVerification({
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const isNavigatingRef = useRef(false);
 
-  // Mobile Keyboard handling
+  // Accurate Virtual Keyboard & Focus Tracking
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [isOtpFocused, setIsOtpFocused] = useState(false);
+  const [isEmailFocused, setIsEmailFocused] = useState(false);
+  const initialHeightRef = useRef<number>(
+    typeof window !== "undefined" ? window.innerHeight : 800
+  );
 
-  // Viewport resize tracking for mobile virtual keyboard
+  // Stable unconstrained container height tracking so virtual keyboard does NOT shrink or reposition screen content
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [stableHeight, setStableHeight] = useState<number | null>(null);
+
+  // Single authoritative source of truth for above-keyboard button existence
+  const showAboveKeyboardButton = keyboardOpen && isOtpComplete;
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const handleViewportChange = () => {
+    const measureStableHeight = () => {
+      const isAnyInputFocused = isOtpFocused || isEmailFocused;
+      if (!isAnyInputFocused && !keyboardOpen && containerRef.current) {
+        const h = containerRef.current.clientHeight;
+        if (h > 200) {
+          setStableHeight(h);
+        }
+      }
+    };
+
+    measureStableHeight();
+    const t = setTimeout(measureStableHeight, 100);
+
+    window.addEventListener("resize", measureStableHeight);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("resize", measureStableHeight);
+    };
+  }, [isOtpFocused, isEmailFocused, keyboardOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateKeyboardState = () => {
       if (window.scrollY !== 0) {
         window.scrollTo(0, 0);
       }
-      if (window.visualViewport) {
-        const vv = window.visualViewport;
-        const kbHeight = Math.max(0, window.innerHeight - vv.height);
-        setKeyboardHeight(kbHeight);
-        setKeyboardOpen(kbHeight > 100);
+
+      const vv = window.visualViewport;
+      const isMobile =
+        "ontouchstart" in window ||
+        navigator.maxTouchPoints > 0 ||
+        window.innerWidth <= 768;
+
+      const isAnyInputFocused = isOtpFocused || isEmailFocused;
+
+      if (!isAnyInputFocused) {
+        initialHeightRef.current = Math.max(initialHeightRef.current, window.innerHeight);
       }
+
+      let detectedKbHeight = 0;
+      let detectedKbInset = 0;
+      let isKbActive = false;
+
+      if (vv) {
+        const fullHeight = initialHeightRef.current;
+        const currentHeight = vv.height;
+        const diffFromFull = fullHeight - currentHeight;
+        const diffFromInner = window.innerHeight - (vv.height + (vv.offsetTop || 0));
+
+        detectedKbHeight = Math.max(diffFromFull, diffFromInner);
+
+        if (detectedKbHeight > 120 && isAnyInputFocused) {
+          isKbActive = true;
+          detectedKbInset = Math.max(0, diffFromInner);
+        }
+      }
+
+      setKeyboardHeight(detectedKbHeight);
+      setKeyboardInset(detectedKbInset);
+      setKeyboardOpen(isKbActive);
     };
 
     if (window.visualViewport) {
-      window.visualViewport.addEventListener("resize", handleViewportChange);
-      window.visualViewport.addEventListener("scroll", handleViewportChange);
+      window.visualViewport.addEventListener("resize", updateKeyboardState);
+      window.visualViewport.addEventListener("scroll", updateKeyboardState);
     }
-    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("resize", updateKeyboardState);
+
+    updateKeyboardState();
 
     return () => {
       if (window.visualViewport) {
-        window.visualViewport.removeEventListener("resize", handleViewportChange);
-        window.visualViewport.removeEventListener("scroll", handleViewportChange);
+        window.visualViewport.removeEventListener("resize", updateKeyboardState);
+        window.visualViewport.removeEventListener("scroll", updateKeyboardState);
       }
-      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("resize", updateKeyboardState);
     };
-  }, []);
+  }, [isOtpFocused, isEmailFocused]);
 
   // Preload cups illustration
   useEffect(() => {
@@ -388,6 +457,17 @@ export function EmailVerification({
 
   const handleOtpBoxFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     e.target.select();
+    setIsOtpFocused(true);
+  };
+
+  const handleOtpBoxBlur = () => {
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      const stillInOtp = otpBoxRefs.current.some((ref) => ref === active);
+      if (!stillInOtp) {
+        setIsOtpFocused(false);
+      }
+    });
   };
 
   // Handle Resend OTP
@@ -555,7 +635,18 @@ export function EmailVerification({
   };
 
   return (
-    <div className={`w-full h-full flex flex-col justify-between ${className}`}>
+    <div
+      ref={containerRef}
+      style={
+        keyboardOpen && stableHeight
+          ? {
+              height: `${stableHeight}px`,
+              minHeight: `${stableHeight}px`,
+            }
+          : undefined
+      }
+      className={`w-full h-full flex flex-col justify-between ${className}`}
+    >
       {/* 1. EMAIL INPUT VIEW */}
       {subStep === "EMAIL" && (
         <motion.div
@@ -574,11 +665,7 @@ export function EmailVerification({
             className="w-full h-full flex flex-col justify-between items-center select-none overflow-hidden px-4 sm:px-6 md:px-8 pb-[max(1rem,env(safe-area-inset-bottom))]"
           >
             {/* Top Section: Fixed Authentication Content */}
-            <div
-              className={`w-full pt-20 xs:pt-24 sm:pt-28 md:pt-32 flex flex-col items-center select-text shrink-0 transition-transform duration-200 ease-out ${
-                keyboardOpen ? "translate-y-0" : "translate-y-0"
-              }`}
-            >
+            <div className="w-full pt-6 xs:pt-8 sm:pt-10 flex flex-col items-center select-text shrink-0">
               {/* Centered Planless Hero Symbol */}
               <div className="flex justify-center items-center select-none pointer-events-none mb-5 sm:mb-6">
                 <img
@@ -613,6 +700,8 @@ export function EmailVerification({
                     autoComplete="email"
                     autoCapitalize="none"
                     spellCheck={false}
+                    onFocus={() => setIsEmailFocused(true)}
+                    onBlur={() => setIsEmailFocused(false)}
                     className={`w-full h-[52px] bg-[#141416] rounded-[15px] px-4 sm:px-[18px] text-[15.5px] sm:text-base text-white placeholder-zinc-500 focus:outline-none transition-colors duration-150 border ${
                       errorMessage
                         ? "border-red-500 focus:border-red-500"
@@ -630,12 +719,8 @@ export function EmailVerification({
               </div>
             </div>
 
-            {/* Middle Section: Illustration vertically balanced between email input and Next button */}
-            <div
-              className={`flex-1 w-full min-h-0 flex items-center justify-center pt-3 pb-1 transition-opacity duration-200 pointer-events-none select-none ${
-                keyboardOpen ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
-              }`}
-            >
+            {/* Middle Section: Illustration vertically balanced between email input and Continue button */}
+            <div className="flex-1 w-full min-h-0 flex items-center justify-center pt-3 pb-1 pointer-events-none select-none">
               <img
                 src={onboardingCups}
                 alt="Planless Toast"
@@ -645,41 +730,16 @@ export function EmailVerification({
               />
             </div>
 
-            {/* Bottom Section: Next Button - Full width resting state (keyboard closed) */}
-            <div
-              className={`w-full shrink-0 pt-2 transition-opacity duration-150 ease-out ${
-                keyboardOpen ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
-              }`}
-            >
+            {/* Bottom Section: Primary CTA - ALWAYS at the bottom of the screen */}
+            <div className="w-full shrink-0 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
               <div className="h-[46px] w-full flex items-center">
                 <button
-                  id={keyboardOpen ? "email_continue_btn_resting" : "email_continue_btn"}
+                  id="email_continue_btn"
                   type="submit"
                   disabled={checkingUser}
-                  tabIndex={keyboardOpen ? -1 : 0}
                   className="w-full py-3 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-semibold text-[14px] xs:text-[14.5px] sm:text-[15px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center shadow-md shadow-[#FF6B2C]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
                 >
-                  {checkingUser ? "Sending OTP..." : "Next"}
-                </button>
-              </div>
-            </div>
-
-            {/* Floating Next Button - Full width docked above keyboard (keyboard open) */}
-            <div
-              style={{ bottom: `${keyboardHeight + 14}px` }}
-              className={`fixed left-0 right-0 z-20 flex justify-center transition-opacity duration-150 ease-out ${
-                keyboardOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-              }`}
-            >
-              <div className="w-full px-4 sm:px-6 md:px-8">
-                <button
-                  id={keyboardOpen ? "email_continue_btn" : "email_continue_btn_docked"}
-                  type="submit"
-                  disabled={checkingUser}
-                  tabIndex={keyboardOpen ? 0 : -1}
-                  className="w-full py-3 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-semibold text-[14px] xs:text-[14.5px] sm:text-[15px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center shadow-md shadow-[#FF6B2C]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
-                >
-                  {checkingUser ? "Sending OTP..." : "Next"}
+                  {checkingUser ? "Sending OTP..." : "Continue"}
                 </button>
               </div>
             </div>
@@ -700,9 +760,9 @@ export function EmailVerification({
             id="step_otp_form"
             onSubmit={handleOtpVerify}
             noValidate
-            className="w-full h-full flex flex-col items-center select-none overflow-hidden"
+            className="w-full h-full flex flex-col justify-between items-center select-none overflow-hidden"
           >
-            {/* Layer 1: Fixed Authentication Content (Unified Visual Group) */}
+            {/* Top / Main Authentication Section: Fixed / Stable layout */}
             <div className="w-full px-4 sm:px-6 md:px-8 pt-4 xs:pt-6 sm:pt-8 flex flex-col items-center select-text">
               {/* Centered Planless Hero Symbol */}
               <div className="flex justify-center items-center select-none pointer-events-none mb-6 sm:mb-7">
@@ -718,15 +778,15 @@ export function EmailVerification({
               {/* Main heading and input content group */}
               <div className="w-full space-y-5 sm:space-y-6">
                 {/* Heading & Subtext */}
-                <div className="space-y-2 text-center select-none">
+                <div className="space-y-1 sm:space-y-1.5 text-center select-none">
                   <h2 className="text-[18px] xs:text-[20px] sm:text-[22px] md:text-[24px] font-sans font-bold tracking-tight text-white leading-[1.25] text-center">
                     Verify your email
                   </h2>
-                  <p className="text-[14.5px] sm:text-[15.5px] text-zinc-400 font-normal leading-normal text-center">
+                  <p className="text-[13.5px] sm:text-[14.5px] text-zinc-400 font-normal leading-normal text-center">
                     Enter the 6-digit code sent to
                   </p>
                   <div className="flex items-center justify-center gap-2 pt-0.5">
-                    <span className="text-[14.5px] sm:text-[15.5px] font-semibold text-white select-text">
+                    <span className="text-[13.5px] sm:text-[14.5px] font-semibold text-white select-text">
                       {activeOtpEmail || email}
                     </span>
                     <button
@@ -737,12 +797,13 @@ export function EmailVerification({
                         if (document.activeElement instanceof HTMLElement) {
                           document.activeElement.blur();
                         }
+                        setIsOtpFocused(false);
                         if (!email && activeOtpEmail) {
                           setEmail(activeOtpEmail);
                         }
                         setSubStep("EMAIL");
                       }}
-                      className="text-[13.5px] sm:text-[14px] font-normal text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer underline underline-offset-2"
+                      className="text-[13px] sm:text-[13.5px] font-normal text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer underline underline-offset-2"
                     >
                       edit
                     </button>
@@ -768,7 +829,10 @@ export function EmailVerification({
                         onChange={(e) => handleOtpBoxChange(index, e)}
                         onKeyDown={(e) => handleOtpBoxKeyDown(index, e)}
                         onPaste={handleOtpBoxPaste}
-                        onFocus={handleOtpBoxFocus}
+                        onFocus={(e) => {
+                          handleOtpBoxFocus(e);
+                        }}
+                        onBlur={handleOtpBoxBlur}
                         spellCheck={false}
                         className={`flex-1 min-w-0 max-w-[48px] xs:max-w-[52px] aspect-square bg-[#141416] rounded-[14px] sm:rounded-[15px] text-[20px] sm:text-[22px] font-semibold text-center text-white focus:outline-none transition-colors duration-150 border caret-[#FF6B2C] select-text ${
                           errorMessage
@@ -790,49 +854,58 @@ export function EmailVerification({
               </div>
             </div>
 
-            {/* Layer 2: Verify & Continue Button + Resend Code */}
+            {/* STATE A: Normal Resting Bottom Section */}
             <div
-              style={{
-                bottom: keyboardOpen
-                  ? `${keyboardHeight + 14}px`
-                  : "max(1.75rem, env(safe-area-inset-bottom))",
-                transition: "bottom 200ms cubic-bezier(0.16, 1, 0.3, 1)",
-              }}
-              className="fixed left-0 right-0 z-20 flex justify-center pointer-events-auto"
+              className={`w-full shrink-0 pb-[max(1.5rem,env(safe-area-inset-bottom))] px-4 sm:px-6 md:px-8 transition-opacity duration-150 ${
+                showAboveKeyboardButton ? "invisible pointer-events-none" : "visible pointer-events-auto"
+              }`}
             >
-              <div className="w-full px-4 sm:px-6 md:px-8 flex flex-col items-center">
-                <button
-                  id="otp_verify_btn"
-                  type="submit"
-                  disabled={checkingUser}
-                  className="w-full py-3 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-semibold text-[14px] xs:text-[14.5px] sm:text-[15px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center shadow-md shadow-[#FF6B2C]/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
-                >
-                  {checkingUser ? "Verifying..." : "Verify & Continue"}
-                </button>
+              <button
+                id="otp_verify_btn"
+                type="submit"
+                disabled={checkingUser || !isOtpComplete}
+                tabIndex={keyboardOpen ? -1 : 0}
+                className="w-full py-3 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-semibold text-[14px] xs:text-[14.5px] sm:text-[15px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center shadow-md shadow-[#FF6B2C]/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
+              >
+                {checkingUser ? "Verifying..." : "Verify"}
+              </button>
 
-                {/* Resend Code: Visible below button in resting state; collapses cleanly when keyboard is open */}
-                <div
-                  className={`transition-all duration-200 overflow-hidden select-none ${
-                    keyboardOpen
-                      ? "max-h-0 opacity-0 mt-0 pointer-events-none"
-                      : "max-h-12 opacity-100 mt-3 sm:mt-3.5 pointer-events-auto"
-                  }`}
-                >
-                  <p className="text-[13px] sm:text-[13.5px] text-zinc-400 text-center select-none">
-                    Didn't receive the code?{" "}
-                    <button
-                      type="button"
-                      id="otp_resend_code_btn"
-                      onClick={handleResendOtp}
-                      disabled={checkingUser || resendCooldown > 0}
-                      className="underline underline-offset-2 cursor-pointer text-white hover:text-zinc-300 font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : "Resend code"}
-                    </button>
-                  </p>
-                </div>
+              {/* Resend Code: Visible below button in resting state */}
+              <div className="mt-3 sm:mt-3.5 text-center">
+                <p className="text-[13px] sm:text-[13.5px] text-zinc-400 text-center select-none">
+                  Didn't receive the code?{" "}
+                  <button
+                    type="button"
+                    id="otp_resend_code_btn"
+                    onClick={handleResendOtp}
+                    disabled={checkingUser || resendCooldown > 0}
+                    tabIndex={keyboardOpen ? -1 : 0}
+                    className="underline underline-offset-2 cursor-pointer text-white hover:text-zinc-300 font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : "Resend code"}
+                  </button>
+                </p>
               </div>
             </div>
+
+            {/* STATE B: Keyboard-Aware Button Overlay (Mounted ONLY when keyboard is OPEN and OTP has EXACTLY 6 digits) */}
+            {showAboveKeyboardButton && (
+              <div
+                style={{
+                  bottom: `${keyboardInset + 14}px`,
+                }}
+                className="fixed left-0 right-0 z-30 px-4 sm:px-6 md:px-8 flex justify-center pointer-events-auto"
+              >
+                <button
+                  id="otp_verify_btn_above_kb"
+                  type="submit"
+                  disabled={checkingUser}
+                  className="w-full py-3 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-semibold text-[14px] xs:text-[14.5px] sm:text-[15px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center shadow-lg shadow-[#FF6B2C]/30 flex items-center justify-center"
+                >
+                  {checkingUser ? "Verifying..." : "Verify"}
+                </button>
+              </div>
+            )}
           </form>
         </motion.div>
       )}

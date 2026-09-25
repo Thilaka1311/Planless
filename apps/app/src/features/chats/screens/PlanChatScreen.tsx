@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { ArrowLeft, SendHorizontal, MessageSquare, ChevronDown, CheckCheck, Check } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { Plan } from "../../../core/types";
 import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
@@ -18,8 +18,9 @@ import { PlanParticipantManagementWrapper } from "../../plans/screens/PlansScree
 import { PlanDetailsScreen } from "../../wallet/screens/PlanBalances";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { useHorizontalPager } from "../hooks/useHorizontalPager";
-import { useChatCache, ChatMessage } from "../hooks/useChatCache";
+import { useChatCache, ChatMessage, getCachedUnreadInfo, setCachedUnreadInfo } from "../hooks/useChatCache";
 import { AddCost } from "../../wallet/screens/AddCost";
+import { markPlanChatAsRead } from "../utils/chatReads";
 
 interface PlanChatScreenProps {
   planId: string;
@@ -41,7 +42,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const { plans, dbPlanParticipants, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, replaceParticipant, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
   const { userProfile, activeUserId, activeUserUuid, dbUsers } = useProfileStore();
 
-  const senderUuid =
+  const rawSenderId =
     userProfile?.dbUuid ||
     activeUserUuid ||
     (userProfile as any)?.id ||
@@ -49,7 +50,16 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     activeUserId ||
     "";
 
-  const currentUserId = senderUuid;
+  const currentUserId = useMemo(() => {
+    if (rawSenderId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawSenderId)) {
+      return rawSenderId;
+    }
+    const match = (dbUsers || []).find(
+      (u: any) => u.id === rawSenderId || u.public_id === rawSenderId || u.user_id === rawSenderId
+    );
+    return match?.id || rawSenderId;
+  }, [rawSenderId, dbUsers]);
+  const senderUuid = currentUserId;
   const plan = useMemo(() => {
     return findPlanBySlugOrId(plans, planId) || plans.find((p) => p.id === planId || p.dbUuid === planId);
   }, [plans, planId]);
@@ -78,29 +88,80 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const [showSettingsScreen, setShowSettingsScreen] = useState(false);
   const [showBalancesScreen, setShowBalancesScreen] = useState(false);
   const [replaceTargetUserId, setReplaceTargetUserId] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = textareaRef;
 
-  // ── Keyboard Visibility State (Used to lock pager gestures & bound Chat Page height) ──
+  // ── Keyboard Visibility & Visual Viewport State ──
   const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const maxHeightRef = useRef<number>(
+    typeof window !== "undefined"
+      ? window.visualViewport
+        ? Math.max(window.visualViewport.height, window.innerHeight)
+        : window.innerHeight
+      : 800
+  );
+  const [viewportHeight, setViewportHeight] = useState<number | null>(() => {
+    if (typeof window !== "undefined" && window.visualViewport) {
+      return window.visualViewport.height;
+    }
+    return null;
+  });
+  const [viewportOffsetTop, setViewportOffsetTop] = useState(0);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !window.visualViewport) return;
-    const vv = window.visualViewport;
+    if (typeof window === "undefined") return;
 
     const handleViewportChange = () => {
-      const isKeyboardActive = vv.height < window.innerHeight * 0.85;
-      setKeyboardOpen(isKeyboardActive);
-      setViewportHeight(vv.height);
+      const vv = window.visualViewport;
+      if (vv) {
+        const currentHeight = Math.round(vv.height);
+        const currentTop = Math.round(vv.offsetTop || 0);
+
+        // Track max unconstrained height (e.g. when keyboard is closed)
+        if (currentHeight > maxHeightRef.current) {
+          maxHeightRef.current = currentHeight;
+        }
+
+        const keyboardGap = Math.max(0, maxHeightRef.current - currentHeight);
+        const isInputFocused = document.activeElement === textareaRef.current;
+        const isHeightReduced = keyboardGap > 100;
+        const isKbActive = Boolean(isHeightReduced || (isInputFocused && keyboardGap > 60));
+
+        setViewportHeight(currentHeight);
+        setViewportOffsetTop(currentTop);
+        setKeyboardOpen(isKbActive);
+
+        if (window.scrollY !== 0) {
+          window.scrollTo(0, 0);
+        }
+      } else {
+        const currentHeight = window.innerHeight;
+        if (currentHeight > maxHeightRef.current) {
+          maxHeightRef.current = currentHeight;
+        }
+        const isInputFocused = document.activeElement === textareaRef.current;
+        const isHeightReduced = (maxHeightRef.current - currentHeight) > 100;
+        setViewportHeight(currentHeight);
+        setViewportOffsetTop(0);
+        setKeyboardOpen(Boolean(isHeightReduced || isInputFocused));
+      }
     };
 
-    vv.addEventListener("resize", handleViewportChange);
-    vv.addEventListener("scroll", handleViewportChange);
     handleViewportChange();
 
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", handleViewportChange);
+      vv.addEventListener("scroll", handleViewportChange);
+    }
+    window.addEventListener("resize", handleViewportChange);
+
     return () => {
-      vv.removeEventListener("resize", handleViewportChange);
-      vv.removeEventListener("scroll", handleViewportChange);
+      if (vv) {
+        vv.removeEventListener("resize", handleViewportChange);
+        vv.removeEventListener("scroll", handleViewportChange);
+      }
+      window.removeEventListener("resize", handleViewportChange);
     };
   }, []);
 
@@ -129,6 +190,195 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     setReplaceTargetUserId(targetUserId);
     goToPage(0); // Switch to participants page where replacement selection happens
   }, [goToPage]);
+
+  // ── Track Previous Read Position & Dynamic In-Chat Unread Divider ──
+  // Cache-first: initialize unreadDivider synchronously from getCachedUnreadInfo
+  const initialCachedUnread = targetPlanUuid ? getCachedUnreadInfo(targetPlanUuid) : undefined;
+  const [unreadDivider, setUnreadDivider] = useState<{
+    firstUnreadId: string | null;
+    latestUnreadId: string | null;
+    count: number;
+    isVisible: boolean;
+  }>(() => {
+    if (initialCachedUnread && initialCachedUnread.count > 0) {
+      return {
+        firstUnreadId: initialCachedUnread.firstUnreadId,
+        latestUnreadId: initialCachedUnread.latestUnreadId,
+        count: initialCachedUnread.count,
+        isVisible: true,
+      };
+    }
+    return { firstUnreadId: null, latestUnreadId: null, count: 0, isVisible: false };
+  });
+
+  const unreadDividerRef = useRef<HTMLDivElement>(null);
+  const latestUnreadMsgRef = useRef<HTMLDivElement>(null);
+  const initialUnreadFetchedRef = useRef<string | null>(null);
+  const hasInitiallyPositionedRef = useRef<string | null>(null);
+  const targetPlanUuidRef = useRef(targetPlanUuid);
+  const currentUserIdRef = useRef(currentUserId);
+  const latestMessageRef = useRef<ChatMessage | null>(null);
+
+  // Keep latest refs updated for unmount and exit handlers
+  useEffect(() => {
+    targetPlanUuidRef.current = targetPlanUuid;
+    currentUserIdRef.current = currentUserId;
+    latestMessageRef.current = messages && messages.length > 0 ? messages[messages.length - 1] : null;
+  });
+
+  // Fetch / synchronize unread position & count upon entering this plan in background
+  useEffect(() => {
+    if (!targetPlanUuid || !currentUserId) return;
+    let isMounted = true;
+    initialUnreadFetchedRef.current = null;
+    hasInitiallyPositionedRef.current = null;
+
+    // Synchronize cache-first state if available
+    const cached = getCachedUnreadInfo(targetPlanUuid);
+    if (cached && cached.count > 0) {
+      setUnreadDivider({
+        firstUnreadId: cached.firstUnreadId,
+        latestUnreadId: cached.latestUnreadId,
+        count: cached.count,
+        isVisible: true,
+      });
+    }
+
+    const fetchUnreadStatus = async () => {
+      try {
+        // 1. Primary: Call RPC get_plan_unread_info for high-performance exact calculation
+        const { data: rpcData, error: rpcError } = await supabase.rpc("get_plan_unread_info", {
+          p_user_id: currentUserId,
+          p_plan_id: targetPlanUuid,
+        } as any);
+
+        if (!isMounted) return;
+
+        const info = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+        if (!rpcError && info) {
+          const count = Number(info.unread_count || 0);
+          const firstId = info.first_unread_message_id || null;
+          const latestId = (info as any).latest_unread_message_id || null;
+          initialUnreadFetchedRef.current = targetPlanUuid;
+
+          // Update cache store
+          setCachedUnreadInfo(targetPlanUuid, {
+            count,
+            firstUnreadId: firstId,
+            latestUnreadId: latestId,
+            lastReadAt: info.last_read_at || null,
+            lastReadMessageId: info.last_read_message_id || null,
+          });
+
+          if (count > 0) {
+            setUnreadDivider((prev) => {
+              if (prev.isVisible && prev.firstUnreadId === firstId && prev.count === count) {
+                return prev;
+              }
+              if (prev.firstUnreadId !== firstId) {
+                // If unread boundary changed, allow repositioning
+                hasInitiallyPositionedRef.current = null;
+              }
+              return {
+                firstUnreadId: firstId,
+                latestUnreadId: latestId,
+                count,
+                isVisible: true,
+              };
+            });
+            return;
+          } else {
+            // If count is 0, only clear divider if it wasn't already visible from this chat session
+            setUnreadDivider((prev) => {
+              if (prev.isVisible) {
+                return prev; // "The divider remains visible for the entire chat session."
+              }
+              return { firstUnreadId: null, latestUnreadId: null, count: 0, isVisible: false };
+            });
+            return;
+          }
+        }
+
+        // 2. Fallback: Query plan_chat_reads directly
+        const { data: readData } = await supabase
+          .from("plan_chat_reads")
+          .select("last_read_at, last_read_message_id")
+          .eq("plan_id", targetPlanUuid)
+          .eq("user_id", currentUserId)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        const lastReadAt = readData?.last_read_at || null;
+        const unreadMsgs = messages.filter((m) => {
+          if (m.sender_id === currentUserId) return false;
+          if (m.message_type === "system") return false;
+          if (!lastReadAt) return true;
+          return new Date(m.created_at).getTime() > new Date(lastReadAt).getTime();
+        });
+
+        initialUnreadFetchedRef.current = targetPlanUuid;
+        if (unreadMsgs.length > 0) {
+          const firstId = unreadMsgs[0].id;
+          const latestId = unreadMsgs[unreadMsgs.length - 1].id;
+          setCachedUnreadInfo(targetPlanUuid, {
+            count: unreadMsgs.length,
+            firstUnreadId: firstId,
+            latestUnreadId: latestId,
+            lastReadAt,
+            lastReadMessageId: readData?.last_read_message_id || null,
+          });
+          setUnreadDivider((prev) => {
+            if (prev.firstUnreadId !== firstId) {
+              hasInitiallyPositionedRef.current = null;
+            }
+            return {
+              firstUnreadId: firstId,
+              latestUnreadId: latestId,
+              count: unreadMsgs.length,
+              isVisible: true,
+            };
+          });
+        } else {
+          setUnreadDivider((prev) => {
+            if (prev.isVisible) return prev;
+            return { firstUnreadId: null, latestUnreadId: null, count: 0, isVisible: false };
+          });
+        }
+      } catch (err) {
+        if (isMounted) {
+          initialUnreadFetchedRef.current = targetPlanUuid;
+        }
+      }
+    };
+
+    fetchUnreadStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [targetPlanUuid, currentUserId]);
+
+  // Handle explicit Back button exit from PlanChatScreen (marks chat read up to latest message when leaving)
+  const handleExitChat = useCallback(async () => {
+    if (targetPlanUuid && currentUserId) {
+      const latestMsg = latestMessageRef.current;
+      await markPlanChatAsRead(targetPlanUuid, latestMsg ? latestMsg.id : null, currentUserId);
+    }
+    onBack();
+  }, [targetPlanUuid, currentUserId, onBack]);
+
+  // Sync mark-as-read on unmount ONLY (runs when leaving chat / closing screen)
+  useEffect(() => {
+    return () => {
+      const planUuid = targetPlanUuidRef.current;
+      const userId = currentUserIdRef.current;
+      const latestMsg = latestMessageRef.current;
+      if (planUuid && userId) {
+        markPlanChatAsRead(planUuid, latestMsg ? latestMsg.id : null, userId);
+      }
+    };
+  }, []);
 
   // Derive host status & all hosts for HeroHeader
   const planUuid = plan ? (plan.dbUuid || plan.id) : "";
@@ -240,8 +490,12 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     // Optimistically update shared cache & clear input
     appendOptimisticMessage(optimisticMsg);
     setInputText("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.overflowY = "hidden";
+      textareaRef.current.focus();
+    }
     scrollToBottom(false);
-    inputRef.current?.focus();
 
     try {
       const newMessagePayload = {
@@ -445,32 +699,149 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     }
   };
 
-  // Track initial scroll completion per plan
-  const hasInitiallyScrolledRef = useRef<string | null>(null);
+  // Find indices of first and latest unread messages in timelineItems
+  const { firstUnreadIndex, latestUnreadIndex } = useMemo(() => {
+    if (!unreadDivider.isVisible || unreadDivider.count <= 0 || timelineItems.length === 0) {
+      return { firstUnreadIndex: -1, latestUnreadIndex: -1 };
+    }
 
-  // Sync scroll to bottom before DOM paint when entering chat or receiving new messages
+    let firstIdx = -1;
+    let latestIdx = -1;
+
+    // 1. Direct match by message UUIDs
+    if (unreadDivider.firstUnreadId) {
+      firstIdx = timelineItems.findIndex((it) => it.id === unreadDivider.firstUnreadId);
+    }
+    if (unreadDivider.latestUnreadId) {
+      latestIdx = timelineItems.findIndex((it) => it.id === unreadDivider.latestUnreadId);
+    }
+
+    // 2. Fallback: match among incoming messages from other participants (excluding system messages)
+    const otherIndices: number[] = [];
+    timelineItems.forEach((it, idx) => {
+      if (!it.isSystem && it.senderId !== currentUserId) {
+        otherIndices.push(idx);
+      }
+    });
+
+    if (otherIndices.length > 0) {
+      const count = Math.min(unreadDivider.count, otherIndices.length);
+      const fallbackFirst = otherIndices[otherIndices.length - count];
+      const fallbackLatest = otherIndices[otherIndices.length - 1];
+
+      if (firstIdx === -1) firstIdx = fallbackFirst;
+      if (latestIdx === -1) latestIdx = fallbackLatest;
+    }
+
+    return { firstUnreadIndex: firstIdx, latestUnreadIndex: latestIdx };
+  }, [
+    unreadDivider.isVisible,
+    unreadDivider.count,
+    unreadDivider.firstUnreadId,
+    unreadDivider.latestUnreadId,
+    timelineItems,
+    currentUserId,
+  ]);
+
+  // Centering helper: centers the unread divider around the vertical center of the chat viewport
+  const centerUnreadDivider = useCallback(() => {
+    const container = chatMessagesRef.current;
+    const divider = unreadDividerRef.current;
+    if (!container || !divider) return false;
+
+    // 1. Native scrollIntoView center
+    divider.scrollIntoView({ block: "center", behavior: "auto" });
+
+    // 2. Precise vertical pixel centering
+    const containerRect = container.getBoundingClientRect();
+    const dividerRect = divider.getBoundingClientRect();
+    const currentScroll = container.scrollTop;
+    const offsetFromContainerTop = dividerRect.top - containerRect.top;
+    const targetOffset = (containerRect.height - dividerRect.height) / 2;
+    const delta = offsetFromContainerTop - targetOffset;
+
+    if (Math.abs(delta) > 1) {
+      container.scrollTop = currentScroll + delta;
+    }
+    return true;
+  }, []);
+
+  // Initial scroll positioning upon entering chat:
+  // - If unread messages exist: center unread divider in viewport
+  // - If no unread messages: open at latest message / bottom
+  useLayoutEffect(() => {
+    if (loading || timelineItems.length === 0) return;
+    if (hasInitiallyPositionedRef.current === targetPlanUuid) return;
+
+    // Case A: Unread messages exist -> position around VERTICAL CENTER of the UNREAD DIVIDER
+    if (unreadDivider.isVisible && unreadDivider.count > 0 && firstUnreadIndex >= 0) {
+      if (unreadDividerRef.current) {
+        hasInitiallyPositionedRef.current = targetPlanUuid;
+        centerUnreadDivider();
+        requestAnimationFrame(() => {
+          centerUnreadDivider();
+          requestAnimationFrame(() => {
+            centerUnreadDivider();
+          });
+        });
+      }
+      return;
+    }
+
+    // Case B: No unread messages -> open normally at the latest message / bottom
+    if (
+      (initialUnreadFetchedRef.current === targetPlanUuid || initialCachedUnread !== undefined) &&
+      !unreadDivider.isVisible
+    ) {
+      hasInitiallyPositionedRef.current = targetPlanUuid;
+      scrollToBottom(false);
+      requestAnimationFrame(() => {
+        scrollToBottom(false);
+      });
+    }
+  }, [
+    loading,
+    timelineItems.length,
+    unreadDivider.isVisible,
+    unreadDivider.count,
+    firstUnreadIndex,
+    targetPlanUuid,
+    centerUnreadDivider,
+    initialCachedUnread,
+  ]);
+
+  // Fallback effect when divider DOM node mounts
+  useEffect(() => {
+    if (loading || timelineItems.length === 0) return;
+    if (hasInitiallyPositionedRef.current === targetPlanUuid) return;
+
+    if (unreadDivider.isVisible && unreadDivider.count > 0 && firstUnreadIndex >= 0 && unreadDividerRef.current) {
+      hasInitiallyPositionedRef.current = targetPlanUuid;
+      centerUnreadDivider();
+      requestAnimationFrame(() => {
+        centerUnreadDivider();
+      });
+    }
+  }, [
+    loading,
+    timelineItems.length,
+    unreadDivider.isVisible,
+    unreadDivider.count,
+    firstUnreadIndex,
+    targetPlanUuid,
+    centerUnreadDivider,
+  ]);
+
+  // Maintain scroll position when new messages arrive while inside chat
   useLayoutEffect(() => {
     if (loading || timelineItems.length === 0) return;
 
-    const isNewPlanEntry = hasInitiallyScrolledRef.current !== targetPlanUuid;
     const prevLength = prevItemsLengthRef.current;
     const isNewItemAdded = timelineItems.length > prevLength;
     prevItemsLengthRef.current = timelineItems.length;
 
-    if (isNewPlanEntry) {
-      hasInitiallyScrolledRef.current = targetPlanUuid;
-      scrollToBottom(false);
-      // Double frame fallback to handle layout calculation after initial render
-      requestAnimationFrame(() => {
-        scrollToBottom(false);
-        requestAnimationFrame(() => {
-          scrollToBottom(false);
-        });
-      });
-      return;
-    }
-
-    if (isNewItemAdded) {
+    // If new item was added after initial positioning, scroll to bottom if sent by me or already at bottom
+    if (isNewItemAdded && hasInitiallyPositionedRef.current === targetPlanUuid) {
       const latestItem = timelineItems[timelineItems.length - 1];
       const isSentByMe = latestItem?.senderId === currentUserId;
 
@@ -493,13 +864,60 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     }
   }, [keyboardOpen, viewportHeight]);
 
+  // ── Multi-line Textarea Auto-expand (Up to 10 lines, then vertical scroll) ──
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    // Reset height to 'auto' to correctly re-measure scrollHeight when text wraps or is deleted
+    textarea.style.height = "auto";
+
+    // 10 visible lines max: 20px line-height * 10 = 200px
+    const computed = window.getComputedStyle(textarea);
+    const lineHeight = parseFloat(computed.lineHeight) || 20;
+    const paddingTop = parseFloat(computed.paddingTop) || 0;
+    const paddingBottom = parseFloat(computed.paddingBottom) || 0;
+    const maxContentHeight = lineHeight * 10;
+    const maxHeight = maxContentHeight + paddingTop + paddingBottom;
+
+    const scrollH = textarea.scrollHeight;
+    if (scrollH > maxHeight) {
+      textarea.style.height = `${maxHeight}px`;
+      textarea.style.overflowY = "auto";
+    } else {
+      textarea.style.height = `${scrollH}px`;
+      textarea.style.overflowY = "hidden";
+    }
+  }, [inputText]);
+
+  // When input text changes and composer expands upward, keep messages visible if already at bottom
+  useLayoutEffect(() => {
+    if (!isScrolledUp) {
+      scrollToBottom(false);
+    }
+  }, [inputText, isScrolledUp]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      const isTouch = typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+      if (!isTouch) {
+        e.preventDefault();
+        handleSendMessage();
+      }
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="fixed inset-0 z-50 bg-[#050505] flex flex-col w-full h-[100dvh] overflow-hidden text-left font-sans select-none"
+      style={{
+        height: viewportHeight ? `${viewportHeight}px` : "100dvh",
+        top: viewportOffsetTop ? `${viewportOffsetTop}px` : 0,
+      }}
+      className="fixed left-0 right-0 z-50 bg-[#050505] flex flex-col w-full overflow-hidden text-left font-sans select-none"
     >
       {/* 1. INDEPENDENT FIXED HERO HEADER OVERLAY — Completely isolated from pager flex/resize */}
       {plan && (
@@ -510,7 +928,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             creatorAvatar={isHost ? userProfile?.avatar : plan.creatorAvatar}
             hosts={allHosts}
             viewerId={currentUserId}
-            onClose={isAnySheetOpen ? undefined : onBack}
+            onClose={isAnySheetOpen ? undefined : handleExitChat}
             isHost={isHost && !isCancelled}
             coverImage={plan.coverImage}
             category={plan.category}
@@ -602,12 +1020,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           </div>
 
           {/* PAGE 1: CHAT (DEFAULT) */}
-          <div
-            className="w-1/2 h-full overflow-hidden flex flex-col justify-between flex-shrink-0 relative"
-            style={{
-              height: keyboardOpen && viewportHeight ? `${viewportHeight - 96}px` : "100%",
-            }}
-          >
+          <div className="w-1/2 h-full overflow-hidden flex flex-col justify-between flex-shrink-0 relative">
             <div
               ref={chatMessagesRef}
               onScroll={handleChatScroll}
@@ -628,16 +1041,46 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 </div>
               ) : (
                 timelineItems.map((item, index) => {
+                  const isUnreadFirst = index === firstUnreadIndex;
+                  const isLatestUnread = index === latestUnreadIndex;
+
+                  const renderDivider = () => (
+                    <AnimatePresence>
+                      {isUnreadFirst && unreadDivider.isVisible && (
+                        <motion.div
+                          key="unread-messages-divider"
+                          ref={unreadDividerRef}
+                          initial={{ opacity: 0, scale: 0.96, y: -4 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
+                          transition={{ duration: 0.35, ease: "easeInOut" }}
+                          className="w-full flex items-center justify-center my-4 gap-3 select-none px-2"
+                        >
+                          <div className="flex-1 h-[1px] bg-white/[0.08]" />
+                          <div className="flex items-center px-4 py-1.5 rounded-full bg-[#181a1c] border border-white/[0.08] shadow-sm">
+                            <span className="text-[12px] font-medium text-[#2ebb64]/90 tracking-wide leading-none">
+                              {unreadDivider.count} {unreadDivider.count === 1 ? "unread message" : "unread messages"}
+                            </span>
+                          </div>
+                          <div className="flex-1 h-[1px] bg-white/[0.08]" />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  );
+
                   if (item.isSystem) {
                     return (
-                      <div
-                        key={item.id}
-                        className="w-full flex items-center justify-center py-1.5 my-1"
-                      >
-                        <span className="text-[12px] font-medium text-zinc-500 bg-zinc-900/60 border border-white/[0.04] px-3 py-1 rounded-full text-center tracking-wide">
-                          {item.content}
-                        </span>
-                      </div>
+                      <React.Fragment key={item.id}>
+                        {isUnreadFirst && renderDivider()}
+                        <div
+                          ref={isLatestUnread ? latestUnreadMsgRef : undefined}
+                          className="w-full flex items-center justify-center py-1.5 my-1"
+                        >
+                          <span className="text-[12px] font-medium text-zinc-500 bg-zinc-900/60 border border-white/[0.04] px-3 py-1 rounded-full text-center tracking-wide">
+                            {item.content}
+                          </span>
+                        </div>
+                      </React.Fragment>
                     );
                   }
 
@@ -647,11 +1090,12 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   const minutes = date.getMinutes().toString().padStart(2, "0");
                   const timeStr = `${hours}:${minutes}`;
 
-                  // Sender grouping: pure sender identity match (no time-gap splitting)
+                  // Sender grouping: pure sender identity match (no time-gap splitting).
+                  // If this item starts with an unread divider, treat it as a fresh group start.
                   const prevItem = index > 0 ? timelineItems[index - 1] : null;
                   const nextItem = index < timelineItems.length - 1 ? timelineItems[index + 1] : null;
 
-                  const isPrevSameSender = Boolean(
+                  const isPrevSameSender = !isUnreadFirst && Boolean(
                     prevItem &&
                       !prevItem.isSystem &&
                       prevItem.senderId === item.senderId
@@ -807,111 +1251,117 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
 
                   if (item.messageType === "cost") {
                     return (
-                      <div
-                        key={item.id}
-                        className={`flex flex-col ${isMe ? "items-end" : "items-start"} ${topMarginClass}`}
-                      >
-                        {!isMe && showAvatar && (
-                          <span className="text-[13px] font-medium text-white mb-[2px] pl-[34px] tracking-wide select-none">
-                            {senderName}
-                          </span>
-                        )}
-                        <div className="flex items-start gap-1.5 max-w-full">
-                          {!isMe && (
-                            <div className="w-[28px] h-[28px] flex-shrink-0">
-                              {showAvatar ? (
-                                <div className="w-[28px] h-[28px] rounded-full border border-white/10 overflow-hidden bg-zinc-800 flex items-center justify-center">
-                                  <UserAvatar src={senderAvatarSrc} alt={senderName} size="w-full h-full" />
-                                </div>
-                              ) : (
-                                <div className="w-[28px] h-[28px]" />
-                              )}
-                            </div>
-                          )}
-                          <div>
-                            {renderCostCard()}
-                            <span className="text-[10px] text-zinc-500 block px-1 mt-0.5">
-                              {timeStr}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={`flex flex-col ${isMe ? "items-end" : "items-start"} ${topMarginClass}`}
-                    >
-                      {isMe ? (
-                        /* Outgoing Message Bubble */
+                      <React.Fragment key={item.id}>
+                        {isUnreadFirst && renderDivider()}
                         <div
-                          className={`max-w-[87%] sm:max-w-[80%] w-fit ${bubblePaddingClass} ${emojiTextClass} break-words relative flex flex-col bg-[#C46A2C] text-white ${outgoingBorderRadiusClass} ${
-                            isFirstOutgoing
-                              ? "before:content-[''] before:absolute before:top-0 before:-right-[6px] before:w-[6px] before:h-[8px] before:bg-[#C46A2C] before:[clip-path:polygon(0_0,100%_0,0_100%)]"
-                              : ""
-                          }`}
+                          ref={isLatestUnread ? latestUnreadMsgRef : undefined}
+                          className={`flex flex-col ${isMe ? "items-end" : "items-start"} ${topMarginClass}`}
                         >
-                          <div className="font-normal whitespace-pre-line break-words inline-block">
-                            {item.content}
-                            <span className={`inline-block ${spacerWidthClass} h-0 align-baseline pointer-events-none`} />
-                          </div>
-                          <div
-                            className="absolute bottom-1 right-2.5 flex items-center gap-1 select-none pointer-events-none text-white/60 leading-none"
-                            style={{ fontSize: "11px", fontWeight: 400 }}
-                          >
-                            <span className="whitespace-nowrap">{timeStr}</span>
-                            <span className="w-0 inline-block" />
-                          </div>
-                        </div>
-                      ) : (
-                        /* Incoming message (Left-aligned) */
-                        <div className="flex flex-col max-w-[93%] sm:max-w-[85%] w-fit">
-                          {/* Sender Name: Rendered 2px above the first bubble of a sender group */}
-                          {showAvatar && (
+                          {!isMe && showAvatar && (
                             <span className="text-[13px] font-medium text-white mb-[2px] pl-[34px] tracking-wide select-none">
                               {senderName}
                             </span>
                           )}
-
-                          {/* Row container: Avatar + Message Bubble (Top-aligned with first bubble) */}
                           <div className="flex items-start gap-1.5 max-w-full">
-                            {/* Avatar Column: Fixed 28px width, top-aligned with first bubble */}
-                            <div className="w-[28px] h-[28px] flex-shrink-0">
-                              {showAvatar ? (
-                                <div className="w-[28px] h-[28px] rounded-full border border-white/10 overflow-hidden bg-zinc-800 flex items-center justify-center">
-                                  <UserAvatar src={senderAvatarSrc} alt={senderName} size="w-full h-full" />
-                                </div>
-                              ) : (
-                                /* Empty spacer so follow-up bubbles align under the first bubble */
-                                <div className="w-[28px] h-[28px]" />
-                              )}
-                            </div>
-
-                            {/* Incoming Message Bubble */}
-                            <div
-                              className={`w-fit max-w-[calc(100%-34px)] ${bubblePaddingClass} ${emojiTextClass} break-words relative flex flex-col bg-[#1f2c34] text-white min-w-0 ${incomingBorderRadiusClass} ${
-                                showAvatar
-                                  ? "before:content-[''] before:absolute before:top-0 before:-left-[6px] before:w-[6px] before:h-[8px] before:bg-[#1f2c34] before:[clip-path:polygon(100%_0,0_0,100%_100%)]"
-                                  : ""
-                              }`}
-                            >
-                              <div className="font-normal whitespace-pre-line break-words inline-block">
-                                {item.content}
-                                <span className={`inline-block ${spacerWidthClass} h-0 align-baseline pointer-events-none`} />
+                            {!isMe && (
+                              <div className="w-[28px] h-[28px] flex-shrink-0">
+                                {showAvatar ? (
+                                  <div className="w-[28px] h-[28px] rounded-full border border-white/10 overflow-hidden bg-zinc-800 flex items-center justify-center">
+                                    <UserAvatar src={senderAvatarSrc} alt={senderName} size="w-full h-full" />
+                                  </div>
+                                ) : (
+                                  <div className="w-[28px] h-[28px]" />
+                                )}
                               </div>
-                              <div
-                                className="absolute bottom-1 right-2.5 flex items-center gap-1 select-none pointer-events-none text-white/50 leading-none"
-                                style={{ fontSize: "11px", fontWeight: 400 }}
-                              >
-                                <span className="whitespace-nowrap">{timeStr}</span>
-                              </div>
+                            )}
+                            <div>
+                              {renderCostCard()}
+                              <span className="text-[10px] text-zinc-500 block px-1 mt-0.5">
+                                {timeStr}
+                              </span>
                             </div>
                           </div>
                         </div>
-                      )}
-                    </div>
+                      </React.Fragment>
+                    );
+                  }
+
+                  return (
+                    <React.Fragment key={item.id}>
+                      {isUnreadFirst && renderDivider()}
+                      <div
+                        ref={isLatestUnread ? latestUnreadMsgRef : undefined}
+                        className={`flex flex-col ${isMe ? "items-end" : "items-start"} ${topMarginClass}`}
+                      >
+                        {isMe ? (
+                          /* Outgoing Message Bubble */
+                          <div
+                            className={`max-w-[87%] sm:max-w-[80%] w-fit ${bubblePaddingClass} ${emojiTextClass} break-words relative flex flex-col bg-[#C46A2C] text-white ${outgoingBorderRadiusClass} ${
+                              isFirstOutgoing
+                                ? "before:content-[''] before:absolute before:top-0 before:-right-[6px] before:w-[6px] before:h-[8px] before:bg-[#C46A2C] before:[clip-path:polygon(0_0,100%_0,0_100%)]"
+                                : ""
+                            }`}
+                          >
+                            <div className="font-normal whitespace-pre-line break-words inline-block">
+                              {item.content}
+                              <span className={`inline-block ${spacerWidthClass} h-0 align-baseline pointer-events-none`} />
+                            </div>
+                            <div
+                              className="absolute bottom-1 right-2.5 flex items-center gap-1 select-none pointer-events-none text-white/60 leading-none"
+                              style={{ fontSize: "11px", fontWeight: 400 }}
+                            >
+                              <span className="whitespace-nowrap">{timeStr}</span>
+                              <span className="w-0 inline-block" />
+                            </div>
+                          </div>
+                        ) : (
+                          /* Incoming message (Left-aligned) */
+                          <div className="flex flex-col max-w-[93%] sm:max-w-[85%] w-fit">
+                            {/* Sender Name: Rendered 2px above the first bubble of a sender group */}
+                            {showAvatar && (
+                              <span className="text-[13px] font-medium text-white mb-[2px] pl-[34px] tracking-wide select-none">
+                                {senderName}
+                              </span>
+                            )}
+
+                            {/* Row container: Avatar + Message Bubble (Top-aligned with first bubble) */}
+                            <div className="flex items-start gap-1.5 max-w-full">
+                              {/* Avatar Column: Fixed 28px width, top-aligned with first bubble */}
+                              <div className="w-[28px] h-[28px] flex-shrink-0">
+                                {showAvatar ? (
+                                  <div className="w-[28px] h-[28px] rounded-full border border-white/10 overflow-hidden bg-zinc-800 flex items-center justify-center">
+                                    <UserAvatar src={senderAvatarSrc} alt={senderName} size="w-full h-full" />
+                                  </div>
+                                ) : (
+                                  /* Empty spacer so follow-up bubbles align under the first bubble */
+                                  <div className="w-[28px] h-[28px]" />
+                                )}
+                              </div>
+
+                              {/* Incoming Message Bubble */}
+                              <div
+                                className={`w-fit max-w-[calc(100%-34px)] ${bubblePaddingClass} ${emojiTextClass} break-words relative flex flex-col bg-[#1f2c34] text-white min-w-0 ${incomingBorderRadiusClass} ${
+                                  showAvatar
+                                    ? "before:content-[''] before:absolute before:top-0 before:-left-[6px] before:w-[6px] before:h-[8px] before:bg-[#1f2c34] before:[clip-path:polygon(100%_0,0_0,100%_100%)]"
+                                    : ""
+                                }`}
+                              >
+                                <div className="font-normal whitespace-pre-line break-words inline-block">
+                                  {item.content}
+                                  <span className={`inline-block ${spacerWidthClass} h-0 align-baseline pointer-events-none`} />
+                                </div>
+                                <div
+                                  className="absolute bottom-1 right-2.5 flex items-center gap-1 select-none pointer-events-none text-white/50 leading-none"
+                                  style={{ fontSize: "11px", fontWeight: 400 }}
+                                >
+                                  <span className="whitespace-nowrap">{timeStr}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </React.Fragment>
                   );
                 })
               )}
@@ -932,20 +1382,41 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               <form
                 onSubmit={handleSendMessage}
                 className={`bg-black/90 px-4 pt-1.5 ${
-                  keyboardOpen ? "pb-1.5" : "pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
-                } flex items-center gap-2.5 flex-shrink-0`}
+                  keyboardOpen ? "pb-2" : "pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]"
+                } flex items-end gap-2.5 flex-shrink-0`}
               >
-                <div className="relative flex-1 flex items-center h-[46px] bg-zinc-900/90 border border-white/[0.08] rounded-full px-5 focus-within:border-white/20 transition-all shadow-lg min-w-0">
-                  <input
-                    ref={inputRef}
-                    type="text"
+                <div className="relative flex-1 flex items-center min-h-[46px] max-h-[224px] bg-zinc-900/90 border border-white/[0.08] rounded-[24px] px-4 py-2 focus-within:border-white/20 transition-[border-color] shadow-lg min-w-0">
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
                     placeholder="Message"
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     onFocus={() => {
+                      setKeyboardOpen(true);
                       scrollToBottom(false);
+                      setTimeout(() => scrollToBottom(false), 80);
+                      setTimeout(() => scrollToBottom(false), 200);
                     }}
-                    className="w-full h-full bg-transparent text-sm text-white placeholder-zinc-500 focus:outline-none font-sans"
+                    onBlur={() => {
+                      setTimeout(() => {
+                        const vv = window.visualViewport;
+                        if (vv) {
+                          const currentHeight = Math.round(vv.height);
+                          const keyboardGap = Math.max(0, maxHeightRef.current - currentHeight);
+                          setKeyboardOpen(keyboardGap > 100);
+                        } else {
+                          const currentHeight = window.innerHeight;
+                          const keyboardGap = Math.max(0, maxHeightRef.current - currentHeight);
+                          setKeyboardOpen(keyboardGap > 100);
+                        }
+                      }, 100);
+                    }}
+                    className="w-full bg-transparent text-[16px] sm:text-sm text-white placeholder-zinc-500 focus:outline-none font-sans resize-none leading-[20px] py-[3px] max-h-[200px]"
+                    style={{
+                      height: "auto",
+                    }}
                   />
                 </div>
 

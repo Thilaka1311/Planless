@@ -10,7 +10,7 @@ export default defineConfig(() => {
       react(), 
       tailwindcss(),
       VitePWA({
-        registerType: 'autoUpdate',
+        registerType: 'prompt',
         includeAssets: [
           'favicon.ico',
           'favicon-32x32.png',
@@ -50,6 +50,8 @@ export default defineConfig(() => {
           ]
         },
         workbox: {
+          cleanupOutdatedCaches: true,
+          clientsClaim: true,
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           // Precache static assets like CSS, JS, HTML, fonts, and core images
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,otf,ttf}'],

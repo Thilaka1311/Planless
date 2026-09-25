@@ -55,16 +55,22 @@ The **Profile** feature manages the public identity, personal presentation, and 
 * Allows user to search friends, manage incoming/outgoing requests, and remove connections.
 * Closing the friendships screen returns directly to `ProfileScreen`.
 
-### 6. Viewing Past Completed Plans
+### 6. Viewing Past Completed & Cancelled Plans
 * User taps the **Past Plans** row.
 * `activeSheet` is set to `'pastPlans'`, mounting `<PastPlans />`.
-* `PastPlans` queries all plans from `usePlansStore()` where `status === 'COMPLETED'` and the active user was a participant.
+* `PastPlans` queries all plans from `usePlansStore()` where `status === 'COMPLETED'` or `status === 'CANCELLED'` and the active user was a participant/host.
 * Plans are sorted descending by scheduled date/time (newest first).
 * Each card renders date, time, circular plan cover, title, and relative attendance status:
   * **Hosted** (white text): User was the plan organizer/host.
   * **Joined** (emerald green text): User RSVP'd and attended.
   * **Skipped** (rose red text): User skipped or did not attend.
-* Tapping any plan row calls `setSelectedPlanId(plan.id)`, navigating directly to that plan's detailed view.
+  * **Canceled** (rose red text): Plan was cancelled.
+* **Host Actions (Hold to Manage)**:
+  * When a host presses and holds a plan card for 500ms, the Plan Actions bottom sheet (`<CancelPlanBottomSheet />`) opens.
+  * For cancelled plans, options include **Reopen Plan** (`status = LIVE`) and **Mark as Complete**.
+  * Tapping **Mark as Complete** does NOT directly mutate plan status. Instead, it launches the standard attendance reconciliation workflow (`<HostAttendanceScreen />`, preceded by `<EarlyCompletePlanConfirmationBottomSheet />` if scheduled before current time).
+  * Host reviews participant attendance, adjusts walk-ins, selects expense mode, and confirms. Only upon completing the flow is `completePlan` invoked and the plan marked `COMPLETED`.
+* Tapping any plan row normally calls `setSelectedPlanId(plan.id)`, navigating directly to that plan's detailed view.
 
 ### 7. Logging Out
 1. User taps the **Logout** row.

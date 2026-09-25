@@ -48,7 +48,7 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
   * *Adjusting Capacity*: Pinned header Plan Size adjuster (`[ 👥 N ]`) opens `EditCapacityBottomSheet`. Adjusts freely and commits on close. If expanded, host selects which waitlisted participants move to Joined via `GuidedCapacityAdjustmentBottomSheet` (in both Automatic and Assigned modes). Total plan size cannot exceed the number of active invited participants.
   * *Automatic Mode*: Roster ordered by queue timestamp (`joined_queue_at ASC`).
   * *Assigned Mode*: Host explicitly assigns participants between `GOING` and `WAITLIST`, reorders the waitlist via drag-and-drop, or swaps individuals.
-* **Inviting Friends**: Hosts (or participants if `allow_participant_invites` is enabled) invite friends using `<WhoIsComingScreen />` or generate a shareable link via `<SharePlanLinkBottomSheet />`.
+* **Inviting Friends**: Hosts (or participants if `allow_participant_invites` is enabled) invite friends using `<WhoIsComingScreen />` or generate a shareable link via `<SharePlanLinkBottomSheet />` (which follows the Plan Actions visual hierarchy with actual plan avatar, plan title, and 'Plan Actions' context).
 * **Host Succession**: Hosts can promote other members to host (`promoteToHostRPC`), demote hosts (`demoteFromHostRPC`), or step down while appointing a replacement (`stopHostingWithReplacementRPC`).
 
 ### 7. Plan Conclusion
@@ -124,6 +124,7 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
 * **Key Sheet Variants**:
   * *Leave Plan*: Explains consequences of leaving; shows cost warning if expenses are shared.
   * *Cancel Plan*: Red destructive confirmation button (`#EF4444`) with cancellation reason field.
+  * *Discard / Exit Plan*: Plan Action confirmation sheet with Plan identity header (`DiscoveryImages`, title, "Plan Actions" subtitle), unsaved changes advisory, and standard destructive action styling (`Discard`, text-only `Cancel`).
   * *Edit Date/Time*: Dual time wheels and quick-select day chips (Today, Tomorrow, Weekend).
   * *Host Attendance*: Roster checklist to mark each member as `ATTENDED` or `DID_NOT_ATTEND` before final plan closure.
 
@@ -240,7 +241,7 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
 | `leave_plan` | `p_plan_id uuid` | `SECURITY DEFINER` | Marks caller as `SKIPPED` (`skip_reason = 'LEFT'`), enforces last-host protection, promotes waitlist candidate, and recalculates costs. |
 | `request_host_leave_with_replacement` | `p_plan_id uuid, p_replacement_user_id uuid` | `SECURITY DEFINER` | Atomically promotes replacement user to Host and executes or queues leave request for current host. |
 | `stop_hosting_with_replacement` | `p_plan_id uuid, p_replacement_user_id uuid` | `SECURITY DEFINER` | Promotes replacement to Host and demotes caller to Participant without leaving the plan. |
-| `claim_plan_invite` | `p_plan_id uuid` | `SECURITY DEFINER` | Atomically claims a plan invite link, inserting the user as `INVITED`, `JOINED`, or `WAITLISTED` based on mode and capacity. |
+| `claim_plan_invite` | `p_plan_id uuid` | `SECURITY DEFINER` | Claims a plan invite link. Always inserts new participants with `rsvp_status = 'INVITED'`, regardless of plan mode or capacity. If the participant row already exists, their existing status is preserved unchanged. |
 | `invite_participants` | `p_plan_id uuid, p_invitee_user_ids uuid[], p_assigned_group text` | `SECURITY DEFINER` | Invites multiple users, enforcing host permissions or `allow_participant_invites`. |
 | `update_plan_capacity` | `p_plan_id uuid, p_plan_size int, p_auto_promote boolean DEFAULT true` | `SECURITY DEFINER` | Updates `plan_size`. When `p_auto_promote = true`, auto-promotes waitlisted users; when false, leaves waitlist untouched for host-guided selection. |
 | `promote_to_host` / `demote_from_host` | `p_plan_id uuid, p_target_user_id uuid` | `SECURITY DEFINER` | Switches a user's role between `HOST` and `PARTICIPANT`. |

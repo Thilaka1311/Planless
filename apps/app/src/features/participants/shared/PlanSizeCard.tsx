@@ -7,7 +7,7 @@ interface PlanSizeCardProps {
   maxCapacity?: number;
   isHostUser?: boolean;
   isInviteOnly?: boolean;
-  onAdjustCapacity?: (newCapacity: number) => void;
+  onAdjustCapacity?: (newCapacity: number | null | undefined) => void;
   onConfirmAdjustCapacity?: (targetCap: number) => void;
   onEditingChange?: (isEditing: boolean) => void;
 }

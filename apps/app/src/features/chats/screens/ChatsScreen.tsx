@@ -11,6 +11,8 @@ import { getPlanCover } from "../../plans/config/planCoverImages";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import { SearchBar } from "../../../shared/components/SearchBar";
+import { formatChatListTimestamp, subscribeToChatReadEvents } from "../utils/chatReads";
+import { appendMessageToCache, getCachedUnreadInfo, setCachedUnreadInfo, ChatMessage } from "../hooks/useChatCache";
 
 interface ChatsScreenProps {
   onSelectChatPlan: (planId: string) => void;
@@ -126,69 +128,96 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
 
   const { dbUsers } = useProfileStore();
 
-  // State to hold latest user text message preview per plan_id
-  const [latestMessages, setLatestMessages] = useState<Record<string, { senderName: string; isCurrentUser: boolean; content: string }>>({});
+  // State to hold unread counts and latest message preview per plan_id
+  const [chatSummaries, setChatSummaries] = useState<Record<string, {
+    unreadCount: number;
+    senderName: string;
+    isCurrentUser: boolean;
+    content: string;
+    createdAt?: string | null;
+  }>>({});
 
-  // Fetch the latest user text message for all involved plans
+  // Fetch unread counts and latest message preview for all involved plans
   useEffect(() => {
-    if (userPlanChats.length === 0) return;
+    if (!userUuid) return;
 
-    const planIds = userPlanChats.map((p) => p.id).filter(Boolean);
-    if (planIds.length === 0) return;
+    let isMounted = true;
 
-    const fetchLatestMessages = async () => {
+    const fetchSummaries = async () => {
       try {
-        const { data, error } = await supabase
-          .from("plan_messages")
-          .select("id, plan_id, sender_id, message_type, content, created_at")
-          .in("plan_id", planIds)
-          .eq("message_type", "text")
-          .order("created_at", { ascending: false });
+        const { data, error } = await supabase.rpc("get_user_chat_summaries", {
+          p_user_id: userUuid,
+        });
 
         if (error) {
-          console.error("Error fetching latest plan messages:", error);
+          console.error("Error fetching chat summaries:", error);
           return;
         }
 
-        if (data && data.length > 0) {
-          const map: Record<string, { senderName: string; isCurrentUser: boolean; content: string }> = {};
+        if (data && Array.isArray(data) && isMounted) {
+          const map: Record<string, {
+            unreadCount: number;
+            senderName: string;
+            isCurrentUser: boolean;
+            content: string;
+            createdAt?: string | null;
+          }> = {};
 
-          // Data is sorted DESC, so first hit per plan_id is the most recent text message
-          for (const msg of data) {
-            if (!map[msg.plan_id]) {
-              const isMe = Boolean(userUuid && (msg.sender_id === userUuid || allMyUserIds.has(msg.sender_id)));
-              let senderName = "User";
+          for (const row of data) {
+            if (!row.plan_id) continue;
+            const isMe = Boolean(userUuid && (row.latest_sender_id === userUuid || allMyUserIds.has(row.latest_sender_id)));
+            let senderName = "User";
 
-              if (isMe) {
-                senderName = "You";
-              } else {
-                const foundUser = (dbUsers || []).find(
-                  (u) => u.id === msg.sender_id || u.user_id === msg.sender_id
-                );
-                if (foundUser) {
-                  senderName = foundUser.full_name || foundUser.username || "User";
-                }
+            if (isMe) {
+              senderName = "You";
+            } else if (row.latest_sender_id) {
+              const foundUser = (dbUsers || []).find(
+                (u) => u.id === row.latest_sender_id || u.user_id === row.latest_sender_id
+              );
+              if (foundUser) {
+                senderName = foundUser.full_name || foundUser.username || "User";
               }
+            }
 
-              map[msg.plan_id] = {
-                senderName,
-                isCurrentUser: isMe,
-                content: msg.content || "",
-              };
+            let previewContent = row.latest_content || "";
+            if (row.latest_message_type === "cost") {
+              previewContent = isMe ? "You added an expense" : `${senderName} added an expense`;
+            } else if (row.latest_message_type === "poll") {
+              previewContent = isMe ? "You created a poll" : `${senderName} created a poll`;
+            }
+
+            const unreadCount = Number(row.unread_count || 0);
+            map[row.plan_id] = {
+              unreadCount,
+              senderName,
+              isCurrentUser: isMe,
+              content: previewContent,
+              createdAt: row.latest_created_at,
+            };
+
+            const existingCache = getCachedUnreadInfo(row.plan_id);
+            if (!existingCache || unreadCount === 0) {
+              setCachedUnreadInfo(row.plan_id, {
+                count: unreadCount,
+                firstUnreadId: existingCache?.firstUnreadId || null,
+                latestUnreadId: (row.latest_message_id as string) || null,
+                lastReadAt: null,
+                lastReadMessageId: null,
+              });
             }
           }
 
-          setLatestMessages(map);
+          setChatSummaries(map);
         }
       } catch (err) {
-        console.error("Exception fetching latest plan messages:", err);
+        console.error("Exception fetching chat summaries:", err);
       }
     };
 
-    fetchLatestMessages();
+    fetchSummaries();
 
-    // Subscribe to Realtime updates for plan_messages
-    const channel = supabase
+    // 1. Subscribe to Realtime inserts on plan_messages
+    const messagesChannel = supabase
       .channel("public:plan_messages_chats_preview")
       .on(
         "postgres_changes",
@@ -199,38 +228,105 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
         },
         (payload) => {
           const newMsg = payload.new as any;
-          if (newMsg && newMsg.message_type === "text" && newMsg.plan_id) {
-            const isMe = Boolean(userUuid && (newMsg.sender_id === userUuid || allMyUserIds.has(newMsg.sender_id)));
-            let senderName = "User";
+          if (!newMsg || !newMsg.plan_id) return;
+          if (!["text", "cost", "poll"].includes(newMsg.message_type)) return;
 
-            if (isMe) {
-              senderName = "You";
-            } else {
-              const foundUser = (dbUsers || []).find(
-                (u) => u.id === newMsg.sender_id || u.user_id === newMsg.sender_id
-              );
-              if (foundUser) {
-                senderName = foundUser.full_name || foundUser.username || "User";
-              }
+          // Keep in-memory chat cache and unread info warm in background
+          appendMessageToCache(newMsg as ChatMessage, userUuid);
+
+          const isMe = Boolean(userUuid && (newMsg.sender_id === userUuid || allMyUserIds.has(newMsg.sender_id)));
+          let senderName = "User";
+
+          if (isMe) {
+            senderName = "You";
+          } else {
+            const foundUser = (dbUsers || []).find(
+              (u) => u.id === newMsg.sender_id || u.user_id === newMsg.sender_id
+            );
+            if (foundUser) {
+              senderName = foundUser.full_name || foundUser.username || "User";
             }
+          }
 
-            setLatestMessages((prev) => ({
+          let previewContent = newMsg.content || "";
+          if (newMsg.message_type === "cost") {
+            previewContent = isMe ? "You added an expense" : `${senderName} added an expense`;
+          } else if (newMsg.message_type === "poll") {
+            previewContent = isMe ? "You created a poll" : `${senderName} created a poll`;
+          }
+
+          setChatSummaries((prev) => {
+            const existing = prev[newMsg.plan_id];
+            const currentUnread = existing ? existing.unreadCount : 0;
+            const nextUnread = isMe ? currentUnread : currentUnread + 1;
+
+            return {
               ...prev,
               [newMsg.plan_id]: {
+                unreadCount: nextUnread,
                 senderName,
                 isCurrentUser: isMe,
-                content: newMsg.content || "",
+                content: previewContent,
+                createdAt: newMsg.created_at || new Date().toISOString(),
               },
-            }));
+            };
+          });
+        }
+      )
+      .subscribe();
+
+    // 2. Subscribe to Realtime updates on plan_chat_reads for current user
+    const readsChannel = supabase
+      .channel(`public:plan_chat_reads:${userUuid}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "plan_chat_reads",
+          filter: `user_id=eq.${userUuid}`,
+        },
+        (payload) => {
+          const readRecord = payload.new as any;
+          if (readRecord && readRecord.plan_id) {
+            setChatSummaries((prev) => {
+              const existing = prev[readRecord.plan_id];
+              if (!existing) return prev;
+              return {
+                ...prev,
+                [readRecord.plan_id]: {
+                  ...existing,
+                  unreadCount: 0,
+                },
+              };
+            });
           }
         }
       )
       .subscribe();
 
+    // 3. Subscribe to synchronous local chat read events (clears badge instantly upon opening chat)
+    const unsubscribeLocalReads = subscribeToChatReadEvents((readPlanId) => {
+      setChatSummaries((prev) => {
+        const targetKey = prev[readPlanId] ? readPlanId : Object.keys(prev).find((k) => k === readPlanId);
+        if (!targetKey || !prev[targetKey]) return prev;
+        return {
+          ...prev,
+          [targetKey]: {
+            ...prev[targetKey],
+            unreadCount: 0,
+          },
+        };
+      });
+    });
+
     return () => {
-      supabase.removeChannel(channel);
+      isMounted = false;
+      supabase.removeChannel(messagesChannel);
+      supabase.removeChannel(readsChannel);
+      unsubscribeLocalReads();
     };
-  }, [userPlanChats, userUuid, allMyUserIds, dbUsers]);
+  }, [userUuid, allMyUserIds, dbUsers]);
 
   // Helper to determine host display name for fallback subtitle
   const getHostDisplayName = (plan: Plan): string => {
@@ -266,15 +362,24 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
   };
 
   const renderChatCard = (plan: Plan) => {
-    const latestMsg = latestMessages[plan.id];
-    let subtitleText = "";
+    const summary = chatSummaries[plan.id] || (plan.dbUuid ? chatSummaries[plan.dbUuid] : undefined);
+    const unreadCount = summary?.unreadCount || 0;
+    const hasLatestMsg = Boolean(summary && summary.content);
 
-    if (latestMsg) {
-      subtitleText = `${latestMsg.senderName}: ${latestMsg.content}`;
+    let subtitleText = "";
+    if (hasLatestMsg && summary) {
+      if (summary.content.startsWith(`${summary.senderName} `) || summary.content.startsWith("You ")) {
+        subtitleText = summary.content;
+      } else {
+        subtitleText = `${summary.senderName}: ${summary.content}`;
+      }
     } else {
       const hostName = getHostDisplayName(plan);
       subtitleText = `Hosted by ${hostName}`;
     }
+
+    const rawTimestamp = summary?.createdAt || plan.createdAt || (plan as any).created_at;
+    const formattedTime = rawTimestamp ? formatChatListTimestamp(rawTimestamp) : "";
 
     return (
       <motion.div
@@ -301,14 +406,41 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
             />
           </div>
 
-          {/* Title & Subtitle Container */}
-          <div className="min-w-0 flex-1 flex flex-col justify-center h-full space-y-0.5">
-            <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate leading-snug">
-              {plan.title}
-            </h3>
-            <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
-              {subtitleText}
-            </p>
+          {/* Title & Subtitle Container with WhatsApp-style Right Meta */}
+          <div className="min-w-0 flex-1 flex flex-col justify-center h-full space-y-1">
+            {/* Top row: Plan Title & Latest Timestamp */}
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate leading-snug flex-1 min-w-0">
+                {plan.title}
+              </h3>
+              {formattedTime && (
+                <span
+                  className={`shrink-0 text-[11px] font-medium leading-none ${
+                    unreadCount > 0 ? "text-emerald-400 font-semibold" : "text-zinc-500"
+                  }`}
+                >
+                  {formattedTime}
+                </span>
+              )}
+            </div>
+
+            {/* Bottom row: Subtitle preview & Unread Count Badge */}
+            <div className="flex items-center justify-between gap-2">
+              <p
+                className={`font-sans text-[12px] truncate leading-tight flex-1 min-w-0 ${
+                  unreadCount > 0 ? "text-zinc-200 font-medium" : "text-zinc-400"
+                }`}
+              >
+                {subtitleText}
+              </p>
+
+              {/* WhatsApp-Style Numeric Unread Badge */}
+              {unreadCount > 0 && (
+                <span className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-[#10B981] text-zinc-950 font-bold text-[11px] flex items-center justify-center leading-none shadow-sm">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </motion.div>
@@ -358,6 +490,15 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
               icon={<MessageSquare className="w-8 h-8 text-zinc-500 stroke-[1.5]" />}
               title="No chats yet"
               description="Create or join a plan to start chatting with your group."
+              ctaButton={
+                <button
+                  type="button"
+                  onClick={() => setActiveTab?.('create')}
+                  className="py-3 px-7 bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-sans font-semibold text-[13.5px] tracking-wide rounded-full transition-all duration-200 active:scale-[0.98] cursor-pointer shadow-md shadow-[#FF6B2C]/20 flex items-center justify-center"
+                >
+                  Create Plan
+                </button>
+              }
               py="py-16"
             />
           </div>

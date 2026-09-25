@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { ArrowLeft, UserPlus, X } from "lucide-react";
+import { ArrowLeft, UserPlus, UserRoundCheck, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useFriendshipStore } from "../state/FriendshipContext";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
@@ -9,27 +9,20 @@ import { SearchBar } from "../../../shared/components/SearchBar";
 interface DiscoverFriendsProps {
   onBack: () => void;
   discoverableUsers: any[];
-  onAddFriend: (targetUserUuid: string, name: string) => Promise<void>;
+  onAddFriend?: (targetUserUuid: string, name: string) => Promise<void>;
+  onOpenRequests?: () => void;
 }
 
 export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
   onBack,
   discoverableUsers,
-  onAddFriend,
+  onOpenRequests,
 }) => {
-  const { outgoingRequests, rejectFriendRequest } = useFriendshipStore();
+  const { incomingRequests } = useFriendshipStore();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; name: string } | null>(null);
   const [selectedUserForViewer, setSelectedUserForViewer] = useState<{ userId: string } | null>(null);
-
-  const handleCancelRequest = async (friendshipId: string, name: string) => {
-    try {
-      await rejectFriendRequest(friendshipId);
-    } catch (err: any) {
-      console.error("[handleCancelRequest] Error:", err);
-    }
-  };
 
   const filteredUsers = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -62,9 +55,9 @@ export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
       if (a.score !== b.score) {
         return a.score - b.score;
       }
-      const nameA = (a.user.full_name || "").toLowerCase();
-      const nameB = (b.user.full_name || "").toLowerCase();
-      return nameA.localeCompare(nameB);
+      const nameA = a.user.full_name || "";
+      const nameB = b.user.full_name || "";
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
     });
 
     return matchesWithScore.map((m) => m.user);
@@ -92,6 +85,21 @@ export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
             <h1 className="font-sans font-bold text-xl text-white tracking-tight leading-none">Discover People</h1>
           </div>
         </div>
+
+        {onOpenRequests && (
+          <button
+            onClick={onOpenRequests}
+            className="w-9 h-9 -mr-1 flex items-center justify-center text-white/90 hover:text-white transition active:scale-95 cursor-pointer relative"
+            title="Friend Requests"
+          >
+            <UserRoundCheck className="w-5 h-5" />
+            {incomingRequests.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#EF4444] text-[10px] font-sans font-bold text-white flex items-center justify-center ring-2 ring-black">
+                {incomingRequests.length}
+              </span>
+            )}
+          </button>
+        )}
       </header>
 
       {/* SEARCH BAR */}
@@ -106,31 +114,23 @@ export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
       </div>
 
       {/* DISCOVER USERS LIST */}
-      <div className="flex-1 overflow-y-auto px-5 pb-8">
+      <div className="flex-1 flex flex-col overflow-y-auto px-5 pb-8">
         {filteredUsers.length === 0 ? (
-          <div className="p-8 bg-[#0A0A0C]/50 border border-white/[0.02] border-dashed rounded-2xl text-center">
-            <div className="w-14 h-14 rounded-full bg-zinc-950 border border-white/[0.03] flex items-center justify-center text-zinc-650 mx-auto mb-3.5">
-              <UserPlus className="w-6 h-6" />
-            </div>
-            <p className="text-zinc-500 font-sans font-medium text-xs">No users found</p>
-            <p className="text-zinc-600 text-[11px] mt-1">Try a different search term</p>
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-4 py-8">
+            <UserPlus className="w-8 h-8 text-zinc-600 stroke-[1.5] mb-3" />
+            <p className="text-zinc-400 font-sans font-medium text-sm">No users found</p>
+            <p className="text-zinc-600 text-xs mt-1 max-w-[240px]">Try a different search term</p>
           </div>
         ) : (
           <div className="space-y-1 pt-1">
             {filteredUsers.map((user) => {
-              const pendingRequest = outgoingRequests.find(
-                (r) => r.recipient?.id === user.id || (r.recipient as any)?.public_id === user.public_id
-              );
-
               return (
                 <div
                   key={user.id}
-                  className="w-full py-2.5 px-1 hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl flex items-center justify-between transition"
+                  onClick={() => setSelectedUserForViewer({ userId: user.id })}
+                  className="w-full py-2.5 px-1 hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl flex items-center justify-between transition cursor-pointer group"
                 >
-                  <div
-                    onClick={() => setSelectedUserForViewer({ userId: user.id })}
-                    className="flex items-center space-x-3.5 min-w-0 flex-1 pr-3 cursor-pointer group"
-                  >
+                  <div className="flex items-center space-x-3.5 min-w-0 flex-1 pr-3">
                     <UserAvatar
                       src={user.profile_photo_path || user.profile_photo}
                       alt={user.full_name || "User"}
@@ -145,29 +145,6 @@ export const DiscoverFriends: React.FC<DiscoverFriendsProps> = ({
                       </p>
                     </div>
                   </div>
-
-                  {pendingRequest ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCancelRequest(pendingRequest.friendshipId, user.full_name);
-                      }}
-                      className="px-3.5 py-2 bg-zinc-950 hover:bg-zinc-900 border border-white/[0.04] hover:border-white/[0.08] text-zinc-400 hover:text-white font-sans font-bold text-xs rounded-xl transition active:scale-[0.97] cursor-pointer whitespace-nowrap flex-shrink-0 min-w-[95px] flex items-center justify-center"
-                    >
-                      Cancel
-                    </button>
-                  ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAddFriend(user.id, user.full_name);
-                      }}
-                      className="px-3.5 py-2 bg-zinc-900 hover:bg-zinc-850 border border-white/[0.04] text-white font-sans font-bold text-xs rounded-xl transition active:scale-[0.97] cursor-pointer whitespace-nowrap flex-shrink-0 min-w-[95px] flex items-center justify-center gap-1.5"
-                    >
-                      <UserPlus className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span>Add Friend</span>
-                    </button>
-                  )}
                 </div>
               );
             })}

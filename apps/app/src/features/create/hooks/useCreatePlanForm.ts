@@ -280,9 +280,10 @@ export function useCreatePlanForm() {
   // Derived: waitlistCapacity is the non-host capacity
   const waitlistCapacity = totalCapacity ? Math.max(0, totalCapacity - 1) : 0;
 
-  const handleSetTotalCapacity = useCallback((val: number) => {
-    setTotalCapacity(val);
-    setIsCapacityManuallySet(true);
+  const handleSetTotalCapacity = useCallback((val: number | undefined | null) => {
+    const nextVal = (val === null || val === undefined) ? undefined : val;
+    setTotalCapacity(nextVal);
+    setIsCapacityManuallySet(nextVal !== undefined);
   }, []);
 
   const handleSetSelectedFriends = useCallback((updater: any[] | ((prev: any[]) => any[])) => {

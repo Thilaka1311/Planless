@@ -223,8 +223,31 @@ async function startServer() {
     const distPath = fs.existsSync(path.join(process.cwd(), "dist", "index.html"))
       ? path.join(process.cwd(), "dist")
       : path.resolve(__dirname, "../dist");
-    app.use(express.static(distPath));
+
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          // Never cache the service worker, HTML files, or webmanifest so browser can always detect updates
+          if (
+            filePath.endsWith("sw.js") ||
+            filePath.endsWith("index.html") ||
+            filePath.endsWith(".webmanifest")
+          ) {
+            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+          } else if (filePath.includes("/assets/")) {
+            // Hashed assets can be safely cached long-term
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          }
+        },
+      })
+    );
+
     app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

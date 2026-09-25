@@ -2,11 +2,13 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft, ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2 } from "lucide-react";
 import { useToast } from "../../../shared/contexts/ToastContext";
-import { buildInviteUrl } from "../services/planInviteService";
+import { buildInviteUrl, copyInviteUrlToClipboard } from "../services/planInviteService";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import type { Plan } from "../../../core/types";
 import { HostInfo } from "./HeroHeader";
+import { useProfileStore } from "../../profile/state/ProfileContext";
+import { usePlansStore } from "../state/PlansContext";
 
 // Helper functions for date/time formatting inside EditDateTimeBottomSheet
 function formatDateFriendly(dateStr: string): string {
@@ -41,19 +43,37 @@ export function getCurrentTimeString(d: Date = new Date()): string {
 }
 
 // ----------------------------------------------------------------------
-// 0. DISCARD / EXIT PLAN BOTTOM SHEET
+// 0. DISCARD / EXIT PLAN BOTTOM SHEET (PLAN ACTIONS)
 // ----------------------------------------------------------------------
 interface DiscardPlanBottomSheetProps {
   isOpen: boolean;
+  plan?: Plan | any | null;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
   onDiscard: () => void;
   onClose: () => void;
 }
 
 export const DiscardPlanBottomSheet: React.FC<DiscardPlanBottomSheetProps> = ({
   isOpen,
+  plan,
+  planTitle,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
   onDiscard,
   onClose,
 }) => {
+  const resolvedTitle = plan?.title || planTitle || "Plan";
+  const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
+  const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
+  const resolvedCategory = plan?.category || planCategory;
+  const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -70,7 +90,7 @@ export const DiscardPlanBottomSheet: React.FC<DiscardPlanBottomSheetProps> = ({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 260 }}
-            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto text-left"
             style={{
               background: "#1C1C1E",
               borderTopLeftRadius: 20,
@@ -78,24 +98,55 @@ export const DiscardPlanBottomSheet: React.FC<DiscardPlanBottomSheetProps> = ({
               paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
             }}
           >
+            {/* Drag handle */}
             <div className="flex justify-center pt-3 pb-4">
               <div className="w-9 h-1 rounded-full bg-white/20" />
             </div>
 
-            <div className="px-5 pb-2 text-left">
-              <h2 className="text-[18px] font-bold text-white mb-2">Do you really want to exit the plan?</h2>
-              <p className="text-[14px] text-white/55 leading-[1.55]">
-                Your changes will not be saved.
-              </p>
+            {/* Plan Identity Header matching Plan Actions visual hierarchy */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={resolvedCover}
+                  planId={resolvedPlanId}
+                  category={resolvedCategory}
+                  subcategory={resolvedSubcategory}
+                  screen="Plan Actions Avatar"
+                  alt={resolvedTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h2 className="text-[17px] font-bold text-white mb-1">
+                  Discard plan?
+                </h2>
+                <p className="text-[13px] text-white/55 leading-[1.5]">
+                  Your changes will not be saved
+                </p>
+              </div>
             </div>
 
-            <div className="px-5 pt-4 flex flex-col gap-2.5">
+            {/* Action Buttons */}
+            <div className="px-4 pt-3 flex flex-col gap-2.5">
               <button
                 id="discard_plan_confirm_btn"
                 type="button"
                 onClick={onDiscard}
-                className="w-full py-3.5 rounded-xl text-[14px] font-semibold text-red-400 active:scale-[0.98] transition-transform cursor-pointer flex items-center justify-center text-center"
-                style={{ background: "rgba(255,59,48,0.12)", border: "1px solid rgba(255,59,48,0.2)" }}
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#EF4444',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
               >
                 Discard
               </button>
@@ -104,7 +155,18 @@ export const DiscardPlanBottomSheet: React.FC<DiscardPlanBottomSheetProps> = ({
                 id="discard_plan_cancel_btn"
                 type="button"
                 onClick={onClose}
-                className="w-full py-3 bg-transparent border-none text-[14px] font-medium text-white/40 hover:text-white/60 active:opacity-70 transition cursor-pointer text-center"
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                  marginTop: 4,
+                }}
               >
                 Cancel
               </button>
@@ -1177,9 +1239,11 @@ interface CancelPlanBottomSheetProps {
   planSubcategory?: string | null;
   planId?: string;
   subtitle?: string;
+  isHost?: boolean;
   onConfirm?: () => void;
   onConfirmCancel?: () => void;
   onMarkAsComplete?: () => void;
+  onReopenPlan?: () => void;
   onClose: () => void;
 }
 
@@ -1192,11 +1256,15 @@ export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
   planSubcategory,
   planId,
   subtitle,
+  isHost: propIsHost,
   onConfirm,
   onConfirmCancel,
   onMarkAsComplete,
+  onReopenPlan,
   onClose,
 }) => {
+  const { userProfile, activeUserId, activeUserUuid } = useProfileStore();
+
   const handleCancelClick = () => {
     if (onConfirmCancel) {
       onConfirmCancel();
@@ -1210,8 +1278,31 @@ export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
   const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
   const resolvedCategory = plan?.category || planCategory;
   const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
-  const isCancelled = Boolean((plan?.status || "").toUpperCase() === "CANCELLED");
-  const displaySubtitle = subtitle || (isCancelled ? "Cancelled plan" : "Manage this plan");
+  const isCancelled = Boolean((plan?.status || "").toUpperCase() === "CANCELLED" || (plan?.status || "").toUpperCase() === "CANCELED");
+  const isCompleted = Boolean((plan?.status || "").toUpperCase() === "COMPLETED");
+
+  const isHost = propIsHost !== undefined ? propIsHost : Boolean(
+    (plan?.hostId && activeUserUuid && plan.hostId === activeUserUuid) ||
+    ((plan as any)?.host_id && activeUserUuid && (plan as any).host_id === activeUserUuid) ||
+    (plan?.creatorId && activeUserUuid && plan.creatorId === activeUserUuid) ||
+    (plan?.hostId && activeUserId && plan.hostId === activeUserId) ||
+    ((plan as any)?.host_id && activeUserId && (plan as any).host_id === activeUserId) ||
+    (plan?.creatorId && activeUserId && plan.creatorId === activeUserId) ||
+    (userProfile?.dbUuid && plan?.hostId === userProfile.dbUuid) ||
+    ((userProfile as any)?.id && plan?.hostId === (userProfile as any).id) ||
+    Boolean(
+      (plan?.members || []).some((m: any) => {
+        const mId = m.userUuid || m.userId || m.user_id || m.id;
+        const isMe = (activeUserUuid && mId === activeUserUuid) ||
+                     (activeUserId && mId === activeUserId) ||
+                     (userProfile?.dbUuid && mId === userProfile.dbUuid) ||
+                     ((userProfile as any)?.id && mId === (userProfile as any).id);
+        return isMe && (m.isHost || m.role === "HOST");
+      })
+    )
+  );
+
+  const displaySubtitle = (subtitle === "Completed plan" ? "Plan Actions" : subtitle) || (isCancelled ? "Cancelled plan" : isCompleted ? "Plan Actions" : "Manage this plan");
 
   return (
     <AnimatePresence>
@@ -1265,54 +1356,175 @@ export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
             </div>
 
             <div className="px-4 pt-4 flex flex-col gap-2.5">
-              <button
-                id="mark_as_complete_btn"
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onMarkAsComplete?.();
-                }}
-                style={{
-                  width: '100%',
-                  height: 48,
-                  padding: '0 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  background: 'rgba(255, 255, 255, 0.06)',
-                  border: 'none',
-                  borderRadius: 12,
-                  color: '#FFFFFF',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                Mark as Complete
-              </button>
+              {isCancelled ? (
+                <>
+                  {isHost && onReopenPlan && (
+                    <button
+                      id="reopen_plan_btn"
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onReopenPlan();
+                      }}
+                      style={{
+                        width: '100%',
+                        height: 48,
+                        padding: '0 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: 'none',
+                        borderRadius: 12,
+                        color: '#FFFFFF',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      Reopen Plan
+                    </button>
+                  )}
 
-              <button
-                id="cancel_plan_confirm_btn"
-                type="button"
-                onClick={handleCancelClick}
-                style={{
-                  width: '100%',
-                  height: 48,
-                  padding: '0 14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  background: 'rgba(239, 68, 68, 0.08)',
-                  border: 'none',
-                  borderRadius: 12,
-                  color: '#EF4444',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                Cancel Plan
-              </button>
+                  {isHost && onMarkAsComplete && (
+                    <button
+                      id="mark_as_complete_btn"
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onMarkAsComplete();
+                      }}
+                      style={{
+                        width: '100%',
+                        height: 48,
+                        padding: '0 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: 'none',
+                        borderRadius: 12,
+                        color: '#FFFFFF',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      Mark as Complete
+                    </button>
+                  )}
+                </>
+              ) : isCompleted ? (
+                <>
+                  {isHost && onReopenPlan && (
+                    <button
+                      id="reopen_plan_btn"
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onReopenPlan();
+                      }}
+                      style={{
+                        width: '100%',
+                        height: 48,
+                        padding: '0 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: 'none',
+                        borderRadius: 12,
+                        color: '#FFFFFF',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      Reopen Plan
+                    </button>
+                  )}
+
+                  {isHost && (
+                    <button
+                      id="cancel_plan_confirm_btn"
+                      type="button"
+                      onClick={handleCancelClick}
+                      style={{
+                        width: '100%',
+                        height: 48,
+                        padding: '0 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        border: 'none',
+                        borderRadius: 12,
+                        color: '#EF4444',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      Cancel Plan
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  {isHost && onMarkAsComplete && (
+                    <button
+                      id="mark_as_complete_btn"
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onMarkAsComplete();
+                      }}
+                      style={{
+                        width: '100%',
+                        height: 48,
+                        padding: '0 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: 'none',
+                        borderRadius: 12,
+                        color: '#FFFFFF',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      Mark as Complete
+                    </button>
+                  )}
+
+                  {isHost && (
+                    <button
+                      id="cancel_plan_confirm_btn"
+                      type="button"
+                      onClick={handleCancelClick}
+                      style={{
+                        width: '100%',
+                        height: 48,
+                        padding: '0 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        border: 'none',
+                        borderRadius: 12,
+                        color: '#EF4444',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      Cancel Plan
+                    </button>
+                  )}
+                </>
+              )}
 
               <button
                 id="plan_actions_cancel_btn"
@@ -3732,16 +3944,35 @@ export interface SharePlanLinkBottomSheetProps {
   onClose: () => void;
   planId: string;
   userUuid?: string;
+  plan?: Plan | any | null;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
 }
 
 export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> = ({
   isOpen,
   onClose,
   planId,
+  plan: propPlan,
+  planTitle: propPlanTitle,
+  planCoverImage: propPlanCoverImage,
+  planCategory: propPlanCategory,
+  planSubcategory: propPlanSubcategory,
 }) => {
   const { showToast } = useToast();
   const inviteUrl = planId ? buildInviteUrl(planId) : "";
   const [copied, setCopied] = useState<boolean>(false);
+
+  const { plans } = usePlansStore();
+  const activePlan = propPlan || (plans || []).find((p: any) => (p.dbUuid || p.id) === planId);
+
+  const resolvedTitle = activePlan?.title || propPlanTitle || "Plan";
+  const resolvedCover = activePlan?.coverImage || (activePlan as any)?.cover_image || propPlanCoverImage;
+  const resolvedPlanId = activePlan?.dbUuid || activePlan?.id || planId;
+  const resolvedCategory = activePlan?.category || propPlanCategory;
+  const resolvedSubcategory = (activePlan as any)?.subcategory || propPlanSubcategory;
 
   useEffect(() => {
     if (!isOpen) {
@@ -3752,22 +3983,12 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
   const handleCopy = async () => {
     if (!inviteUrl) return;
     try {
-      if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(inviteUrl);
-      } else {
-        const textArea = document.createElement("textarea");
-        textArea.value = inviteUrl;
-        textArea.style.position = "fixed";
-        textArea.style.opacity = "0";
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textArea);
+      const ok = await copyInviteUrlToClipboard(inviteUrl);
+      if (ok) {
+        setCopied(true);
+        showToast("Link copied");
+        setTimeout(() => setCopied(false), 2000);
       }
-      setCopied(true);
-      showToast("Link copied");
-      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error("[SharePlanLinkBottomSheet] Failed to copy link:", err);
     }
@@ -3792,117 +4013,141 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 260 }}
-            className="fixed bottom-0 left-0 right-0 z-[115] pointer-events-auto"
+            className="fixed bottom-0 left-0 right-0 z-[115] pointer-events-auto text-left"
             style={{
               background: "#1C1C1E",
               borderTopLeftRadius: 20,
               borderTopRightRadius: 20,
-              padding: "14px 20px calc(24px + env(safe-area-inset-bottom, 0px))",
-              fontFamily: "Inter, sans-serif",
-              color: "#FFFFFF",
-              boxSizing: "border-box",
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
             }}
           >
             {/* Drag Handle */}
-            <div style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255, 255, 255, 0.2)", margin: "0 auto 16px" }} />
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
 
-            {/* Title */}
-            <h3 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 6px", textAlign: "center", letterSpacing: "-0.01em" }}>
-              Share Plan Link
-            </h3>
-
-            {/* Subtitle / Explanation */}
-            <p style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.5)", textAlign: "center", margin: "0 0 20px", lineHeight: 1.4 }}>
-              Invite people to this plan with a link.
-            </p>
-
-            {/* Visible / Copyable Invite Link Box */}
-            <div
-              id="share_plan_link_box"
-              onClick={handleCopy}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "12px 14px",
-                borderRadius: 14,
-                background: "rgba(255, 255, 255, 0.05)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                marginBottom: 20,
-                cursor: inviteUrl ? "pointer" : "default",
-                transition: "all 0.15s ease",
-              }}
-            >
-              <Link2 style={{ width: 18, height: 18, color: "#FF6B2C", flexShrink: 0 }} />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <span
-                  style={{
-                    fontSize: 13,
-                    color: "rgba(255, 255, 255, 0.9)",
-                    wordBreak: "break-all",
-                    userSelect: "all",
-                    display: "block",
-                    lineHeight: 1.3,
-                  }}
-                >
-                  {inviteUrl || "No plan selected"}
-                </span>
+            {/* Plan Identity Header matching Plan Actions visual hierarchy */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={resolvedCover}
+                  planId={resolvedPlanId}
+                  category={resolvedCategory}
+                  subcategory={resolvedSubcategory}
+                  screen="Plan Actions Avatar"
+                  alt={resolvedTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {resolvedTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  Plan Actions
+                </p>
               </div>
             </div>
 
-            {/* Primary Action Button: "Copy Link" */}
-            <button
-              id="share_plan_copy_link_btn"
-              type="button"
-              disabled={!inviteUrl}
-              onClick={handleCopy}
-              style={{
-                width: "100%",
-                padding: "14px",
-                borderRadius: 14,
-                background: !inviteUrl ? "rgba(255, 255, 255, 0.1)" : "#FF6B2C",
-                color: !inviteUrl ? "rgba(255, 255, 255, 0.3)" : "#FFFFFF",
-                fontSize: 15,
-                fontWeight: 700,
-                cursor: !inviteUrl ? "not-allowed" : "pointer",
-                border: "none",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                transition: "all 0.15s ease",
-              }}
-            >
-              {copied ? (
-                <>
-                  <Check style={{ width: 18, height: 18 }} />
-                  <span>Link Copied</span>
-                </>
-              ) : (
-                <span>Copy Link</span>
-              )}
-            </button>
+            {/* Share Content */}
+            <div className="px-5 pt-3 pb-1 text-left">
+              <h2 className="text-[17px] font-bold text-white mb-1">
+                Share Plan Link
+              </h2>
+              <p className="text-[13px] text-white/55 leading-[1.5]">
+                Invite people to this plan with a link.
+              </p>
+            </div>
 
-            {/* Cancel / Close action */}
-            <button
-              id="share_plan_cancel_btn"
-              type="button"
-              onClick={onClose}
-              style={{
-                width: "100%",
-                padding: "12px 14px",
-                background: "none",
-                border: "none",
-                color: "rgba(255, 255, 255, 0.45)",
-                fontSize: 14,
-                fontWeight: 500,
-                cursor: "pointer",
-                textAlign: "center",
-                marginTop: 6,
-              }}
-            >
-              Cancel
-            </button>
+            {/* Visible / Copyable Invite Link Box & Actions */}
+            <div className="px-4 pt-3 flex flex-col gap-2.5">
+              <div
+                id="share_plan_link_box"
+                onClick={handleCopy}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "12px 14px",
+                  borderRadius: 14,
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  cursor: inviteUrl ? "pointer" : "default",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <Link2 style={{ width: 18, height: 18, color: "#FF6B2C", flexShrink: 0 }} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: "rgba(255, 255, 255, 0.9)",
+                      wordBreak: "break-all",
+                      userSelect: "all",
+                      display: "block",
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    {inviteUrl || "No plan selected"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Primary Action Button: "Copy Link" */}
+              <button
+                id="share_plan_copy_link_btn"
+                type="button"
+                disabled={!inviteUrl}
+                onClick={handleCopy}
+                style={{
+                  width: "100%",
+                  height: 48,
+                  padding: "0 14px",
+                  borderRadius: 12,
+                  background: !inviteUrl ? "rgba(255, 255, 255, 0.1)" : "#FF6B2C",
+                  color: !inviteUrl ? "rgba(255, 255, 255, 0.3)" : "#FFFFFF",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: !inviteUrl ? "not-allowed" : "pointer",
+                  border: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {copied ? (
+                  <>
+                    <Check style={{ width: 18, height: 18 }} />
+                    <span>Link Copied</span>
+                  </>
+                ) : (
+                  <span>Copy Link</span>
+                )}
+              </button>
+
+              {/* Cancel / Close action */}
+              <button
+                id="share_plan_cancel_btn"
+                type="button"
+                onClick={onClose}
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  background: "none",
+                  border: "none",
+                  color: "rgba(255, 255, 255, 0.4)",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  textAlign: "center",
+                  marginTop: 4,
+                }}
+              >
+                Cancel
+              </button>
+            </div>
           </motion.div>
         </>
       )}

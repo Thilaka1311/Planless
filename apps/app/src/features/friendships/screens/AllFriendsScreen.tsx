@@ -17,15 +17,23 @@ export const AllFriendsScreen: React.FC<AllFriendsScreenProps> = ({ onBack, onZo
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [friendToRemove, setFriendToRemove] = useState<{ id: string; name: string } | null>(null);
 
+  const sortedFriends = useMemo(() => {
+    return [...friends].sort((a, b) => {
+      const nameA = a.friend?.full_name || "";
+      const nameB = b.friend?.full_name || "";
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+    });
+  }, [friends]);
+
   const filteredFriends = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return friends;
-    return friends.filter(
+    if (!query) return sortedFriends;
+    return sortedFriends.filter(
       (item) =>
         item.friend?.full_name?.toLowerCase().includes(query) ||
         item.friend?.bio?.toLowerCase().includes(query)
     );
-  }, [searchQuery, friends]);
+  }, [searchQuery, sortedFriends]);
 
   const handleSettleAction = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -87,16 +95,14 @@ export const AllFriendsScreen: React.FC<AllFriendsScreenProps> = ({ onBack, onZo
       </div>
 
       {/* FRIENDS LIST */}
-      <div className="flex-1 overflow-y-auto px-5 pb-8">
+      <div className="flex-1 flex flex-col overflow-y-auto px-5 pb-8">
         {filteredFriends.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center px-4 pt-16">
-            <div className="w-16 h-16 rounded-full bg-zinc-950 border border-white/[0.03] flex items-center justify-center text-zinc-650 mb-4">
-              <User className="w-7 h-7" />
-            </div>
-            <h3 className="font-sans font-bold text-base text-zinc-200">
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-4 py-8">
+            <User className="w-8 h-8 text-zinc-600 stroke-[1.5] mb-3" />
+            <h3 className="font-sans font-semibold text-sm text-zinc-300">
               {searchQuery ? "No friends found" : "No friends yet"}
             </h3>
-            <p className="text-zinc-550 text-xs mt-1.5 max-w-[220px] leading-relaxed">
+            <p className="text-zinc-500 font-sans text-xs mt-1 max-w-[240px]">
               {searchQuery ? "Try searching for a different name" : "Start connecting with people on Planless."}
             </p>
           </div>
