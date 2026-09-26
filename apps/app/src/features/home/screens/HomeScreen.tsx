@@ -176,7 +176,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({
         hasLivePlan ? (
           <EmptyState
             title="No plans around you"
-            description="Manage your plan"
+            description="Manage your plans"
             ctaButton={
               <button
                 type="button"

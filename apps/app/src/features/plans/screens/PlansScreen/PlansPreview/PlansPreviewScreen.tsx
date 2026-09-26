@@ -54,7 +54,8 @@ import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGoog
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";
 import { uploadPlanImage } from "../../../../../shared/utils/imageUtils";
-import { cleanPlanId, parsePlanDateTime, isUuid } from "../../../utils/planUtils";
+import { cleanPlanId, parsePlanDateTime, isUuid, isPlanTimeEnded } from "../../../utils/planUtils";
+import { useToast } from "../../../../../shared/contexts/ToastContext";
 import { LiveActionButton } from "../../../components/LiveActionButton";
 import { WhoIsComingScreen } from "../../../../create/screens/WhoIsComingScreen";
 import { getCompleteCurrentUserFriends } from "../../../../friendships/api/friendships";
@@ -549,6 +550,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     replaceParticipant,
     manageCompletedPlanParticipants,
   } = usePlansStore();
+  const { showToast } = useToast();
   const livePlan = useLivePlan(planId || '');
   const selectedPlan = (createMode && plan) ? plan : livePlan;
 
@@ -1676,6 +1678,39 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     ]
   );
 
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!selectedPlan) return;
+    const planDate = parsePlanDateTime({ ...(rawDbPlan || {}), ...selectedPlan });
+    const planTimeMs = planDate.getTime();
+    if (isNaN(planTimeMs)) return;
+
+    const timeUntilPlan = planTimeMs - Date.now();
+    if (timeUntilPlan > 0) {
+      const timeout = setTimeout(() => {
+        setCurrentTime(Date.now());
+      }, Math.min(timeUntilPlan, 3600000));
+      return () => clearTimeout(timeout);
+    } else {
+      const interval = setInterval(() => {
+        setCurrentTime(Date.now());
+      }, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [selectedPlan, rawDbPlan]);
+
+  const hasPlanTimeEnded = useMemo(() => {
+    if (!selectedPlan) return false;
+    return isPlanTimeEnded({ ...(rawDbPlan || {}), ...selectedPlan }, currentTime);
+  }, [selectedPlan, rawDbPlan, currentTime]);
+
+  useEffect(() => {
+    if (hasPlanTimeEnded && showParticipantManagement) {
+      setShowParticipantManagement(false);
+    }
+  }, [hasPlanTimeEnded, showParticipantManagement]);
+
   const isManagementExpired = useMemo(() => {
     if (!selectedPlan) return false;
     const rawScheduled = (selectedPlan as any).scheduled_at || rawDbPlan?.scheduled_at || selectedPlan.datetime || selectedPlan.time || selectedPlan.createdAt;
@@ -2503,11 +2538,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 onClick={
                   createMode
                     ? () => onEditParticipants?.()
-                    : isCompleted
-                      ? !isManagementExpired
-                        ? () => setShowAttendanceSheet(true)
-                        : () => {}
-                      : () => setShowParticipantManagement(true)
+                    : hasPlanTimeEnded
+                      ? () => {
+                          showToast("Plan time is up. This plan has completed.", "info");
+                        }
+                      : isCompleted
+                        ? !isManagementExpired
+                          ? () => setShowAttendanceSheet(true)
+                          : () => {}
+                        : () => setShowParticipantManagement(true)
                 }
                 className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
               >
@@ -2581,9 +2620,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               </div>
             );
           })() : (() => {
-            const planDateTime = selectedPlan ? parsePlanDateTime(selectedPlan) : new Date();
-            const isPastPlan = Boolean(selectedPlan && planDateTime.getTime() < new Date().setHours(0, 0, 0, 0));
-            const showExclamation = Boolean(isHost && isPastPlan && !isCancelled && !isCompleted);
+            const showExclamation = Boolean(isHost && hasPlanTimeEnded && !isCancelled && !isCompleted);
 
             return (
               <LiveActionButton

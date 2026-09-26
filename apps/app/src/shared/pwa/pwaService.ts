@@ -10,6 +10,8 @@ class PwaManager {
   private isUpdating = false;
   private isInitialized = false;
   private hasReloaded = false;
+  private isCheckingUpdate = false;
+  private lastCheckTime = 0;
 
   init() {
     if (typeof window === 'undefined' || this.isInitialized) return;
@@ -35,10 +37,11 @@ class PwaManager {
     // Listen for controller changes across the entire service worker lifecycle.
     // When the user accepts an update and skipWaiting activates the new worker,
     // reloading the page ensures the latest production code runs immediately.
+    // If the user has NOT tapped update, isUpdating remains false so we NEVER auto-reload.
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (this.isUpdating && !this.hasReloaded) {
         this.hasReloaded = true;
-        console.log('[PWA] Controller changed after update, reloading to activate latest version...');
+        console.log('[PWA] Controller changed after user update, reloading to activate latest version...');
         window.location.reload();
       }
     });
@@ -59,7 +62,7 @@ class PwaManager {
           this.registration = registration;
 
           // 1. If a service worker is already in waiting state on startup
-          if (registration.waiting) {
+          if (registration.waiting && navigator.serviceWorker.controller) {
             console.log('[PWA] Found waiting service worker on startup');
             this.setHasUpdate(true);
           }
@@ -77,19 +80,21 @@ class PwaManager {
           });
 
           // 4. Actively check for updates immediately on application launch
-          this.checkForUpdate();
+          this.checkForUpdate(true);
 
           // 5. Follow-up check after 2 seconds to let initial critical network traffic settle
           setTimeout(() => {
-            this.checkForUpdate();
+            this.checkForUpdate(true);
           }, 2000);
 
           // 6. Check for updates whenever user returns to the app
-          document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-              this.checkForUpdate();
-            }
-          });
+          if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', () => {
+              if (document.visibilityState === 'visible') {
+                this.checkForUpdate();
+              }
+            });
+          }
 
           // 7. Check for updates when window gains focus
           window.addEventListener('focus', () => {
@@ -101,10 +106,45 @@ class PwaManager {
             this.checkForUpdate();
           });
 
-          // 9. Periodic background update check every 15 minutes
+          // 9. Check on client-side routing & SPA navigation changes
+          window.addEventListener('popstate', () => {
+            this.checkForUpdate();
+          });
+
+          // Hook into history pushState / replaceState for client-side routing checks
+          if (window.history) {
+            const origPushState = window.history.pushState;
+            if (typeof origPushState === 'function') {
+              window.history.pushState = (...args: Parameters<History['pushState']>) => {
+                const result = origPushState.apply(window.history, args);
+                this.checkForUpdate();
+                return result;
+              };
+            }
+            const origReplaceState = window.history.replaceState;
+            if (typeof origReplaceState === 'function') {
+              window.history.replaceState = (...args: Parameters<History['replaceState']>) => {
+                const result = origReplaceState.apply(window.history, args);
+                this.checkForUpdate();
+                return result;
+              };
+            }
+          }
+
+          // 10. Check on user activity (throttled to at most once every 30 seconds)
+          const handleUserActivity = () => {
+            const now = Date.now();
+            if (now - this.lastCheckTime >= 30000) {
+              this.checkForUpdate();
+            }
+          };
+          window.addEventListener('pointerdown', handleUserActivity, { passive: true });
+          window.addEventListener('keydown', handleUserActivity, { passive: true });
+
+          // 11. Periodic background update check every 30 seconds to immediately discover new builds
           setInterval(() => {
             this.checkForUpdate();
-          }, 15 * 60 * 1000);
+          }, 30 * 1000);
         },
         onRegisterError: (error) => {
           console.error('[PWA] Registration failed:', error);
@@ -116,6 +156,13 @@ class PwaManager {
   }
 
   private trackInstallingWorker(worker: ServiceWorker) {
+    // If worker is already installed and waiting, notify immediately
+    if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+      console.log('[PWA] New service worker already installed and waiting in background');
+      this.setHasUpdate(true);
+      return;
+    }
+
     worker.addEventListener('statechange', () => {
       if (worker.state === 'installed' && navigator.serviceWorker.controller) {
         console.log('[PWA] New service worker installed and waiting in background');
@@ -124,24 +171,42 @@ class PwaManager {
     });
   }
 
-  async checkForUpdate() {
+  async checkForUpdate(force = false) {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    const now = Date.now();
+    // Throttle automatic checks to at most once every 10 seconds unless forced
+    if (!force && now - this.lastCheckTime < 10000) return;
+    if (this.isCheckingUpdate) return;
+
+    this.isCheckingUpdate = true;
+    this.lastCheckTime = now;
+
     try {
       if (!this.registration) {
         this.registration = await navigator.serviceWorker.getRegistration();
       }
       if (this.registration) {
         // Check if a worker entered waiting state
-        if (this.registration.waiting) {
+        if (this.registration.waiting && navigator.serviceWorker.controller) {
           this.setHasUpdate(true);
         }
+        if (this.registration.installing) {
+          this.trackInstallingWorker(this.registration.installing);
+        }
+
         await this.registration.update();
-        if (this.registration.waiting) {
+
+        if (this.registration.waiting && navigator.serviceWorker.controller) {
           this.setHasUpdate(true);
+        }
+        if (this.registration.installing) {
+          this.trackInstallingWorker(this.registration.installing);
         }
       }
     } catch (err) {
       console.warn('[PWA] Update check failed:', err);
+    } finally {
+      this.isCheckingUpdate = false;
     }
   }
 
@@ -176,6 +241,9 @@ class PwaManager {
     }
 
     try {
+      if (!this.registration && 'serviceWorker' in navigator) {
+        this.registration = await navigator.serviceWorker.getRegistration();
+      }
       // 1. Message waiting worker directly if available
       if (this.registration?.waiting) {
         this.registration.waiting.postMessage({ type: 'SKIP_WAITING' });

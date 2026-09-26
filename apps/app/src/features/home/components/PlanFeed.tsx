@@ -1,5 +1,4 @@
 import React from "react";
-import { Sparkles, Plus } from "lucide-react";
 import { motion } from "motion/react";
 import { Plan, UserProfile, NotificationItem } from "../../../core/types";
 import { PlanCard } from "./PlanCard";
@@ -26,53 +25,6 @@ interface PlanStackProps {
   handleWaitlistPlan?: (planId: string, userProfile: any) => void;
   onNavigateToCreate?: () => void;
 }
-
-const EndCard: React.FC<{
-  hasPlans: boolean;
-  onNavigateToCreate?: () => void;
-}> = ({ hasPlans, onNavigateToCreate }) => {
-  return (
-    <div className="h-full w-full relative rounded-[32px] overflow-hidden border border-white/[0.06] flex flex-col justify-center items-center bg-[#000000] shadow-2xl p-8 text-center select-none flex-shrink-0">
-      <div className="absolute inset-0 bg-[#000000] z-0" />
-
-      <motion.div 
-        initial={{ opacity: 0, y: 15, scale: 0.98 }}
-        whileInView={{ opacity: 1, y: 0, scale: 1 }}
-        viewport={{ once: false, amount: 0.3 }}
-        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-10 flex flex-col items-center max-w-[280px]"
-      >
-        <div className="w-16 h-16 rounded-full bg-white/[0.02] border border-white/[0.06] flex items-center justify-center mb-8 shadow-inner shadow-white/[0.02]">
-          <Sparkles className="w-6 h-6 text-zinc-400" />
-        </div>
-
-        <h3 className="font-sans font-semibold text-[24px] text-white tracking-tight leading-none mb-4">
-          {hasPlans ? "You're all caught up" : "No plans currently"}
-        </h3>
-
-        <p className="text-zinc-455 font-sans text-[13.5px] leading-relaxed mb-10 font-normal">
-          {hasPlans ? (
-            <>
-              No more plans nearby right now.
-              <br />
-              <span className="text-zinc-550 font-normal block mt-1">Start something people will want to join.</span>
-            </>
-          ) : (
-            "Host the next one."
-          )}
-        </p>
-
-        <button
-          onClick={onNavigateToCreate}
-          className="w-full py-4 px-8 bg-white/[0.04] hover:bg-white/[0.08] active:bg-white/[0.02] text-white font-sans font-semibold text-[13.5px] tracking-wide rounded-full transition-all duration-300 border border-white/[0.12] hover:border-white/[0.20] active:scale-[0.98] cursor-pointer shadow-xl flex items-center justify-center gap-2 group backdrop-blur-md"
-        >
-          <Plus className="w-4 h-4 text-zinc-450 transition-transform duration-300 group-hover:rotate-90" />
-          Create a Plan
-        </button>
-      </motion.div>
-    </div>
-  );
-};
 
 export const PlanStack: React.FC<PlanStackProps> = ({
   plansToRender,
@@ -101,7 +53,7 @@ export const PlanStack: React.FC<PlanStackProps> = ({
     setExpandedCardId(null);
   }, [activeCardId]);
 
-  const totalPages = plansToRender.length + 1;
+  const totalPages = plansToRender.length;
 
   const targetPlanIndex = React.useMemo(() => {
     if (!activeCardId || plansToRender.length === 0) return -1;
@@ -133,8 +85,6 @@ export const PlanStack: React.FC<PlanStackProps> = ({
       const targetPlan = plansToRender[index];
       if (targetPlan) {
         setActiveCardId(targetPlan.id);
-      } else {
-        setActiveCardId("");
       }
     },
   });
@@ -208,16 +158,6 @@ export const PlanStack: React.FC<PlanStackProps> = ({
             />
           </div>
         ))}
-        <div
-          id="plan-card-end"
-          style={{ height: containerHeight > 0 ? `${containerHeight}px` : "100%" }}
-          className="w-full relative flex-shrink-0"
-        >
-          <EndCard
-            hasPlans={plansToRender.length > 0}
-            onNavigateToCreate={onNavigateToCreate}
-          />
-        </div>
       </motion.div>
     </div>
   );

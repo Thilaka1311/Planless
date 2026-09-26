@@ -685,6 +685,7 @@ export default function MainApp({
                 setActiveTab={handleTabChange}
                 onToggleBottomNav={setChildrenWantBottomNavHidden}
                 setPlansFilter={setPlansFilter}
+                setSelectedPlanId={setSelectedPlanId}
               />
             )}
 
@@ -973,6 +974,7 @@ export default function MainApp({
         }}
         setActiveTab={handleTabChange}
         setPlansFilter={setPlansFilter}
+        setSelectedPlanId={setSelectedPlanId}
       />
 
 

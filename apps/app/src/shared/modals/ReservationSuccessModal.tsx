@@ -10,6 +10,7 @@ interface ReservationSuccessModalProps {
   onClose: () => void;
   setActiveTab: (tab: any) => void;
   setPlansFilter?: (filter: any) => void;
+  setSelectedPlanId?: (id: string | null) => void;
 }
 
 export default function ReservationSuccessModal({
@@ -19,6 +20,7 @@ export default function ReservationSuccessModal({
   onClose,
   setActiveTab,
   setPlansFilter,
+  setSelectedPlanId,
 }: ReservationSuccessModalProps) {
   const livePlan = useLivePlan(planId);
 
@@ -34,9 +36,13 @@ export default function ReservationSuccessModal({
           isWaitlist={isWaitlist}
           isLeft={isLeft}
           onGoToPlans={() => {
+            const targetId = planId;
             onClose();
             if (setPlansFilter) {
               setPlansFilter(isLeft ? "SKIPPED" : isWaitlist ? "WAITLISTED" : "JOINED");
+            }
+            if (setSelectedPlanId && targetId) {
+              setSelectedPlanId(targetId);
             }
             setActiveTab("plans");
           }}

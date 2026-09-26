@@ -97,4 +97,44 @@ describe('PWA Service and Update Lifecycle', () => {
     // Cleanup
     (pwaManager as any).setHasUpdate(false);
   });
+
+  it('immediately recognizes an already installed worker when trackInstallingWorker is invoked', () => {
+    (pwaManager as any).setHasUpdate(false);
+
+    Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+      value: {
+        controller: {} as any,
+        addEventListener: vi.fn(),
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    const mockWorker = {
+      state: 'installed',
+      addEventListener: vi.fn(),
+    } as any;
+
+    (pwaManager as any).trackInstallingWorker(mockWorker);
+
+    expect(pwaManager.getHasUpdate()).toBe(true);
+
+    // Cleanup
+    (pwaManager as any).setHasUpdate(false);
+  });
+
+  it('posts SKIP_WAITING to registration.waiting when updateApp is called', async () => {
+    const postMessageMock = vi.fn();
+    (pwaManager as any).registration = {
+      waiting: {
+        postMessage: postMessageMock,
+      },
+    };
+    (pwaManager as any).updateSwFn = vi.fn().mockResolvedValue(undefined);
+    (pwaManager as any).isUpdating = false;
+
+    await pwaManager.updateApp();
+
+    expect(postMessageMock).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+  });
 });

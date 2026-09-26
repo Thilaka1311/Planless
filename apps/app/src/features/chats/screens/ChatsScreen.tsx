@@ -12,7 +12,7 @@ import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import { SearchBar } from "../../../shared/components/SearchBar";
 import { formatChatListTimestamp, subscribeToChatReadEvents } from "../utils/chatReads";
-import { appendMessageToCache, getCachedUnreadInfo, setCachedUnreadInfo, ChatMessage } from "../hooks/useChatCache";
+import { appendMessageToCache, getCachedMessages, getCachedUnreadInfo, setCachedUnreadInfo, ChatMessage } from "../hooks/useChatCache";
 
 interface ChatsScreenProps {
   onSelectChatPlan: (planId: string) => void;
@@ -96,8 +96,74 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
     return map;
   }, [dbPlanParticipants, allMyUserIds]);
 
+  const { dbUsers } = useProfileStore();
+
+  // State to hold unread counts and latest message preview per plan_id (seeded immediately from local cache)
+  const [chatSummaries, setChatSummaries] = useState<Record<string, {
+    unreadCount: number;
+    senderName: string;
+    isCurrentUser: boolean;
+    content: string;
+    createdAt?: string | null;
+    messageType?: string;
+  }>>(() => {
+    const initialMap: Record<string, any> = {};
+    for (const p of plans || []) {
+      const pid = p.dbUuid || p.id;
+      const cached = getCachedMessages(pid);
+      const unread = getCachedUnreadInfo(pid);
+      if (cached.length > 0 || unread) {
+        const lastMsg = cached.length > 0 ? cached[cached.length - 1] : undefined;
+        const isMe = Boolean(userUuid && lastMsg && (lastMsg.sender_id === userUuid || allMyUserIds.has(lastMsg.sender_id)));
+        initialMap[pid] = {
+          unreadCount: unread?.count || 0,
+          senderName: isMe ? "You" : "User",
+          isCurrentUser: isMe,
+          content: lastMsg?.content || "",
+          createdAt: lastMsg?.created_at || null,
+          messageType: lastMsg?.message_type,
+        };
+      }
+    }
+    return initialMap;
+  });
+
+  // Helper to determine latest message/activity timestamp for dynamic descending sort
+  const getPlanLatestActivityTime = (plan: Plan): number => {
+    const planId = plan.dbUuid || plan.id;
+    const altPlanId = plan.id;
+
+    // 1. Check chatSummaries state (populated by cache, RPC, or realtime)
+    const summary = chatSummaries[planId] || chatSummaries[altPlanId];
+    if (summary?.createdAt) {
+      const t = new Date(summary.createdAt).getTime();
+      if (!isNaN(t)) return t;
+    }
+
+    // 2. Check local in-memory chat cache (useChatCache / getCachedMessages)
+    const cached = getCachedMessages(planId);
+    const altCached = altPlanId !== planId ? getCachedMessages(altPlanId) : [];
+    const allCached = cached.length > 0 ? cached : altCached;
+    if (allCached.length > 0) {
+      const lastMsg = allCached[allCached.length - 1];
+      if (lastMsg?.created_at) {
+        const t = new Date(lastMsg.created_at).getTime();
+        if (!isNaN(t)) return t;
+      }
+    }
+
+    // 3. Fallback to plan creation timestamp
+    const rawCreation = plan.createdAt || (plan as any).created_at || plan.datetime || (plan as any).scheduled_at;
+    if (rawCreation) {
+      const t = new Date(rawCreation).getTime();
+      if (!isNaN(t)) return t;
+    }
+
+    return 0;
+  };
+
   // Retrieve every plan where the authenticated user is a participant (Hosted, Joined, Waitlisted, Invited)
-  // excluding cancelled plans. Sorted by scheduled_at ASC (occurring sooner first).
+  // excluding cancelled plans. Dynamically sorted by latest message/activity DESC (newest activity first).
   const userPlanChats = useMemo(() => {
     const userInvolvedPlans = plans.filter((p) => {
       // Exclude cancelled and completed plans from active chat list
@@ -110,13 +176,15 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
       return Boolean(myParticipant || isHostRole || isMember);
     });
 
-    // Sort by scheduled_at ASC (sooner plans first)
+    // Dynamic sort descending by latest message/activity timestamp (newest activity first)
     return userInvolvedPlans.sort((a, b) => {
-      return getPlanScheduledDateTime(a).getTime() - getPlanScheduledDateTime(b).getTime();
+      const timeA = getPlanLatestActivityTime(a);
+      const timeB = getPlanLatestActivityTime(b);
+      return timeB - timeA;
     });
-  }, [plans, participantMap, userUuid, allMyUserIds]);
+  }, [plans, participantMap, userUuid, allMyUserIds, chatSummaries]);
 
-  // Real-time title search filtering while preserving scheduled_at ASC sort order
+  // Real-time title search filtering while preserving latest-activity DESC sort order
   const filteredChats = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return userPlanChats;
@@ -125,17 +193,6 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
       plan.title.toLowerCase().includes(query)
     );
   }, [userPlanChats, searchQuery]);
-
-  const { dbUsers } = useProfileStore();
-
-  // State to hold unread counts and latest message preview per plan_id
-  const [chatSummaries, setChatSummaries] = useState<Record<string, {
-    unreadCount: number;
-    senderName: string;
-    isCurrentUser: boolean;
-    content: string;
-    createdAt?: string | null;
-  }>>({});
 
   // Fetch unread counts and latest message preview for all involved plans
   useEffect(() => {
@@ -161,6 +218,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
             isCurrentUser: boolean;
             content: string;
             createdAt?: string | null;
+            messageType?: string;
           }> = {};
 
           for (const row of data) {
@@ -184,6 +242,8 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
               previewContent = isMe ? "You added an expense" : `${senderName} added an expense`;
             } else if (row.latest_message_type === "poll") {
               previewContent = isMe ? "You created a poll" : `${senderName} created a poll`;
+            } else if (row.latest_message_type === "system") {
+              previewContent = row.latest_content || "";
             }
 
             const unreadCount = Number(row.unread_count || 0);
@@ -193,6 +253,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
               isCurrentUser: isMe,
               content: previewContent,
               createdAt: row.latest_created_at,
+              messageType: row.latest_message_type,
             };
 
             const existingCache = getCachedUnreadInfo(row.plan_id);
@@ -216,7 +277,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
 
     fetchSummaries();
 
-    // 1. Subscribe to Realtime inserts on plan_messages
+    // 1. Subscribe to Realtime inserts on plan_messages (including system messages)
     const messagesChannel = supabase
       .channel("public:plan_messages_chats_preview")
       .on(
@@ -229,7 +290,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
         (payload) => {
           const newMsg = payload.new as any;
           if (!newMsg || !newMsg.plan_id) return;
-          if (!["text", "cost", "poll"].includes(newMsg.message_type)) return;
+          if (!["text", "cost", "poll", "system"].includes(newMsg.message_type)) return;
 
           // Keep in-memory chat cache and unread info warm in background
           appendMessageToCache(newMsg as ChatMessage, userUuid);
@@ -239,7 +300,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
 
           if (isMe) {
             senderName = "You";
-          } else {
+          } else if (newMsg.sender_id) {
             const foundUser = (dbUsers || []).find(
               (u) => u.id === newMsg.sender_id || u.user_id === newMsg.sender_id
             );
@@ -253,12 +314,16 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
             previewContent = isMe ? "You added an expense" : `${senderName} added an expense`;
           } else if (newMsg.message_type === "poll") {
             previewContent = isMe ? "You created a poll" : `${senderName} created a poll`;
+          } else if (newMsg.message_type === "system") {
+            previewContent = newMsg.content || "";
           }
 
           setChatSummaries((prev) => {
             const existing = prev[newMsg.plan_id];
             const currentUnread = existing ? existing.unreadCount : 0;
-            const nextUnread = isMe ? currentUnread : currentUnread + 1;
+            // System messages count as unread! For user-authored messages, only from others
+            const shouldIncrement = newMsg.message_type === "system" || !isMe;
+            const nextUnread = shouldIncrement ? currentUnread + 1 : currentUnread;
 
             return {
               ...prev,
@@ -268,6 +333,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
                 isCurrentUser: isMe,
                 content: previewContent,
                 createdAt: newMsg.created_at || new Date().toISOString(),
+                messageType: newMsg.message_type,
               },
             };
           });
@@ -368,7 +434,12 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
 
     let subtitleText = "";
     if (hasLatestMsg && summary) {
-      if (summary.content.startsWith(`${summary.senderName} `) || summary.content.startsWith("You ")) {
+      if (
+        summary.messageType === "system" ||
+        summary.content.startsWith(`${summary.senderName} `) ||
+        summary.content.startsWith("You ") ||
+        summary.content.startsWith("Hosted by")
+      ) {
         subtitleText = summary.content;
       } else {
         subtitleText = `${summary.senderName}: ${summary.content}`;
@@ -437,7 +508,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
               {/* WhatsApp-Style Numeric Unread Badge */}
               {unreadCount > 0 && (
                 <span className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-[#10B981] text-zinc-950 font-bold text-[11px] flex items-center justify-center leading-none shadow-sm">
-                  {unreadCount > 99 ? "99+" : unreadCount}
+                  {unreadCount}
                 </span>
               )}
             </div>
