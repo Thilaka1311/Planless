@@ -16,7 +16,10 @@ export function resolveUserUuid(uId: string, dbUsers: User[]): string {
 export function parsePlanDateTime(plan: any): Date {
   const now = new Date();
   const rawScheduled = plan?.scheduled_at || plan?.datetime;
-  if (rawScheduled && String(rawScheduled).includes("T") && String(rawScheduled).includes("-")) {
+  if (rawScheduled) {
+    if (rawScheduled instanceof Date && !isNaN(rawScheduled.getTime())) {
+      return rawScheduled;
+    }
     const d = new Date(rawScheduled);
     if (!isNaN(d.getTime())) return d;
   }
@@ -53,4 +56,14 @@ export function parsePlanDateTime(plan: any): Date {
   }
 
   return targetDate;
+}
+
+export function isPlanTimeEnded(plan: any, referenceTimeMs: number = Date.now()): boolean {
+  if (!plan) return false;
+  const status = (plan.status || "").toUpperCase();
+  if (status === "COMPLETED" || status === "OVERDUE") return true;
+
+  const planDate = parsePlanDateTime(plan);
+  if (!planDate || isNaN(planDate.getTime())) return false;
+  return referenceTimeMs >= planDate.getTime();
 }

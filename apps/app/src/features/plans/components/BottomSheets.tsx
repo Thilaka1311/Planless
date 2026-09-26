@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowLeft, ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2, Share } from "lucide-react";
 import { useToast } from "../../../shared/contexts/ToastContext";
 import { buildInviteUrl, copyInviteUrlToClipboard } from "../services/planInviteService";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
@@ -3980,8 +3980,22 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
     }
   }, [isOpen]);
 
-  const handleCopy = async () => {
+  const handleShare = async () => {
     if (!inviteUrl) return;
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({
+          title: resolvedTitle,
+          text: `Join ${resolvedTitle} on Planless`,
+          url: inviteUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === "AbortError") {
+          return;
+        }
+      }
+    }
     try {
       const ok = await copyInviteUrlToClipboard(inviteUrl);
       if (ok) {
@@ -3990,7 +4004,7 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
         setTimeout(() => setCopied(false), 2000);
       }
     } catch (err) {
-      console.error("[SharePlanLinkBottomSheet] Failed to copy link:", err);
+      console.error("[SharePlanLinkBottomSheet] Failed to share/copy link:", err);
     }
   };
 
@@ -4049,21 +4063,14 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
               </div>
             </div>
 
-            {/* Share Content */}
-            <div className="px-5 pt-3 pb-1 text-left">
-              <h2 className="text-[17px] font-bold text-white mb-1">
-                Share Plan Link
-              </h2>
-            </div>
-
-            {/* Actions: Copy Link & Cancel */}
+            {/* Actions: Share & Cancel */}
             <div className="px-4 pt-3 flex flex-col gap-2.5">
-              {/* Primary Action Button: "Copy Link" */}
+              {/* Primary Action Button: "Share" */}
               <button
-                id="share_plan_copy_link_btn"
+                id="share_plan_btn"
                 type="button"
                 disabled={!inviteUrl}
-                onClick={handleCopy}
+                onClick={handleShare}
                 style={{
                   width: "100%",
                   height: 48,
@@ -4088,7 +4095,10 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
                     <span>Link Copied</span>
                   </>
                 ) : (
-                  <span>Copy Link</span>
+                  <>
+                    <Share style={{ width: 18, height: 18 }} />
+                    <span>Share</span>
+                  </>
                 )}
               </button>
 

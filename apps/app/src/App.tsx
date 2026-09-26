@@ -352,118 +352,114 @@ function AppContent({
     setAppState("unauthenticated");
   };
 
-  if (appState === "initializing" || appState === "retrying") {
-    return (
-      <div className="h-[100dvh] w-screen bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
-        {/* Sleek Gradient Glows */}
-        <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#ff5e3a]/10 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
-        
-        <div className="flex flex-col items-center space-y-6 z-10">
-          <h1 className="text-white text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-zinc-200 to-zinc-400">
-            Planless
-          </h1>
-          <div className="w-6 h-6 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
-          <p className="text-zinc-400 text-xs tracking-widest uppercase font-bold animate-pulse">
-            {appState === "retrying" ? "Reconnecting..." : "Setting things up..."}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (appState === "startupError") {
-    return (
-      <div className="h-[100dvh] w-screen bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden p-6">
-        <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#ff5e3a]/10 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
-
-        <div className="flex flex-col items-center space-y-6 z-10 max-w-sm text-center">
-          <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-[#ff5e3a]">
-            <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
+  return (
+    <>
+      <PwaUpdatePrompt />
+      {appState === "initializing" || appState === "retrying" ? (
+        <div className="h-[100dvh] w-screen bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
+          {/* Sleek Gradient Glows */}
+          <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#ff5e3a]/10 blur-[120px] pointer-events-none" />
+          <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
           
-          <div className="space-y-2">
-            <h2 className="text-white text-xl font-bold tracking-tight">Unable to connect to Planless</h2>
-            <p className="text-zinc-400 text-sm leading-relaxed">
-              We're having trouble reaching the server. Please try again.
+          <div className="flex flex-col items-center space-y-6 z-10">
+            <h1 className="text-white text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-zinc-200 to-zinc-400">
+              Planless
+            </h1>
+            <div className="w-6 h-6 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+            <p className="text-zinc-400 text-xs tracking-widest uppercase font-bold animate-pulse">
+              {appState === "retrying" ? "Reconnecting..." : "Setting things up..."}
             </p>
           </div>
+        </div>
+      ) : appState === "startupError" ? (
+        <div className="h-[100dvh] w-screen bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden p-6">
+          <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#ff5e3a]/10 blur-[120px] pointer-events-none" />
+          <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
 
-          <div className="w-full flex flex-col space-y-2">
-            <button
-              type="button"
-              onClick={handleRetry}
-              className="w-full py-3.5 px-6 rounded-xl bg-[#ff5e3a] hover:bg-[#e05230] text-white font-semibold text-sm transition-all shadow-lg shadow-[#ff5e3a]/25 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Retry
-            </button>
-            <button
-              type="button"
-              onClick={handleLogoutReset}
-              className="w-full py-3 px-6 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-medium text-sm transition-all border border-zinc-800 active:scale-[0.98]"
-            >
-              Sign In with Another Account
-            </button>
+          <div className="flex flex-col items-center space-y-6 z-10 max-w-sm text-center">
+            <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-[#ff5e3a]">
+              <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            
+            <div className="space-y-2">
+              <h2 className="text-white text-xl font-bold tracking-tight">Unable to connect to Planless</h2>
+              <p className="text-zinc-400 text-sm leading-relaxed">
+                We're having trouble reaching the server. Please try again.
+              </p>
+            </div>
+
+            <div className="w-full flex flex-col space-y-2">
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="w-full py-3.5 px-6 rounded-xl bg-[#ff5e3a] hover:bg-[#e05230] text-white font-semibold text-sm transition-all shadow-lg shadow-[#ff5e3a]/25 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={handleLogoutReset}
+                className="w-full py-3 px-6 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-medium text-sm transition-all border border-zinc-800 active:scale-[0.98]"
+              >
+                Sign In with Another Account
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="h-[100dvh] w-screen bg-[#050505] flex flex-col font-sans selection:bg-[#ff5e3a]/35 overflow-hidden">
-      <PwaUpdatePrompt />
-      <div className="flex-1 w-full h-full z-10 overflow-hidden">
-        {appState === "unauthenticated" ? (
-          <PlansProviderComp key="plans-onboarding">
-            <FriendshipProvider>
-              <ToastProvider>
-                <div className="w-full h-full bg-[#050505] flex flex-col relative">
-                  <div className="flex-1 overflow-hidden relative">
-                    <OnboardingFlow
-                      onComplete={handleOnboardingComplete}
-                      initialStep={(userProfile && lastInitializedUserIdRef.current) ? "PROFILE_SETUP" : "ENTRY"}
-                      existingProfile={lastInitializedUserIdRef.current ? userProfile : null}
-                    />
-                  </div>
-                </div>
-              </ToastProvider>
-            </FriendshipProvider>
-          </PlansProviderComp>
-        ) : (
-          (() => {
-            const providerKey = userProfile?.user_id || "anonymous";
-            return (
-              <WalletProviderComp key={`wallet-${providerKey}`} userId={userProfile?.dbUuid}>
-                <PlansProviderComp key={`plans-${providerKey}`} userId={userProfile?.dbUuid}>
-                  <FriendshipProvider>
-                    <div className="flex flex-row items-stretch justify-center w-full h-full relative overflow-hidden">
-                      {/* Responsive Container */}
-                      <div className="w-full h-full bg-[#050505] flex flex-col relative">
-                        <div className="flex-1 overflow-hidden relative">
-                          <ToastProvider>
-                            <MainApp
-                              userProfile={userProfile!}
-                              activeUserId={userProfile?.dbUuid || "U001"}
-                              onLogout={handleLogoutReset}
-                              pendingInviteToken={pendingInviteToken}
-                              onClearPendingInvite={handleClearPendingInviteToken}
-                            />
-                          </ToastProvider>
-                        </div>
+      ) : (
+        <div className="h-[100dvh] w-screen bg-[#050505] flex flex-col font-sans selection:bg-[#ff5e3a]/35 overflow-hidden">
+          <div className="flex-1 w-full h-full z-10 overflow-hidden">
+            {appState === "unauthenticated" ? (
+              <PlansProviderComp key="plans-onboarding">
+                <FriendshipProvider>
+                  <ToastProvider>
+                    <div className="w-full h-full bg-[#050505] flex flex-col relative">
+                      <div className="flex-1 overflow-hidden relative">
+                        <OnboardingFlow
+                          onComplete={handleOnboardingComplete}
+                          initialStep={(userProfile && lastInitializedUserIdRef.current) ? "PROFILE_SETUP" : "ENTRY"}
+                          existingProfile={lastInitializedUserIdRef.current ? userProfile : null}
+                        />
                       </div>
                     </div>
-                  </FriendshipProvider>
-                </PlansProviderComp>
-              </WalletProviderComp>
-            );
-          })()
-        )}
-      </div>
-    </div>
+                  </ToastProvider>
+                </FriendshipProvider>
+              </PlansProviderComp>
+            ) : (
+              (() => {
+                const providerKey = userProfile?.user_id || "anonymous";
+                return (
+                  <WalletProviderComp key={`wallet-${providerKey}`} userId={userProfile?.dbUuid}>
+                    <PlansProviderComp key={`plans-${providerKey}`} userId={userProfile?.dbUuid}>
+                      <FriendshipProvider>
+                        <div className="flex flex-row items-stretch justify-center w-full h-full relative overflow-hidden">
+                          {/* Responsive Container */}
+                          <div className="w-full h-full bg-[#050505] flex flex-col relative">
+                            <div className="flex-1 overflow-hidden relative">
+                              <ToastProvider>
+                                <MainApp
+                                  userProfile={userProfile!}
+                                  activeUserId={userProfile?.dbUuid || "U001"}
+                                  onLogout={handleLogoutReset}
+                                  pendingInviteToken={pendingInviteToken}
+                                  onClearPendingInvite={handleClearPendingInviteToken}
+                                />
+                              </ToastProvider>
+                            </div>
+                          </div>
+                        </div>
+                      </FriendshipProvider>
+                    </PlansProviderComp>
+                  </WalletProviderComp>
+                );
+              })()
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

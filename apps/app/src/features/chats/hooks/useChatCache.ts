@@ -134,11 +134,12 @@ export const appendMessageToCache = (newMsg: ChatMessage, currentUserId?: string
   }
   notifyListeners("messages", planUuid);
 
-  // 2. Update unread cache if message is from another participant
+  // 2. Update unread cache if message is from another participant or a system message
+  const isSystem = newMsg.message_type === "system";
   const isFromOther = !currentUserId || newMsg.sender_id !== currentUserId;
-  const isEligible = ["text", "cost", "poll"].includes(newMsg.message_type);
+  const isEligible = isSystem || (isFromOther && ["text", "cost", "poll"].includes(newMsg.message_type));
 
-  if (isFromOther && isEligible) {
+  if (isEligible) {
     const unread = planCache.unreadInfo.get(planUuid);
     if (unread) {
       planCache.unreadInfo.set(planUuid, {

@@ -18,7 +18,7 @@ import {
 import { getPlanPreviewCtaState } from "../../../utils/planPreviewCtaUtils";
 import { LiveActionButton } from "../../../components/LiveActionButton";
 import { EditPlanImageScreen } from "./EditPlanImageScreen";
-import { cleanPlanId, parsePlanDateTime } from "../../../utils/planUtils";
+import { cleanPlanId, parsePlanDateTime, isPlanTimeEnded } from "../../../utils/planUtils";
 import { supabase } from "../../../../../../lib/supabaseClient";
 
 interface PlanSettingsScreenProps {
@@ -338,9 +338,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
   const isCancelled = Boolean((plan?.status || "").toUpperCase() === "CANCELLED");
   const isCompleted = Boolean((plan?.status || "").toUpperCase() === "COMPLETED");
-  const planDateTime = plan ? parsePlanDateTime(plan) : new Date();
-  const isPastPlan = Boolean(plan && planDateTime.getTime() < new Date().setHours(0, 0, 0, 0));
-  const showExclamation = Boolean(!isPlanSettingsForParticipant && isPastPlan && !isCancelled && !isCompleted);
+  const hasPlanTimeEnded = Boolean(plan && isPlanTimeEnded(plan));
+  const showExclamation = Boolean(!isPlanSettingsForParticipant && hasPlanTimeEnded && !isCancelled && !isCompleted);
 
   const isAssignedMode = Boolean((plan as any)?.waitlist_mode === "assigned" || (plan as any)?.waitlistMode === "assigned");
   const assignedGroup = effectiveParticipantRecord?.assigned_group || (effectiveParticipantRecord as any)?.assignedGroup;

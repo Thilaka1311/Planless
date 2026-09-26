@@ -266,7 +266,7 @@ export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
       </div>
 
       {/* Primary and Secondary Action CTAs */}
-      <div className="w-full pt-4 pb-6 flex flex-col items-center max-w-sm mx-auto">
+      <div className="w-full pt-4 pb-6 flex flex-col items-center">
         {/* Primary Action Button */}
         <motion.button
           initial={{ y: 8, opacity: 0 }}
@@ -278,7 +278,7 @@ export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
             damping: 24 
           }}
           onClick={onGoToPlans}
-          className="w-full py-4 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] text-white font-sans font-extrabold text-xs tracking-[0.15em] transition-all duration-200 uppercase cursor-pointer shadow-lg shadow-[#FF6B2C]/20 active:scale-98 border border-[#FF6B2C]/20"
+          className="w-full py-4 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] text-white font-sans font-extrabold text-sm tracking-wide transition-all duration-200 cursor-pointer shadow-lg shadow-[#FF6B2C]/20 active:scale-98 border border-[#FF6B2C]/20"
           id="btn-go-to-plans"
         >
           Go to Plans
@@ -295,7 +295,7 @@ export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
             damping: 24 
           }}
           onClick={onBackToHome}
-          className="w-full mt-4 py-2 text-[#94A3B8]/65 hover:text-white font-sans font-black text-[11px] tracking-[0.14em] transition-colors duration-200 uppercase cursor-pointer"
+          className="w-full mt-4 py-2 text-[#94A3B8]/65 hover:text-white font-sans font-medium text-xs tracking-wide transition-colors duration-200 cursor-pointer"
           id="btn-back-to-home"
         >
           Back to Home
