@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { ArrowLeft } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { DiscoverySection } from "../components/DiscoverySection";
 import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
 import { useUserLocation } from "../hooks/useUserLocation";
+import { usePlacesSearch } from "../hooks/usePlacesSearch";
 import { ADMIN_CONFIGS } from "../services/discoveryAdminService";
 import { SearchBar } from "../../../shared/components/SearchBar";
 
@@ -239,14 +240,22 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<SportsCategoryId>("all");
   const [previewItem, setPreviewItem] = useState<DiscoveryItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
 
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedQuery(searchQuery.trim().toLowerCase());
-    }, 250);
-    return () => clearTimeout(handler);
-  }, [searchQuery]);
+  const {
+    isSearching,
+    isLoading: isSearchLoading,
+    searchResults,
+    searchCoordinates: activeSearchCoordinates,
+    resolvedLocationName,
+  } = usePlacesSearch({
+    category: "SPORTS",
+    searchQuery,
+    subCategoryFilter: selectedCategory,
+    currentCoordinates: activeCoordinates,
+    currentCity: resolvedCity,
+  });
+
+  const effectiveOriginCoords = activeSearchCoordinates || activeCoordinates;
 
   // Extract and deduplicate all sports items across sections
   const allSportsItems = useMemo(() => {
@@ -407,25 +416,6 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
     return [];
   }, [selectedCategory, turfs, courts, adventure]);
 
-  // Search filtering over all sports items
-  const searchedItems = useMemo(() => {
-    if (!debouncedQuery) return [];
-    const q = debouncedQuery;
-    return allSportsItems.filter((item) => {
-      const t = (item.title || "").toLowerCase();
-      const d = (item.description || "").toLowerCase();
-      const loc = (item.location || "").toLowerCase();
-      const addr = (item.place_address || "").toLowerCase();
-      const sub = (item.subcategory || "").toLowerCase();
-      return (
-        t.includes(q) ||
-        d.includes(q) ||
-        loc.includes(q) ||
-        addr.includes(q) ||
-        sub.includes(q)
-      );
-    });
-  }, [allSportsItems, debouncedQuery]);
 
   return (
     <div
@@ -466,40 +456,45 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
       </div>
 
       {/* ── 3. CATEGORY FILTERS (Text Chips) ── */}
-      {!debouncedQuery && (
-        <section className="px-5 pt-2 pb-2 shrink-0 border-b border-white/[0.04]">
-          <div className="flex gap-2 overflow-x-auto no-scrollbar scroll-smooth py-0.5">
-            {SPORTS_CATEGORIES.map((cat) => {
-              const isSelected = selectedCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => handleCategoryClick(cat.id)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer active:scale-95 ${
-                    isSelected
-                      ? "bg-emerald-500 text-white shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-400/40"
-                      : "bg-[#121216] text-zinc-400 border border-white/[0.06] hover:text-white hover:bg-white/[0.06]"
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
+      <section className="px-5 pt-2 pb-2 shrink-0 border-b border-white/[0.04]">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar scroll-smooth py-0.5">
+          {SPORTS_CATEGORIES.map((cat) => {
+            const isSelected = selectedCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => handleCategoryClick(cat.id)}
+                className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer active:scale-95 ${
+                  isSelected
+                    ? "bg-emerald-500 text-white shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-400/40"
+                    : "bg-[#121216] text-zinc-400 border border-white/[0.06] hover:text-white hover:bg-white/[0.06]"
+                }`}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {/* ── 4. HORIZONTAL SECTIONS FEED / SEARCH RESULTS ── */}
       <div className="space-y-8 pt-4 pb-8 flex-1">
-        {debouncedQuery ? (
-          searchedItems.length > 0 ? (
+        {isSearching ? (
+          isSearchLoading ? (
+            <div className="flex flex-col items-center justify-center py-20 space-y-3">
+              <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
+              <p className="text-xs text-zinc-400 font-medium">
+                Searching sports venues for &quot;{searchQuery.trim()}&quot;...
+              </p>
+            </div>
+          ) : searchResults.length > 0 ? (
             <DiscoverySection
               id="sec_sports_search"
-              title="Search Results"
-              items={searchedItems}
+              title={resolvedLocationName ? `Places in ${resolvedLocationName}` : "Search Results"}
+              items={searchResults}
               colorAccent="text-emerald-500"
-              userCoordinates={activeCoordinates}
+              userCoordinates={effectiveOriginCoords}
               isAdmin={isAdmin}
               onSelectItem={(item) => setPreviewItem(item)}
               onLongPressAdmin={
@@ -510,8 +505,11 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
             />
           ) : (
             <div className="px-6 py-16 text-center space-y-2">
-              <p className="text-zinc-500 text-sm font-normal">
-                No sports places found matching &quot;{searchQuery}&quot;.
+              <p className="text-zinc-400 text-sm font-medium">
+                No sports places found for &quot;{searchQuery}&quot;.
+              </p>
+              <p className="text-zinc-500 text-xs">
+                Try searching for a different area, landmark, or sport category.
               </p>
             </div>
           )
@@ -547,7 +545,7 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
       {previewItem && (
         <PlacePreviewSheet
           item={previewItem}
-          userCoordinates={activeCoordinates}
+          userCoordinates={effectiveOriginCoords}
           onClose={() => setPreviewItem(null)}
           onConfirmPlan={(item) => {
             setPreviewItem(null);

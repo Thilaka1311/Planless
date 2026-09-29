@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from "react";
-import { ChevronLeft, Search, MapPin, Navigation, X, Loader2, AlertCircle, Check, Compass } from "lucide-react";
+import React, { useState } from "react";
+import { ArrowLeft, MapPin, Navigation, Loader2, AlertCircle, Compass } from "lucide-react";
 import { useGooglePlacesAutocomplete } from "../../../shared/hooks/useGooglePlacesAutocomplete";
+import { SearchBar } from "../../../shared/components/SearchBar";
 
 export interface DiscoveryLocation {
   name: string;
@@ -15,23 +16,16 @@ export interface LocationSetterProps {
   currentCity?: string;
   currentLocality?: string;
   currentCoordinates?: { latitude: number; longitude: number };
+  hasLocation?: boolean;
   onBack: () => void;
   onSelectLocation: (location: DiscoveryLocation) => void;
 }
-
-// Popular Bangalore / metro areas for instant 1-tap discovery selection
-const POPULAR_DISCOVERY_HUBS = [
-  { name: "Indiranagar", city: "Bengaluru", locality: "Indiranagar", latitude: 12.9784, longitude: 77.6408 },
-  { name: "Koramangala", city: "Bengaluru", locality: "Koramangala", latitude: 12.9352, longitude: 77.6245 },
-  { name: "HSR Layout", city: "Bengaluru", locality: "HSR Layout", latitude: 12.9121, longitude: 77.6446 },
-  { name: "Whitefield", city: "Bengaluru", locality: "Whitefield", latitude: 12.9698, longitude: 77.7500 },
-  { name: "Church Street", city: "Bengaluru", locality: "Central Bangalore", latitude: 12.9749, longitude: 77.6075 },
-];
 
 export const LocationSetter: React.FC<LocationSetterProps> = ({
   currentCity = "Bengaluru",
   currentLocality = "Nearby",
   currentCoordinates,
+  hasLocation,
   onBack,
   onSelectLocation,
 }) => {
@@ -39,9 +33,18 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
   const [isResolvingPlaceId, setIsResolvingPlaceId] = useState<string | null>(null);
   const [isLocatingDevice, setIsLocatingDevice] = useState(false);
   const [deviceLocationError, setDeviceLocationError] = useState<string | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Reuse the exact same Google Places Autocomplete hook used by Create Plan Review
+  // Check if location is already set/available
+  const isLocationAlreadySet =
+    hasLocation !== undefined
+      ? hasLocation
+      : typeof window !== "undefined" &&
+        Boolean(
+          localStorage.getItem("planless_selected_discovery_loc") ||
+          sessionStorage.getItem("planless_selected_discovery_loc")
+        );
+
+  // Reuse the exact same Google Places Autocomplete hook used across the app
   const {
     suggestions,
     isLoading: isAutocompleteLoading,
@@ -50,14 +53,6 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
     reverseGeocode,
     clearSuggestions,
   } = useGooglePlacesAutocomplete(searchQuery);
-
-  // Focus input automatically on mount
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      searchInputRef.current?.focus();
-    }, 100);
-    return () => clearTimeout(timer);
-  }, []);
 
   // ── Handle Place Selection from Google Places Suggestions ────────────────
   const handleSelectSuggestion = async (suggestion: typeof suggestions[0]) => {
@@ -183,17 +178,6 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
     );
   };
 
-  const handleSelectQuickHub = (hub: typeof POPULAR_DISCOVERY_HUBS[0]) => {
-    onSelectLocation({
-      name: hub.name,
-      address: `${hub.name}, ${hub.city}`,
-      latitude: hub.latitude,
-      longitude: hub.longitude,
-      city: hub.city,
-      locality: hub.locality,
-    });
-  };
-
   const showSuggestions = searchQuery.trim().length >= 3 && suggestions.length > 0;
   const showEmptySearch = searchQuery.trim().length >= 3 && !isAutocompleteLoading && suggestions.length === 0;
 
@@ -203,56 +187,33 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
       {/* ── 1. Top Header Bar ── */}
-      <div className="w-full shrink-0 px-4 pt-3 pb-3 flex items-center justify-between border-b border-white/[0.08] bg-[#000000]">
+      <div className="w-full shrink-0 px-4 pt-4 pb-2 flex items-center justify-between bg-[#000000]">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-white/80 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] active:scale-95 transition cursor-pointer"
+            className="p-1 -ml-1 text-white hover:text-zinc-300 active:scale-95 transition flex items-center justify-center cursor-pointer shrink-0"
             aria-label="Back"
           >
-            <ChevronLeft className="w-5 h-5" />
+            <ArrowLeft className="w-6 h-6 text-white" />
           </button>
-          <div>
-            <h1 className="text-base font-bold text-white tracking-tight leading-tight">
-              Discovery Location
-            </h1>
-            <p className="text-[11px] text-zinc-400 font-normal leading-tight">
-              Explore restaurants & sports near you
-            </p>
-          </div>
+          <h1 className="text-lg font-bold text-white tracking-tight leading-tight">
+            Location
+          </h1>
         </div>
       </div>
 
       {/* ── 2. Search Bar Connected to Google Places ── */}
-      <div className="px-5 pt-4 pb-2 shrink-0">
-        <div className="relative flex items-center w-full rounded-2xl bg-[#121216] border border-white/[0.08] focus-within:border-[#FF6B2C]/60 focus-within:bg-[#16161b] transition-all px-3.5 py-2.5 shadow-inner">
-          <Search className="w-4 h-4 text-zinc-400 shrink-0 mr-2.5" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search city, area, or landmark..."
-            className="w-full bg-transparent text-sm font-medium text-white placeholder:text-zinc-500 focus:outline-none"
-          />
-          {isAutocompleteLoading && (
-            <Loader2 className="w-4 h-4 text-zinc-400 animate-spin shrink-0 ml-2" />
-          )}
-          {searchQuery && !isAutocompleteLoading && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchQuery("");
-                clearSuggestions();
-                searchInputRef.current?.focus();
-              }}
-              className="w-5 h-5 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-white transition cursor-pointer shrink-0 ml-2"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          )}
-        </div>
+      <div className="px-4 pt-2 pb-2 shrink-0">
+        <SearchBar
+          value={searchQuery}
+          onChange={(val) => {
+            setSearchQuery(val);
+            if (!val) clearSuggestions();
+          }}
+          placeholder="Search city, area, or landmark..."
+          autoFocus
+        />
 
         {/* Autocomplete API Error Notification */}
         {autocompleteError && (
@@ -265,7 +226,7 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
 
       {/* ── 3. Search Suggestions List (when active) ── */}
       {showSuggestions && (
-        <div className="px-5 pt-1 space-y-1">
+        <div className="px-4 pt-1 space-y-1">
           <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-1 py-1.5">
             Search Results
           </div>
@@ -311,7 +272,7 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
       {showEmptySearch && (
         <div className="px-6 py-12 text-center space-y-2">
           <div className="w-10 h-10 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center mx-auto text-zinc-500">
-            <Search className="w-5 h-5" />
+            <MapPin className="w-5 h-5" />
           </div>
           <p className="text-sm font-medium text-white/90">
             No places found for &quot;{searchQuery}&quot;
@@ -324,125 +285,49 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
 
       {/* ── 5. Standard Content (When Not Searching) ── */}
       {!searchQuery && (
-        <div className="px-5 pt-3 space-y-5">
-          {/* Current / Selected Discovery Location */}
-          <div className="space-y-2">
-            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-1">
-              Active Discovery Location
-            </div>
-            <div className="p-3.5 rounded-2xl bg-[#0e0e11] border border-white/[0.08] flex items-center justify-between">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-[#FF6B2C]/10 border border-[#FF6B2C]/20 flex items-center justify-center text-[#FF6B2C] shrink-0">
-                  <MapPin className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-bold text-white truncate">
-                    {currentCity}
-                  </div>
-                  <div className="text-xs text-zinc-400 truncate">
-                    {currentLocality}
-                  </div>
-                </div>
-              </div>
-              <span className="shrink-0 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold tracking-wide">
-                Current
-              </span>
-            </div>
-          </div>
-
-          {/* Device Location Action ("Use my current location") */}
-          <div className="space-y-2">
-            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-1">
-              Device Location
-            </div>
-            <button
-              type="button"
-              disabled={isLocatingDevice}
-              onClick={handleUseCurrentLocation}
-              className="w-full text-left p-3.5 rounded-2xl bg-[#121216] hover:bg-[#18181e] active:scale-[0.99] border border-white/[0.08] hover:border-[#FF6B2C]/40 transition duration-200 flex items-center justify-between cursor-pointer group shadow-sm"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-[#FF6B2C]/10 border border-[#FF6B2C]/20 flex items-center justify-center text-[#FF6B2C] group-hover:scale-105 transition shrink-0">
-                  {isLocatingDevice ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Navigation className="w-4 h-4" />
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-bold text-white group-hover:text-white truncate">
-                    {isLocatingDevice ? "Detecting location..." : "Use my current location"}
-                  </div>
-                  <div className="text-xs text-zinc-400 truncate mt-0.5">
-                    {isLocatingDevice
-                      ? "Resolving coordinates and address..."
-                      : "Find dining & sports around where you are now"}
-                  </div>
-                </div>
-              </div>
-              <Compass className="w-4 h-4 text-zinc-500 group-hover:text-[#FF6B2C] transition shrink-0 ml-2" />
-            </button>
-
-            {/* Permission denied / GPS error feedback */}
-            {deviceLocationError && (
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-2.5 text-amber-300 text-xs">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
-                <div className="flex-1">
-                  <span>{deviceLocationError}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Selection: Popular Bangalore Discovery Hubs */}
-          <div className="space-y-2 pt-1">
-            <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-1">
-              Popular Discovery Hubs
-            </div>
-            <div className="grid grid-cols-1 gap-2">
-              {POPULAR_DISCOVERY_HUBS.map((hub) => {
-                const isSelected =
-                  currentCity.toLowerCase() === hub.name.toLowerCase() ||
-                  currentLocality.toLowerCase().includes(hub.name.toLowerCase());
-
-                return (
-                  <button
-                    key={hub.name}
-                    type="button"
-                    onClick={() => handleSelectQuickHub(hub)}
-                    className={`w-full text-left p-3 rounded-2xl border transition duration-150 flex items-center justify-between cursor-pointer ${
-                      isSelected
-                        ? "bg-[#18181d] border-[#FF6B2C]/40"
-                        : "bg-[#0c0c0e] hover:bg-white/[0.04] active:bg-white/[0.08] border-white/[0.05]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                          isSelected
-                            ? "bg-[#FF6B2C]/10 text-[#FF6B2C]"
-                            : "bg-white/[0.04] text-zinc-400"
-                        }`}
-                      >
-                        <MapPin className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-white truncate">
-                          {hub.name}
-                        </div>
-                        <div className="text-[11px] text-zinc-400 truncate">
-                          {hub.city} • Popular Hangout & Sports Area
-                        </div>
-                      </div>
-                    </div>
-                    {isSelected && (
-                      <Check className="w-4 h-4 text-[#FF6B2C] shrink-0 ml-2" />
+        <div className="px-4 pt-1 space-y-4">
+          {/* Device Location Action ("Use my current location") - only shown if user has NOT already given location */}
+          {!isLocationAlreadySet && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                disabled={isLocatingDevice}
+                onClick={handleUseCurrentLocation}
+                className="w-full text-left p-3.5 rounded-2xl bg-[#121216] hover:bg-[#18181e] active:scale-[0.99] border border-white/[0.08] hover:border-[#FF6B2C]/40 transition duration-200 flex items-center justify-between cursor-pointer group shadow-sm"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-[#FF6B2C]/10 border border-[#FF6B2C]/20 flex items-center justify-center text-[#FF6B2C] group-hover:scale-105 transition shrink-0">
+                    {isLocatingDevice ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Navigation className="w-4 h-4" />
                     )}
-                  </button>
-                );
-              })}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-white group-hover:text-white truncate">
+                      {isLocatingDevice ? "Detecting location..." : "Use my current location"}
+                    </div>
+                    <div className="text-xs text-zinc-400 truncate mt-0.5">
+                      {isLocatingDevice
+                        ? "Resolving coordinates and address..."
+                        : "Find dining & sports around where you are now"}
+                    </div>
+                  </div>
+                </div>
+                <Compass className="w-4 h-4 text-zinc-500 group-hover:text-[#FF6B2C] transition shrink-0 ml-2" />
+              </button>
             </div>
-          </div>
+          )}
+
+          {/* Permission denied / GPS error feedback */}
+          {deviceLocationError && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-2.5 text-amber-300 text-xs">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+              <div className="flex-1">
+                <span>{deviceLocationError}</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

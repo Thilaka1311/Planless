@@ -200,7 +200,7 @@ describe("Activities Discovery Category Suite", () => {
       );
 
       expect(html).toContain("Activities near you");
-      expect(html).toContain("Great places to do something together");
+      expect(html).not.toContain("Great places to do something together");
       expect(html).toContain("Mystery Rooms Koramangala");
     });
   });

@@ -305,10 +305,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           {["Restaurants near you", "Sports near you", "More dining spots"].map((catTitle) => (
             <div key={catTitle} className="space-y-3">
               <div className="px-6 flex items-center justify-between">
-                <div className="space-y-1">
-                  <div className="h-4 w-32 bg-white/[0.06] rounded-md animate-pulse" />
-                  <div className="h-2.5 w-44 bg-white/[0.04] rounded-md animate-pulse" />
-                </div>
+                <div className="h-4 w-32 bg-white/[0.06] rounded-md animate-pulse" />
               </div>
               <div className="flex gap-3 overflow-x-auto no-scrollbar px-6 pb-2.5">
                 {[1, 2, 3, 4].map((i) => (

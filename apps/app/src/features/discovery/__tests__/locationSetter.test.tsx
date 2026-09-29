@@ -10,33 +10,45 @@ describe("Location Setter & Discovery Flow Suite", () => {
     clearCachedSections();
   });
 
-  it("renders LocationSetter with header, current location, device location option, and popular hubs", () => {
+  it("renders LocationSetter with clean header, search bar, and conditional device location option", () => {
     const onBackMock = vi.fn();
     const onSelectLocationMock = vi.fn();
 
-    const html = renderToString(
+    // When location has NOT been set:
+    const htmlWithoutLoc = renderToString(
       <LocationSetter
         currentCity="Bengaluru"
         currentLocality="Nearby"
+        hasLocation={false}
         onBack={onBackMock}
         onSelectLocation={onSelectLocationMock}
       />
     );
 
-    expect(html).toContain("Discovery Location");
-    expect(html).toContain("Explore restaurants &amp; sports near you");
-    expect(html).toContain("Search city, area, or landmark...");
-    expect(html).toContain("Active Discovery Location");
-    expect(html).toContain("Bengaluru");
-    expect(html).toContain("Nearby");
-    expect(html).toContain("Use my current location");
-    expect(html).toContain("Popular Discovery Hubs");
-    expect(html).toContain("Indiranagar");
-    expect(html).toContain("Koramangala");
-    expect(html).toContain("HSR Layout");
+    expect(htmlWithoutLoc).toContain("Location");
+    expect(htmlWithoutLoc).not.toContain("Discovery Location");
+    expect(htmlWithoutLoc).not.toContain("Explore restaurants");
+    expect(htmlWithoutLoc).toContain("Search city, area, or landmark...");
+    expect(htmlWithoutLoc).not.toContain("Active Discovery Location");
+    expect(htmlWithoutLoc).not.toContain("Popular Discovery Hubs");
+    expect(htmlWithoutLoc).toContain("Use my current location");
+
+    // When location has already been set:
+    const htmlWithLoc = renderToString(
+      <LocationSetter
+        currentCity="Bengaluru"
+        currentLocality="Nearby"
+        hasLocation={true}
+        onBack={onBackMock}
+        onSelectLocation={onSelectLocationMock}
+      />
+    );
+
+    expect(htmlWithLoc).toContain("Location");
+    expect(htmlWithLoc).not.toContain("Use my current location");
   });
 
-  it("handles quick hub selection with valid coordinates and city/locality", () => {
+  it("handles location selection with valid coordinates and city/locality", () => {
     let selected: DiscoveryLocation | null = null;
     const onSelect = (loc: DiscoveryLocation) => {
       selected = loc;

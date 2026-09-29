@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowLeft, ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2, Share } from "lucide-react";
+import { ArrowLeft, ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2, Share, Image as ImageIcon, Zap } from "lucide-react";
 import { useToast } from "../../../shared/contexts/ToastContext";
 import { buildInviteUrl, copyInviteUrlToClipboard } from "../services/planInviteService";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
@@ -41,6 +41,146 @@ export function getCurrentTimeString(d: Date = new Date()): string {
   const minutes = String(d.getMinutes()).padStart(2, '0');
   return `${hours}:${minutes}`;
 }
+
+// ----------------------------------------------------------------------
+// 0A. CREATE PLAN ACTIONS BOTTOM SHEET (EDIT IMAGE / ADD TO QUICK PLAN)
+// ----------------------------------------------------------------------
+export interface CreatePlanActionsBottomSheetProps {
+  isOpen: boolean;
+  onClose: () => void;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  onEditImage: () => void;
+  onAddToQuickPlan: () => void;
+}
+
+export const CreatePlanActionsBottomSheet: React.FC<CreatePlanActionsBottomSheetProps> = ({
+  isOpen,
+  onClose,
+  planTitle = "Plan",
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  onEditImage,
+  onAddToQuickPlan,
+}) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto text-left"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
+
+            {/* Plan Identity Header matching Plan Actions visual hierarchy */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={planCoverImage}
+                  category={planCategory}
+                  subcategory={planSubcategory}
+                  screen="Plan Actions Avatar"
+                  alt={planTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {planTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  Plan Actions
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="px-4 pt-4 flex flex-col gap-2.5">
+              <button
+                id="create-plan-action-edit-image-btn"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEditImage();
+                }}
+                style={{
+                  width: "100%",
+                  height: 48,
+                  padding: "0 16px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  background: "rgba(255, 255, 255, 0.06)",
+                  border: "none",
+                  borderRadius: 12,
+                  color: "#FFFFFF",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <ImageIcon className="w-4 h-4 text-zinc-300 shrink-0" />
+                <span>Edit plan image</span>
+              </button>
+
+              <button
+                id="create-plan-action-add-quick-plan-btn"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onAddToQuickPlan();
+                }}
+                style={{
+                  width: "100%",
+                  height: 48,
+                  padding: "0 16px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  background: "rgba(255, 255, 255, 0.06)",
+                  border: "none",
+                  borderRadius: 12,
+                  color: "#FFFFFF",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <Zap className="w-4 h-4 text-[#FF6B2C] shrink-0" />
+                <span>Add to quick plan</span>
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
 
 // ----------------------------------------------------------------------
 // 0. DISCARD / EXIT PLAN BOTTOM SHEET (PLAN ACTIONS)

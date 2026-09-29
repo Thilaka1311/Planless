@@ -1191,17 +1191,25 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [lifecycle, plans, updateLocalPlan]);
 
   const updatePlanDetails = useCallback(async (planId: string, updates: Partial<DbPlan>, options?: { totalCost?: number; autoPromote?: boolean }) => {
-    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId || (p as any).public_id === planId);
-    const planUuid = matchedPlan?.dbUuid || planId;
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId || (p as any).public_id === planId)
+      || dbPlans.find(p => p.id === planId || (p as any).dbUuid === planId || (p as any).public_id === planId);
+    const planUuid = (matchedPlan && isUuid((matchedPlan as any).dbUuid))
+      ? (matchedPlan as any).dbUuid
+      : (matchedPlan && isUuid(matchedPlan.id))
+      ? matchedPlan.id
+      : (isUuid(planId) ? planId : (matchedPlan?.id || planId));
 
     const previousPlanState = matchedPlan ? {
       plan_size: matchedPlan.plan_size,
-      capacity: matchedPlan.capacity,
-      joinLimit: matchedPlan.joinLimit,
+      capacity: (matchedPlan as any).capacity,
+      joinLimit: (matchedPlan as any).joinLimit,
     } : null;
 
     // Synchronously update local React state first so capacity bounds expand immediately
     updateLocalPlan(planUuid, updates);
+    if (planId !== planUuid) {
+      updateLocalPlan(planId, updates);
+    }
     if (updates.plan_size !== undefined) {
       updateLocalPlan(planUuid, {
         plan_size: updates.plan_size,
@@ -1210,17 +1218,29 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         joinLimit: updates.plan_size,
         maxSpots: updates.plan_size,
       } as any);
+      if (planId !== planUuid) {
+        updateLocalPlan(planId, {
+          plan_size: updates.plan_size,
+          planSize: updates.plan_size,
+          capacity: updates.plan_size,
+          joinLimit: updates.plan_size,
+          maxSpots: updates.plan_size,
+        } as any);
+      }
     }
 
     try {
-      await lifecycle.updatePlanDetails(planId, updates, options);
+      await lifecycle.updatePlanDetails(planUuid || planId, updates, options);
     } catch (err) {
       if (previousPlanState) {
         updateLocalPlan(planUuid, previousPlanState as any);
+        if (planId !== planUuid) {
+          updateLocalPlan(planId, previousPlanState as any);
+        }
       }
       throw err;
     }
-  }, [lifecycle, plans, updateLocalPlan]);
+  }, [lifecycle, plans, dbPlans, updateLocalPlan]);
 
   const completePlan = useCallback(async (
     planId: string,

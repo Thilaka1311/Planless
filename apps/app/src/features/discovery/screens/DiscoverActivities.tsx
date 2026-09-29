@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { ArrowLeft } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { DiscoverySection } from "../components/DiscoverySection";
 import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
 import { useUserLocation } from "../hooks/useUserLocation";
+import { usePlacesSearch } from "../hooks/usePlacesSearch";
 import { ADMIN_CONFIGS } from "../services/discoveryAdminService";
 import { SearchBar } from "../../../shared/components/SearchBar";
 
@@ -394,14 +395,22 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<ActivityCategoryId>("all");
   const [previewItem, setPreviewItem] = useState<DiscoveryItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
 
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedQuery(searchQuery.trim().toLowerCase());
-    }, 250);
-    return () => clearTimeout(handler);
-  }, [searchQuery]);
+  const {
+    searchResults,
+    isSearching,
+    isSearchLoading,
+    resolvedLocationName,
+    activeSearchCoordinates,
+  } = usePlacesSearch({
+    category: "ACTIVITIES",
+    searchQuery,
+    subCategoryFilter: selectedCategory,
+    currentCoordinates: activeCoordinates,
+    currentCity: resolvedCity,
+  });
+
+  const effectiveOriginCoords = activeSearchCoordinates || activeCoordinates;
 
   // Extract and deduplicate all activity items across sections
   const allActivityItems = useMemo(() => {
@@ -582,33 +591,6 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
     return [];
   }, [selectedCategory, mysteryRooms, bowling, goKarting, amusementParks, arcades, adventure, miniGolf, allActivityItems]);
 
-  // Search filtering over all activity items
-  const searchedItems = useMemo(() => {
-    if (!debouncedQuery) return [];
-    const q = debouncedQuery;
-    const pool = allActivityItems.length > 0 ? allActivityItems : [
-      ...defaultBowling,
-      ...defaultMysteryRooms,
-      ...defaultGoKarting,
-      ...defaultAmusement,
-      ...defaultArcades,
-      ...defaultAdventure,
-    ];
-    return pool.filter((item) => {
-      const t = (item.title || "").toLowerCase();
-      const d = (item.description || "").toLowerCase();
-      const loc = (item.location || "").toLowerCase();
-      const addr = (item.place_address || "").toLowerCase();
-      const sub = (item.subcategory || "").toLowerCase();
-      return (
-        t.includes(q) ||
-        d.includes(q) ||
-        loc.includes(q) ||
-        addr.includes(q) ||
-        sub.includes(q)
-      );
-    });
-  }, [allActivityItems, debouncedQuery]);
 
   return (
     <div
@@ -649,40 +631,45 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
       </div>
 
       {/* ── 3. CATEGORY FILTERS (Text Chips with Pink Accent) ── */}
-      {!debouncedQuery && (
-        <section className="px-5 pt-2 pb-2 shrink-0 border-b border-white/[0.04]">
-          <div className="flex gap-2 overflow-x-auto no-scrollbar scroll-smooth py-0.5">
-            {ACTIVITY_CATEGORIES.map((cat) => {
-              const isSelected = selectedCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => handleCategoryClick(cat.id)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer active:scale-95 ${
-                    isSelected
-                      ? "bg-pink-500 text-white shadow-[0_0_12px_rgba(236,72,153,0.35)] border border-pink-400/40"
-                      : "bg-[#121216] text-zinc-400 border border-white/[0.06] hover:text-white hover:bg-white/[0.06]"
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
+      <section className="px-5 pt-2 pb-2 shrink-0 border-b border-white/[0.04]">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar scroll-smooth py-0.5">
+          {ACTIVITY_CATEGORIES.map((cat) => {
+            const isSelected = selectedCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => handleCategoryClick(cat.id)}
+                className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer active:scale-95 ${
+                  isSelected
+                    ? "bg-pink-500 text-white shadow-[0_0_12px_rgba(236,72,153,0.35)] border border-pink-400/40"
+                    : "bg-[#121216] text-zinc-400 border border-white/[0.06] hover:text-white hover:bg-white/[0.06]"
+                }`}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {/* ── 4. HORIZONTAL SECTIONS FEED / SEARCH RESULTS ── */}
       <div className="space-y-8 pt-4 pb-8 flex-1">
-        {debouncedQuery ? (
-          searchedItems.length > 0 ? (
+        {isSearching ? (
+          isSearchLoading ? (
+            <div className="flex flex-col items-center justify-center py-20 space-y-3">
+              <Loader2 className="w-6 h-6 animate-spin text-pink-500" />
+              <p className="text-xs text-zinc-400 font-medium">
+                Searching places for &quot;{searchQuery.trim()}&quot;...
+              </p>
+            </div>
+          ) : searchResults.length > 0 ? (
             <DiscoverySection
               id="sec_activities_search"
-              title="Search Results"
-              items={searchedItems}
+              title={resolvedLocationName ? `Places in ${resolvedLocationName}` : "Search Results"}
+              items={searchResults}
               colorAccent="text-pink-500"
-              userCoordinates={activeCoordinates}
+              userCoordinates={effectiveOriginCoords}
               isAdmin={isAdmin}
               onSelectItem={(item) => setPreviewItem(item)}
               onLongPressAdmin={
@@ -693,8 +680,11 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
             />
           ) : (
             <div className="px-6 py-16 text-center space-y-2">
-              <p className="text-zinc-500 text-sm font-normal">
-                No activities found matching &quot;{searchQuery}&quot;.
+              <p className="text-zinc-400 text-sm font-medium">
+                No activities found for &quot;{searchQuery}&quot;.
+              </p>
+              <p className="text-zinc-500 text-xs">
+                Try searching for a different area, landmark, or activity category.
               </p>
             </div>
           )
@@ -730,7 +720,7 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
       {previewItem && (
         <PlacePreviewSheet
           item={previewItem}
-          userCoordinates={activeCoordinates}
+          userCoordinates={effectiveOriginCoords}
           onClose={() => setPreviewItem(null)}
           onConfirmPlan={(item) => {
             setPreviewItem(null);
@@ -741,3 +731,4 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
     </div>
   );
 };
+

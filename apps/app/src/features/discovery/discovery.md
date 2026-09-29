@@ -267,3 +267,8 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
    - Tap any card (e.g. "Tiki Taka Arena"): verify Create flow opens with pre-populated title, category, and venue location.
 3. **Admin Edit Flow**:
    - Long-press card as admin: verify context sheet appears, edit title, save, and verify immediate UI update.
+4. **Places Search Betterment Verification**:
+   - Search queries with singular/plural categories (e.g. "football", "cafes") dynamically filter items.
+   - Distances dynamically calculate from the active search origin coordinates or user coordinates.
+5. **Streamlined Section Headers**:
+   - Rail headers in `ForYouSections.tsx` show prominent clean titles without trailing "View all" buttons or secondary helper subtitles.

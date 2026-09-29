@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { ChevronRight } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { DiscoverySection } from "./DiscoverySection";
 import { ADMIN_CONFIGS, ContentConfig } from "../services/discoveryAdminService";
@@ -25,31 +24,25 @@ interface ForYouSectionsProps {
 interface SectionDef {
   id: string;
   title: string;
-  subtitle?: string;
   items: DiscoveryItem[];
   colorAccent?: string;
   adminConfig?: ContentConfig;
-  onViewAll?: () => void;
 }
 
 // ─── Movie Rail Section ───────────────────────────────────────────────────────
 
 interface MovieRailProps {
   title: string;
-  subtitle?: string;
   movies: DiscoveryItem[];
   isLoading: boolean;
   onSelectItem: (item: DiscoveryItem) => void;
-  onViewAll?: () => void;
 }
 
 const MovieRailSection: React.FC<MovieRailProps> = ({
   title,
-  subtitle,
   movies,
   isLoading,
   onSelectItem,
-  onViewAll,
 }) => {
   if (!isLoading && movies.length === 0) return null;
 
@@ -58,18 +51,7 @@ const MovieRailSection: React.FC<MovieRailProps> = ({
       <div className="px-6 flex items-end justify-between">
         <div className="space-y-0.5 text-left">
           <h4 className="text-sm font-bold text-white tracking-wide">{title}</h4>
-          {subtitle && <p className="text-[11px] text-zinc-400 font-normal">{subtitle}</p>}
         </div>
-        {onViewAll && (
-          <button
-            type="button"
-            onClick={onViewAll}
-            className="text-[11px] font-semibold text-[#FF6B2C] hover:text-[#ff8552] flex items-center gap-0.5 pb-0.5 transition cursor-pointer"
-          >
-            <span>View all</span>
-            <ChevronRight className="w-3 h-3" />
-          </button>
-        )}
       </div>
 
       <div className="flex gap-3 overflow-x-auto no-scrollbar px-6 pb-2.5 scroll-smooth snap-x snap-mandatory">
@@ -196,7 +178,6 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
       searchSections.push({
         id: "search_dining",
         title: `Restaurants matching "${searchQuery}"`,
-        subtitle: `${diningItems.length} dining spots found`,
         items: diningItems,
         colorAccent: "text-rose-500",
         adminConfig: ADMIN_CONFIGS.dining,
@@ -206,7 +187,6 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
       searchSections.push({
         id: "search_sports",
         title: `Sports matching "${searchQuery}"`,
-        subtitle: `${sportsItems.length} sports facilities found`,
         items: sportsItems,
         colorAccent: "text-emerald-500",
         adminConfig: ADMIN_CONFIGS.turfs,
@@ -216,7 +196,6 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
       searchSections.push({
         id: "search_activities",
         title: `Activities matching "${searchQuery}"`,
-        subtitle: `${activitiesItems.length} activity places found`,
         items: activitiesItems,
         colorAccent: "text-pink-500",
         adminConfig: ADMIN_CONFIGS.activities,
@@ -240,7 +219,6 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
             key={sec.id}
             id={sec.id}
             title={sec.title}
-            subtitle={sec.subtitle}
             items={sec.items}
             colorAccent={sec.colorAccent}
             userCoordinates={userCoordinates}
@@ -260,15 +238,15 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
   // ── Dining/Sports/Activities single-category filter ─────────────────────────
   if (categoryFilter === "dining") {
     const secs: SectionDef[] = [];
-    if (diningItems.length > 0) secs.push({ id: "dining_sec_1", title: "Restaurants near you", subtitle: "Great hangout spots for food & drinks", items: diningItems.slice(0, 12), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
-    if (diningItems.length > 12) secs.push({ id: "dining_sec_2", title: "Dining spots", subtitle: "Popular places for lunch & dinner", items: diningItems.slice(12, 25), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
-    if (diningItems.length > 25) secs.push({ id: "dining_sec_3", title: "More restaurants", subtitle: "Cafes & casual dining", items: diningItems.slice(25, 38), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
-    if (diningItems.length > 38) secs.push({ id: "dining_sec_4", title: "More places to eat", subtitle: "Local food spots nearby", items: diningItems.slice(38, 50), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
+    if (diningItems.length > 0) secs.push({ id: "dining_sec_1", title: "Restaurants near you", items: diningItems.slice(0, 12), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
+    if (diningItems.length > 12) secs.push({ id: "dining_sec_2", title: "Dining spots", items: diningItems.slice(12, 25), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
+    if (diningItems.length > 25) secs.push({ id: "dining_sec_3", title: "More restaurants", items: diningItems.slice(25, 38), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
+    if (diningItems.length > 38) secs.push({ id: "dining_sec_4", title: "More places to eat", items: diningItems.slice(38, 50), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
     if (secs.length === 0) return <div className="px-6 py-16 text-center"><p className="text-zinc-500 text-sm">No places found in this category yet.</p></div>;
     return (
       <div className="space-y-8 pt-2">
         {secs.map((sec) => (
-          <DiscoverySection key={sec.id} id={sec.id} title={sec.title} subtitle={sec.subtitle} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
+          <DiscoverySection key={sec.id} id={sec.id} title={sec.title} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
             onLongPressAdmin={onLongPressAdmin && sec.adminConfig ? (item) => onLongPressAdmin(item, sec.adminConfig!) : undefined} />
         ))}
       </div>
@@ -277,15 +255,15 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
 
   if (categoryFilter === "sports") {
     const secs: SectionDef[] = [];
-    if (sportsItems.length > 0) secs.push({ id: "sports_sec_1", title: "Sports near you", subtitle: "Turfs & courts nearby for your next match", items: sportsItems.slice(0, 12), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
-    if (sportsItems.length > 12) secs.push({ id: "sports_sec_2", title: "Turfs & courts near you", subtitle: "Football, cricket & racket facilities", items: sportsItems.slice(12, 25), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
-    if (sportsItems.length > 25) secs.push({ id: "sports_sec_3", title: "More sports facilities", subtitle: "Clubs, grounds & complexes", items: sportsItems.slice(25, 38), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
-    if (sportsItems.length > 38) secs.push({ id: "sports_sec_4", title: "More sports venues", subtitle: "Recreational facilities near you", items: sportsItems.slice(38, 50), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
+    if (sportsItems.length > 0) secs.push({ id: "sports_sec_1", title: "Sports near you", items: sportsItems.slice(0, 12), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
+    if (sportsItems.length > 12) secs.push({ id: "sports_sec_2", title: "Turfs & courts near you", items: sportsItems.slice(12, 25), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
+    if (sportsItems.length > 25) secs.push({ id: "sports_sec_3", title: "More sports facilities", items: sportsItems.slice(25, 38), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
+    if (sportsItems.length > 38) secs.push({ id: "sports_sec_4", title: "More sports venues", items: sportsItems.slice(38, 50), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
     if (secs.length === 0) return <div className="px-6 py-16 text-center"><p className="text-zinc-500 text-sm">No places found in this category yet.</p></div>;
     return (
       <div className="space-y-8 pt-2">
         {secs.map((sec) => (
-          <DiscoverySection key={sec.id} id={sec.id} title={sec.title} subtitle={sec.subtitle} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
+          <DiscoverySection key={sec.id} id={sec.id} title={sec.title} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
             onLongPressAdmin={onLongPressAdmin && sec.adminConfig ? (item) => onLongPressAdmin(item, sec.adminConfig!) : undefined} />
         ))}
       </div>
@@ -294,15 +272,15 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
 
   if (categoryFilter === "activities") {
     const secs: SectionDef[] = [];
-    if (activitiesItems.length > 0) secs.push({ id: "activities_sec_1", title: "Activities near you", subtitle: "Great places to do something together", items: activitiesItems.slice(0, 12), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
-    if (activitiesItems.length > 12) secs.push({ id: "activities_sec_2", title: "More fun activities", subtitle: "Bowling, arcades, and mystery rooms", items: activitiesItems.slice(12, 25), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
-    if (activitiesItems.length > 25) secs.push({ id: "activities_sec_3", title: "More recreational spots", subtitle: "Games & group experiences nearby", items: activitiesItems.slice(25, 38), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
-    if (activitiesItems.length > 38) secs.push({ id: "activities_sec_4", title: "Explore more activities", subtitle: "Fun experiences near you", items: activitiesItems.slice(38, 50), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
+    if (activitiesItems.length > 0) secs.push({ id: "activities_sec_1", title: "Activities near you", items: activitiesItems.slice(0, 12), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
+    if (activitiesItems.length > 12) secs.push({ id: "activities_sec_2", title: "More fun activities", items: activitiesItems.slice(12, 25), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
+    if (activitiesItems.length > 25) secs.push({ id: "activities_sec_3", title: "More recreational spots", items: activitiesItems.slice(25, 38), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
+    if (activitiesItems.length > 38) secs.push({ id: "activities_sec_4", title: "Explore more activities", items: activitiesItems.slice(38, 50), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
     if (secs.length === 0) return <div className="px-6 py-16 text-center"><p className="text-zinc-500 text-sm">No places found in this category yet.</p></div>;
     return (
       <div className="space-y-8 pt-2">
         {secs.map((sec) => (
-          <DiscoverySection key={sec.id} id={sec.id} title={sec.title} subtitle={sec.subtitle} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
+          <DiscoverySection key={sec.id} id={sec.id} title={sec.title} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
             onLongPressAdmin={onLongPressAdmin && sec.adminConfig ? (item) => onLongPressAdmin(item, sec.adminConfig!) : undefined} />
         ))}
       </div>
@@ -321,22 +299,22 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
   const interleavedFeed = useMemo((): FeedSlot[] => {
     // Collect all venue section defs
     const dSecs: SectionDef[] = [];
-    if (diningItems.length > 0) dSecs.push({ id: "foryou_dining_1", title: "Restaurants near you", subtitle: "Great hangout spots for food & drinks", items: diningItems.slice(0, 10), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining, onViewAll: onViewAllCategory ? () => onViewAllCategory("dining") : undefined });
-    if (diningItems.length > 10) dSecs.push({ id: "foryou_dining_2", title: "More dining spots", subtitle: "Cafes, bistros & eateries", items: diningItems.slice(10, 20), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
-    if (diningItems.length > 20) dSecs.push({ id: "foryou_dining_3", title: "More restaurants", subtitle: "Places to catch up and unwind", items: diningItems.slice(20, 32), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
-    if (diningItems.length > 32) dSecs.push({ id: "foryou_dining_4", title: "More places to eat", subtitle: "Explore neighborhood eateries", items: diningItems.slice(32, 50), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
+    if (diningItems.length > 0) dSecs.push({ id: "foryou_dining_1", title: "Restaurants near you", items: diningItems.slice(0, 10), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
+    if (diningItems.length > 10) dSecs.push({ id: "foryou_dining_2", title: "More dining spots", items: diningItems.slice(10, 20), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
+    if (diningItems.length > 20) dSecs.push({ id: "foryou_dining_3", title: "More restaurants", items: diningItems.slice(20, 32), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
+    if (diningItems.length > 32) dSecs.push({ id: "foryou_dining_4", title: "More places to eat", items: diningItems.slice(32, 50), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
 
     const sSecs: SectionDef[] = [];
-    if (sportsItems.length > 0) sSecs.push({ id: "foryou_sports_1", title: "Sports near you", subtitle: "Turfs & courts nearby for your next match", items: sportsItems.slice(0, 10), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs, onViewAll: onViewAllCategory ? () => onViewAllCategory("sports") : undefined });
-    if (sportsItems.length > 10) sSecs.push({ id: "foryou_sports_2", title: "Turfs & courts near you", subtitle: "Football, cricket & racket facilities", items: sportsItems.slice(10, 20), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
-    if (sportsItems.length > 20) sSecs.push({ id: "foryou_sports_3", title: "More sports facilities", subtitle: "Clubs, grounds & activity centers", items: sportsItems.slice(20, 32), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
-    if (sportsItems.length > 32) sSecs.push({ id: "foryou_sports_4", title: "More sports venues", subtitle: "Recreational venues for groups", items: sportsItems.slice(32, 50), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
+    if (sportsItems.length > 0) sSecs.push({ id: "foryou_sports_1", title: "Sports near you", items: sportsItems.slice(0, 10), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
+    if (sportsItems.length > 10) sSecs.push({ id: "foryou_sports_2", title: "Turfs & courts near you", items: sportsItems.slice(10, 20), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
+    if (sportsItems.length > 20) sSecs.push({ id: "foryou_sports_3", title: "More sports facilities", items: sportsItems.slice(20, 32), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
+    if (sportsItems.length > 32) sSecs.push({ id: "foryou_sports_4", title: "More sports venues", items: sportsItems.slice(32, 50), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
 
     const aSecs: SectionDef[] = [];
-    if (activitiesItems.length > 0) aSecs.push({ id: "foryou_activities_1", title: "Activities near you", subtitle: "Great places to do something together", items: activitiesItems.slice(0, 10), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities, onViewAll: onViewAllCategory ? () => onViewAllCategory("activities") : undefined });
-    if (activitiesItems.length > 10) aSecs.push({ id: "foryou_activities_2", title: "More fun activities", subtitle: "Games & group experiences nearby", items: activitiesItems.slice(10, 20), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
-    if (activitiesItems.length > 20) aSecs.push({ id: "foryou_activities_3", title: "More recreational spots", subtitle: "Recreational venues for groups", items: activitiesItems.slice(20, 32), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
-    if (activitiesItems.length > 32) aSecs.push({ id: "foryou_activities_4", title: "Explore more activities", subtitle: "Fun experiences near you", items: activitiesItems.slice(32, 50), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
+    if (activitiesItems.length > 0) aSecs.push({ id: "foryou_activities_1", title: "Activities near you", items: activitiesItems.slice(0, 10), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
+    if (activitiesItems.length > 10) aSecs.push({ id: "foryou_activities_2", title: "More fun activities", items: activitiesItems.slice(10, 20), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
+    if (activitiesItems.length > 20) aSecs.push({ id: "foryou_activities_3", title: "More recreational spots", items: activitiesItems.slice(20, 32), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
+    if (activitiesItems.length > 32) aSecs.push({ id: "foryou_activities_4", title: "Explore more activities", items: activitiesItems.slice(32, 50), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
 
     const showMovies = nowPlaying.length > 0 || popular.length > 0 || moviesLoading;
 
@@ -416,13 +394,11 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
               key={sec.id}
               id={sec.id}
               title={sec.title}
-              subtitle={sec.subtitle}
               items={sec.items}
               colorAccent={sec.colorAccent}
               userCoordinates={userCoordinates}
               isAdmin={isAdmin}
               onSelectItem={onSelectItem}
-              onViewAll={sec.onViewAll}
               onLongPressAdmin={
                 onLongPressAdmin && sec.adminConfig
                   ? (item) => onLongPressAdmin(item, sec.adminConfig!)
@@ -437,11 +413,9 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
             <MovieRailSection
               key="movies_now_playing"
               title="Latest Movies"
-              subtitle="Recently released"
               movies={nowPlaying.slice(0, 12)}
               isLoading={moviesLoading && nowPlaying.length === 0}
               onSelectItem={onSelectItem}
-              onViewAll={onViewAllMovies}
             />
           );
         }
@@ -453,11 +427,9 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
             <MovieRailSection
               key="movies_popular"
               title="Popular Movies"
-              subtitle="Trending across India"
               movies={popular.slice(0, 12)}
               isLoading={moviesLoading && popular.length === 0}
               onSelectItem={onSelectItem}
-              onViewAll={onViewAllMovies}
             />
           );
         }

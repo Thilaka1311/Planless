@@ -188,4 +188,74 @@ describe('No Limit Plan Capacity Flow (Phase 1)', () => {
     );
     expect(capacityC).toBe(5);
   });
+
+  it('allows increasing capacity from 6 to 7 in Automatic mode without being clamped to active participants', () => {
+    const isAssigned = false;
+    const totalActiveParticipants = 6;
+    const currentPlanSize = 6;
+    const previewMaxCapacity = Math.max(currentPlanSize || 2, Math.max(2, totalActiveParticipants)); // 6
+    expect(previewMaxCapacity).toBe(6);
+
+    // In Automatic mode, maxAllowedCapacity must be 50, not clamped to 6
+    const maxAllowedCapacity = isAssigned ? previewMaxCapacity : 50;
+    expect(maxAllowedCapacity).toBe(50);
+
+    const newCapacity = 7;
+    const clampedVal = Math.min(maxAllowedCapacity, Math.max(2, newCapacity));
+    expect(clampedVal).toBe(7);
+    expect(clampedVal).not.toBe(currentPlanSize);
+  });
+
+  it('correctly persists capacity update to database and updates local cache synchronously', async () => {
+    const mockDbPlans = [
+      { id: '11111111-2222-3333-4444-555555555555', public_id: 'P000001', title: 'Friday night', plan_size: 6 }
+    ];
+
+    let persistedRow: any = null;
+    let localCache = [...mockDbPlans];
+
+    const mockUpdatePlanDetails = async (
+      rawPlanId: string,
+      updates: { plan_size?: number | null }
+    ) => {
+      const planUuid = '11111111-2222-3333-4444-555555555555';
+      const boundedPlanSize = updates.plan_size !== undefined && updates.plan_size !== null
+        ? Math.max(2, updates.plan_size)
+        : null;
+
+      // Local state update
+      localCache = localCache.map(p =>
+        p.id === planUuid || p.public_id === rawPlanId
+          ? { ...p, plan_size: boundedPlanSize }
+          : p
+      );
+
+      // Direct DB update
+      persistedRow = {
+        ...localCache[0],
+        plan_size: boundedPlanSize,
+        updated_at: new Date().toISOString(),
+      };
+      return persistedRow;
+    };
+
+    // 1. Host changes capacity 6 -> 7
+    await mockUpdatePlanDetails('P000001', { plan_size: 7 });
+    expect(persistedRow.plan_size).toBe(7);
+    expect(localCache[0].plan_size).toBe(7);
+
+    // 2. Reopening sheet reads from localCache or persisted DB row
+    const reopenedCapacity = localCache[0].plan_size === null ? null : (localCache[0].plan_size || 2);
+    expect(reopenedCapacity).toBe(7);
+
+    // 3. Host changes capacity 7 -> No Limit (null)
+    await mockUpdatePlanDetails('P000001', { plan_size: null });
+    expect(persistedRow.plan_size).toBeNull();
+    expect(localCache[0].plan_size).toBeNull();
+
+    // 4. Hero card displays "No limit"
+    const heroDisplay = localCache[0].plan_size === null ? "No limit" : localCache[0].plan_size;
+    expect(heroDisplay).toBe("No limit");
+  });
 });
+

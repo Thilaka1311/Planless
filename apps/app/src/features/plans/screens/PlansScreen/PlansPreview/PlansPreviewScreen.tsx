@@ -490,6 +490,7 @@ export interface PlansDetailsScreenProps {
   onDecrementCapacity?: () => void;
   onSubmit?: () => void;
   isSubmitting?: boolean;
+  onOpenMenu?: () => void;
 }
 
 export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
@@ -520,6 +521,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   onDecrementCapacity,
   onSubmit,
   isSubmitting = false,
+  onOpenMenu,
 }) => {
   const {
     dbPlans,
@@ -1168,8 +1170,17 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
   const rawDbPlan = useMemo(() => {
     if (createMode && plan) return plan as any;
-    return dbPlans.find(p => p.id === planUuid);
-  }, [dbPlans, planUuid, createMode, plan]);
+    return (dbPlans || []).find((p: any) =>
+      p.id === planUuid ||
+      (p as any).dbUuid === planUuid ||
+      (p as any).public_id === planUuid ||
+      (selectedPlan && (
+        p.id === selectedPlan.id ||
+        (p as any).dbUuid === selectedPlan.id ||
+        (p as any).public_id === selectedPlan.id
+      ))
+    );
+  }, [dbPlans, planUuid, createMode, plan, selectedPlan]);
 
   const currentPlanSize = Number(
     rawDbPlan?.plan_size ??
@@ -1371,7 +1382,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         if (!selectedPlan?.id) return;
         setIsEditingCapacitySheetOpen(false);
         try {
-          await updatePlanDetails(selectedPlan.id, { plan_size: null }, { autoPromote: true });
+          await updatePlanDetails(planUuid || selectedPlan.id, { plan_size: null }, { autoPromote: true });
         } catch (err: any) {
           console.error('[PlansPreviewScreen handleCapacityChange] Error updating capacity to null:', err);
         }
@@ -1387,7 +1398,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       }
       if (!selectedPlan?.id) return;
 
-      const clampedVal = Math.min(previewMaxCapacity, Math.max(2, newCapacity));
+      const maxAllowedCapacity = isAssigned ? previewMaxCapacity : 50;
+      const clampedVal = Math.min(maxAllowedCapacity, Math.max(2, newCapacity));
       if (clampedVal === currentPlanSize) return;
 
       let planCost = Number(selectedPlan.total_cost || 0);
@@ -1535,7 +1547,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
         setIsEditingCapacitySheetOpen(false);
         try {
-          await updatePlanDetails(selectedPlan.id, { plan_size: clampedVal }, { autoPromote: true });
+          await updatePlanDetails(planUuid || selectedPlan.id, { plan_size: clampedVal }, { autoPromote: true });
         } catch (err: any) {
           console.error('[PlansPreviewScreen handleCapacityChange] Error updating capacity:', err);
         }
@@ -1552,6 +1564,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       previewWaitlistList,
       activeUserId,
       updatePlanDetails,
+      planUuid,
     ]
   );
 
@@ -2294,6 +2307,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   ? () => setShowSharePlanLinkSheet(true)
                   : undefined
               }
+              onOpenMenu={createMode ? onOpenMenu : undefined}
             />
 
             {isEditingLocationInline && (
@@ -3120,7 +3134,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           )?.length
         }
         minCapacity={2}
-        maxCapacity={createMode ? (plan?.members ? plan.members.length : undefined) : previewMaxCapacity}
+        maxCapacity={createMode ? (plan?.members ? plan.members.length : undefined) : (isAssigned ? previewMaxCapacity : 50)}
         limitToInvitedCount={createMode ? true : isAssigned}
         isAutomatic={!isAssigned}
         onCapacityChange={handleCapacityChange}

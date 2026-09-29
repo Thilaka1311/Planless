@@ -205,8 +205,13 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     options?: { totalCost?: number; autoPromote?: boolean }
   ) => {
     const planId = cleanPlanId(rawPlanId);
-    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
-    const planUuid = matchedPlan?.dbUuid || planId;
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId || (p as any).public_id === planId)
+      || dbPlans.find(p => p.id === planId || (p as any).dbUuid === planId || (p as any).public_id === planId);
+    const planUuid = (matchedPlan && isUuidUtil((matchedPlan as any).dbUuid))
+      ? (matchedPlan as any).dbUuid
+      : (matchedPlan && isUuidUtil(matchedPlan.id))
+      ? matchedPlan.id
+      : (isUuidUtil(planId) ? planId : (matchedPlan?.id || planId));
 
     const oldCapacity = matchedPlan?.plan_size || matchedPlan?.joinLimit || matchedPlan?.capacity || matchedPlan?.maxSpots || 0;
     const newCapacity = updates.plan_size !== undefined && updates.plan_size !== null ? Math.max(2, updates.plan_size) : null;
@@ -257,10 +262,9 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
 
     if (planUpdate.plan_size !== undefined) {
       if (planUpdate.plan_size === null) {
-        const previousDbPlans = dbPlans;
         if (setDbPlans) {
           setDbPlans(prev => prev.map(p => {
-            if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+            if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId || (p as any).public_id === planId) {
               return {
                 ...p,
                 plan_size: null,
@@ -276,11 +280,11 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
         }
       } else {
         const boundedPlanSize = Math.max(2, planUpdate.plan_size);
+        planUpdate.plan_size = boundedPlanSize;
 
-        const previousDbPlans = dbPlans;
         if (setDbPlans) {
           setDbPlans(prev => prev.map(p => {
-            if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+            if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId || (p as any).public_id === planId) {
               return {
                 ...p,
                 plan_size: boundedPlanSize,
@@ -298,7 +302,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
         try {
           await api.updatePlanCapacityRPC(planUuid, boundedPlanSize, options?.autoPromote);
         } catch (err: any) {
-          console.error("[usePlanLifecycle.updatePlanDetails] updatePlanCapacityRPC failed:", {
+          console.warn("[usePlanLifecycle.updatePlanDetails] updatePlanCapacityRPC failed, falling back to direct plans update:", {
             message: err?.message || String(err),
             code: err?.code,
             details: err?.details,
@@ -307,10 +311,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
             attemptedPlanSize: boundedPlanSize,
             rawError: err,
           });
-          if (setDbPlans) setDbPlans(previousDbPlans);
-          throw err;
         }
-        delete planUpdate.plan_size;
       }
     }
 
@@ -337,11 +338,12 @@ new = ${planUpdate.cover_image}`);
           .update(planUpdate)
           .eq("id", planUuid);
         if (planError) {
+          console.error("[usePlanLifecycle.updatePlanDetails] Failed to update plan in database:", planError);
           throw new Error("Failed to update plan details in database: " + planError.message);
         }
         if (setDbPlans) {
           setDbPlans(prev => prev.map(p => {
-            if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+            if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId || (p as any).public_id === planId) {
               return {
                 ...p,
                 ...planUpdate,

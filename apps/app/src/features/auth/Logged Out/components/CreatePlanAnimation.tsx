@@ -118,7 +118,7 @@ export function CreatePlanAnimation({
   const [totalCapacity, setTotalCapacity] = useState<number | undefined>(undefined);
   const [waitlistMode, setWaitlistMode] = useState<"automatic" | "assigned">("automatic");
   const [waitlistEnabled, setWaitlistEnabled] = useState<boolean>(true);
-  const [localTitle, setLocalTitle] = useState("Friday Plans");
+  const [localTitle, setLocalTitle] = useState("Friday plans");
   const [costAmount, setCostAmount] = useState("400");
   const [isCostManuallySet, setIsCostManuallySet] = useState(true);
   const [isDateManuallySet, setIsDateManuallySet] = useState(true);
@@ -343,6 +343,9 @@ export function CreatePlanAnimation({
               className="w-full h-full flex flex-col overflow-hidden relative"
             >
               <CreatePlanConfirmation
+                planTitle="Friday plans"
+                planCoverImage={customPlanCover}
+                hideActions={true}
                 onGoToPlans={() => onCompleteRef.current?.()}
                 onCopyInviteLink={() => onCompleteRef.current?.()}
               />
