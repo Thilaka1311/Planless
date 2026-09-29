@@ -13,8 +13,8 @@ import {
   Film,
   X,
 } from "lucide-react";
-import customPlanCover from "../../../../assets/planimagedefault.png";
-import defaultAvatar from "../../../../assets/default_avatar.png";
+import customPlanCover from "../../../../assets/planimagedefault.webp";
+import defaultAvatar from "../../../../assets/default_avatar.webp";
 import { getOnboardingPlanTime } from "./PlanAnimation";
 
 export interface DemoPerson {

@@ -22,7 +22,7 @@ import { pwaManager } from './shared/pwa/pwaService';
 
 // Initialize PWA lifecycle management and update listener
 pwaManager.init();
-import planlessLogo from './assets/planless_logo.png';
+import planlessLogo from './assets/planless_logo.webp';
 import { preloadImage } from './shared/imaging/preloadImage';
 import { preloadCoreStaticAssets } from './shared/assets/coreStaticAssets';
 

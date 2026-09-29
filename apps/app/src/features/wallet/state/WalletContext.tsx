@@ -16,7 +16,9 @@ interface WalletState {
   transactions?: any[];
   dbTransactions?: any[];
   setDbTransactions?: any;
-  refreshTransactions: () => Promise<void>;
+  refreshTransactions: (reason?: string, sourceEvent?: string) => Promise<void>;
+  ensureLoaded: () => Promise<void>;
+  isLoaded: boolean;
   updateExpenseInStore: (expenseId: string, updatedFields: {
     title?: string;
     total_amount?: number;
@@ -40,10 +42,15 @@ export const WalletProvider = ({
   const [dbWalletPaidTransactions, setDbWalletPaidTransactions] = useState<any[]>([]);
   const [dbWalletSettlements, setDbWalletSettlements] = useState<any[]>([]);
   const [dbPlansLocal, setDbPlansLocal] = useState<any[]>([]);
+  const dbPlansLocalRef = useRef<any[]>([]);
+  dbPlansLocalRef.current = dbPlansLocal;
   const [dbPlanParticipantsLocal, setDbPlanParticipantsLocal] = useState<any[]>([]);
   const [dbUsersLocal, setDbUsersLocal] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const isLoadedRef = useRef<boolean>(false);
+  const loadedUserRef = useRef<string | null>(null);
 
   const updateExpenseInStore = useCallback((expenseId: string, updatedFields: {
     title?: string;
@@ -103,16 +110,97 @@ export const WalletProvider = ({
         }
       }
 
-      // 2. Query wallet_expenses with payer and plan joined
+      // Early exit if no valid active user UUID
+      if (!resolvedUuid) {
+        setDbWalletTransactions([]);
+        setDbWalletPaidTransactions([]);
+        setDbWalletSettlements([]);
+        setDbPlansLocal([]);
+        setDbPlanParticipantsLocal([]);
+        setDbUsersLocal([]);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Discover relevant plan and expense associations concurrently
+      // - Query user's plan participation (fast index scan on user_id)
+      // - Query user's settlements (payer or receiver)
+      // - Query user's expense participant allocations (expenses where user owes / shares cost)
+      const settlementsSelectQuery = `
+        *,
+        allocations:wallet_settlement_allocations(
+          id,
+          amount,
+          expense_participant_id,
+          expense_participant:wallet_expense_participants(
+            id,
+            expense_id,
+            expense:wallet_expenses(
+              id,
+              title,
+              expense_type
+            )
+          )
+        )
+      `;
+
+      const [myPartRes, settlementsRes, myExpPartsRes] = await Promise.all([
+        supabase
+          .from("plan_participants")
+          .select("plan_id")
+          .eq("user_id", resolvedUuid),
+        (supabase as any)
+          .from("wallet_settlements")
+          .select(settlementsSelectQuery)
+          .or(`payer_id.eq.${resolvedUuid},receiver_id.eq.${resolvedUuid}`)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("wallet_expense_participants")
+          .select("expense_id")
+          .eq("user_id", resolvedUuid),
+      ]);
+
+      if (myPartRes.error) {
+        console.error("[Wallet ERROR] Error fetching user plan_participants:", myPartRes.error);
+      }
+      if (settlementsRes.error) {
+        console.error("[Wallet ERROR] Error fetching wallet_settlements:", settlementsRes.error);
+      }
+      if (myExpPartsRes.error) {
+        console.error("[Wallet ERROR] Error fetching user wallet_expense_participants:", myExpPartsRes.error);
+      }
+
+      const settlementsData = settlementsRes.data || [];
+      setDbWalletSettlements(settlementsData);
+
+      const userPlanIds = Array.from(
+        new Set((myPartRes.data || []).map((pp: any) => pp.plan_id).filter(Boolean))
+      );
+      const settlementPlanIds = (settlementsData || []).map((s: any) => s.plan_id).filter(Boolean);
+      const candidatePlanIds = Array.from(new Set([...userPlanIds, ...settlementPlanIds]));
+      const userExpenseIds = Array.from(
+        new Set((myExpPartsRes.data || []).map((ep: any) => ep.expense_id).filter(Boolean))
+      );
+
+      // 3. Query wallet_expenses scoped to the active user's participation, payer role, and relevant plans
       const selectQuery = `
         *,
         payer:users!payer_id(id, full_name, profile_photo_path, username, public_id),
         plan:plans!plan_id(id, title, total_cost, cover_image)
       `;
 
+      const expenseOrFilters: string[] = [`payer_id.eq.${resolvedUuid}`];
+      if (candidatePlanIds.length > 0) {
+        expenseOrFilters.push(`plan_id.in.(${candidatePlanIds.join(",")})`);
+      }
+      if (userExpenseIds.length > 0) {
+        expenseOrFilters.push(`id.in.(${userExpenseIds.join(",")})`);
+      }
+
       const { data: allExp, error: allErr } = await supabase
         .from("wallet_expenses")
-        .select(selectQuery);
+        .select(selectQuery)
+        .or(expenseOrFilters.join(","));
 
       if (allErr) {
         console.error("[Wallet ERROR] Supabase error in wallet_expenses query:", allErr);
@@ -121,7 +209,7 @@ export const WalletProvider = ({
 
       let expenses: any[] = allExp || [];
 
-      // 2b. Direct query to wallet_expense_participants to guarantee participant rows reach state
+      // 3b. Query wallet_expense_participants scoped strictly to the fetched expense IDs
       const expIds: string[] = expenses.map((e: any) => e.id).filter(Boolean);
       let expParticipants: any[] = [];
 
@@ -164,36 +252,25 @@ export const WalletProvider = ({
 
       setDbWalletPaidTransactions([]);
 
-      // 3. Query wallet_settlements with allocations and expense context
-      const { data: settlementsData, error: settlementsErr } = await (supabase as any)
-        .from("wallet_settlements")
-        .select(`
-          *,
-          allocations:wallet_settlement_allocations(
-            id,
-            amount,
-            expense_participant_id,
-            expense_participant:wallet_expense_participants(
-              id,
-              expense_id,
-              expense:wallet_expenses(
-                id,
-                title,
-                expense_type
-              )
-            )
-          )
-        `)
-        .order("created_at", { ascending: false });
+      // 4. Scope plan_participants strictly to all relevant plans (candidate plans + any expense plans)
+      const expensePlanIds = (expenses || []).map((e: any) => e.plan_id).filter(Boolean);
+      const allPlanIds = Array.from(new Set([...candidatePlanIds, ...expensePlanIds]));
 
-      if (settlementsErr) {
-        console.error("[Wallet ERROR] Supabase error fetching wallet_settlements:", settlementsErr);
-      } else {
-        setDbWalletSettlements(settlementsData || []);
+      let participants: any[] = [];
+      if (allPlanIds.length > 0) {
+        const { data: planParts, error: planPartsErr } = await supabase
+          .from("plan_participants")
+          .select("*")
+          .in("plan_id", allPlanIds);
+
+        if (planPartsErr) {
+          console.error("[Wallet ERROR] Supabase error fetching plan_participants for relevant plans:", planPartsErr);
+        } else {
+          participants = planParts || [];
+        }
       }
 
-      // 4. Extract unique plan and user IDs to fetch additional context
-      const expensePlanIds = (expenses || []).map((e: any) => e.plan_id).filter(Boolean);
+      // 5. Scope users and plans to relevant entities only, with empty-state safety (no global fallback scans)
       const payerIds = Array.from(new Set((expenses || []).map((e: any) => e.payer_id).filter(Boolean)));
       const settlementUserIds = (settlementsData || []).flatMap((s: any) => [s.payer_id, s.receiver_id]).filter(Boolean);
       const participantUserIds = Array.from(
@@ -203,33 +280,19 @@ export const WalletProvider = ({
             .filter(Boolean)
         )
       );
-
-      // Fetch all plan_participants first to discover all plans the active user is in
-      const { data: participants } = await supabase.from("plan_participants").select("*");
-
-      const userPlanIds = (participants || [])
-        .filter((pp: any) => pp.user_id === activeUserUuid)
-        .map((pp: any) => pp.plan_id)
-        .filter(Boolean);
-
-      const allPlanIds = Array.from(new Set([...expensePlanIds, ...userPlanIds]));
-
-      const planParticipantUserIds = (participants || [])
-        .filter((pp: any) => allPlanIds.includes(pp.plan_id))
-        .map((pp: any) => pp.user_id)
-        .filter(Boolean);
+      const planParticipantUserIds = (participants || []).map((pp: any) => pp.user_id).filter(Boolean);
 
       const userIds = Array.from(
-        new Set([...payerIds, ...participantUserIds, ...settlementUserIds, ...planParticipantUserIds, activeUserUuid].filter(Boolean))
+        new Set([...payerIds, ...participantUserIds, ...settlementUserIds, ...planParticipantUserIds, resolvedUuid].filter(Boolean))
       );
 
       const fetchPromises: Promise<any>[] = [
         userIds.length > 0
           ? Promise.resolve(supabase.from("users").select("*").in("id", userIds))
-          : Promise.resolve(supabase.from("users").select("*")),
+          : Promise.resolve({ data: [] }),
         allPlanIds.length > 0
           ? Promise.resolve(supabase.from("plans").select("*").in("id", allPlanIds))
-          : Promise.resolve(supabase.from("plans").select("*")),
+          : Promise.resolve({ data: [] }),
       ];
 
       const [{ data: users }, { data: plans }] = await Promise.all(fetchPromises);
@@ -237,6 +300,9 @@ export const WalletProvider = ({
       setDbUsersLocal(users || []);
       setDbPlansLocal(plans || []);
       setDbPlanParticipantsLocal(participants || []);
+      loadedUserRef.current = activeUserUuid || null;
+      isLoadedRef.current = true;
+      setIsLoaded(true);
     } catch (err: any) {
       console.error("[Wallet ERROR] Exception loading wallet data:", err);
       setError(err.message || "Failed to load wallet data");
@@ -245,18 +311,36 @@ export const WalletProvider = ({
     }
   }, [activeUserUuid]);
 
-  const hasInitialLoadedRef = useRef<string | null>(null);
+  const ensureLoaded = useCallback(async () => {
+    if (isLoadedRef.current && loadedUserRef.current === activeUserUuid) {
+      return;
+    }
+    await refreshTransactions("ensure_loaded");
+  }, [activeUserUuid, refreshTransactions]);
+
+  // Reset wallet state when active user changes or logs out
+  useEffect(() => {
+    if (loadedUserRef.current && loadedUserRef.current !== activeUserUuid) {
+      loadedUserRef.current = null;
+      isLoadedRef.current = false;
+      setIsLoaded(false);
+      setDbWalletTransactions([]);
+      setDbWalletPaidTransactions([]);
+      setDbWalletSettlements([]);
+      setDbPlansLocal([]);
+      setDbPlanParticipantsLocal([]);
+      setDbUsersLocal([]);
+    }
+  }, [activeUserUuid]);
 
   useEffect(() => {
-    if (hasInitialLoadedRef.current !== activeUserUuid) {
-      hasInitialLoadedRef.current = activeUserUuid;
-      refreshTransactions("initial_load");
-    }
-
-    const channelName = "wallet_expenses_changes";
+    const channelName = `wallet_expenses_changes:${activeUserUuid || "anonymous"}`;
     let realtimeCoalesceTimer: NodeJS.Timeout | null = null;
 
     const triggerCoalescedRefresh = (reason: string, sourceEvent: string) => {
+      // Defer realtime updates if wallet data has not been initially loaded for the active user
+      if (!isLoadedRef.current) return;
+
       if (realtimeCoalesceTimer) clearTimeout(realtimeCoalesceTimer);
       realtimeCoalesceTimer = setTimeout(() => {
         realtimeCoalesceTimer = null;
@@ -291,8 +375,16 @@ export const WalletProvider = ({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "plan_participants" },
-        () => {
-          triggerCoalescedRefresh("realtime", "plan_participants");
+        (payload: any) => {
+          const newRec = payload.new;
+          const oldRec = payload.old;
+          const participantUserId = newRec?.user_id || oldRec?.user_id;
+          const participantPlanId = newRec?.plan_id || oldRec?.plan_id;
+          const isMe = Boolean(activeUserUuid && participantUserId === activeUserUuid);
+          const isMyPlan = Boolean(participantPlanId && dbPlansLocalRef.current.some(p => p.id === participantPlanId));
+          if (isMe || isMyPlan) {
+            triggerCoalescedRefresh("realtime", "plan_participants");
+          }
         }
       )
       .subscribe();
@@ -313,9 +405,11 @@ export const WalletProvider = ({
     loading,
     error,
     refreshTransactions,
+    ensureLoaded,
+    isLoaded,
     updateExpenseInStore,
   }), [
-    dbWalletTransactions, dbWalletPaidTransactions, dbWalletSettlements, dbPlansLocal, dbPlanParticipantsLocal, dbUsersLocal, loading, error, refreshTransactions, updateExpenseInStore
+    dbWalletTransactions, dbWalletPaidTransactions, dbWalletSettlements, dbPlansLocal, dbPlanParticipantsLocal, dbUsersLocal, loading, error, refreshTransactions, ensureLoaded, isLoaded, updateExpenseInStore
   ]);
 
   return (

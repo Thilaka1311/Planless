@@ -16,13 +16,11 @@ import { appendMessageToCache, getCachedMessages, getCachedUnreadInfo, setCached
 
 interface ChatsScreenProps {
   onSelectChatPlan: (planId: string) => void;
-  onScroll?: (y: number) => void;
   setActiveTab?: (tab: string) => void;
 }
 
 export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
   onSelectChatPlan,
-  onScroll,
   setActiveTab,
 }) => {
   const { plans, dbPlanParticipants } = usePlansStore();
@@ -292,6 +290,10 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
           if (!newMsg || !newMsg.plan_id) return;
           if (!["text", "cost", "poll", "system"].includes(newMsg.message_type)) return;
 
+          // Guard: Only process messages belonging to plans the current user is part of
+          const isUserPlan = plans && plans.some((p) => p.id === newMsg.plan_id || p.dbUuid === newMsg.plan_id);
+          if (plans && plans.length > 0 && !isUserPlan) return;
+
           // Keep in-memory chat cache and unread info warm in background
           appendMessageToCache(newMsg as ChatMessage, userUuid);
 
@@ -552,7 +554,6 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
 
       {/* SCROLLABLE CHATS LIST (Begins below sticky search bar) */}
       <div
-        onScroll={(e) => onScroll?.(e.currentTarget.scrollTop)}
         className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-3 pt-0.5 pb-28"
       >
         {userPlanChats.length === 0 ? (

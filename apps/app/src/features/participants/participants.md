@@ -200,6 +200,10 @@ The **Participants** feature is Planless's core attendee orchestration and roste
   * `leave_requested_at` (`timestamptz`, nullable): Timestamp of leave submission.
   * `skip_reason` (`skip_reason`, nullable): `'LEFT'`, `'REMOVED'`, `'REPLACED'`, `'PAYMENT_KEPT'`, `'SKIPPED'`.
   * `cost_per_participant` (`numeric`, default 0): Member's calculated share of plan costs.
+* **Indexes**:
+  * `plan_participants_pkey`: Composite primary key on `(plan_id, user_id)`.
+  * `idx_plan_participants_user_id`: B-tree index on `(user_id)` to accelerate user-filtered queries across plans loading, chat prewarming, and wallet lookups.
+  * `idx_uniq_plan_waitlist_position`: Unique partial B-tree index on `(plan_id, waitlist_position)` where `assigned_group = 'WAITLIST'`.
 
 ### 2. Table: `public.plans` (Participant-Related Columns)
 * `plan_size` (`integer`, not null): Maximum confirmed joined capacity (including hosts).

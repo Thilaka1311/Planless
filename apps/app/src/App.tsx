@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { OnboardingFlow } from "./features/auth/Logged Out/screens/OnboardingFlow";
-import MainApp from "./MainApp";
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from "react";
 import { UserProfile } from "./core/types";
 import { SimulatorStatusBar } from "./components/SimulatorStatusBar";
 import { SimulatorHomeBar } from "./components/SimulatorHomeBar";
 import { PlansProvider } from "./features/plans/state/PlansContext";
 import { ProfileProvider, useProfileStore } from "./features/profile/state/ProfileContext";
-import { WalletProvider } from "./features/wallet/state/WalletContext";
 import { ToastProvider } from "./shared/contexts/ToastContext";
 import { FriendshipProvider } from "./features/friendships/state/FriendshipContext";
 import { supabase } from "../lib/supabaseClient";
-import defaultAvatar from "./assets/default_avatar.png";
+import defaultAvatar from "./assets/default_avatar.webp";
 import {
   extractInviteTokenFromPath,
   getStoredPendingInviteToken,
@@ -19,8 +16,25 @@ import {
 } from "./features/plans/services/planInviteService";
 import { PwaUpdatePrompt } from "./shared/pwa/PwaUpdatePrompt";
 
-const WalletProviderComp = WalletProvider as React.ComponentType<{ children: React.ReactNode; userId?: string }>;
 const PlansProviderComp = PlansProvider as React.ComponentType<{ children: React.ReactNode; userId?: string }>;
+
+const OnboardingFlow = lazy(() =>
+  import("./features/auth/Logged Out/screens/OnboardingFlow").then((m) => ({ default: m.OnboardingFlow }))
+);
+const MainApp = lazy(() => import("./MainApp"));
+
+const FlowLoadingFallback = (
+  <div className="h-[100dvh] w-screen bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
+    <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#ff5e3a]/10 blur-[120px] pointer-events-none" />
+    <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
+    <div className="flex flex-col items-center space-y-6 z-10">
+      <h1 className="text-white text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-zinc-200 to-zinc-400">
+        Planless
+      </h1>
+      <div className="w-6 h-6 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+    </div>
+  </div>
+);
 
 export default function App() {
   const query = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
@@ -417,11 +431,13 @@ function AppContent({
                   <ToastProvider>
                     <div className="w-full h-full bg-[#050505] flex flex-col relative">
                       <div className="flex-1 overflow-hidden relative">
-                        <OnboardingFlow
-                          onComplete={handleOnboardingComplete}
-                          initialStep={(userProfile && lastInitializedUserIdRef.current) ? "PROFILE_SETUP" : "ENTRY"}
-                          existingProfile={lastInitializedUserIdRef.current ? userProfile : null}
-                        />
+                        <Suspense fallback={FlowLoadingFallback}>
+                          <OnboardingFlow
+                            onComplete={handleOnboardingComplete}
+                            initialStep={(userProfile && lastInitializedUserIdRef.current) ? "PROFILE_SETUP" : "ENTRY"}
+                            existingProfile={lastInitializedUserIdRef.current ? userProfile : null}
+                          />
+                        </Suspense>
                       </div>
                     </div>
                   </ToastProvider>
@@ -431,14 +447,14 @@ function AppContent({
               (() => {
                 const providerKey = userProfile?.user_id || "anonymous";
                 return (
-                  <WalletProviderComp key={`wallet-${providerKey}`} userId={userProfile?.dbUuid}>
-                    <PlansProviderComp key={`plans-${providerKey}`} userId={userProfile?.dbUuid}>
-                      <FriendshipProvider>
-                        <div className="flex flex-row items-stretch justify-center w-full h-full relative overflow-hidden">
-                          {/* Responsive Container */}
-                          <div className="w-full h-full bg-[#050505] flex flex-col relative">
-                            <div className="flex-1 overflow-hidden relative">
-                              <ToastProvider>
+                  <PlansProviderComp key={`plans-${providerKey}`} userId={userProfile?.dbUuid}>
+                    <FriendshipProvider>
+                      <div className="flex flex-row items-stretch justify-center w-full h-full relative overflow-hidden">
+                        {/* Responsive Container */}
+                        <div className="w-full h-full bg-[#050505] flex flex-col relative">
+                          <div className="flex-1 overflow-hidden relative">
+                            <ToastProvider>
+                              <Suspense fallback={FlowLoadingFallback}>
                                 <MainApp
                                   userProfile={userProfile!}
                                   activeUserId={userProfile?.dbUuid || "U001"}
@@ -446,13 +462,13 @@ function AppContent({
                                   pendingInviteToken={pendingInviteToken}
                                   onClearPendingInvite={handleClearPendingInviteToken}
                                 />
-                              </ToastProvider>
-                            </div>
+                              </Suspense>
+                            </ToastProvider>
                           </div>
                         </div>
-                      </FriendshipProvider>
-                    </PlansProviderComp>
-                  </WalletProviderComp>
+                      </div>
+                    </FriendshipProvider>
+                  </PlansProviderComp>
                 );
               })()
             )}

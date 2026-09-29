@@ -22,6 +22,7 @@ interface CreatePlanReviewProps {
   onAddParticipants?: () => void;
   onSubmit: () => void;
   isSubmitting: boolean;
+  isQuickPlanMode?: boolean;
 }
 
 export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
@@ -35,6 +36,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
   onAddParticipants,
   onSubmit,
   isSubmitting,
+  isQuickPlanMode = false,
 }) => {
   const [editorImageFile, setEditorImageFile] = useState<File | Blob | string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -321,6 +323,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
     <>
       <PlansDetailsScreen
         createMode={true}
+        isQuickPlanMode={isQuickPlanMode}
         plan={syntheticPlan}
         userProfile={userProfile}
         activeUserId={userProfile.dbUuid || (userProfile as any)?.id}

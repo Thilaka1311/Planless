@@ -9,13 +9,9 @@ import { getInitialsAvatar, mapTransactionsToLegacy } from "../lib/mappers";
 import { syncUserStats, insertTransaction } from "../lib/db";
 import { usePlansStore } from "./features/plans/state/PlansContext";
 import { useProfileStore } from "./features/profile/state/ProfileContext";
-import { useWalletStore } from "./features/wallet/state/WalletContext";
 import { useFriendshipStore } from "./features/friendships/state/FriendshipContext";
-import { WalletScreen } from "./features/wallet/screens/WalletScreen";
 import { HomeScreen } from "./features/home/screens/HomeScreen";
 import { PlansScreen } from "./features/plans/screens/PlansScreen/PlansScreen";
-import { CreatePlanScreen } from "./features/create/screens/Create";
-import { CreateMVP } from "./features/create/screens/CreateMVP";
 import { ProfileScreen } from "./features/profile/screens/ProfileScreen";
 import { FriendshipsScreen } from "./features/friendships/screens/FriendshipsScreen";
 import DetailedPlanModal from "./components/common screens/DetailedPlanModal";
@@ -32,7 +28,6 @@ import { SearchYourPlansScreen } from "./features/plans/screens/PlansScreen/Sear
 import { HostedPlansScreen } from "./features/plans/screens/PlansScreen/HostedPlansScreen";
 import { PastPlans } from "./features/profile/screens/PastPlans";
 import { ChatsScreen } from "./features/chats/screens/ChatsScreen";
-import { PlanChatScreen } from "./features/chats/screens/PlanChatScreen";
 import { useUnreadChatsCount } from "./features/chats/hooks/useUnreadChatsCount";
 import {
   parseCurrentRoute,
@@ -49,6 +44,19 @@ import {
   resolveInviteDestination,
 } from "./features/plans/services/planInviteService";
 import { tabVariants, screenModalVariants } from "./shared/transitions/motionTokens";
+
+const CreatePlanScreen = React.lazy(() =>
+  import("./features/create/screens/Create").then((m) => ({ default: m.CreatePlanScreen }))
+);
+const PlanChatScreen = React.lazy(() =>
+  import("./features/chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen }))
+);
+
+const ScreenLoadingFallback = (
+  <div className="w-full h-full flex items-center justify-center bg-[#050505]">
+    <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
+  </div>
+);
 
 interface MainAppProps {
   userProfile: UserProfile;
@@ -67,7 +75,7 @@ export default function MainApp({
 }: MainAppProps) {
   // --- Decoupled Context Stores ---
   const { plans, dbPlans, setDbPlans, dbPlanParticipants, setDbPlanParticipants, dbPlanOutcomes, setDbPlanOutcomes, dbPlanTeamAssignments, setDbPlanTeamAssignments, joinPlan, waitlistPlan, passPlan, submitReview, submitStats, submitMvp, updatePlanDetails, cancelPlan, getHomeFeedPlans, dbMemories, dbMemoryResults, refreshPlans } = usePlansStore();
-  const { dbUsers, setDbUsers, updateProfile, activeUserUuid } = useProfileStore();  const { walletBalance, transactions, dbTransactions, setDbTransactions, refreshTransactions } = useWalletStore();
+  const { dbUsers, setDbUsers, updateProfile, activeUserUuid } = useProfileStore();
   const { friends } = useFriendshipStore();
 
   const initialRoute = React.useMemo(() => parseCurrentRoute(), []);
@@ -77,7 +85,7 @@ export default function MainApp({
   // Tab persistence across reloads was causing users to land on non-home screens
   // after login, logout, or session recovery, which breaks expected app behavior.
   const [activeTab, setActiveTab] = useState<any>(() => {
-    if (initialRoute.tab) return initialRoute.tab;
+    if (initialRoute.tab && initialRoute.tab !== "wallet") return initialRoute.tab;
     return "home";
   });
   // Determine whether the initial route should be a full-screen flow without bottom nav
@@ -159,7 +167,7 @@ export default function MainApp({
   // Listen for external / popstate route changes
   React.useEffect(() => {
     const unsubscribe = listenToNavigation((route) => {
-      if (route.tab && route.tab !== activeTab) {
+      if (route.tab && route.tab !== activeTab && route.tab !== "wallet") {
         setActiveTab(route.tab);
       }
 
@@ -292,7 +300,6 @@ export default function MainApp({
   const [showHostedPlansScreen, setShowHostedPlansScreen] = useState(false);
   const [showPastPlansScreen, setShowPastPlansScreen] = useState(false);
   const [pastPlansOrigin, setPastPlansOrigin] = useState<"profile" | "hosted">("profile");
-  const [plansScrollY, setPlansScrollY] = useState(0);
   const [showPlansSearchScreen, setShowPlansSearchScreen] = useState(false);
   const [plansSearchOrigin, setPlansSearchOrigin] = useState<"plans" | "hosted">("plans");
   const [showFriendsScreen, setShowFriendsScreen] = useState(false);
@@ -478,7 +485,6 @@ export default function MainApp({
       const plan = plans.find(p => p.id === planId);
       if (!plan) return false;
       await joinPlan(plan.id, userProfile);
-      await refreshTransactions();
       return true;
     } catch (err) {
       console.error("[handleToggleJoin] Error joining plan:", err);
@@ -509,7 +515,6 @@ export default function MainApp({
       created_at: new Date().toISOString()
     };
     await insertTransaction(newDbTx as any);
-    await refreshTransactions();
 
     setDepositAmount("");
     setShowDepositModal(false);
@@ -621,7 +626,6 @@ export default function MainApp({
               onToggleHosted={() => setShowHostedPlansScreen(prev => !prev)}
               isHostedActive={showHostedPlansScreen}
               title={showHostedPlansScreen ? "Hosted Plans" : "Plans"}
-              scrollY={plansScrollY}
               hideNotificationsIcon={true}
             />
           </motion.div>
@@ -651,7 +655,7 @@ export default function MainApp({
                 setSelectedPlan={setSelectedPlanId}
                 selectedPlan={selectedPlanId}
                 setPaymentConfirmationPlan={setPaymentConfirmationPlanId}
-                walletBalance={walletBalance}
+                walletBalance={0}
                 handleToggleJoin={handleToggleJoin}
                 setShowPaymentSuccess={setShowPaymentSuccessId}
                 setShowWaitlistSuccess={setShowWaitlistSuccessId}
@@ -675,18 +679,19 @@ export default function MainApp({
                 skippedByPlanId={skippedByPlanId}
                 plansFilter={plansFilter}
                 setPlansFilter={setPlansFilter}
-                onScroll={setPlansScrollY}
               />
             )}
 
             {/* TAB 3: SPONTANEOUS CREATOR - INSTANT PRODUCTIVITY AESTHETICS */}
             {activeTab === "create" && (
-              <CreateMVP
-                setActiveTab={handleTabChange}
-                onToggleBottomNav={setChildrenWantBottomNavHidden}
-                setPlansFilter={setPlansFilter}
-                setSelectedPlanId={setSelectedPlanId}
-              />
+              <React.Suspense fallback={ScreenLoadingFallback}>
+                <CreatePlanScreen
+                  setActiveTab={handleTabChange}
+                  onToggleBottomNav={setChildrenWantBottomNavHidden}
+                  setPlansFilter={setPlansFilter}
+                  setSelectedPlanId={setSelectedPlanId}
+                />
+              </React.Suspense>
             )}
 
             {/* TAB 4: CHATS — PLAN CONVERSATIONS */}
@@ -698,18 +703,10 @@ export default function MainApp({
                   setSelectedChatPlanId(planId);
                   navigateToRoute({ tab: "chats", selectedChatPlanId: planId });
                 }}
-                onScroll={setPlansScrollY}
               />
             )}
 
-            {/* TAB: WALLET */}
-            {activeTab === "wallet" && (
-              <WalletScreen
-                setActiveTab={handleTabChange}
-                setSelectedPlanId={setSelectedPlanId}
-                onToggleBottomNav={setChildrenWantBottomNavHidden}
-              />
-            )}
+            {/* TAB: WALLET (Disabled) */}
 
             {/* TAB 5: PROFILE & ACCOUNT MANAGEMENT */}
             {activeTab === "profile" && (
@@ -890,7 +887,6 @@ export default function MainApp({
                 setShowHostedPlansScreen(false);
                 setShowPlansSearchScreen(true);
               }}
-              onScroll={setPlansScrollY}
               onNavigateToCreate={() => {
                 setShowHostedPlansScreen(false);
                 handleTabChange("create");
@@ -909,34 +905,36 @@ export default function MainApp({
             initial="initial"
             animate="animate"
             exit="exit"
-            className="fixed inset-0 z-50 overflow-hidden"
+            className="fixed inset-0 z-50 overflow-hidden bg-[#050505]"
           >
-            <PlanChatScreen
-              planId={selectedChatPlanId}
-              onBack={() => {
-                if (chatOriginContext?.type === "plan") {
-                  const { planId, planSource, previousTab } = chatOriginContext;
-                  setSelectedChatPlanId(null);
-                  setChatOriginContext(null);
-                  if (previousTab && previousTab !== activeTab) {
-                    setActiveTab(previousTab);
+            <React.Suspense fallback={ScreenLoadingFallback}>
+              <PlanChatScreen
+                planId={selectedChatPlanId}
+                onBack={() => {
+                  if (chatOriginContext?.type === "plan") {
+                    const { planId, planSource, previousTab } = chatOriginContext;
+                    setSelectedChatPlanId(null);
+                    setChatOriginContext(null);
+                    if (previousTab && previousTab !== activeTab) {
+                      setActiveTab(previousTab);
+                    }
+                    setSelectedPlanSource(planSource || "list");
+                    if (planId) {
+                      setSelectedPlanId(planId);
+                    }
+                  } else {
+                    setSelectedChatPlanId(null);
+                    setChatOriginContext(null);
+                    navigateToRoute({ tab: "chats" });
                   }
-                  setSelectedPlanSource(planSource || "list");
-                  if (planId) {
-                    setSelectedPlanId(planId);
-                  }
-                } else {
-                  setSelectedChatPlanId(null);
-                  setChatOriginContext(null);
-                  navigateToRoute({ tab: "chats" });
-                }
-              }}
-              onOpenPlanDetails={() => {
-                const planId = selectedChatPlanId;
-                setSelectedPlanSource("chat");
-                setSelectedPlanId(planId);
-              }}
-            />
+                }}
+                onOpenPlanDetails={() => {
+                  const planId = selectedChatPlanId;
+                  setSelectedPlanSource("chat");
+                  setSelectedPlanId(planId);
+                }}
+              />
+            </React.Suspense>
           </motion.div>
         )}
       </AnimatePresence>
@@ -956,7 +954,7 @@ export default function MainApp({
       <PaymentConfirmationModal
         paymentConfirmationPlanId={paymentConfirmationPlanId}
         onClose={() => setPaymentConfirmationPlanId(null)}
-        walletBalance={walletBalance}
+        walletBalance={0}
         handleToggleJoin={handleToggleJoin}
         setSelectedPlanId={setSelectedPlanId}
         setShowPaymentSuccessId={setShowPaymentSuccessId}

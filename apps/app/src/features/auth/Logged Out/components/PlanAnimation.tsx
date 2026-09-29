@@ -14,11 +14,11 @@ import {
   X,
 } from "lucide-react";
 
-import movieCover from "../../../../assets/Movies.png";
-import diningCover from "../../../../assets/dining.png";
-import sportsCover from "../../../../assets/sports.png";
-import customPlanCover from "../../../../assets/planimagedefault.png";
-import defaultAvatar from "../../../../assets/default_avatar.png";
+import movieCover from "../../../../assets/Movies.webp";
+import diningCover from "../../../../assets/dining.webp";
+import sportsCover from "../../../../assets/sports.webp";
+import customPlanCover from "../../../../assets/planimagedefault.webp";
+import defaultAvatar from "../../../../assets/default_avatar.webp";
 import { preloadImage } from "../../../../shared/imaging/preloadImage";
 
 export { preloadImage };

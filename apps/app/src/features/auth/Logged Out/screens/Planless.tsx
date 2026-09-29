@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { motion } from "motion/react";
-import planlessLogo from "../../../../assets/planless_logo.png";
-import onboardingCups from "../../../../assets/Onboarding_cups.png";
+import planlessLogo from "../../../../assets/planless_logo.webp";
+import onboardingCups from "../../../../assets/Onboarding_cups.webp";
 import { preloadImage } from "../../../../shared/imaging/preloadImage";
 
 export interface PlanlessProps {
@@ -106,11 +106,6 @@ export function Planless({
             Already have an account
           </button>
         )}
-
-        {/* Build version indicator for production update verification */}
-        <div id="planless_build_version" className="text-[11px] text-zinc-600 font-mono tracking-wider text-center mt-1">
-          v2.0.1
-        </div>
       </motion.div>
     </div>
   );

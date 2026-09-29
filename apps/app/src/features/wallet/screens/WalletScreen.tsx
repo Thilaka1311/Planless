@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { ChevronRight, Check, CheckCircle2, Search, X, Users, Calendar } from "lucide-react";
 import { RelationshipDetailsScreen } from "./PeopleBalances";
 import { PlanOverallCost } from "./PlanOverallCost";
@@ -44,8 +44,14 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
     loading,
     error,
     refreshTransactions,
+    ensureLoaded,
+    isLoaded,
   } = useWalletStore();
   const { activeUserUuid, dbUsers, userProfile } = useProfileStore();
+
+  useEffect(() => {
+    ensureLoaded?.();
+  }, [ensureLoaded]);
 
   const mergedUsers = useMemo(() => {
     const map = new Map<string, any>();
@@ -460,7 +466,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
           <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-xs text-red-400 flex items-center justify-between">
             <span>{error}</span>
             <button
-              onClick={refreshTransactions}
+              onClick={() => { refreshTransactions(); }}
               className="underline font-semibold ml-2 hover:text-red-300 cursor-pointer"
             >
               Retry
@@ -472,7 +478,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
         {(() => {
           if (viewMode === "plans") return null;
 
-          const isInitialLoading = loading && visibleRelationships.length === 0 && settledRelationships.length === 0 && visiblePlanRelationships.length === 0;
+          const isInitialLoading = (!isLoaded || loading) && visibleRelationships.length === 0 && settledRelationships.length === 0 && visiblePlanRelationships.length === 0;
 
           if (isInitialLoading && !isSearching) {
             return (
@@ -512,7 +518,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
           )}
 
           {viewMode === "people" ? (
-            loading && visibleRelationships.length === 0 && settledRelationships.length === 0 ? (
+            (!isLoaded || loading) && visibleRelationships.length === 0 && settledRelationships.length === 0 ? (
               <div className="space-y-2">
                 {[1, 2, 3].map((i) => (
                   <div
@@ -601,7 +607,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
               </div>
             )
           ) : (
-            loading && visiblePlanRelationships.length === 0 && settledPlanRelationships.length === 0 ? (
+            (!isLoaded || loading) && visiblePlanRelationships.length === 0 && settledPlanRelationships.length === 0 ? (
               <div className="space-y-2">
                 {[1, 2, 3].map((i) => (
                   <div

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import customPlanCover from "../../../../assets/planimagedefault.png";
-import defaultAvatar from "../../../../assets/default_avatar.png";
+import customPlanCover from "../../../../assets/planimagedefault.webp";
+import defaultAvatar from "../../../../assets/default_avatar.webp";
 import { WhoIsComingScreen } from "../../../create/screens/WhoIsComingScreen";
 import { CreatePlanReview } from "../../../create/screens/CreatePlanReview";
 import { CreatePlanConfirmation } from "../../../create/components/CreatePlanConfirmation";

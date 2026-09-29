@@ -82,6 +82,67 @@ export interface DbPlanParticipant {
   join_queue?: number | null;
   final_attendance?: 'ATTENDED' | 'DID_NOT_ATTEND' | null;
   final_state?: 'JOINED' | 'SKIPPED' | null;
+  user_profile?: {
+    id: string;
+    public_id?: string;
+    full_name?: string;
+    profile_photo_path?: string | null;
+    bio?: string | null;
+    [key: string]: any;
+  } | null;
+}
+
+// 5a. QUICK_PLAN_LISTS, QUICK_PLANS & QUICK_PLAN_PARTICIPANTS TABLES (Saved reusable plan setups)
+export interface DbQuickPlanList {
+  id: string;
+  creator_id: string;
+  name: string;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuickPlanList extends DbQuickPlanList {
+  quick_plans_count?: number;
+}
+
+export interface DbQuickPlan {
+  id: string;
+  creator_id: string;
+  quick_plan_list_id?: string | null;
+  name: string;
+  description?: string | null;
+  category: string;
+  subcategory?: string | null;
+  place_id?: string | null;
+  place_name: string;
+  place_address: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  cover_image?: string | null;
+  default_cost: number;
+  plan_size?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbQuickPlanParticipant {
+  id: string;
+  quick_plan_id: string;
+  user_id: string;
+  created_at: string;
+  user_profile?: {
+    id: string;
+    public_id?: string;
+    full_name?: string;
+    profile_photo_path?: string | null;
+    bio?: string | null;
+    [key: string]: any;
+  } | null;
+}
+
+export interface QuickPlan extends DbQuickPlan {
+  participants?: DbQuickPlanParticipant[];
 }
 
 export enum SystemMessageType {

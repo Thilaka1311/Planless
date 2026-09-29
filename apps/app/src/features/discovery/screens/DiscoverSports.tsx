@@ -1,18 +1,38 @@
-import React, { useState } from "react";
-import { ChevronLeft, Sparkles, MapPin, ChevronRight, Compass } from "lucide-react";
-import { motion, useMotionValue, useTransform, AnimatePresence, useAnimation } from "motion/react";
+import React, { useState, useEffect, useMemo } from "react";
+import { ArrowLeft } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
-import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
+import { DiscoverySection } from "../components/DiscoverySection";
+import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
+import { useUserLocation } from "../hooks/useUserLocation";
+import { ADMIN_CONFIGS } from "../services/discoveryAdminService";
+import { SearchBar } from "../../../shared/components/SearchBar";
 
 interface DiscoverSportsProps {
   sections: DiscoverySectionType[];
   isAdmin: boolean;
   onBack: () => void;
   onSelectDiscoveryItem: (item: DiscoveryItem) => void;
-  onLongPressAdmin: (item: DiscoveryItem, config: any) => void;
+  onLongPressAdmin?: (item: DiscoveryItem, config: any) => void;
+  currentCity?: string;
+  currentLocality?: string;
+  currentCoordinates?: { latitude: number; longitude: number };
 }
 
-// Premium mock data for sports when the database is empty
+type SportsCategoryId = "all" | "turfs" | "courts" | "adventure";
+
+interface CategoryDef {
+  id: SportsCategoryId;
+  label: string;
+}
+
+const SPORTS_CATEGORIES: CategoryDef[] = [
+  { id: "all", label: "All" },
+  { id: "turfs", label: "Turfs & Arenas" },
+  { id: "courts", label: "Courts & Clubs" },
+  { id: "adventure", label: "Adventure & Fun" },
+];
+
+// Premium mock data for sports when local results are limited
 const defaultTurfs: DiscoveryItem[] = [
   {
     id: "sports-1",
@@ -20,7 +40,7 @@ const defaultTurfs: DiscoveryItem[] = [
     section_id: "default-sports",
     title: "Tiki Taka Arena",
     category: "SPORTS",
-    subcategory: "turfs",
+    subcategory: "Turfs & Arenas",
     description: "Premium rooftop 5-a-side football turf with floodlights.",
     cover_image_url: "sports/football.jpg",
     location: "Koramangala, Bangalore",
@@ -40,7 +60,7 @@ const defaultTurfs: DiscoveryItem[] = [
     section_id: "default-sports",
     title: "The Gamechanger Turf",
     category: "SPORTS",
-    subcategory: "turfs",
+    subcategory: "Turfs & Arenas",
     description: "High quality turf for both cricket and football games.",
     cover_image_url: "sports/cricket.jpg",
     location: "Indiranagar, Bangalore",
@@ -53,7 +73,7 @@ const defaultTurfs: DiscoveryItem[] = [
     status: "ACTIVE",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  }
+  },
 ];
 
 const defaultCourts: DiscoveryItem[] = [
@@ -63,7 +83,7 @@ const defaultCourts: DiscoveryItem[] = [
     section_id: "default-sports",
     title: "Dinks & Smashes Court",
     category: "SPORTS",
-    subcategory: "courts",
+    subcategory: "Courts & Clubs",
     description: "Indoor wooden flooring badminton and pickleball courts.",
     cover_image_url: "sports/badminton.jpg",
     location: "HSR Layout, Bangalore",
@@ -83,7 +103,7 @@ const defaultCourts: DiscoveryItem[] = [
     section_id: "default-sports",
     title: "Vantage Clay Tennis",
     category: "SPORTS",
-    subcategory: "courts",
+    subcategory: "Courts & Clubs",
     description: "Professional clay courts open for recreational tennis matches.",
     cover_image_url: "sports/tennis.jpg",
     location: "Whitefield, Bangalore",
@@ -96,7 +116,7 @@ const defaultCourts: DiscoveryItem[] = [
     status: "ACTIVE",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  }
+  },
 ];
 
 const defaultAdventure: DiscoveryItem[] = [
@@ -106,7 +126,7 @@ const defaultAdventure: DiscoveryItem[] = [
     section_id: "default-sports",
     title: "Play Arena",
     category: "SPORTS",
-    subcategory: "adventure",
+    subcategory: "Adventure & Fun",
     description: "Go-karting, bowling, laser tag, and climbing walls under one roof.",
     cover_image_url: "sports/karting.jpg",
     location: "Sarjapur Road, Bangalore",
@@ -119,230 +139,88 @@ const defaultAdventure: DiscoveryItem[] = [
     status: "ACTIVE",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  }
+  },
+  {
+    id: "sports-6",
+    public_id: "sports-6",
+    section_id: "default-sports",
+    title: "Torq03 Karting",
+    category: "SPORTS",
+    subcategory: "Adventure & Fun",
+    description: "Premier high-speed go-karting track and arcade zone.",
+    cover_image_url: "sports/karting-2.jpg",
+    location: "Marathahalli, Bangalore",
+    suggested_duration_minutes: 120,
+    suggested_cost_amount: 800,
+    suggested_capacity: 8,
+    default_rsvp_offset_minutes: 30,
+    display_order: 2,
+    featured: false,
+    status: "ACTIVE",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
 ];
 
-interface SwipableCardProps {
-  item: DiscoveryItem;
-  index: number;
-  onSwipe: (direction: "left" | "right") => void;
-  onTap: () => void;
-  isSwipable?: boolean;
-}
-
-const SwipableCard: React.FC<SwipableCardProps> = ({
-  item,
-  index,
-  onSwipe,
-  onTap,
-  isSwipable = true,
-}) => {
-  const isTop = index === 0;
-  const controls = useAnimation();
-  const x = useMotionValue(0);
-  const rotate = useTransform(x, [-250, 250], [-15, 15]);
-  const opacity = useTransform(x, [-250, -150, 0, 150, 250], [0.3, 1, 1, 1, 0.3]);
-
-  React.useEffect(() => {
-    if (index === 0) {
-      controls.start({
-        x: 0,
-        y: 0,
-        scale: 1,
-        opacity: 1,
-        transition: { type: "spring", stiffness: 450, damping: 30 }
-      });
-    } else {
-      x.set(0);
-      controls.start({
-        x: 0,
-        y: index * 14,
-        scale: 1 - index * 0.05,
-        opacity: index <= 2 ? 1 : 0,
-        transition: { type: "spring", stiffness: 400, damping: 30 }
-      });
-    }
-  }, [index, controls, x]);
-
-  const handleDragEnd = async (event: any, info: any) => {
-    const swipeThreshold = 40;
-    const velocityThreshold = 200;
-    if (isSwipable && (info.offset.x > swipeThreshold || info.velocity.x > velocityThreshold)) {
-      controls.start({
-        x: 380,
-        opacity: 0,
-        rotate: 20,
-        transition: { duration: 0.15, ease: "easeOut" }
-      });
-      setTimeout(() => onSwipe("right"), 140);
-    } else if (isSwipable && (info.offset.x < -swipeThreshold || info.velocity.x < -velocityThreshold)) {
-      controls.start({
-        x: -380,
-        opacity: 0,
-        rotate: -20,
-        transition: { duration: 0.15, ease: "easeOut" }
-      });
-      setTimeout(() => onSwipe("left"), 140);
-    } else {
-      controls.start({
-        x: 0,
-        rotate: 0,
-        transition: { type: "spring", stiffness: 400, damping: 25 }
-      });
-    }
-  };
-
+const isTurfItem = (it: DiscoveryItem): boolean => {
+  const t = (it.title || "").toLowerCase();
+  const s = (it.subcategory || "").toLowerCase();
+  const d = (it.description || "").toLowerCase();
+  const c = `${t} ${s} ${d}`;
   return (
-    <motion.div
-      animate={controls}
-      initial={{
-        x: 0,
-        y: index * 14,
-        scale: 1 - index * 0.05,
-        opacity: index <= 2 ? 1 : 0,
-      }}
-      style={{
-        x,
-        rotate,
-        opacity: isTop ? opacity : undefined,
-        pointerEvents: isTop ? "auto" : "none",
-        touchAction: "pan-y"
-      }}
-      drag={isTop ? "x" : false}
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.7}
-      onDragEnd={handleDragEnd}
-      onTap={() => {
-        if (isTop && Math.abs(x.get()) < 10) {
-          onTap();
-        }
-      }}
-      whileTap={isTop ? { scale: 0.98 } : undefined}
-      className={`absolute w-[290px] h-[370px] rounded-3xl overflow-hidden bg-[#09090b] border border-white/[0.06] shadow-2xl flex flex-col justify-end p-6 transition-colors duration-200 ${isTop ? "cursor-pointer hover:border-white/[0.16]" : ""
-        }`}
-    >
-      <div className="absolute inset-0 bg-[#09090b]" />
-
-      {/* Dimming overlay for stacked background cards to prevent visual bleed-through */}
-      {index > 0 && (
-        <div
-          className="absolute inset-0 bg-black z-20 pointer-events-none transition-opacity duration-300"
-          style={{ opacity: index === 1 ? 0.35 : 0.7 }}
-        />
-      )}
-
-      <DiscoveryImages
-        src={item.cover_image_url}
-        category={item.category}
-        alt={item.title}
-        className="absolute inset-0 w-full h-full object-cover opacity-60"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/90" />
-
-      {/* Content details at bottom, no buttons or badges */}
-      <div className="z-10 flex flex-col items-center w-full text-center pb-2">
-        <h4 className="text-lg font-extrabold text-white leading-snug tracking-wide line-clamp-1">
-          {item.title}
-        </h4>
-        <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-300 mt-1">
-          <span className="font-semibold text-emerald-400">
-            {(1.0 + (item.display_order % 4) * 1.8).toFixed(1)}km
-          </span>
-          <span className="text-zinc-600">•</span>
-          <span className="truncate max-w-[170px]">{item.location || "Bangalore"}</span>
-        </div>
-      </div>
-    </motion.div>
+    c.includes("turf") ||
+    c.includes("arena") ||
+    c.includes("football") ||
+    c.includes("futsal") ||
+    c.includes("soccer") ||
+    c.includes("cricket") ||
+    c.includes("ground") ||
+    c.includes("pitch")
   );
 };
 
-interface SportsCategorySectionProps {
+const isCourtItem = (it: DiscoveryItem): boolean => {
+  const t = (it.title || "").toLowerCase();
+  const s = (it.subcategory || "").toLowerCase();
+  const d = (it.description || "").toLowerCase();
+  const c = `${t} ${s} ${d}`;
+  return (
+    c.includes("court") ||
+    c.includes("badminton") ||
+    c.includes("shuttle") ||
+    c.includes("pickleball") ||
+    c.includes("tennis") ||
+    c.includes("squash") ||
+    c.includes("table tennis") ||
+    c.includes("club")
+  );
+};
+
+const isAdventureItem = (it: DiscoveryItem): boolean => {
+  const t = (it.title || "").toLowerCase();
+  const s = (it.subcategory || "").toLowerCase();
+  const d = (it.description || "").toLowerCase();
+  const c = `${t} ${s} ${d}`;
+  return (
+    c.includes("adventure") ||
+    c.includes("fun") ||
+    c.includes("kart") ||
+    c.includes("bowling") ||
+    c.includes("fitness") ||
+    c.includes("gym") ||
+    c.includes("swim") ||
+    c.includes("laser") ||
+    c.includes("boxing") ||
+    c.includes("skate")
+  );
+};
+
+interface SectionItemDef {
+  id: string;
   title: string;
+  subtitle?: string;
   items: DiscoveryItem[];
-  isExpanded: boolean;
-  onSelect: (item: DiscoveryItem) => void;
 }
-
-const SportsCategorySection: React.FC<SportsCategorySectionProps> = ({
-  title,
-  items,
-  isExpanded,
-  onSelect,
-}) => {
-  const [stack, setStack] = useState<DiscoveryItem[]>(items);
-
-  React.useEffect(() => {
-    setStack(items);
-  }, [items]);
-
-  const handleSwipe = (direction: "left" | "right") => {
-    if (stack.length <= 1) return;
-    setStack((prev) => {
-      const [first, ...rest] = prev;
-      return [...rest, first];
-    });
-  };
-
-  if (items.length === 0) return null;
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between border-b border-white/[0.04] pb-2 px-1">
-        <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
-          {title} ({items.length})
-        </h4>
-      </div>      {isExpanded ? (
-        <div className="grid grid-rows-2 grid-flow-col gap-3.5 overflow-x-auto py-2 px-1 no-scrollbar scroll-smooth">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              onClick={() => onSelect(item)}
-              className="relative shrink-0 w-[135px] h-[175px] rounded-2xl overflow-hidden bg-[#09090b] border border-white/[0.06] shadow-lg flex flex-col justify-end p-3 cursor-pointer hover:border-white/[0.16] hover:scale-[1.01] transition-all duration-300 group"
-            >
-              <div className="absolute inset-0 bg-[#09090b]" />
-              <DiscoveryImages
-                src={item.cover_image_url}
-                category={item.category}
-                alt={item.title}
-                className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500"
-              />
-              <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/90" />
-              <div className="z-10 flex flex-col w-full text-left">
-                <h4 className="text-xs font-bold text-white leading-tight line-clamp-1">
-                  {item.title}
-                </h4>
-                <div className="flex items-center gap-1 text-[9px] text-zinc-300 mt-0.5">
-                  <span className="font-semibold text-emerald-400">
-                    {(1.0 + (item.display_order % 4) * 1.8).toFixed(1)}km
-                  </span>
-                  <span className="text-zinc-500">•</span>
-                  <span className="truncate max-w-[70px]">{item.location || "Bangalore"}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="relative h-[395px] flex justify-center items-start pt-2">
-          {stack
-            .slice(0, 3)
-            .map((item, idx) => ({ item, idx }))
-            .reverse()
-            .map(({ item, idx }) => (
-              <SwipableCard
-                key={item.id}
-                item={item}
-                index={idx}
-                onSwipe={handleSwipe}
-                onTap={() => onSelect(item)}
-                isSwipable={stack.length > 1}
-              />
-            ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
   sections,
@@ -350,129 +228,333 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
   onBack,
   onSelectDiscoveryItem,
   onLongPressAdmin,
+  currentCity,
+  currentLocality,
+  currentCoordinates,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const { coordinates: hookCoords, cityName, localityName } = useUserLocation();
+  const activeCoordinates = currentCoordinates || hookCoords;
+  const resolvedCity = currentCity || cityName || "Bengaluru";
 
-  const allSportsItems = React.useMemo(() => {
-    return sections
+  const [selectedCategory, setSelectedCategory] = useState<SportsCategoryId>("all");
+  const [previewItem, setPreviewItem] = useState<DiscoveryItem | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery.trim().toLowerCase());
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Extract and deduplicate all sports items across sections
+  const allSportsItems = useMemo(() => {
+    const raw = sections
       .filter((s) => s.category?.toUpperCase() === "SPORTS")
       .flatMap((s) => s.items || []);
+
+    const seen = new Set<string>();
+    const deduped: DiscoveryItem[] = [];
+    for (const item of raw) {
+      const key = item.place_id || item.id;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(item);
+      }
+    }
+    return deduped;
   }, [sections]);
 
-  const turfs = React.useMemo(() => {
-    const list = allSportsItems.filter((item) => {
-      const sub = (item.subcategory || "").toLowerCase();
-      const title = (item.title || "").toLowerCase();
-      return sub.includes("turf") || title.includes("turf") || title.includes("arena");
-    });
-    return list.length > 0 ? list : defaultTurfs;
+  // Categorize sports items
+  const turfs = useMemo(() => {
+    const matched = allSportsItems.filter(isTurfItem);
+    return matched.length > 0 ? matched : defaultTurfs;
   }, [allSportsItems]);
 
-  const courts = React.useMemo(() => {
-    const list = allSportsItems.filter((item) => {
-      const sub = (item.subcategory || "").toLowerCase();
-      const title = (item.title || "").toLowerCase();
-      return sub.includes("court") || sub.includes("badminton") || sub.includes("pickleball") || sub.includes("tennis");
-    });
-    return list.length > 0 ? list : defaultCourts;
+  const courts = useMemo(() => {
+    const matched = allSportsItems.filter(isCourtItem);
+    return matched.length > 0 ? matched : defaultCourts;
   }, [allSportsItems]);
 
-  const adventure = React.useMemo(() => {
-    const list = allSportsItems.filter((item) => {
-      const sub = (item.subcategory || "").toLowerCase();
-      const title = (item.title || "").toLowerCase();
-      return sub.includes("adventure") || sub.includes("fun") || sub.includes("kart") || sub.includes("bowling");
-    });
-    return list.length > 0 ? list : defaultAdventure;
+  const adventure = useMemo(() => {
+    const matched = allSportsItems.filter(isAdventureItem);
+    return matched.length > 0 ? matched : defaultAdventure;
   }, [allSportsItems]);
 
-  const scrollToSection = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
+  const handleCategoryClick = (id: SportsCategoryId) => {
+    if (selectedCategory === id) {
+      setSelectedCategory("all");
+    } else {
+      setSelectedCategory(id);
     }
   };
+
+  // Generate sections based on active category with clean title casing and no redundant subtitles
+  const visibleSections = useMemo((): SectionItemDef[] => {
+    if (selectedCategory === "all") {
+      const result: SectionItemDef[] = [];
+      if (turfs.length > 0) {
+        result.push({
+          id: "sec_turfs_all",
+          title: "Turfs & Arenas",
+          items: turfs.slice(0, 10),
+        });
+      }
+      if (courts.length > 0) {
+        result.push({
+          id: "sec_courts_all",
+          title: "Courts & Clubs",
+          items: courts.slice(0, 10),
+        });
+      }
+      if (adventure.length > 0) {
+        result.push({
+          id: "sec_adventure_all",
+          title: "Adventure & Fun",
+          items: adventure.slice(0, 10),
+        });
+      }
+      if (turfs.length > 10) {
+        result.push({
+          id: "sec_more_turfs",
+          title: "More Turfs Near You",
+          items: turfs.slice(10, 24),
+        });
+      }
+      if (courts.length > 10) {
+        result.push({
+          id: "sec_more_courts",
+          title: "More Courts & Clubs",
+          items: courts.slice(10, 24),
+        });
+      }
+      return result;
+    }
+
+    if (selectedCategory === "turfs") {
+      if (turfs.length > 10) {
+        return [
+          {
+            id: "sec_turfs_1",
+            title: "Top Turfs & Arenas",
+            items: turfs.slice(0, 10),
+          },
+          {
+            id: "sec_turfs_2",
+            title: "More Turfs Near You",
+            items: turfs.slice(10, 24),
+          },
+        ];
+      }
+      return [
+        {
+          id: "sec_turfs_all",
+          title: "Turfs & Arenas Near You",
+          items: turfs,
+        },
+      ];
+    }
+
+    if (selectedCategory === "courts") {
+      if (courts.length > 10) {
+        return [
+          {
+            id: "sec_courts_1",
+            title: "Top Courts & Clubs",
+            items: courts.slice(0, 10),
+          },
+          {
+            id: "sec_courts_2",
+            title: "More Courts & Clubs",
+            items: courts.slice(10, 24),
+          },
+        ];
+      }
+      return [
+        {
+          id: "sec_courts_all",
+          title: "Courts & Clubs Near You",
+          items: courts,
+        },
+      ];
+    }
+
+    if (selectedCategory === "adventure") {
+      if (adventure.length > 10) {
+        return [
+          {
+            id: "sec_adventure_1",
+            title: "Adventure & Fun",
+            items: adventure.slice(0, 10),
+          },
+          {
+            id: "sec_adventure_2",
+            title: "More Activities & Games",
+            items: adventure.slice(10, 24),
+          },
+        ];
+      }
+      return [
+        {
+          id: "sec_adventure_all",
+          title: "Adventure & Fun Near You",
+          items: adventure,
+        },
+      ];
+    }
+
+    return [];
+  }, [selectedCategory, turfs, courts, adventure]);
+
+  // Search filtering over all sports items
+  const searchedItems = useMemo(() => {
+    if (!debouncedQuery) return [];
+    const q = debouncedQuery;
+    return allSportsItems.filter((item) => {
+      const t = (item.title || "").toLowerCase();
+      const d = (item.description || "").toLowerCase();
+      const loc = (item.location || "").toLowerCase();
+      const addr = (item.place_address || "").toLowerCase();
+      const sub = (item.subcategory || "").toLowerCase();
+      return (
+        t.includes(q) ||
+        d.includes(q) ||
+        loc.includes(q) ||
+        addr.includes(q) ||
+        sub.includes(q)
+      );
+    });
+  }, [allSportsItems, debouncedQuery]);
 
   return (
     <div
       className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-24 text-left select-none"
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
-      {/* Header Bar */}
-      <div className="w-full shrink-0 px-5 flex items-center justify-between bg-[#000000] border-b border-white/[0.08]" style={{ height: "72px" }}>
-        <div className="flex items-center">
+      {/* ── 1. HEADER BAR ── */}
+      <div className="w-full shrink-0 px-5 pt-3.5 pb-2 flex items-center justify-between bg-black border-b border-white/[0.06]">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="mr-4 flex items-center justify-center text-white bg-none border-none cursor-pointer p-0"
-            style={{ width: "24px", height: "24px" }}
+            className="text-white hover:text-zinc-300 active:scale-95 transition cursor-pointer p-1 -ml-1 flex items-center justify-center"
+            aria-label="Back"
           >
-            <ChevronLeft className="w-6 h-6" />
+            <ArrowLeft className="w-6 h-6 text-white" />
           </button>
-          <div
-            className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mr-3 shrink-0"
-          >
-            <Compass className="w-4 h-4" />
+          <div className="flex flex-col text-left">
+            <h2 className="text-base font-bold text-white tracking-tight leading-tight">
+              Sports
+            </h2>
+            <span className="text-[11px] text-emerald-400 font-medium mt-0.5 leading-none">
+              Find places to play
+            </span>
           </div>
-          <h2 className="text-base font-bold text-white tracking-tight">Sports Plan</h2>
         </div>
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="text-xs font-bold text-zinc-300 hover:text-white px-3.5 py-1.5 bg-zinc-900 border border-white/[0.06] rounded-full transition active:scale-95 cursor-pointer"
-        >
-          {isExpanded ? "Show Stacks" : "Expand All"}
-        </button>
       </div>
 
-      {/* Index Navigation Bar */}
-      <div className="w-full shrink-0 px-6 py-2.5 bg-[#000000] border-b border-white/[0.04] flex gap-2 overflow-x-auto no-scrollbar scroll-smooth">
-        <button
-          onClick={() => scrollToSection("sports-section-turfs")}
-          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
-        >
-          ⚽ Turfs & Arenas
-        </button>
-        <button
-          onClick={() => scrollToSection("sports-section-courts")}
-          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
-        >
-          🏸 Courts & Clubs
-        </button>
-        <button
-          onClick={() => scrollToSection("sports-section-adventure")}
-          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
-        >
-          🧗 Adventure & Fun
-        </button>
+      {/* ── 2. SEARCH BAR ── */}
+      <div className="shrink-0 bg-[#000000] px-4 pt-2 pb-1.5 select-none">
+        <SearchBar
+          id="search-sports-input"
+          name="searchSportsInput"
+          placeholder="Search sports venues, turfs, courts..."
+          value={searchQuery}
+          onChange={setSearchQuery}
+        />
       </div>
 
-      {/* Categories Content */}
-      <div className="px-6 py-6 flex-1 space-y-8">
-        <div id="sports-section-turfs">
-          <SportsCategorySection
-            title="Turfs & Arenas"
-            items={turfs}
-            isExpanded={isExpanded}
-            onSelect={onSelectDiscoveryItem}
-          />
-        </div>
-        <div id="sports-section-courts">
-          <SportsCategorySection
-            title="Courts"
-            items={courts}
-            isExpanded={isExpanded}
-            onSelect={onSelectDiscoveryItem}
-          />
-        </div>
-        <div id="sports-section-adventure">
-          <SportsCategorySection
-            title="Adventure & Fun"
-            items={adventure}
-            isExpanded={isExpanded}
-            onSelect={onSelectDiscoveryItem}
-          />
-        </div>
+      {/* ── 3. CATEGORY FILTERS (Text Chips) ── */}
+      {!debouncedQuery && (
+        <section className="px-5 pt-2 pb-2 shrink-0 border-b border-white/[0.04]">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar scroll-smooth py-0.5">
+            {SPORTS_CATEGORIES.map((cat) => {
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => handleCategoryClick(cat.id)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer active:scale-95 ${
+                    isSelected
+                      ? "bg-emerald-500 text-white shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-400/40"
+                      : "bg-[#121216] text-zinc-400 border border-white/[0.06] hover:text-white hover:bg-white/[0.06]"
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ── 4. HORIZONTAL SECTIONS FEED / SEARCH RESULTS ── */}
+      <div className="space-y-8 pt-4 pb-8 flex-1">
+        {debouncedQuery ? (
+          searchedItems.length > 0 ? (
+            <DiscoverySection
+              id="sec_sports_search"
+              title="Search Results"
+              items={searchedItems}
+              colorAccent="text-emerald-500"
+              userCoordinates={activeCoordinates}
+              isAdmin={isAdmin}
+              onSelectItem={(item) => setPreviewItem(item)}
+              onLongPressAdmin={
+                onLongPressAdmin
+                  ? (item) => onLongPressAdmin(item, ADMIN_CONFIGS.turfs)
+                  : undefined
+              }
+            />
+          ) : (
+            <div className="px-6 py-16 text-center space-y-2">
+              <p className="text-zinc-500 text-sm font-normal">
+                No sports places found matching &quot;{searchQuery}&quot;.
+              </p>
+            </div>
+          )
+        ) : visibleSections.length > 0 ? (
+          visibleSections.map((sec) => (
+            <DiscoverySection
+              key={sec.id}
+              id={sec.id}
+              title={sec.title}
+              subtitle={sec.subtitle}
+              items={sec.items}
+              colorAccent="text-emerald-500"
+              userCoordinates={activeCoordinates}
+              isAdmin={isAdmin}
+              onSelectItem={(item) => setPreviewItem(item)}
+              onLongPressAdmin={
+                onLongPressAdmin
+                  ? (item) => onLongPressAdmin(item, ADMIN_CONFIGS.turfs)
+                  : undefined
+              }
+            />
+          ))
+        ) : (
+          <div className="px-6 py-16 text-center space-y-2">
+            <p className="text-zinc-500 text-sm font-normal">
+              No sports places found in this category near {resolvedCity}.
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* ── 5. PLACE PREVIEW SHEET ── */}
+      {previewItem && (
+        <PlacePreviewSheet
+          item={previewItem}
+          userCoordinates={activeCoordinates}
+          onClose={() => setPreviewItem(null)}
+          onConfirmPlan={(item) => {
+            setPreviewItem(null);
+            onSelectDiscoveryItem(item);
+          }}
+        />
+      )}
     </div>
   );
 };

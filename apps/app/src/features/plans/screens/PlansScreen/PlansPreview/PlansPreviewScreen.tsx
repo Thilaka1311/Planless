@@ -36,7 +36,6 @@ import { Friend } from "../../../../participants/shared/types";
 import { getPlanCover } from "../../../config/planCoverImages";
 import { formatPlanDate } from "../../../../../../lib/mappers";
 import { UserAvatar } from "../../../../../IMGfromDB/UserAvatar";
-import { getUserPlanOutstandingDues } from "../../../../wallet/services/walletService";
 import { CostBreakdownPopover } from "../../../components/CostBreakdownPopover";
 import { DiscoveryImages } from "../../../../../IMGfromDB/PlanImages";
 import TeamOrganizerModal from "../../../../../shared/modals/TeamOrganizerModal";
@@ -48,9 +47,11 @@ import { getPlanPreviewCtaState } from "../../../utils/planPreviewCtaUtils";
 import { InlineParticipantView } from "../../../components/InlineParticipantView";
 import { HeroHeader } from "../../../components/HeroHeader";
 import { HeroMetadataCard } from "../../../components/HeroMetadataCard";
-import { PlanChatScreen } from "../../../../chats/screens/PlanChatScreen";
-import { PlanDetailsScreen } from "../../../../wallet/screens/PlanBalances";
 import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGooglePlacesAutocomplete";
+
+const PlanChatScreen = React.lazy(() =>
+  import("../../../../chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen }))
+);
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";
 import { uploadPlanImage } from "../../../../../shared/utils/imageUtils";
@@ -465,6 +466,7 @@ export interface PlansDetailsScreenProps {
   planId?: string;
   plan?: Plan;
   createMode?: boolean;
+  isQuickPlanMode?: boolean;
   onClose: () => void;
   onBack?: () => void;
   userProfile: UserProfile;
@@ -494,6 +496,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   planId,
   plan,
   createMode = false,
+  isQuickPlanMode = false,
   onClose,
   onBack,
   userProfile,
@@ -917,7 +920,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [showRestorePlanConfirm, setShowRestorePlanConfirm] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(false);
-  const [showPlanBalancesScreen, setShowPlanBalancesScreen] = useState(false);
   const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
   const planStartIso = (selectedPlan as any)?.scheduled_at || selectedPlan?.datetime || selectedPlan?.time || selectedPlan?.createdAt;
   const rawRsvpDeadline = (selectedPlan as any)?.rsvp_deadline || selectedPlan?.response_deadline_at;
@@ -2206,11 +2208,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     selectedPlan.location.trim() !== "Add venue" &&
     selectedPlan.location.trim() !== "Search for a place…"
   );
-  const isCreateDisabled =
-    !isTitleSet ||
-    !isDateSet ||
-    !isLocationSet ||
-    isRsvpExpired;
+  const isCreateDisabled = isQuickPlanMode
+    ? (!isTitleSet || !isLocationSet)
+    : (!isTitleSet || !isDateSet || !isLocationSet || isRsvpExpired);
 
   return (
     <motion.div
@@ -2252,6 +2252,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             {/* Hero Header component */}
             <HeroHeader
               title={selectedPlan.title}
+              headerBadge={isQuickPlanMode ? "Quick Plan Review" : undefined}
               creatorName={isHost ? "You" : selectedPlan.creatorName}
               creatorAvatar={isHost ? userProfile.avatar : selectedPlan.creatorAvatar}
               hosts={allHosts}
@@ -2280,8 +2281,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   : () => {
                     if (onOpenExpenses) {
                       onOpenExpenses(selectedPlan.id);
-                    } else {
-                      setShowPlanBalancesScreen(true);
                     }
                   }
               }
@@ -2615,7 +2614,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                       : "bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white shadow-lg"
                     }`}
                 >
-                  {isSubmitting ? "Creating Plan…" : "Create Plan"}
+                  {isSubmitting
+                    ? (isQuickPlanMode ? "Saving Quick Plan…" : "Creating Plan…")
+                    : (isQuickPlanMode ? "Create Quick Plan" : "Create Plan")}
                 </button>
               </div>
             );
@@ -2789,29 +2790,22 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       {/* 💬 PLAN CHAT OVERLAY */}
       {selectedChatPlanId && (
         <div className="fixed inset-0 z-[80] bg-[#050505]">
-          <PlanChatScreen
-            planId={selectedChatPlanId}
-            onBack={() => setSelectedChatPlanId(null)}
-            onOpenPlanDetails={() => {
-              setSelectedChatPlanId(null);
-            }}
-          />
+          <React.Suspense fallback={
+            <div className="w-full h-full flex items-center justify-center bg-[#050505]">
+              <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
+            </div>
+          }>
+            <PlanChatScreen
+              planId={selectedChatPlanId}
+              onBack={() => setSelectedChatPlanId(null)}
+              onOpenPlanDetails={() => {
+                setSelectedChatPlanId(null);
+              }}
+            />
+          </React.Suspense>
         </div>
       )}
 
-      {/* 💳 PLAN BALANCES / EXPENSES OVERLAY */}
-      {showPlanBalancesScreen && selectedPlan && (
-        <div className="fixed inset-0 z-[80] bg-[#050505]">
-          <PlanDetailsScreen
-            planId={selectedPlan.id}
-            onBack={() => setShowPlanBalancesScreen(false)}
-            onRefreshBalances={async () => { }}
-            activeUserId={activeUserId || userProfile.dbUuid || (userProfile as any)?.id || ""}
-            onSelectPlan={() => { }}
-            onToggleBottomNav={() => { }}
-          />
-        </div>
-      )}
 
       <AnimatePresence>
         {showCompletionFlow && (

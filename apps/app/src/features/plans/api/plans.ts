@@ -10,8 +10,11 @@ export async function syncOverduePlansRPC(): Promise<void> {
 
 export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]> {
   console.log('[INVITE_TRACE] getCurrentUserPlans: called with activeUserUuid=', activeUserUuid);
-  // Sync overdue plans so database statuses are up-to-date
-  await syncOverduePlansRPC();
+  // Non-blocking background sync: Postgres overdue status is synchronized in the background
+  // without adding a blocking network round-trip to startup (PlansContext evaluates overdue in-memory).
+  void syncOverduePlansRPC().catch((err) => {
+    console.warn("[syncOverduePlansRPC] Non-blocking sync failed:", err);
+  });
 
   // Phase 1: Fetch all plan IDs where user is a participant or host
   const { data: partData, error: partError } = await supabase
@@ -28,30 +31,31 @@ export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]
     return [];
   }
 
-  // Phase 2 - Fetch Plans
-  const { data: plansData, error: plansError } = await supabase
-    .from("plans")
-    .select(`
-      *,
-      discovery_items(category, subcategory, cover_image_url)
-    `)
-    .in("id", allPlanIds);
+  // Phase 2 & 3: Concurrently fetch independent Plan details and participant details
+  const [
+    { data: plansData, error: plansError },
+    { data: participantsData, error: participantsError }
+  ] = await Promise.all([
+    supabase
+      .from("plans")
+      .select(`
+        *,
+        discovery_items(category, subcategory, cover_image_url)
+      `)
+      .in("id", allPlanIds),
+    supabase
+      .from("plan_participants")
+      .select(`
+        *,
+        user_profile:users(id, public_id, full_name, profile_photo_path, bio)
+      `)
+      .in("plan_id", allPlanIds)
+  ]);
 
   if (plansError) throw plansError;
-
-  const plans = plansData || [];
-
-  // Phase 3 - Fetch Participants
-  const { data: participantsData, error: participantsError } = await supabase
-    .from("plan_participants")
-    .select(`
-      *,
-      user_profile:users(id, public_id, full_name, profile_photo_path)
-    `)
-    .in("plan_id", allPlanIds);
-
   if (participantsError) throw participantsError;
 
+  const plans = plansData || [];
   const participants = participantsData || [];
 
   // Phase 4 - Merge

@@ -330,6 +330,11 @@ export const ProfileProvider = ({
             }
 
             if (index === -1) {
+              // Do NOT append unrelated platform users to dbUsers
+              if (rowId !== activeUserUuid) {
+                return prev;
+              }
+
               const newUser: User = {
                 id: newRow.id,
                 user_id: newRow.public_id || newRow.user_id || "U001",

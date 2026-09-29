@@ -19,7 +19,6 @@ interface PlansScreenProps {
   skippedByPlanId?: Record<string, string[]>;
   plansFilter?: 'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted';
   setPlansFilter?: (filter: any) => void;
-  onScroll?: (y: number) => void;
 }
 
 export const PlansScreen = React.memo(({
@@ -27,7 +26,6 @@ export const PlansScreen = React.memo(({
   skippedByPlanId = {},
   plansFilter: propPlansFilter,
   setPlansFilter: propSetPlansFilter,
-  onScroll,
 }: PlansScreenProps) => {
   const { plans, dbPlanParticipants } = usePlansStore();
   const { userProfile, activeUserId } = useProfileStore();
@@ -349,7 +347,6 @@ export const PlansScreen = React.memo(({
     <div className="flex-1 flex flex-col relative overflow-hidden h-full bg-[#050505] text-left">
       {/* Scrollable Container */}
       <div
-        onScroll={(e) => onScroll?.(e.currentTarget.scrollTop)}
         className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pb-6"
       >
         {/* Sticky Participation Tabs */}

@@ -20,6 +20,8 @@ export interface BackendEnv {
   RESEND_API_KEY?: string;
   NODE_ENV?: string;
   GOOGLE_MAPS_API_KEY?: string;
+  TMDB_API_KEY?: string;
+  TMDB_ACCESS_TOKEN?: string;
 }
 
 function getRequiredEnv(name: string): string {
@@ -39,4 +41,6 @@ export const env: BackendEnv = {
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   NODE_ENV: process.env.NODE_ENV,
   GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
+  TMDB_API_KEY: process.env.TMDB_API_KEY,
+  TMDB_ACCESS_TOKEN: process.env.TMDB_ACCESS_TOKEN,
 };

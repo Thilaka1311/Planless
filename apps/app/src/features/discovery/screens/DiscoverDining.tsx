@@ -1,18 +1,46 @@
-import React, { useState } from "react";
-import { ChevronLeft, Sparkles, Bookmark, MapPin, ChevronRight, UtensilsCrossed } from "lucide-react";
-import { motion, useMotionValue, useTransform, AnimatePresence, useAnimation } from "motion/react";
+import React, { useState, useEffect, useMemo } from "react";
+import { ArrowLeft } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
-import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
+import { DiscoverySection } from "../components/DiscoverySection";
+import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
+import { useUserLocation } from "../hooks/useUserLocation";
+import { ADMIN_CONFIGS } from "../services/discoveryAdminService";
+import { SearchBar } from "../../../shared/components/SearchBar";
 
 interface DiscoverDiningProps {
   sections: DiscoverySectionType[];
   isAdmin: boolean;
   onBack: () => void;
   onSelectDiscoveryItem: (item: DiscoveryItem) => void;
-  onLongPressAdmin: (item: DiscoveryItem, config: any) => void;
+  onLongPressAdmin?: (item: DiscoveryItem, config: any) => void;
+  currentCity?: string;
+  currentLocality?: string;
+  currentCoordinates?: { latitude: number; longitude: number };
 }
 
-// Premium mock data for dining subcategories when the database lists are empty
+type DiningCategoryId =
+  | "all"
+  | "cafes"
+  | "restaurants"
+  | "fine-dining"
+  | "fast-food"
+  | "pubs-breweries";
+
+interface CategoryDef {
+  id: DiningCategoryId;
+  label: string;
+}
+
+const DINING_CATEGORIES: CategoryDef[] = [
+  { id: "all", label: "All" },
+  { id: "cafes", label: "Cafes" },
+  { id: "restaurants", label: "Restaurants" },
+  { id: "fine-dining", label: "Fine Dining" },
+  { id: "fast-food", label: "Fast Food" },
+  { id: "pubs-breweries", label: "Pubs & Breweries" },
+];
+
+// Curated fallbacks to guarantee rich content if local area has limited results
 const defaultCafes: DiscoveryItem[] = [
   {
     id: "cafe-1",
@@ -20,7 +48,7 @@ const defaultCafes: DiscoveryItem[] = [
     section_id: "default-dining",
     title: "Glen's Bakehouse",
     category: "DINING",
-    subcategory: "cafe",
+    subcategory: "Cafe",
     description: "Famous for red velvet cupcakes and cozy outdoor seating.",
     cover_image_url: "dining/glens.jpg",
     location: "Indiranagar, Bangalore",
@@ -40,7 +68,7 @@ const defaultCafes: DiscoveryItem[] = [
     section_id: "default-dining",
     title: "Third Wave Coffee",
     category: "DINING",
-    subcategory: "cafe",
+    subcategory: "Cafe",
     description: "Artisanal coffee and a great workspace vibe.",
     cover_image_url: "dining/thirdwave.jpg",
     location: "Koramangala, Bangalore",
@@ -60,7 +88,7 @@ const defaultCafes: DiscoveryItem[] = [
     section_id: "default-dining",
     title: "The Hole in the Wall Cafe",
     category: "DINING",
-    subcategory: "cafe",
+    subcategory: "Cafe",
     description: "All-day English breakfast in a quirky, rustic space.",
     cover_image_url: "dining/holeinwall.jpg",
     location: "Koramangala, Bangalore",
@@ -73,7 +101,7 @@ const defaultCafes: DiscoveryItem[] = [
     status: "ACTIVE",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  }
+  },
 ];
 
 const defaultFineDines: DiscoveryItem[] = [
@@ -83,7 +111,7 @@ const defaultFineDines: DiscoveryItem[] = [
     section_id: "default-dining",
     title: "The Karavalli",
     category: "DINING",
-    subcategory: "fine dine",
+    subcategory: "Fine Dining",
     description: "Authentic coastal food set in a heritage backyard setting.",
     cover_image_url: "dining/karavalli.jpg",
     location: "Residency Road, Bangalore",
@@ -103,7 +131,7 @@ const defaultFineDines: DiscoveryItem[] = [
     section_id: "default-dining",
     title: "Toscano",
     category: "DINING",
-    subcategory: "fine dine",
+    subcategory: "Fine Dining",
     description: "Fine Italian dining with an extensive wine selection.",
     cover_image_url: "dining/toscano.jpg",
     location: "UB City, Bangalore",
@@ -116,7 +144,7 @@ const defaultFineDines: DiscoveryItem[] = [
     status: "ACTIVE",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  }
+  },
 ];
 
 const defaultPubs: DiscoveryItem[] = [
@@ -126,7 +154,7 @@ const defaultPubs: DiscoveryItem[] = [
     section_id: "default-dining",
     title: "Toit Beer Co.",
     category: "DINING",
-    subcategory: "pubs",
+    subcategory: "Pubs & Breweries",
     description: "Iconic microbrewery known for its craft beers and wood-fired pizzas.",
     cover_image_url: "dining/toit.jpg",
     location: "Indiranagar, Bangalore",
@@ -146,7 +174,7 @@ const defaultPubs: DiscoveryItem[] = [
     section_id: "default-dining",
     title: "Arbor Brewing Company",
     category: "DINING",
-    subcategory: "pubs",
+    subcategory: "Pubs & Breweries",
     description: "American style pub with an industrial-chic setting and great IPAs.",
     cover_image_url: "dining/arbor.jpg",
     location: "Allied Grand Plaza, Bangalore",
@@ -166,7 +194,7 @@ const defaultPubs: DiscoveryItem[] = [
     section_id: "default-dining",
     title: "Windmills Craftworks",
     category: "DINING",
-    subcategory: "pubs",
+    subcategory: "Pubs & Breweries",
     description: "A jazz theater, microbrewery, and library combined.",
     cover_image_url: "dining/windmills.jpg",
     location: "Whitefield, Bangalore",
@@ -179,241 +207,160 @@ const defaultPubs: DiscoveryItem[] = [
     status: "ACTIVE",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  }
+  },
 ];
 
-// Swipable Card component using Framer Motion
-interface SwipableCardProps {
-  item: DiscoveryItem;
-  index: number;
-  onSwipe: (direction: "left" | "right") => void;
-  onTap: () => void;
-  isSwipable?: boolean;
-}
+const defaultFastFood: DiscoveryItem[] = [
+  {
+    id: "fastfood-1",
+    public_id: "fastfood-1",
+    section_id: "default-dining",
+    title: "Truffles",
+    category: "DINING",
+    subcategory: "Fast Food",
+    description: "Famous burgers, steaks, and decadent shakes.",
+    cover_image_url: "dining/truffles.jpg",
+    location: "Koramangala, Bangalore",
+    suggested_duration_minutes: 45,
+    suggested_cost_amount: 600,
+    suggested_capacity: 4,
+    default_rsvp_offset_minutes: 30,
+    display_order: 1,
+    featured: true,
+    status: "ACTIVE",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "fastfood-2",
+    public_id: "fastfood-2",
+    section_id: "default-dining",
+    title: "Leon's Burgers & Wings",
+    category: "DINING",
+    subcategory: "Fast Food",
+    description: "Gourmet fried chicken, peri-peri wings, and loaded fries.",
+    cover_image_url: "dining/leons.jpg",
+    location: "Indiranagar, Bangalore",
+    suggested_duration_minutes: 30,
+    suggested_cost_amount: 450,
+    suggested_capacity: 2,
+    default_rsvp_offset_minutes: 20,
+    display_order: 2,
+    featured: false,
+    status: "ACTIVE",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
 
-const SwipableCard: React.FC<SwipableCardProps> = ({
-  item,
-  index,
-  onSwipe,
-  onTap,
-  isSwipable = true,
-}) => {
-  const isTop = index === 0;
-  const controls = useAnimation();
-  const x = useMotionValue(0);
-  const rotate = useTransform(x, [-250, 250], [-15, 15]);
-  const opacity = useTransform(x, [-250, -150, 0, 150, 250], [0.3, 1, 1, 1, 0.3]);
-
-  React.useEffect(() => {
-    if (index === 0) {
-      controls.start({
-        x: 0,
-        y: 0,
-        scale: 1,
-        opacity: 1,
-        transition: { type: "spring", stiffness: 450, damping: 30 }
-      });
-    } else {
-      x.set(0);
-      controls.start({
-        x: 0,
-        y: index * 14,
-        scale: 1 - index * 0.05,
-        opacity: index <= 2 ? 1 : 0,
-        transition: { type: "spring", stiffness: 400, damping: 30 }
-      });
-    }
-  }, [index, controls, x]);
-
-  const handleDragEnd = async (event: any, info: any) => {
-    const swipeThreshold = 40;
-    const velocityThreshold = 200;
-    if (isSwipable && (info.offset.x > swipeThreshold || info.velocity.x > velocityThreshold)) {
-      // Fly off to the right
-      controls.start({
-        x: 380,
-        opacity: 0,
-        rotate: 20,
-        transition: { duration: 0.15, ease: "easeOut" }
-      });
-      setTimeout(() => onSwipe("right"), 140);
-    } else if (isSwipable && (info.offset.x < -swipeThreshold || info.velocity.x < -velocityThreshold)) {
-      // Fly off to the left
-      controls.start({
-        x: -380,
-        opacity: 0,
-        rotate: -20,
-        transition: { duration: 0.15, ease: "easeOut" }
-      });
-      setTimeout(() => onSwipe("left"), 140);
-    } else {
-      // Snap back to center
-      controls.start({
-        x: 0,
-        rotate: 0,
-        transition: { type: "spring", stiffness: 400, damping: 25 }
-      });
-    }
-  };
-
+const isCafeItem = (it: DiscoveryItem): boolean => {
+  const t = (it.title || "").toLowerCase();
+  const s = (it.subcategory || "").toLowerCase();
+  const d = (it.description || "").toLowerCase();
+  const c = `${t} ${s} ${d}`;
   return (
-    <motion.div
-      animate={controls}
-      initial={{
-        x: 0,
-        y: index * 14,
-        scale: 1 - index * 0.05,
-        opacity: index <= 2 ? 1 : 0,
-      }}
-      style={{
-        x,
-        rotate,
-        opacity: isTop ? opacity : undefined,
-        pointerEvents: isTop ? "auto" : "none",
-        touchAction: "pan-y"
-      }}
-      drag={isTop ? "x" : false}
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.7}
-      onDragEnd={handleDragEnd}
-      onTap={() => {
-        if (isTop && Math.abs(x.get()) < 10) {
-          onTap();
-        }
-      }}
-      whileTap={isTop ? { scale: 0.98 } : undefined}
-      className={`absolute w-[290px] h-[370px] rounded-3xl overflow-hidden bg-[#09090b] border border-white/[0.06] shadow-2xl flex flex-col justify-end p-6 transition-colors duration-200 ${isTop ? "cursor-pointer hover:border-white/[0.16]" : ""
-        }`}
-    >
-      {/* Solid Background container (ensures card is fully opaque) */}
-      <div className="absolute inset-0 bg-[#09090b]" />
-
-      {/* Dimming overlay for stacked background cards to prevent visual bleed-through */}
-      {index > 0 && (
-        <div
-          className="absolute inset-0 bg-black z-20 pointer-events-none transition-opacity duration-300"
-          style={{ opacity: index === 1 ? 0.35 : 0.7 }}
-        />
-      )}
-
-      {/* Cover Image */}
-      <DiscoveryImages
-        src={item.cover_image_url}
-        category={item.category}
-        alt={item.title}
-        className="absolute inset-0 w-full h-full object-cover opacity-60"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/90" />
-
-      {/* Content details at bottom, no buttons or badges */}
-      <div className="z-10 flex flex-col items-center w-full text-center pb-2">
-        <h4 className="text-lg font-extrabold text-white leading-snug tracking-wide line-clamp-1">
-          {item.title}
-        </h4>
-        <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-300 mt-1">
-          <span className="font-semibold text-rose-400">
-            {(1.2 + (item.display_order % 5) * 1.5).toFixed(1)}km
-          </span>
-          <span className="text-zinc-600">•</span>
-          <span className="truncate max-w-[170px]">{item.location || "Bangalore"}</span>
-        </div>
-      </div>
-    </motion.div>
+    c.includes("cafe") ||
+    c.includes("coffee") ||
+    c.includes("tea") ||
+    c.includes("chai") ||
+    c.includes("bake") ||
+    c.includes("bakery") ||
+    c.includes("dessert") ||
+    c.includes("waffle") ||
+    c.includes("roaster")
   );
 };
 
-// Dining Category Section incorporating stacks or sideways scrolling
-interface DiningCategorySectionProps {
+const isFastFoodItem = (it: DiscoveryItem): boolean => {
+  const t = (it.title || "").toLowerCase();
+  const s = (it.subcategory || "").toLowerCase();
+  const d = (it.description || "").toLowerCase();
+  const c = `${t} ${s} ${d}`;
+  return (
+    c.includes("burger") ||
+    c.includes("pizza") ||
+    c.includes("chicken") ||
+    c.includes("fast food") ||
+    c.includes("roll") ||
+    c.includes("shawarma") ||
+    c.includes("momo") ||
+    c.includes("fries") ||
+    c.includes("takeaway") ||
+    c.includes("bites") ||
+    c.includes("sandwich") ||
+    c.includes("snack")
+  );
+};
+
+const isPubItem = (it: DiscoveryItem): boolean => {
+  const t = (it.title || "").toLowerCase();
+  const s = (it.subcategory || "").toLowerCase();
+  const d = (it.description || "").toLowerCase();
+  const c = `${t} ${s} ${d}`;
+  return (
+    c.includes("pub") ||
+    c.includes("bar") ||
+    c.includes("brewery") ||
+    c.includes("taproom") ||
+    c.includes("lounge") ||
+    c.includes("beer") ||
+    c.includes("drink") ||
+    c.includes("cocktail") ||
+    c.includes("club")
+  );
+};
+
+const isFineDiningItem = (it: DiscoveryItem): boolean => {
+  const t = (it.title || "").toLowerCase();
+  const s = (it.subcategory || "").toLowerCase();
+  const d = (it.description || "").toLowerCase();
+  const c = `${t} ${s} ${d}`;
+  return (
+    c.includes("fine") ||
+    c.includes("pavilion") ||
+    c.includes("grand") ||
+    c.includes("palace") ||
+    c.includes("marriott") ||
+    c.includes("taj") ||
+    c.includes("sheraton") ||
+    c.includes("karavalli") ||
+    c.includes("leela") ||
+    c.includes("itc") ||
+    c.includes("oberoi") ||
+    (typeof it.suggested_cost_amount === "number" && it.suggested_cost_amount >= 2000)
+  );
+};
+
+const isRestaurantItem = (it: DiscoveryItem): boolean => {
+  const t = (it.title || "").toLowerCase();
+  const s = (it.subcategory || "").toLowerCase();
+  const d = (it.description || "").toLowerCase();
+  const c = `${t} ${s} ${d}`;
+  return (
+    c.includes("restaurant") ||
+    c.includes("dining") ||
+    c.includes("kitchen") ||
+    c.includes("diner") ||
+    c.includes("bhojanalaya") ||
+    c.includes("mess") ||
+    c.includes("punjab") ||
+    c.includes("south indian") ||
+    c.includes("north indian") ||
+    c.includes("biryani") ||
+    c.includes("dhaba") ||
+    c.includes("bhavan") ||
+    c.includes("sagar") ||
+    c.includes("darshini") ||
+    (!c.includes("pub") && !c.includes("bar") && !c.includes("brewery") && !c.includes("cafe"))
+  );
+};
+
+interface SectionItemDef {
+  id: string;
   title: string;
+  subtitle?: string;
   items: DiscoveryItem[];
-  isExpanded: boolean;
-  onSelect: (item: DiscoveryItem) => void;
 }
-
-const DiningCategorySection: React.FC<DiningCategorySectionProps> = ({
-  title,
-  items,
-  isExpanded,
-  onSelect,
-}) => {
-  const [stack, setStack] = useState<DiscoveryItem[]>(items);
-
-  // Keep stack state in sync with items from props
-  React.useEffect(() => {
-    setStack(items);
-  }, [items]);
-
-  const handleSwipe = (direction: "left" | "right") => {
-    if (stack.length <= 1) return;
-    setStack((prev) => {
-      const [first, ...rest] = prev;
-      return [...rest, first];
-    });
-  };
-
-  if (items.length === 0) return null;
-
-  return (
-    <div className="space-y-4">
-      {/* Title */}
-      <div className="flex items-center justify-between border-b border-white/[0.04] pb-2 px-1">
-        <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
-          {title} ({items.length})
-        </h4>
-      </div>
-
-      {isExpanded ? (
-        <div className="grid grid-rows-2 grid-flow-col gap-3.5 overflow-x-auto py-2 px-1 no-scrollbar scroll-smooth">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              onClick={() => onSelect(item)}
-              className="relative shrink-0 w-[135px] h-[175px] rounded-2xl overflow-hidden bg-[#09090b] border border-white/[0.06] shadow-lg flex flex-col justify-end p-3 cursor-pointer hover:border-white/[0.16] hover:scale-[1.01] transition-all duration-300 group"
-            >
-              <div className="absolute inset-0 bg-[#09090b]" />
-              <DiscoveryImages
-                src={item.cover_image_url}
-                category={item.category}
-                alt={item.title}
-                className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500"
-              />
-              <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/90" />
-              <div className="z-10 flex flex-col w-full text-left">
-                <h4 className="text-xs font-bold text-white leading-tight line-clamp-1">
-                  {item.title}
-                </h4>
-                <div className="flex items-center gap-1 text-[9px] text-zinc-300 mt-0.5">
-                  <span className="font-semibold text-rose-400">
-                    {(1.2 + (item.display_order % 5) * 1.5).toFixed(1)}km
-                  </span>
-                  <span className="text-zinc-500">•</span>
-                  <span className="truncate max-w-[70px]">{item.location || "Bangalore"}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="relative h-[395px] flex justify-center items-start pt-2">
-          {stack
-            .slice(0, 3)
-            .map((item, idx) => ({ item, idx }))
-            .reverse()
-            .map(({ item, idx }) => (
-              <SwipableCard
-                key={item.id}
-                item={item}
-                index={idx}
-                onSwipe={handleSwipe}
-                onTap={() => onSelect(item)}
-                isSwipable={stack.length > 1}
-              />
-            ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 export const DiscoverDining: React.FC<DiscoverDiningProps> = ({
   sections,
@@ -421,132 +368,403 @@ export const DiscoverDining: React.FC<DiscoverDiningProps> = ({
   onBack,
   onSelectDiscoveryItem,
   onLongPressAdmin,
+  currentCity,
+  currentLocality,
+  currentCoordinates,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const { coordinates: hookCoords, cityName, localityName } = useUserLocation();
+  const activeCoordinates = currentCoordinates || hookCoords;
+  const resolvedCity = currentCity || cityName || "Bengaluru";
 
-  // Group dining items from sections
-  const allDiningItems = React.useMemo(() => {
-    return sections
+  const [selectedCategory, setSelectedCategory] = useState<DiningCategoryId>("all");
+  const [previewItem, setPreviewItem] = useState<DiscoveryItem | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery.trim().toLowerCase());
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Extract and deduplicate all dining items across sections
+  const allDiningItems = useMemo(() => {
+    const raw = sections
       .filter((s) => s.category?.toUpperCase() === "DINING")
       .flatMap((s) => s.items || []);
+
+    const seen = new Set<string>();
+    const deduped: DiscoveryItem[] = [];
+    for (const item of raw) {
+      const key = item.place_id || item.id;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(item);
+      }
+    }
+    return deduped;
   }, [sections]);
 
-  // Subcategory partitioning (with default fallback fallback items to ensure a filled premium view)
-  const cafes = React.useMemo(() => {
-    const list = allDiningItems.filter((item) => {
-      const sub = (item.subcategory || "").toLowerCase();
-      const title = (item.title || "").toLowerCase();
-      return sub.includes("cafe") || title.includes("cafe") || (!sub.includes("pub") && !sub.includes("fine") && !sub.includes("dine") && !sub.includes("bar") && !sub.includes("brewery"));
-    });
-    return list.length > 0 ? list : defaultCafes;
+  // Categorize items
+  const cafes = useMemo(() => {
+    const matched = allDiningItems.filter(isCafeItem);
+    return matched.length > 0 ? matched : defaultCafes;
   }, [allDiningItems]);
 
-  const fineDines = React.useMemo(() => {
-    const list = allDiningItems.filter((item) => {
-      const sub = (item.subcategory || "").toLowerCase();
-      const title = (item.title || "").toLowerCase();
-      return sub.includes("fine") || sub.includes("dine") || title.includes("fine") || title.includes("dine") || title.includes("restaurant");
-    });
-    return list.length > 0 ? list : defaultFineDines;
+  const restaurants = useMemo(() => {
+    const matched = allDiningItems.filter(isRestaurantItem);
+    return matched.length > 0 ? matched : allDiningItems;
   }, [allDiningItems]);
 
-  const pubs = React.useMemo(() => {
-    const list = allDiningItems.filter((item) => {
-      const sub = (item.subcategory || "").toLowerCase();
-      const title = (item.title || "").toLowerCase();
-      return sub.includes("pub") || sub.includes("bar") || sub.includes("brewery") || sub.includes("drink") || title.includes("pub") || title.includes("bar") || title.includes("brewery") || title.includes("lounge");
-    });
-    return list.length > 0 ? list : defaultPubs;
+  const fineDines = useMemo(() => {
+    const matched = allDiningItems.filter(isFineDiningItem);
+    return matched.length > 0 ? matched : defaultFineDines;
   }, [allDiningItems]);
 
-  const scrollToSection = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
+  const fastFoods = useMemo(() => {
+    const matched = allDiningItems.filter(isFastFoodItem);
+    return matched.length > 0 ? matched : defaultFastFood;
+  }, [allDiningItems]);
+
+  const pubs = useMemo(() => {
+    const matched = allDiningItems.filter(isPubItem);
+    return matched.length > 0 ? matched : defaultPubs;
+  }, [allDiningItems]);
+
+  const handleCategoryClick = (id: DiningCategoryId) => {
+    if (selectedCategory === id) {
+      setSelectedCategory("all");
+    } else {
+      setSelectedCategory(id);
     }
   };
+
+  // Generate sections based on active category with clean title casing and no redundant subtitles
+  const visibleSections = useMemo((): SectionItemDef[] => {
+    if (selectedCategory === "all") {
+      const result: SectionItemDef[] = [];
+      if (restaurants.length > 0) {
+        result.push({
+          id: "sec_restaurants_all",
+          title: "Restaurants",
+          items: restaurants.slice(0, 10),
+        });
+      }
+      if (cafes.length > 0) {
+        result.push({
+          id: "sec_cafes_all",
+          title: "Cafes",
+          items: cafes.slice(0, 10),
+        });
+      }
+      if (fineDines.length > 0) {
+        result.push({
+          id: "sec_fine_dining_all",
+          title: "Fine Dining",
+          items: fineDines.slice(0, 10),
+        });
+      }
+      if (fastFoods.length > 0) {
+        result.push({
+          id: "sec_fast_food_all",
+          title: "Fast Food",
+          items: fastFoods.slice(0, 10),
+        });
+      }
+      if (pubs.length > 0) {
+        result.push({
+          id: "sec_pubs_all",
+          title: "Pubs & Breweries",
+          items: pubs.slice(0, 10),
+        });
+      }
+      if (restaurants.length > 10) {
+        result.push({
+          id: "sec_more_restaurants",
+          title: "More Dining Spots",
+          items: restaurants.slice(10, 24),
+        });
+      }
+      return result;
+    }
+
+    if (selectedCategory === "cafes") {
+      if (cafes.length > 10) {
+        return [
+          {
+            id: "sec_cafes_1",
+            title: "Top Cafes",
+            items: cafes.slice(0, 10),
+          },
+          {
+            id: "sec_cafes_2",
+            title: "More Cafes & Bakes",
+            items: cafes.slice(10, 24),
+          },
+        ];
+      }
+      return [
+        {
+          id: "sec_cafes_all",
+          title: "Cafes Near You",
+          items: cafes,
+        },
+      ];
+    }
+
+    if (selectedCategory === "restaurants") {
+      if (restaurants.length > 10) {
+        return [
+          {
+            id: "sec_restaurants_1",
+            title: "Restaurants Near You",
+            items: restaurants.slice(0, 10),
+          },
+          {
+            id: "sec_restaurants_2",
+            title: "Popular Dining Spots",
+            items: restaurants.slice(10, 22),
+          },
+          {
+            id: "sec_restaurants_3",
+            title: "More Eateries",
+            items: restaurants.slice(22, 36),
+          },
+        ];
+      }
+      return [
+        {
+          id: "sec_restaurants_all",
+          title: "Restaurants Near You",
+          items: restaurants,
+        },
+      ];
+    }
+
+    if (selectedCategory === "fine-dining") {
+      if (fineDines.length > 10) {
+        return [
+          {
+            id: "sec_finedine_1",
+            title: "Fine Dining Experiences",
+            items: fineDines.slice(0, 10),
+          },
+          {
+            id: "sec_finedine_2",
+            title: "More Luxury Dining",
+            items: fineDines.slice(10, 20),
+          },
+        ];
+      }
+      return [
+        {
+          id: "sec_finedine_all",
+          title: "Fine Dining Near You",
+          items: fineDines,
+        },
+      ];
+    }
+
+    if (selectedCategory === "fast-food") {
+      if (fastFoods.length > 10) {
+        return [
+          {
+            id: "sec_fastfood_1",
+            title: "Fast Food & Quick Bites",
+            items: fastFoods.slice(0, 10),
+          },
+          {
+            id: "sec_fastfood_2",
+            title: "More Quick Bites",
+            items: fastFoods.slice(10, 20),
+          },
+        ];
+      }
+      return [
+        {
+          id: "sec_fastfood_all",
+          title: "Fast Food Near You",
+          items: fastFoods,
+        },
+      ];
+    }
+
+    if (selectedCategory === "pubs-breweries") {
+      if (pubs.length > 10) {
+        return [
+          {
+            id: "sec_pubs_1",
+            title: "Pubs & Breweries",
+            items: pubs.slice(0, 10),
+          },
+          {
+            id: "sec_pubs_2",
+            title: "Bars & Lounges",
+            items: pubs.slice(10, 20),
+          },
+        ];
+      }
+      return [
+        {
+          id: "sec_pubs_all",
+          title: "Pubs & Breweries Near You",
+          items: pubs,
+        },
+      ];
+    }
+
+    return [];
+  }, [selectedCategory, restaurants, cafes, fineDines, fastFoods, pubs]);
+
+  // Search filtering over all dining items
+  const searchedItems = useMemo(() => {
+    if (!debouncedQuery) return [];
+    const q = debouncedQuery;
+    return allDiningItems.filter((item) => {
+      const t = (item.title || "").toLowerCase();
+      const d = (item.description || "").toLowerCase();
+      const loc = (item.location || "").toLowerCase();
+      const addr = (item.place_address || "").toLowerCase();
+      const sub = (item.subcategory || "").toLowerCase();
+      return (
+        t.includes(q) ||
+        d.includes(q) ||
+        loc.includes(q) ||
+        addr.includes(q) ||
+        sub.includes(q)
+      );
+    });
+  }, [allDiningItems, debouncedQuery]);
 
   return (
     <div
       className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-24 text-left select-none"
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
-      {/* Header Bar */}
-      <div className="w-full shrink-0 px-5 flex items-center justify-between bg-[#000000] border-b border-white/[0.08]" style={{ height: "72px" }}>
-        <div className="flex items-center">
+      {/* ── 1. HEADER BAR ── */}
+      <div className="w-full shrink-0 px-5 pt-3.5 pb-2 flex items-center justify-between bg-black border-b border-white/[0.06]">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="mr-4 flex items-center justify-center text-white bg-none border-none cursor-pointer p-0"
-            style={{ width: "24px", height: "24px" }}
+            className="text-white hover:text-zinc-300 active:scale-95 transition cursor-pointer p-1 -ml-1 flex items-center justify-center"
+            aria-label="Back"
           >
-            <ChevronLeft className="w-6 h-6" />
+            <ArrowLeft className="w-6 h-6 text-white" />
           </button>
-          <div
-            className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mr-3 shrink-0"
-          >
-            <UtensilsCrossed className="w-4 h-4" />
+          <div className="flex flex-col text-left">
+            <h2 className="text-base font-bold text-white tracking-tight leading-tight">
+              Dining
+            </h2>
+            <span className="text-[11px] text-red-500 font-medium mt-0.5 leading-none">
+              Discover places to eat
+            </span>
           </div>
-          <h2 className="text-base font-bold text-white tracking-tight">Dining Plan</h2>
         </div>
-        {/* Toggle Expansion Option */}
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="text-xs font-bold text-zinc-300 hover:text-white px-3.5 py-1.5 bg-zinc-900 border border-white/[0.06] rounded-full transition active:scale-95 cursor-pointer"
-        >
-          {isExpanded ? "Show Stacks" : "Expand All"}
-        </button>
       </div>
 
-      {/* Index Navigation Bar */}
-      <div className="w-full shrink-0 px-6 py-2.5 bg-[#000000] border-b border-white/[0.04] flex gap-2 overflow-x-auto no-scrollbar scroll-smooth">
-        <button
-          onClick={() => scrollToSection("dining-section-cafes")}
-          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
-        >
-          ☕ Cafes
-        </button>
-        <button
-          onClick={() => scrollToSection("dining-section-finedines")}
-          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
-        >
-          🍷 Fine Dine
-        </button>
-        <button
-          onClick={() => scrollToSection("dining-section-pubs")}
-          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
-        >
-          🍺 Pubs & Breweries
-        </button>
+      {/* ── 2. SEARCH BAR ── */}
+      <div className="shrink-0 bg-[#000000] px-4 pt-2 pb-1.5 select-none">
+        <SearchBar
+          id="search-dining-input"
+          name="searchDiningInput"
+          placeholder="Search restaurants, cafes, places..."
+          value={searchQuery}
+          onChange={setSearchQuery}
+        />
       </div>
 
-      {/* Categories Content */}
-      <div className="px-6 py-6 flex-1 space-y-8">
-        <div id="dining-section-cafes">
-          <DiningCategorySection
-            title="Cafes"
-            items={cafes}
-            isExpanded={isExpanded}
-            onSelect={onSelectDiscoveryItem}
-          />
-        </div>
-        <div id="dining-section-finedines">
-          <DiningCategorySection
-            title="Fine Dine"
-            items={fineDines}
-            isExpanded={isExpanded}
-            onSelect={onSelectDiscoveryItem}
-          />
-        </div>
-        <div id="dining-section-pubs">
-          <DiningCategorySection
-            title="Pubs & Breweries"
-            items={pubs}
-            isExpanded={isExpanded}
-            onSelect={onSelectDiscoveryItem}
-          />
-        </div>
+      {/* ── 3. CATEGORY FILTERS (Text Chips) ── */}
+      {!debouncedQuery && (
+        <section className="px-5 pt-2 pb-2 shrink-0 border-b border-white/[0.04]">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar scroll-smooth py-0.5">
+            {DINING_CATEGORIES.map((cat) => {
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => handleCategoryClick(cat.id)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer active:scale-95 ${
+                    isSelected
+                      ? "bg-red-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.35)] border border-red-400/40"
+                      : "bg-[#121216] text-zinc-400 border border-white/[0.06] hover:text-white hover:bg-white/[0.06]"
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ── 4. HORIZONTAL SECTIONS FEED / SEARCH RESULTS ── */}
+      <div className="space-y-8 pt-4 pb-8 flex-1">
+        {debouncedQuery ? (
+          searchedItems.length > 0 ? (
+            <DiscoverySection
+              id="sec_dining_search"
+              title="Search Results"
+              items={searchedItems}
+              colorAccent="text-rose-500"
+              userCoordinates={activeCoordinates}
+              isAdmin={isAdmin}
+              onSelectItem={(item) => setPreviewItem(item)}
+              onLongPressAdmin={
+                onLongPressAdmin
+                  ? (item) => onLongPressAdmin(item, ADMIN_CONFIGS.dining)
+                  : undefined
+              }
+            />
+          ) : (
+            <div className="px-6 py-16 text-center space-y-2">
+              <p className="text-zinc-500 text-sm font-normal">
+                No dining places found matching &quot;{searchQuery}&quot;.
+              </p>
+            </div>
+          )
+        ) : visibleSections.length > 0 ? (
+          visibleSections.map((sec) => (
+            <DiscoverySection
+              key={sec.id}
+              id={sec.id}
+              title={sec.title}
+              subtitle={sec.subtitle}
+              items={sec.items}
+              colorAccent="text-rose-500"
+              userCoordinates={activeCoordinates}
+              isAdmin={isAdmin}
+              onSelectItem={(item) => setPreviewItem(item)}
+              onLongPressAdmin={
+                onLongPressAdmin
+                  ? (item) => onLongPressAdmin(item, ADMIN_CONFIGS.dining)
+                  : undefined
+              }
+            />
+          ))
+        ) : (
+          <div className="px-6 py-16 text-center space-y-2">
+            <p className="text-zinc-500 text-sm font-normal">
+              No dining places found in this category near {resolvedCity}.
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* ── 5. PLACE PREVIEW SHEET ── */}
+      {previewItem && (
+        <PlacePreviewSheet
+          item={previewItem}
+          userCoordinates={activeCoordinates}
+          onClose={() => setPreviewItem(null)}
+          onConfirmPlan={(item) => {
+            setPreviewItem(null);
+            onSelectDiscoveryItem(item);
+          }}
+        />
+      )}
     </div>
   );
 };

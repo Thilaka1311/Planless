@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle, Share2 } from "lucide-react";
+import { ArrowLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle, Share2, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
@@ -19,6 +19,7 @@ export interface HostInfo {
 
 interface HeroHeaderProps {
   title: string;
+  headerBadge?: string;
   creatorName?: string;
   creatorAvatar?: string;
   hosts?: HostInfo[];
@@ -61,6 +62,7 @@ interface HeroHeaderProps {
 
 export const HeroHeader: React.FC<HeroHeaderProps> = ({
   title,
+  headerBadge,
   creatorName,
   creatorAvatar,
   hosts,
@@ -378,6 +380,12 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           onClick={!isEditingTitle && onHeaderPress ? onHeaderPress : undefined}
           className={`flex flex-col items-center max-w-full ${onHeaderPress ? "cursor-pointer pointer-events-auto" : "pointer-events-none"}`}
         >
+          {headerBadge && (
+            <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#FF6B2C]/20 border border-[#FF6B2C]/40 text-[#FF6B2C] text-[11px] font-bold tracking-wider uppercase mb-1.5 shadow-sm">
+              <Zap className="w-3 h-3 fill-[#FF6B2C]" />
+              <span>{headerBadge}</span>
+            </div>
+          )}
           {coverImage && (
             <div
               onClick={onEditCoverImage ? (e) => { e.stopPropagation(); onEditCoverImage(); } : undefined}

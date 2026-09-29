@@ -232,7 +232,16 @@ export const PlanDetailsScreen: React.FC<PlanDetailsScreenProps> = ({
     const targetPlan = planId || "";
     const channel = supabase
       .channel(`plan-balances-${targetPlan || "all"}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "wallet_expenses" }, () => loadPlanData())
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "wallet_expenses",
+          filter: targetPlan ? `plan_id=eq.${targetPlan}` : undefined,
+        },
+        () => loadPlanData()
+      )
       .on("postgres_changes", { event: "*", schema: "public", table: "wallet_expense_participants" }, () => loadPlanData())
       .subscribe();
 

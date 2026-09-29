@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft, HelpCircle, User } from "lucide-react";
 import { UserProfile } from "../../../../core/types";
-import defaultAvatar from "../../../../assets/default_avatar.png";
+import defaultAvatar from "../../../../assets/default_avatar.webp";
 import { trackEvent } from "../../../../../lib/analytics";
 import { supabase } from "../../../../../lib/supabaseClient";
 import { resolveImage, ImageType } from "../../../../shared/imaging/imageResolver";
@@ -19,7 +19,7 @@ import { resetPlanAnimation } from "../components/PlanAnimation";
 import { resetCreatePlanAnimation } from "../components/CreatePlanAnimation";
 import { resetJoinPlanAnimation } from "../components/JoinPlanAnimation";
 import { OnboardingHeader } from "../components/OnboardingHeader";
-import onboardingCups from "../../../../assets/Onboarding_cups.png";
+import onboardingCups from "../../../../assets/Onboarding_cups.webp";
 import { preloadImage } from "../../../../shared/imaging/preloadImage";
 
 

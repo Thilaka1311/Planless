@@ -9,7 +9,7 @@ import { useLivePlan } from "../../plans/hooks/useLivePlan";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { ParticipantToggleBar } from "./PlanDetailsCard";
 import { formatPlanDate } from "../../../../lib/mappers";
-import defaultAvatar from "../../../assets/default_avatar.png";
+import defaultAvatar from "../../../assets/default_avatar.webp";
 import { normalizeStatus } from "../../../../lib/participantStatus";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";

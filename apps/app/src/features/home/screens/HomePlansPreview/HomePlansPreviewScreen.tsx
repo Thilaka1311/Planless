@@ -25,8 +25,9 @@ import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPrev
 import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../../plans/utils/planUtils";
 import { getPlanPreviewCtaState } from "../../../plans/utils/planPreviewCtaUtils";
-import { PlanChatScreen } from "../../../chats/screens/PlanChatScreen";
-import { PlanDetailsScreen as PlanBalancesScreen } from "../../../wallet/screens/PlanBalances";
+const PlanChatScreen = React.lazy(() =>
+  import("../../../chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen }))
+);
 
 export interface PlansPreviewScreenProps {
   planId: string;
@@ -83,7 +84,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const [showCompletionFlow, setShowCompletionFlow] = useState(false);
   const [showManageTeams, setShowManageTeams] = useState(false);
   const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
-  const [showPlanBalancesScreen, setShowPlanBalancesScreen] = useState(false);
   const [showPlanActionsSheet, setShowPlanActionsSheet] = useState(false);
 
   const resolvedUserUuid = userProfile.dbUuid || activeUserId || "";
@@ -771,29 +771,22 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       {/* 💬 PLAN CHAT OVERLAY */}
       {selectedChatPlanId && (
         <div className="fixed inset-0 z-[80] bg-[#050505]">
-          <PlanChatScreen
-            planId={selectedChatPlanId}
-            onBack={() => setSelectedChatPlanId(null)}
-            onOpenPlanDetails={() => {
-              setSelectedChatPlanId(null);
-            }}
-          />
+          <React.Suspense fallback={
+            <div className="w-full h-full flex items-center justify-center bg-[#050505]">
+              <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
+            </div>
+          }>
+            <PlanChatScreen
+              planId={selectedChatPlanId}
+              onBack={() => setSelectedChatPlanId(null)}
+              onOpenPlanDetails={() => {
+                setSelectedChatPlanId(null);
+              }}
+            />
+          </React.Suspense>
         </div>
       )}
 
-      {/* 💳 PLAN BALANCES / EXPENSES OVERLAY */}
-      {showPlanBalancesScreen && selectedPlan && (
-        <div className="fixed inset-0 z-[80] bg-[#050505]">
-          <PlanBalancesScreen
-            planId={selectedPlan.id}
-            onBack={() => setShowPlanBalancesScreen(false)}
-            onRefreshBalances={async () => { }}
-            activeUserId={activeUserId || userProfile.dbUuid || (userProfile as any)?.id || ""}
-            onSelectPlan={() => { }}
-            onToggleBottomNav={() => { }}
-          />
-        </div>
-      )}
 
       <AnimatePresence>
         {showCompletionFlow && (

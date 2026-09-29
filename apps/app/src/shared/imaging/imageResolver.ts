@@ -84,9 +84,9 @@ const PREFIX_TO_BUCKET: Record<string, string> = {
  * Import placeholders here. Components receive the resolved URL and never need
  * to import asset files themselves.
  */
-import defaultAvatarSrc from "../../assets/default_avatar.png";
-import placeholderCoverSrc from "../../assets/placeholder.png";
-import defaultPlanCoverSrc from "../../assets/planimagedefault.png";
+import defaultAvatarSrc from "../../assets/default_avatar.webp";
+import placeholderCoverSrc from "../../assets/placeholder.webp";
+import defaultPlanCoverSrc from "../../assets/planimagedefault.webp";
 
 const PLACEHOLDER_REGISTRY: Record<ImageType, string> = {
   [ImageType.Avatar]: defaultAvatarSrc,
@@ -153,6 +153,7 @@ export function evictPlanImage(planId: string): void {
     urlCache.set(`${t}:${cleanId}`, defaultPlanCoverSrc);
     urlCache.set(`${t}:plan-images/${storagePath}`, defaultPlanCoverSrc);
     urlCache.set(`${t}:planimagedefault.png`, defaultPlanCoverSrc);
+    urlCache.set(`${t}:planimagedefault.webp`, defaultPlanCoverSrc);
   }
 
   // 2. Clear old imageVersions for this plan
@@ -162,8 +163,8 @@ export function evictPlanImage(planId: string): void {
     }
   }
 
-  // 3. Mark planImageCache as strictly planimagedefault.png
-  setPlanCachedImage(cleanId, "planimagedefault.png");
+  // 3. Mark planImageCache as strictly planimagedefault.webp
+  setPlanCachedImage(cleanId, "planimagedefault.webp");
 
   // 4. Invalidate browser Cache API if available
   if (typeof window !== "undefined" && "caches" in window) {
@@ -256,21 +257,25 @@ export function resolveImageDetails(
     !storagePath.trim() ||
     storagePath.trim() === "default" ||
     storagePath.trim() === "planimagedefault.png" ||
+    storagePath.trim() === "planimagedefault.webp" ||
     storagePath.trim().includes("planimagedefault")
   ) {
-    return { bucket: "none", objectKey: "planimagedefault.png", url: defaultPlanCoverSrc };
+    return { bucket: "none", objectKey: "planimagedefault.webp", url: defaultPlanCoverSrc };
   }
 
   const raw = storagePath.trim();
   const cleanKey = raw.replace(/\.webp$/i, "").replace(/^plan-images\//, "");
 
-  // Check if planImageCache has mapped this plan or path to planimagedefault.png
+  // Check if planImageCache has mapped this plan or path to planimagedefault
   if (
     planImageCache.get(raw) === "planimagedefault.png" ||
+    planImageCache.get(raw) === "planimagedefault.webp" ||
     planImageCache.get(cleanKey) === "planimagedefault.png" ||
-    planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.png"
+    planImageCache.get(cleanKey) === "planimagedefault.webp" ||
+    planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.png" ||
+    planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.webp"
   ) {
-    return { bucket: "none", objectKey: "planimagedefault.png", url: defaultPlanCoverSrc };
+    return { bucket: "none", objectKey: "planimagedefault.webp", url: defaultPlanCoverSrc };
   }
 
   // ── 2. Already a full URL, blob URL, data URI, or local asset → passthrough ─────────
@@ -365,11 +370,15 @@ export function resolveImage(
 
   if (
     raw === "planimagedefault.png" ||
+    raw === "planimagedefault.webp" ||
     raw === "default" ||
     raw.includes("planimagedefault") ||
     planImageCache.get(raw) === "planimagedefault.png" ||
+    planImageCache.get(raw) === "planimagedefault.webp" ||
     planImageCache.get(cleanKey) === "planimagedefault.png" ||
-    planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.png"
+    planImageCache.get(cleanKey) === "planimagedefault.webp" ||
+    planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.png" ||
+    planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.webp"
   ) {
     return defaultPlanCoverSrc;
   }

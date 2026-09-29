@@ -33,7 +33,11 @@ export function classifyImageSource(
   cleanedPath: string;
 } {
   // If this plan has been evicted/reset to default, classify directly as LOCAL_DEFAULT
-  if (planId && getPlanCachedImage(planId) === "planimagedefault.png") {
+  if (
+    planId &&
+    (getPlanCachedImage(planId) === "planimagedefault.png" ||
+      getPlanCachedImage(planId) === "planimagedefault.webp")
+  ) {
     return { sourceType: "LOCAL_DEFAULT", cleanedPath: "" };
   }
 
@@ -44,23 +48,30 @@ export function classifyImageSource(
     src === "undefined" ||
     src === "default" ||
     src === "planimagedefault.png" ||
+    src === "planimagedefault.webp" ||
     src.includes("planimagedefault")
   ) {
     return { sourceType: "LOCAL_DEFAULT", cleanedPath: "" };
   }
   const raw = src.trim();
 
-  // If the raw path itself is cached as planimagedefault.png or points to obsolete plan-covers
-  if (getPlanCachedImage(raw) === "planimagedefault.png" || raw.includes("plan-covers")) {
+  // If the raw path itself is cached as planimagedefault or points to obsolete plan-covers
+  if (
+    getPlanCachedImage(raw) === "planimagedefault.png" ||
+    getPlanCachedImage(raw) === "planimagedefault.webp" ||
+    raw.includes("plan-covers")
+  ) {
     return { sourceType: "LOCAL_DEFAULT", cleanedPath: "" };
   }
 
-  // 1. Local default or asset paths
+  // 1. Local default or asset paths / external URLs
   if (
     raw.startsWith("/assets/") ||
     raw.startsWith("data:") ||
     raw.startsWith("blob:") ||
-    raw.startsWith("/")
+    raw.startsWith("/") ||
+    raw.startsWith("http://") ||
+    raw.startsWith("https://")
   ) {
     return { sourceType: "LOCAL_DEFAULT", cleanedPath: raw };
   }
@@ -128,7 +139,8 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
         evictedPath.includes(cleanSrc) ||
         (fileName && fileName === evictedFile) ||
         (cleanPlan && (evictedPath.includes(cleanPlan) || cleanPlan.includes(evictedPath))) ||
-        evictedPath === "planimagedefault.png"
+        evictedPath === "planimagedefault.png" ||
+        evictedPath === "planimagedefault.webp"
       ) {
         setCatalogFailed(false);
         setLocalFailed(false);

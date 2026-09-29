@@ -2,6 +2,8 @@ import { useState } from "react";
 import { supabase } from "../../../../lib/supabaseClient";
 import { processImage, validateImageFile, ImagePresets } from "../../../shared/imaging/imagePipeline";
 
+export const AVATAR_CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604800";
+
 export interface UseProfileUploadResult {
   uploading: boolean;
   uploadError: string | null;
@@ -51,7 +53,7 @@ export function useProfileUpload(): UseProfileUploadResult {
         .from(bucketName)
         .upload(objectKey, blob, {
           contentType: "image/webp",
-          cacheControl: "0",
+          cacheControl: AVATAR_CACHE_CONTROL,
           upsert: true,
         });
 

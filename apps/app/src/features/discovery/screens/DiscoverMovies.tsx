@@ -1,478 +1,362 @@
-import React, { useState } from "react";
-import { ChevronLeft, Sparkles, MapPin, ChevronRight, Film } from "lucide-react";
-import { motion, useMotionValue, useTransform, AnimatePresence, useAnimation } from "motion/react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { ArrowLeft, AlertCircle, RefreshCw } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
-import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
+import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
+import {
+  fetchDiscoverMovies,
+  searchMovies,
+  getCachedMovieSection,
+  TMDB_LANGUAGE_NAMES,
+  isMovieWithinSixMonths,
+} from "../services/tmdbMovieService";
+import { ADMIN_CONFIGS } from "../services/discoveryAdminService";
+import { useLongPress } from "../../../shared/hooks/useLongPress";
+import { SearchBar } from "../../../shared/components/SearchBar";
 
 interface DiscoverMoviesProps {
-  sections: DiscoverySectionType[];
-  isAdmin: boolean;
+  sections?: DiscoverySectionType[];
+  isAdmin?: boolean;
   onBack: () => void;
   onSelectDiscoveryItem: (item: DiscoveryItem) => void;
-  onLongPressAdmin: (item: DiscoveryItem, config: any) => void;
+  onLongPressAdmin?: (item: DiscoveryItem, config: any) => void;
+  currentCity?: string;
+  currentLocality?: string;
+  currentCoordinates?: { latitude: number; longitude: number };
 }
 
-// Premium mock data for movies when the database is empty
-const defaultCinemas: DiscoveryItem[] = [
-  {
-    id: "movies-1",
-    public_id: "movies-1",
-    section_id: "default-movies",
-    title: "PVR Director's Cut",
-    category: "MOVIES",
-    subcategory: "cinemas",
-    description: "Ultra luxury movie screening experience with gourmet food service.",
-    cover_image_url: "movies/director_cut.jpg",
-    location: "Ambience Mall, Vasant Kunj",
-    suggested_duration_minutes: 180,
-    suggested_cost_amount: 1500,
-    suggested_capacity: 4,
-    default_rsvp_offset_minutes: 30,
-    display_order: 1,
-    featured: true,
-    status: "ACTIVE",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "movies-2",
-    public_id: "movies-2",
-    section_id: "default-movies",
-    title: "INOX Insignia",
-    category: "MOVIES",
-    subcategory: "cinemas",
-    description: "Recliners, laser projection, and curated butler service.",
-    cover_image_url: "movies/insignia.jpg",
-    location: "Lulu Mall, Bangalore",
-    suggested_duration_minutes: 150,
-    suggested_cost_amount: 1000,
-    suggested_capacity: 4,
-    default_rsvp_offset_minutes: 30,
-    display_order: 2,
-    featured: false,
-    status: "ACTIVE",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-];
+const LANGUAGE_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "en", label: "English" },
+  { id: "hi", label: "Hindi" },
+  { id: "ta", label: "Tamil" },
+  { id: "te", label: "Telugu" },
+  { id: "kn", label: "Kannada" },
+] as const;
 
-const defaultPremieres: DiscoveryItem[] = [
-  {
-    id: "movies-3",
-    public_id: "movies-3",
-    section_id: "default-movies",
-    title: "Kalki 2898 AD",
-    category: "MOVIES",
-    subcategory: "premieres",
-    description: "Sci-fi mythology masterpiece directed by Nag Ashwin.",
-    cover_image_url: "movies/kalki.jpg",
-    location: "IMAX Screen 1",
-    suggested_duration_minutes: 180,
-    suggested_cost_amount: 500,
-    suggested_capacity: 6,
-    default_rsvp_offset_minutes: 20,
-    display_order: 1,
-    featured: true,
-    status: "ACTIVE",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "movies-4",
-    public_id: "movies-4",
-    section_id: "default-movies",
-    title: "Deadpool & Wolverine",
-    category: "MOVIES",
-    subcategory: "premieres",
-    description: "The ultimate chaotic superhero matchup of the season.",
-    cover_image_url: "movies/deadpool.jpg",
-    location: "Standard & IMAX Screens",
-    suggested_duration_minutes: 130,
-    suggested_cost_amount: 450,
-    suggested_capacity: 4,
-    default_rsvp_offset_minutes: 15,
-    display_order: 2,
-    featured: false,
-    status: "ACTIVE",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-];
-
-const defaultScreenings: DiscoveryItem[] = [
-  {
-    id: "movies-5",
-    public_id: "movies-5",
-    section_id: "default-movies",
-    title: "Sunset Cinema Club",
-    category: "MOVIES",
-    subcategory: "screenings",
-    description: "Open-air movie screening under the stars with beanbags.",
-    cover_image_url: "movies/sunset_cinema.jpg",
-    location: "Rooftop, HSR Layout",
-    suggested_duration_minutes: 150,
-    suggested_cost_amount: 800,
-    suggested_capacity: 2,
-    default_rsvp_offset_minutes: 30,
-    display_order: 1,
-    featured: true,
-    status: "ACTIVE",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-];
-
-interface SwipableCardProps {
+/**
+ * MoviePortraitCard
+ * Dedicated portrait-oriented card with complete 2:3 aspect ratio poster presentation.
+ * Formatted cleanly for a compact 2-column mobile grid matching the reference design.
+ */
+interface MoviePortraitCardProps {
   item: DiscoveryItem;
-  index: number;
-  onSwipe: (direction: "left" | "right") => void;
   onTap: () => void;
-  isSwipable?: boolean;
+  isAdmin?: boolean;
+  onLongPressAdmin?: () => void;
 }
 
-const SwipableCard: React.FC<SwipableCardProps> = ({
+export const MoviePortraitCard: React.FC<MoviePortraitCardProps> = ({
   item,
-  index,
-  onSwipe,
   onTap,
-  isSwipable = true,
+  isAdmin = false,
+  onLongPressAdmin,
 }) => {
-  const isTop = index === 0;
-  const controls = useAnimation();
-  const x = useMotionValue(0);
-  const rotate = useTransform(x, [-250, 250], [-15, 15]);
-  const opacity = useTransform(x, [-250, -150, 0, 150, 250], [0.3, 1, 1, 1, 0.3]);
+  const longPress = useLongPress(() => {
+    if (isAdmin && onLongPressAdmin) onLongPressAdmin();
+  }, { threshold: 500 });
 
-  React.useEffect(() => {
-    if (index === 0) {
-      controls.start({
-        x: 0,
-        y: 0,
-        scale: 1,
-        opacity: 1,
-        transition: { type: "spring", stiffness: 450, damping: 30 }
-      });
-    } else {
-      x.set(0);
-      controls.start({
-        x: 0,
-        y: index * 14,
-        scale: 1 - index * 0.05,
-        opacity: index <= 2 ? 1 : 0,
-        transition: { type: "spring", stiffness: 400, damping: 30 }
-      });
-    }
-  }, [index, controls, x]);
+  const langLabel =
+    item.language_name ||
+    (item.original_language
+      ? TMDB_LANGUAGE_NAMES[item.original_language.toLowerCase()] || item.original_language.toUpperCase()
+      : "");
 
-  const handleDragEnd = async (event: any, info: any) => {
-    const swipeThreshold = 40;
-    const velocityThreshold = 200;
-    if (isSwipable && (info.offset.x > swipeThreshold || info.velocity.x > velocityThreshold)) {
-      controls.start({
-        x: 380,
-        opacity: 0,
-        rotate: 20,
-        transition: { duration: 0.15, ease: "easeOut" }
-      });
-      setTimeout(() => onSwipe("right"), 140);
-    } else if (isSwipable && (info.offset.x < -swipeThreshold || info.velocity.x < -velocityThreshold)) {
-      controls.start({
-        x: -380,
-        opacity: 0,
-        rotate: -20,
-        transition: { duration: 0.15, ease: "easeOut" }
-      });
-      setTimeout(() => onSwipe("left"), 140);
-    } else {
-      controls.start({
-        x: 0,
-        rotate: 0,
-        transition: { type: "spring", stiffness: 400, damping: 25 }
-      });
-    }
-  };
+  const releaseYear = item.release_date
+    ? new Date(item.release_date).getFullYear().toString()
+    : item.location || "";
 
   return (
-    <motion.div
-      animate={controls}
-      initial={{
-        x: 0,
-        y: index * 14,
-        scale: 1 - index * 0.05,
-        opacity: index <= 2 ? 1 : 0,
-      }}
-      style={{
-        x,
-        rotate,
-        opacity: isTop ? opacity : undefined,
-        pointerEvents: isTop ? "auto" : "none",
-        touchAction: "pan-y"
-      }}
-      drag={isTop ? "x" : false}
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.7}
-      onDragEnd={handleDragEnd}
-      onTap={() => {
-        if (isTop && Math.abs(x.get()) < 10) {
-          onTap();
-        }
-      }}
-      whileTap={isTop ? { scale: 0.98 } : undefined}
-      className={`absolute w-[290px] h-[370px] rounded-3xl overflow-hidden bg-[#09090b] border border-white/[0.06] shadow-2xl flex flex-col justify-end p-6 transition-colors duration-200 ${isTop ? "cursor-pointer hover:border-white/[0.16]" : ""
-        }`}
+    <div
+      {...(isAdmin && onLongPressAdmin ? longPress : {})}
+      onClick={onTap}
+      className="group relative flex flex-col rounded-2xl overflow-hidden bg-[#121216] border border-white/[0.08] shadow-md hover:border-white/20 active:scale-[0.98] transition-all duration-200 cursor-pointer select-none"
     >
-      <div className="absolute inset-0 bg-[#09090b]" />
-
-      {/* Dimming overlay for stacked background cards to prevent visual bleed-through */}
-      {index > 0 && (
-        <div
-          className="absolute inset-0 bg-black z-20 pointer-events-none transition-opacity duration-300"
-          style={{ opacity: index === 1 ? 0.35 : 0.7 }}
+      {/* 1. Portrait Poster Area (Exact 2:3 ratio ensuring the entire poster is visible) */}
+      <div className="relative w-full aspect-[2/3] overflow-hidden bg-[#0a0a0d] shrink-0">
+        <img
+          src={item.cover_image_url || "/assets/plan-covers/movie.png"}
+          alt={item.title}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          loading="lazy"
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).src = "/assets/plan-covers/movie.png";
+          }}
         />
-      )}
+      </div>
 
-      <DiscoveryImages
-        src={item.cover_image_url}
-        category={item.category}
-        alt={item.title}
-        className="absolute inset-0 w-full h-full object-cover opacity-60"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/90" />
-
-      {/* Content details at bottom, no buttons or badges */}
-      <div className="z-10 flex flex-col items-center w-full text-center pb-2">
-        <h4 className="text-lg font-extrabold text-white leading-snug tracking-wide line-clamp-1">
+      {/* 2. Structured Information Section */}
+      <div className="p-2.5 flex flex-col justify-between flex-1 min-w-0 text-left bg-[#121216]">
+        {/* Movie Title (max 2 lines with consistent min-height for uniform card alignment) */}
+        <h4 className="text-[13px] font-bold text-white tracking-tight leading-snug line-clamp-2 min-h-[34px] group-hover:text-violet-300 transition-colors">
           {item.title}
         </h4>
-        <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-300 mt-1">
-          <span className="font-semibold text-violet-400">
-            {(0.8 + (item.display_order % 3) * 2.2).toFixed(1)}km
-          </span>
-          <span className="text-zinc-600">•</span>
-          <span className="truncate max-w-[170px]">{item.location || "Bangalore"}</span>
+
+        {/* Language and Release Year */}
+        <div className="pt-1.5 flex items-center justify-between text-[11px] min-w-0">
+          {langLabel ? (
+            <span className="text-zinc-300 font-medium truncate text-[11px]">
+              {langLabel}
+            </span>
+          ) : (
+            <div />
+          )}
+          {releaseYear && (
+            <span className="text-zinc-500 font-normal text-[11px] shrink-0">
+              {releaseYear}
+            </span>
+          )}
         </div>
       </div>
-    </motion.div>
-  );
-};
-
-interface MoviesCategorySectionProps {
-  title: string;
-  items: DiscoveryItem[];
-  isExpanded: boolean;
-  onSelect: (item: DiscoveryItem) => void;
-}
-
-const MoviesCategorySection: React.FC<MoviesCategorySectionProps> = ({
-  title,
-  items,
-  isExpanded,
-  onSelect,
-}) => {
-  const [stack, setStack] = useState<DiscoveryItem[]>(items);
-
-  React.useEffect(() => {
-    setStack(items);
-  }, [items]);
-
-  const handleSwipe = (direction: "left" | "right") => {
-    if (stack.length <= 1) return;
-    setStack((prev) => {
-      const [first, ...rest] = prev;
-      return [...rest, first];
-    });
-  };
-
-  if (items.length === 0) return null;
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between border-b border-white/[0.04] pb-2 px-1">
-        <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
-          {title} ({items.length})
-        </h4>
-      </div>      {isExpanded ? (
-        <div className="grid grid-rows-2 grid-flow-col gap-3.5 overflow-x-auto py-2 px-1 no-scrollbar scroll-smooth">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              onClick={() => onSelect(item)}
-              className="relative shrink-0 w-[135px] h-[175px] rounded-2xl overflow-hidden bg-[#09090b] border border-white/[0.06] shadow-lg flex flex-col justify-end p-3 cursor-pointer hover:border-white/[0.16] hover:scale-[1.01] transition-all duration-300 group"
-            >
-              <div className="absolute inset-0 bg-[#09090b]" />
-              <DiscoveryImages
-                src={item.cover_image_url}
-                category={item.category}
-                alt={item.title}
-                className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500"
-              />
-              <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/90" />
-              <div className="z-10 flex flex-col w-full text-left">
-                <h4 className="text-xs font-bold text-white leading-tight line-clamp-1">
-                  {item.title}
-                </h4>
-                <div className="flex items-center gap-1 text-[9px] text-zinc-300 mt-0.5">
-                  <span className="font-semibold text-violet-400">
-                    {(0.8 + (item.display_order % 3) * 2.2).toFixed(1)}km
-                  </span>
-                  <span className="text-zinc-500">•</span>
-                  <span className="truncate max-w-[70px]">{item.location || "Bangalore"}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="relative h-[395px] flex justify-center items-start pt-2">
-          {stack
-            .slice(0, 3)
-            .map((item, idx) => ({ item, idx }))
-            .reverse()
-            .map(({ item, idx }) => (
-              <SwipableCard
-                key={item.id}
-                item={item}
-                index={idx}
-                onSwipe={handleSwipe}
-                onTap={() => onSelect(item)}
-                isSwipable={stack.length > 1}
-              />
-            ))}
-        </div>
-      )}
     </div>
   );
 };
 
 export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
-  sections,
-  isAdmin,
+  isAdmin = false,
   onBack,
   onSelectDiscoveryItem,
   onLongPressAdmin,
+  currentCity = "India",
+  currentLocality,
+  currentCoordinates,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
 
-  const allMoviesItems = React.useMemo(() => {
-    return sections
-      .filter((s) => s.category?.toUpperCase() === "MOVIES")
-      .flatMap((s) => s.items || []);
-  }, [sections]);
+  // Pre-load from localStorage cache for instant zero-flash render (filtered to <= 6 months)
+  const [movies, setMovies] = useState<DiscoveryItem[]>(() =>
+    getCachedMovieSection("discover_now_playing_lall_p1_gall").filter((m) =>
+      isMovieWithinSixMonths(m.release_date)
+    )
+  );
+  const [searchResults, setSearchResults] = useState<DiscoveryItem[]>([]);
 
-  const cinemas = React.useMemo(() => {
-    const list = allMoviesItems.filter((item) => {
-      const sub = (item.subcategory || "").toLowerCase();
-      const title = (item.title || "").toLowerCase();
-      return sub.includes("cinema") || sub.includes("theater") || title.includes("pvr") || title.includes("inox") || title.includes("cinema") || title.includes("screen");
-    });
-    return list.length > 0 ? list : defaultCinemas;
-  }, [allMoviesItems]);
+  const [isLoadingFeeds, setIsLoadingFeeds] = useState(() => {
+    return getCachedMovieSection("discover_now_playing_lall_p1_gall").length === 0;
+  });
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const premieres = React.useMemo(() => {
-    const list = allMoviesItems.filter((item) => {
-      const sub = (item.subcategory || "").toLowerCase();
-      const title = (item.title || "").toLowerCase();
-      return sub.includes("premiere") || sub.includes("show") || sub.includes("movie") || (!sub.includes("cinema") && !sub.includes("theater") && !sub.includes("screening"));
-    });
-    return list.length > 0 ? list : defaultPremieres;
-  }, [allMoviesItems]);
+  const [previewItem, setPreviewItem] = useState<DiscoveryItem | null>(null);
 
-  const screenings = React.useMemo(() => {
-    const list = allMoviesItems.filter((item) => {
-      const sub = (item.subcategory || "").toLowerCase();
-      const title = (item.title || "").toLowerCase();
-      return sub.includes("screening") || sub.includes("open") || sub.includes("drive");
-    });
-    return list.length > 0 ? list : defaultScreenings;
-  }, [allMoviesItems]);
+  const activeLanguageLabel =
+    selectedLanguage !== "all" ? TMDB_LANGUAGE_NAMES[selectedLanguage] || selectedLanguage : null;
 
-  const scrollToSection = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Search debounce
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery.trim());
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Execute Search
+  useEffect(() => {
+    if (!debouncedQuery) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
     }
-  };
+
+    let active = true;
+    setIsSearching(true);
+
+    searchMovies(debouncedQuery, 1, selectedLanguage)
+      .then((res) => {
+        if (active) {
+          // On searching, those movies (even older than 6 months) should show up
+          setSearchResults(res.items);
+          setIsSearching(false);
+        }
+      })
+      .catch((err) => {
+        console.error("[DiscoverMovies] Search error:", err);
+        if (active) {
+          setSearchResults([]);
+          setIsSearching(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [debouncedQuery, selectedLanguage]);
+
+  // Load Primary Movie Catalogue (strictly <= 6 months from current date)
+  const loadCatalogue = useCallback(async () => {
+    setLoadError(null);
+    setIsLoadingFeeds(true);
+
+    try {
+      const res = await fetchDiscoverMovies("now_playing", 1, undefined, selectedLanguage);
+      const filtered = (res.items || []).filter((m) =>
+        isMovieWithinSixMonths(m.release_date)
+      );
+      setMovies(filtered);
+    } catch (err: any) {
+      console.error("[DiscoverMovies] Error loading movie catalogue:", err);
+      setLoadError("Failed to load movies. Tap below to retry.");
+    } finally {
+      setIsLoadingFeeds(false);
+    }
+  }, [selectedLanguage]);
+
+  useEffect(() => {
+    loadCatalogue();
+  }, [loadCatalogue]);
+
+  // When searching, show searchResults (regardless of age). Otherwise show only movies within 6 months.
+  const displayedMovies = useMemo(() => {
+    if (debouncedQuery) {
+      return searchResults;
+    }
+    return movies.filter((m) => isMovieWithinSixMonths(m.release_date));
+  }, [debouncedQuery, searchResults, movies]);
 
   return (
     <div
       className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-24 text-left select-none"
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
-      {/* Header Bar */}
-      <div className="w-full shrink-0 px-5 flex items-center justify-between bg-[#000000] border-b border-white/[0.08]" style={{ height: "72px" }}>
-        <div className="flex items-center">
+      {/* ── 1. HEADER BAR ── */}
+      <div className="w-full shrink-0 px-5 pt-3.5 pb-2 flex items-center justify-between bg-black border-b border-white/[0.06]">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="mr-4 flex items-center justify-center text-white bg-none border-none cursor-pointer p-0"
-            style={{ width: "24px", height: "24px" }}
+            className="text-white hover:text-zinc-300 active:scale-95 transition cursor-pointer p-1 -ml-1 flex items-center justify-center"
+            aria-label="Back"
           >
-            <ChevronLeft className="w-6 h-6" />
+            <ArrowLeft className="w-6 h-6 text-white" />
           </button>
-          <div
-            className="w-8 h-8 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 mr-3 shrink-0"
-          >
-            <Film className="w-4 h-4" />
+          <div className="flex flex-col text-left">
+            <h2 className="text-base font-bold text-white tracking-tight leading-tight">
+              Movies
+            </h2>
+            <span className="text-[11px] text-violet-400 font-medium mt-0.5 leading-none">
+              Latest & Popular
+            </span>
           </div>
-          <h2 className="text-base font-bold text-white tracking-tight">Movies Plan</h2>
         </div>
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="text-xs font-bold text-zinc-300 hover:text-white px-3.5 py-1.5 bg-zinc-900 border border-white/[0.06] rounded-full transition active:scale-95 cursor-pointer"
-        >
-          {isExpanded ? "Show Stacks" : "Expand All"}
-        </button>
       </div>
 
-      {/* Index Navigation Bar */}
-      <div className="w-full shrink-0 px-6 py-2.5 bg-[#000000] border-b border-white/[0.04] flex gap-2 overflow-x-auto no-scrollbar scroll-smooth">
-        <button
-          onClick={() => scrollToSection("movies-section-cinemas")}
-          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
-        >
-          🎭 Luxury Cinemas
-        </button>
-        <button
-          onClick={() => scrollToSection("movies-section-premieres")}
-          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
-        >
-          🎬 Premieres
-        </button>
-        <button
-          onClick={() => scrollToSection("movies-section-screenings")}
-          className="text-xs font-semibold px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-full border border-white/[0.04] active:scale-95 transition cursor-pointer shrink-0"
-        >
-          🎥 Special Screenings
-        </button>
+      {/* ── 2. SEARCH BAR ── */}
+      <div className="shrink-0 bg-[#000000] px-4 pt-2 pb-1.5 select-none">
+        <SearchBar
+          id="search-movies-input"
+          name="searchMoviesInput"
+          placeholder="Search movies, titles, genres..."
+          value={searchQuery}
+          onChange={setSearchQuery}
+        />
       </div>
 
-      {/* Categories Content */}
-      <div className="px-6 py-6 flex-1 space-y-8">
-        <div id="movies-section-cinemas">
-          <MoviesCategorySection
-            title="Theaters & Luxury Cinemas"
-            items={cinemas}
-            isExpanded={isExpanded}
-            onSelect={onSelectDiscoveryItem}
-          />
-        </div>
-        <div id="movies-section-premieres">
-          <MoviesCategorySection
-            title="Trending Movies"
-            items={premieres}
-            isExpanded={isExpanded}
-            onSelect={onSelectDiscoveryItem}
-          />
-        </div>
-        <div id="movies-section-screenings">
-          <MoviesCategorySection
-            title="Special Screenings"
-            items={screenings}
-            isExpanded={isExpanded}
-            onSelect={onSelectDiscoveryItem}
-          />
-        </div>
+      {/* ── 3. LANGUAGE FILTERS (Single Row: All | English | Hindi | Tamil | Telugu | Kannada) ── */}
+      {!debouncedQuery && (
+        <section className="px-5 pt-2 pb-2 shrink-0 border-b border-white/[0.04]">
+          <div className="flex gap-2 overflow-x-auto no-scrollbar scroll-smooth py-0.5">
+            {LANGUAGE_FILTERS.map((l) => {
+              const isSelected = selectedLanguage === l.id;
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => setSelectedLanguage(l.id)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer active:scale-95 ${
+                    isSelected
+                      ? "bg-violet-600 text-white shadow-[0_0_12px_rgba(139,92,246,0.35)] border border-violet-400/40"
+                      : "bg-[#121216] text-zinc-400 border border-white/[0.06] hover:text-white hover:bg-white/[0.06]"
+                  }`}
+                >
+                  {l.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ── 4. SINGLE MOVIE SECTION HEADER ── */}
+      <div className="px-5 pt-4 pb-2 text-left shrink-0">
+        <h3 className="text-sm font-bold text-white tracking-wide">
+          {debouncedQuery ? "Search Results" : "Latest Movies"}
+        </h3>
       </div>
+
+      {/* ── 5. COMPACT TWO-COLUMN MOVIE GRID ── */}
+      <div className="flex-1 px-5 pt-1 pb-8">
+        {/* Loading state */}
+        {(isLoadingFeeds || isSearching) && displayedMovies.length === 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div
+                key={i}
+                className="flex flex-col rounded-2xl overflow-hidden bg-[#121216] border border-white/[0.06] animate-pulse"
+              >
+                <div className="w-full aspect-[2/3] bg-white/[0.04]" />
+                <div className="p-2.5 space-y-2">
+                  <div className="h-3.5 w-3/4 bg-white/[0.07] rounded" />
+                  <div className="h-3 w-1/2 bg-white/[0.04] rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : loadError && displayedMovies.length === 0 ? (
+          <div className="py-16 flex flex-col items-center justify-center text-center space-y-3">
+            <AlertCircle className="w-8 h-8 text-rose-400/80" />
+            <p className="text-zinc-300 text-sm font-medium">{loadError}</p>
+            <button
+              type="button"
+              onClick={loadCatalogue}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold transition active:scale-95 cursor-pointer shadow-lg"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Retry
+            </button>
+          </div>
+        ) : displayedMovies.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {displayedMovies.map((item) => (
+              <MoviePortraitCard
+                key={item.id}
+                item={item}
+                onTap={() => setPreviewItem(item)}
+                isAdmin={isAdmin}
+                onLongPressAdmin={
+                  onLongPressAdmin
+                    ? () => onLongPressAdmin(item, ADMIN_CONFIGS.movies)
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="py-16 text-center space-y-2">
+            <p className="text-zinc-400 text-sm font-medium">
+              No movies found{debouncedQuery ? ` for "${debouncedQuery}"` : ""}{" "}
+              {activeLanguageLabel ? `in ${activeLanguageLabel}` : ""}.
+            </p>
+            <p className="text-zinc-600 text-xs">
+              Try switching the language filter or searching another title.
+            </p>
+          </div>
+        )}
+
+      </div>
+
+      {/* ── 7. PLACE PREVIEW SHEET ── */}
+      {previewItem && (
+        <PlacePreviewSheet
+          item={previewItem}
+          userCoordinates={currentCoordinates}
+          onClose={() => setPreviewItem(null)}
+          onConfirmPlan={(item) => {
+            setPreviewItem(null);
+            onSelectDiscoveryItem(item);
+          }}
+        />
+      )}
     </div>
   );
 };

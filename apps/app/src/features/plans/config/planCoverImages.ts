@@ -1,7 +1,8 @@
-import defaultPlanCover from "../../../assets/planimagedefault.png";
-import sportsCover from "../../../assets/sports.png";
-import movieCover from "../../../assets/Movies.png";
-import diningCover from "../../../assets/dining.png";
+import defaultPlanCover from "../../../assets/planimagedefault.webp";
+import sportsCover from "../../../assets/sports.webp";
+import movieCover from "../../../assets/Movies.webp";
+import diningCover from "../../../assets/dining.webp";
+import activitiesCover from "../../../assets/Activities.png";
 
 export const PLAN_COVER_IMAGES = {
   sports: sportsCover,
@@ -9,6 +10,7 @@ export const PLAN_COVER_IMAGES = {
   badminton: sportsCover,
   movie: movieCover,
   dining: diningCover,
+  activities: activitiesCover,
   default: defaultPlanCover,
 };
 
@@ -22,7 +24,19 @@ export function getPlanCover(activityType?: string, subcategory?: string | null)
   }
 
   // 2. Resolve known categories
-  // Sports -> sports.png
+  // Activities -> Activities.png
+  if (
+    normActivity === "activities" ||
+    normActivity === "activity" ||
+    normActivity === "recreation" ||
+    normActivity === "bowling" ||
+    normActivity === "karting" ||
+    normActivity === "arcade" ||
+    normActivity === "games"
+  ) {
+    return PLAN_COVER_IMAGES.activities;
+  }
+  // Sports -> sports.webp
   if (
     normActivity === "sports" ||
     normActivity === "sport" ||
@@ -33,12 +47,12 @@ export function getPlanCover(activityType?: string, subcategory?: string | null)
     return PLAN_COVER_IMAGES.sports;
   }
 
-  // Movies -> Movies.png
+  // Movies -> Movies.webp
   if (normActivity === "movies" || normActivity === "movie" || normActivity === "cinema") {
     return PLAN_COVER_IMAGES.movie;
   }
 
-  // Dining -> dining.png
+  // Dining -> dining.webp
   if (
     normActivity === "dining" ||
     normActivity === "restaurants" ||

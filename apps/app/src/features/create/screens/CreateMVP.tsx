@@ -21,7 +21,7 @@ import { CreatePlanConfirmation } from "../components/CreatePlanConfirmation";
 import { FriendshipsScreen } from "../../friendships/screens/FriendshipsScreen";
 
 import { supabase } from "../../../../lib/supabaseClient";
-import defaultPlanCover from "../../../assets/planimagedefault.png";
+import defaultPlanCover from "../../../assets/planimagedefault.webp";
 import { uploadPlanImage, uploadPlanCardImage } from "../../../shared/utils/imageUtils";
 import {
   getSavedCreatePlanDraft,

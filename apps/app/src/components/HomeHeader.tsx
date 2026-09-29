@@ -18,7 +18,6 @@ interface HomeHeaderProps {
   showFriendsIcon?: boolean;
   onToggleFriends?: () => void;
   title?: string;
-  scrollY?: number;
   hideNotificationsIcon?: boolean;
   className?: string;
 }
@@ -38,7 +37,6 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
   showFriendsIcon = false,
   onToggleFriends,
   title = "Planless",
-  scrollY = 0,
   hideNotificationsIcon = false,
   className = "",
 }) => {

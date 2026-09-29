@@ -5,8 +5,8 @@
 The **Create** feature is the plan authoring, customization, and publishing engine of Planless. It guides a host from an initial activity idea to a fully configured, published plan with invited participants, capacity limits, waitlist rules, location metadata, and expense-sharing parameters.
 
 * **Core Function**: A multi-phase wizard that collects plan category, friends/circles, capacity and waitlist modes (Automatic vs. Assigned), schedule/deadlines, location, and cover imagery, then writes the complete plan and participant records to Supabase.
-* **Product Role**: Occupies the central Create tab in bottom navigation (`activeTab === "create"`). In the active application, `MainApp.tsx` mounts `<CreateMVP />` as the streamlined creator flow, while `<CreatePlanScreen />` (`Create.tsx`) remains in the codebase as an extended multi-step discovery flow.
-* **Lifecycle Boundary**: The Create feature owns state from initial category selection until the plan is committed to the database. Once published, the user sees a confirmation overlay with a shareable invite link before being redirected to the **Plans** tab (`activeTab === "plans"`, filter `JOINED`), which takes over ongoing lifecycle and coordination.
+* **Product Role**: Occupies the central Create tab in bottom navigation (`activeTab === "create"`). In the active application, `MainApp.tsx` code-splits and lazy-loads `<CreatePlanScreen />` (`Create.tsx`) on demand when entering the Create tab, populating the existing Discovery screen as the initial entry point. `<CreateMVP />` and `<CreateCategoryScreen />` remain preserved in the codebase for modular reuse.
+* **Lifecycle Boundary**: The Create feature owns state from initial activity discovery / category selection until the plan is committed to the database. Once published, the user sees a confirmation overlay with a shareable invite link before being redirected to the **Plans** tab (`activeTab === "plans"`, filter `JOINED`), which takes over ongoing lifecycle and coordination.
 
 ---
 
@@ -15,11 +15,13 @@ The **Create** feature is the plan authoring, customization, and publishing engi
 ### 1. Initiating Plan Creation
 * The user taps the **Create** tab in bottom navigation or clicks "Create a Plan" from an empty Home/Plans state.
 * `MainApp.tsx` sets `activeTab = "create"`.
-* The router and draft storage restore any in-progress creation draft from `localStorage` and `IndexedDB`. If no draft exists, the flow initializes at `createPhase = "category"`.
+* The entry point renders the existing **Discovery screen** (`BrowseExperiencesStep`).
+* The Discovery screen displays search, category highlights (Sports, Movies, Dining, Custom), and discoverable item rails (Restaurants, Movies, Turfs, Sports/venues, etc.).
 
-### 2. Category Selection (`createPhase === "category"`)
-* `<CreateCategoryScreen />` displays curated category cards: **Sports**, **Movies**, **Dining**, and **Custom**.
-* Tapping a category assigns `selectedCategory`, sets default category metadata, and advances the wizard to `"who"`.
+### 2. Discoverable Item Selection (`createPhase === "category"`)
+* User selects any discoverable item from the rails or category showcases, or taps "Custom".
+* The item's metadata (title, location, cover image, category, subcategory, coordinates) is populated into the plan form draft.
+* The wizard immediately advances to `"who"` (`WhoIsComingScreen`).
 
 ### 3. Participant Selection (`createPhase === "who"`)
 * `<WhoIsComingScreen />` renders `<FriendsSelector />`.
@@ -69,6 +71,35 @@ The **Create** feature is the plan authoring, customization, and publishing engi
 * Renders celebration overlay confirming plan creation.
 * Displays the plan summary card, public invite link, and a **Copy Invite Link** button.
 * Tapping **Done** or **Go to Plans** switches `activeTab` to `"plans"` with the `JOINED` filter active.
+
+### 8. Quick Plans & Saved Collections (`quick_plan_lists` & `quick_plans`)
+* **Concept**: A Quick Plan is a reusable template containing a pre-configured activity, category, place/venue, default cost, and pre-selected friends. Quick Plans are organized into user-defined collections called **Quick Plan Lists** (e.g. "Football", "Dining", "Movies").
+* **Top-Level Lists View (`QuickPlansScreen.tsx`)**:
+  * Displays user lists in a 2-column saved-collections gallery.
+  * Header shows standalone `ArrowLeft`, left-aligned "Quick Plans" title, and `Plus` button to create a new list. No header divider line.
+  * Each collection card shows a 4:5 aspect ratio cover image (dynamically derived from its contained quick plans or category fallback), collection title, plan count (`${count} plan` / `${count} plans`), and a 3-dots action button.
+  * Tapping a collection navigates into its List Detail screen.
+* **List Detail View**:
+  * Header displays standalone `ArrowLeft`, the active list name (e.g. "football"), and `Plus` button (to add a new quick plan to this list).
+  * **Header Long-Press Interaction**: Sustained press (450ms) on the list header title opens the list management bottom sheet with **Rename** and **Delete** actions.
+    * *Rename*: Immediately updates `quick_plan_lists` record and reflects the new title in header and cache.
+    * *Delete*: Confirms deletion via standard confirmation bottom sheet, deletes list safely without destroying independent quick plans, and navigates back.
+  * The plan count ("1 plan") is completely omitted from the top of the detail screen; the header leads directly into content.
+  * Renders a 2-column grid of saved quick plans using `QuickPlanCard(variant="collection")`.
+* **Quick Plan Card Presentation**:
+  * 4:5 aspect ratio cover image with rounded corners and subtle border. Clean visual presentation with no three-dot menu button or overlay icons on the image.
+  * Plan title rendered cleanly underneath the image.
+  * Friend avatars row: Displays a maximum of 3 friend profile photos. Friends with valid profile photos are prioritized before friends without photos.
+  * If more than 3 friends are attached, a small `+` badge appears after the 3 photos followed by the total count (`${count} friends`).
+* **Creating an Actual Plan from a Quick Plan**:
+  1. User taps a Quick Plan card.
+  2. Automatically hydrates `useCreatePlanForm` state with saved title, category, place, cover, cost, and friends.
+  3. Takes the user directly to the normal **Plan Review** screen (`CreatePlanReview` in normal mode).
+  4. The user sets/adjusts date/time and taps **Create Plan**, publishing through the standard plan creation pipeline.
+* **Data Architecture**:
+  * Tables: `quick_plan_lists` (user_id FK `auth.users`), `quick_plans` (creator_id FK `auth.users`, `quick_plan_list_id` FK `quick_plan_lists.id`), and `quick_plan_participants` (user_id FK `public.users`).
+  * RLS: Strict creator isolation (`auth.uid() = creator_id` / `auth.uid() = user_id`).
+  * Cache-first: Synchronous retrieval from local cache, background syncing with Supabase.
 
 ---
 
@@ -124,15 +155,34 @@ The **Create** feature is the plan authoring, customization, and publishing engi
 * **Shareable Invite Box**: Container with read-only invite link (`planless.app/join/<token>`) and a distinct **Copy Link** button that transitions to a green "Copied!" state with checkmark.
 * **Action Button**: "Go to Plans" pill button routing to the Plans tab.
 
+### 7. Quick Plans & Saved Collections UI (`QuickPlansScreen.tsx` & `QuickPlanCard.tsx`)
+* **Top-Level Lists Screen**:
+  * Pinned top header: Standalone white `ArrowLeft`, left-aligned `Quick Plans` title, and white `Plus` icon button (opens `CreateListModal`). Header divider line is removed.
+  * 2-column grid of saved collection cards (`aspect-[4/5]`) with cover image, collection name, plan count (`${count} plan` / `${count} plans`), and 3-dots action menu triggering rename/delete options.
+* **List Detail Screen**:
+  * Pinned top header: Standalone white `ArrowLeft`, left-aligned active list name (e.g. `football`), and white `Plus` icon button (opens Add Quick Plan flow for this list).
+  * Header count removal: "1 plan" count is omitted from the top of the detail screen.
+  * Header long-press interaction: Sustained hold (450ms) on the header title opens the list management bottom sheet with **Rename** and **Delete** actions.
+  * 2-column grid of saved Quick Plans in `variant="collection"`:
+    * 4:5 aspect ratio cover image container (`aspect-[4/5] rounded-2xl overflow-hidden bg-[#121216] border border-white/[0.08]`).
+    * Image is clean: three-dot menu button and overlays are completely removed.
+    * Text container underneath image: Plan name in bold sans-serif.
+    * Friend avatar row: Displays up to 3 friend profile photos (sorted by valid photo first). If more than 3 friends are associated, displays a subtle `+` circle badge followed by `${count} friends`.
+    * Normal tap hydrates form and opens Plan Review. Long press triggers delete confirmation.
+
 ---
 
 ## 4. Components
 
 | Component | File Path | Responsibilities | Key Relationships |
 |---|---|---|---|
-| `CreateMVP` | `src/features/create/screens/CreateMVP.tsx` | Active root container for the Create tab. Manages wizard phases, URL route sync, draft persistence, submission, and confirmation overlay. | Mounted in `MainApp.tsx` (`activeTab === "create"`). Instantiates `useCreatePlanForm` and coordinates wizard sub-screens. |
-| `CreatePlanScreen` | `src/features/create/screens/Create.tsx` | Legacy/alternative multi-phase creator supporting discovery browsing, customizers, and sports select. | Standalone alternative to `CreateMVP`. Shares same draft storage and hooks. |
-| `CreateCategoryScreen` | `src/features/create/screens/CreateCategoryScreen.tsx` | Phase 0 screen. Displays category selection cards (Sports, Movies, Dining, Custom) and handles category selection. | Rendered by `CreateMVP` when `createPhase === "category"`. |
+| `CreatePlanScreen` | `src/features/create/screens/Create.tsx` | Active root container for the Create tab. Populates the existing Discovery screen (`BrowseExperiencesStep`) as the entry point, pre-fills selected discovery item attributes, and coordinates the plan creation flow. | Code-split and lazy-loaded in `MainApp.tsx` on demand when entering the Create tab (`activeTab === "create"`). Instantiates `useCreatePlanForm` and coordinates child screens. |
+| `CreateMVP` | `src/features/create/screens/CreateMVP.tsx` | Alternative category-first root container preserved in codebase. Manages wizard phases, URL route sync, draft persistence, submission, and confirmation overlay. | Preserved in repository for modular reuse. |
+| `CreateCategoryScreen` | `src/features/create/screens/CreateCategoryScreen.tsx` | Category selection screen displaying category cards (Sports, Movies, Dining, Custom). | Preserved in repository for modular reuse. |
+| `QuickPlansScreen` | `src/features/create/screens/QuickPlansScreen.tsx` | Manages the 2-column saved-collections gallery, list detail view, header long-press list management (rename/delete), and navigation into plan creation. | Consumes `useQuickPlans`, renders `QuickPlanCard` and list management bottom sheets. |
+| `QuickPlanCard` | `src/features/create/components/QuickPlanCard.tsx` | Renders a saved Quick Plan in either `rail` (horizontal card) or `collection` (4:5 vertical card with clean cover and max 3 friend avatars + '+' indicator) variant. | Consumed by `QuickPlansScreen` and `QuickPlansSection`. Uses `UserAvatar` and `DiscoveryImages`. |
+| `QuickPlansSection` | `src/features/create/components/QuickPlansSection.tsx` | Rail section for quick plans displayed on discovery views. | Consumes `useQuickPlans`, renders horizontal `QuickPlanCard`. |
+| `useQuickPlans` | `src/features/create/hooks/useQuickPlans.ts` | Custom hook for fetching, caching, creating, renaming, and deleting quick plans and quick plan lists. | Calls `quickPlanService.ts` and syncs with `localStorage` and Supabase. |
 | `WhoIsComingScreen` | `src/features/create/screens/WhoIsComingScreen.tsx` | Phase 1 screen. Renders search bar, friend list, and circle chips for selecting participants. | Renders `FriendsSelector`. Reads `AVAILABLE_FRIENDS` and passes selected items to `useCreatePlanForm`. |
 | `WhoIsActuallyComing` | `src/features/create/screens/WhoIsActuallyComing.tsx` | Phase 2 screen. Configures capacity, waitlist toggle, and Automatic vs. Assigned participant grouping. | Wraps `ParticipantManagementScreen` in creation mode. Manages `priorityGuestIds` and capacity syncing. |
 | `CreatePlanReview` | `src/features/create/screens/CreatePlanReview.tsx` | Phase 3 screen. Full WYSIWYG plan preview allowing inline edits to title, cover image, venue, datetime, cost, and capacity. Consumes local `form.totalCapacity` / `syntheticPlan.plan_size` immediately, dynamically rendering the numeric capacity (e.g. 4, 6) or "No limit" on the Hero Metadata Card without waiting for a database roundtrip. | Mounts `PlansDetailsScreen(createMode=true)`. Uses `PlanImageEditorModal` and triggers final plan submission. |
@@ -243,7 +293,45 @@ The **Create** feature is the plan authoring, customization, and publishing engi
   * `delivery_status` (`varchar`): Defaults to `'DELIVERED'`.
   * `responded_at` (`timestamptz`, nullable): Set to current timestamp for host, `NULL` for invitees.
 
-### 3. Triggers Directly Affecting Plan Creation
+### 3. Table: `public.quick_plan_lists`
+* **Role in Create**: Stores user-created saved collections grouping quick plans (e.g. "Football", "Dining", "Movies").
+* **Columns**:
+  * `id` (`uuid`, PK, default `gen_random_uuid()`)
+  * `creator_id` (`uuid`, FK `auth.users.id`, not null, ON DELETE CASCADE)
+  * `name` (`text`, not null, CHECK `length(trim(both from name)) > 0`)
+  * `description` (`text`, nullable)
+  * `created_at` (`timestamptz`, default `now()`, not null)
+  * `updated_at` (`timestamptz`, default `now()`, not null)
+* **RLS**: Authenticated users can SELECT, INSERT, UPDATE, DELETE only where `auth.uid() = creator_id`.
+
+### 4. Table: `public.quick_plans`
+* **Role in Create**: Stores reusable quick plan templates with pre-configured venues, categories, costs, and participant associations.
+* **Columns**:
+  * `id` (`uuid`, PK, default `gen_random_uuid()`)
+  * `creator_id` (`uuid`, FK `auth.users.id`, not null, ON DELETE CASCADE)
+  * `quick_plan_list_id` (`uuid`, FK `public.quick_plan_lists.id`, ON DELETE CASCADE)
+  * `name` (`text`, not null)
+  * `description` (`text`, nullable)
+  * `category` (`text`, default `'CUSTOM'`, not null)
+  * `subcategory` (`text`, default `'OTHER'`)
+  * `place_id`, `place_name`, `place_address`, `latitude`, `longitude`
+  * `cover_image` (`text`, nullable)
+  * `default_cost` (`numeric(10,2)`, default 0, not null)
+  * `plan_size` (`integer`, nullable)
+  * `created_at`, `updated_at` (`timestamptz`)
+* **RLS**: Strict creator isolation (`auth.uid() = creator_id`).
+
+### 5. Table: `public.quick_plan_participants`
+* **Role in Create**: Stores pre-selected friends associated with a quick plan template.
+* **Columns**:
+  * `id` (`uuid`, PK, default `gen_random_uuid()`)
+  * `quick_plan_id` (`uuid`, FK `public.quick_plans.id`, not null, ON DELETE CASCADE)
+  * `user_id` (`uuid`, FK `public.users.id`, not null, ON DELETE CASCADE)
+  * `created_at` (`timestamptz`, default `now()`, not null)
+  * Unique constraint on `(quick_plan_id, user_id)`.
+* **RLS**: Restricted to authenticated users where parent quick plan has `creator_id = auth.uid()`.
+
+### 6. Triggers Directly Affecting Plan Creation
 * **`trg_auto_insert_plan_host_participant`** (AFTER INSERT on `plans`):
   Executes `handle_new_plan_creator_participant()`. Inspects `auth.uid()`; if non-null, automatically inserts the creator into `plan_participants` with `role = 'HOST'` and `rsvp_status = 'JOINED'`.
 * **`trg_plans_public_id`** (BEFORE INSERT on `plans`):
@@ -299,6 +387,14 @@ The creation flow transitions through strictly sequenced phases:
 * **Capacity Bounds**: `plan_size IS NULL OR plan_size >= 1`.
 * **Host Role Invariant**: The creating user must always be recorded as an active host (`role = 'HOST'`, `rsvp_status = 'JOINED'`) to satisfy storage upload RLS policies.
 * **Draft Isolation**: Binary cover images must never be placed in `localStorage`. They are stored in IndexedDB under store key `creation_cover_blob` and converted to short-lived object URLs in memory.
+* **Quick Plan List Management Invariants**:
+  * Sustained press (450ms) on list detail header title triggers list actions bottom sheet (`Rename`, `Delete`).
+  * Renaming a list requires non-empty name (`length(trim(name)) > 0`), updates `quick_plan_lists` immediately, and reflects synchronously in UI state.
+  * Deleting a list cascades deletion of child quick plans per database foreign key `ON DELETE CASCADE`, returning the user safely to the collection gallery view.
+* **Quick Plan Card Presentation Rules**:
+  * Friend avatars prioritize participants with valid profile photos (`user_profile.profile_photo_path`).
+  * In `collection` view, render a maximum of 3 friend profile photos. If total friends > 3, render a subtle `+` circle badge followed by the total count (`${count} friends`).
+  * Collection cards must never display the 3-dots action menu or place address on the card face.
 
 ---
 
@@ -321,6 +417,10 @@ The creation flow transitions through strictly sequenced phases:
 
 * `src/features/create/screens/CreateMVP.tsx`: Active root wizard component managing navigation, draft syncing, and submission.
 * `src/features/create/screens/CreatePlanReview.tsx`: Review screen presenting WYSIWYG preview and inline adjustment modals.
+* `src/features/create/screens/QuickPlansScreen.tsx`: 2-column saved-collections gallery, list detail view, and header long-press management.
+* `src/features/create/components/QuickPlanCard.tsx`: Reusable Quick Plan card supporting both `rail` and `collection` formats.
+* `src/features/create/hooks/useQuickPlans.ts`: Custom hook managing Quick Plans and Quick Plan Lists cache and mutations.
+* `src/features/create/services/quickPlanService.ts`: Direct Supabase and local cache service for Quick Plans and Lists.
 * `src/features/create/screens/WhoIsActuallyComing.tsx`: Participant capacity, waitlist mode, and assigned order management.
 * `src/features/create/screens/WhoIsComingScreen.tsx`: Friend selection and search interface.
 * `src/features/create/hooks/useCreatePlanForm.ts`: Primary form state and derived value manager.

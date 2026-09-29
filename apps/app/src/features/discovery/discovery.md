@@ -2,9 +2,9 @@
 
 ## 1. Overview
 
-The **Discovery** feature is Planless's curated experience and venue catalog. It provides a visual, inspiration-first gateway where users browse hand-picked activities—spanning sports turfs, cinema releases, dining hotspots, and recreational activities—to instantly bootstrap and schedule new social plans.
+The **Discovery** feature is Planless's curated experience and venue catalog. It provides a visual, inspiration-first gateway where users browse hand-picked activities—spanning dining hotspots, cinema releases, sports turfs, and recreational activities—to instantly bootstrap and schedule new social plans.
 
-* **Core Function**: Presents categorized horizontally scrolling rails and dedicated drill-down showcases (`Sports`, `Movies`, `Dining`). Selecting any discovery experience pre-fills event metadata (title, category, venue location, suggested capacity, duration, and cover image) and launches directly into the Plan Creation wizard.
+* **Core Function**: Presents categorized horizontally scrolling rails and dedicated drill-down showcases (`Dining`, `Movies`, `Sports`, `Activities`). Selecting any discovery experience pre-fills event metadata (title, category, venue location, suggested capacity, duration, and cover image) and launches directly into the Plan Creation wizard.
 * **Product Role**: Integrated into the plan creation experience as an alternative to building custom blank plans, and accessible as a dedicated browsing section.
 * **Scope & Boundaries**: Manages browsing, category filtering, search, and admin content curation (adding/editing experience cards). Does not manage live attendees, chat, or payments; once an item is selected, control transitions to the `Create` feature.
 
@@ -17,8 +17,8 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
 * The app loads cached sections via `getCachedSections()` or queries `discovery_sections` and `discovery_items` from Supabase via `getSectionsByCategory('all')`.
 * The screen displays:
   * Top header with search bar.
-  * Category quick-filter tabs (`Sports`, `Movies`, `Dining`).
-  * Horizontal carousel rails for active sections (e.g. "Trending Turfs", "Blockbuster Releases", "Top Weekend Dining").
+  * Category quick-filter cards (`Dining`, `Movies`, `Sports`, `Activities`).
+  * Horizontal carousel rails for active sections (e.g. "Trending Turfs", "Top Weekend Dining", "Activities Near You").
 * If database queries return empty or network fails, gracefully falls back to structured category defaults.
 
 ### 2. Searching Discovery Catalog
@@ -27,11 +27,12 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
 * Sections with zero matching items are dynamically hidden.
 
 ### 3. Drilling into Dedicated Showcases
-* Tapping a category card (e.g. "Sports") navigates to its dedicated sub-screen:
-  * `<DiscoverSports />`: Filtered sports venues (turfs, badminton courts, clay tennis).
-  * `<DiscoverMovies />`: Curated cinema premiers and theater listings.
+* Tapping a category card navigates to its dedicated sub-screen:
   * `<DiscoverDining />`: Curated brunch spots, rooftop bistros, and cafes.
-* Sub-screens provide specialized subcategory tabs (e.g. Football vs Cricket vs Badminton) and hero spotlight carousels.
+  * `<DiscoverMovies />`: "Latest & Popular" movie releases, trending films, and watch-together recommendations.
+  * `<DiscoverSports />`: Filtered sports venues (turfs, badminton courts, clay tennis, cricket).
+  * `<DiscoverActivities />`: Recreational venues, bowling, escape rooms, arcades, karting, and amusement centers.
+* Sub-screens provide specialized subcategory tabs and hero spotlight carousels.
 
 ### 4. Bootstrapping a Plan from an Item
 * User taps on a `<DiscoveryCard />`.
@@ -40,7 +41,19 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
   * Pre-hydrates draft plan state.
   * Advances directly to Step 2/3 of the Plan Creation wizard (`WhoIsComingScreen.tsx`).
 
-### 5. Admin In-App Curation (Admin Only)
+### 5. Dedicated Quick Plans Destination (`QuickPlansScreen.tsx`)
+* Accessible via the orange lightning (`Zap`) icon located at the top-right of the Discovery screen.
+* Tapping the ⚡ icon navigates to the dedicated `<QuickPlansScreen />`.
+* The dedicated screen presents:
+  * **Top-level Lists (Saved Collections)**: A 2-column grid gallery of Quick Plan lists (collections) displaying cover imagery, list title, plan count (`X plan` / `X plans`), and card-level 3-dot management menu.
+  * **List Detail View**: Tapping a collection card opens its contents without a count subtitle ("1 plan" is removed).
+    * List header title (e.g. "football") supports a long-press interaction (450ms) to open the list management bottom sheet with **Rename** and **Delete** actions.
+    * Displays saved Quick Plans in 4:5 vertical collection cards with clean cover images (no three-dot button overlay).
+    * Renders friend avatars underneath the plan title: up to 3 friend profile photos (prioritizing friends with valid photos), followed by a subtle `+` badge if more than 3 friends are attached, alongside the total count (`X friends`).
+  * Tapping a Quick Plan card instantly pre-fills the Create Plan form state and opens the Plan Review screen.
+  * An inviting empty state when zero Quick Plans are saved.
+
+### 6. Admin In-App Curation (Admin Only)
 * If `isAdmin` is true in `ProfileContext`:
   * Admin long-presses (500ms threshold) any `<DiscoveryCard />` to open `<AdminContextSheet />`.
   * Can edit title, venue address, cover photo, display order, or trigger soft-deletion (`status = 'INACTIVE'`).
@@ -68,8 +81,8 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
   * Title: Bold white headline (`text-sm font-bold text-white leading-tight tracking-wide truncate`).
   * Location Footer: Pinned bottom bar (`pt-2.5 border-t border-white/[0.06] flex items-center justify-between text-[9px] font-mono text-zinc-500 font-bold tracking-wider`) with `<MapPin className="w-3 h-3 text-zinc-500 shrink-0" />` and address snippet.
 
-### Sub-Category Showcase Screens (`DiscoverSports`, `DiscoverMovies`, `DiscoverDining`)
-* **Header**: Top back chevron (`ChevronLeft`), title headline, and category sparkle badge (`<Sparkles className="w-4 h-4 text-amber-400" />`).
+### Sub-Category Showcase Screens (`DiscoverDining`, `DiscoverMovies`, `DiscoverSports`, `DiscoverActivities`)
+* **Header**: Top back chevron (`ChevronLeft`), title headline, and category sparkle badge (`<Sparkles className="w-4 h-4 text-amber-400" />`). Subtitle for Movies displays "Latest & Popular".
 * **Hero Carousel**: Large interactive swipe card deck showcasing featured items with duration chips and capacity tags.
 * **Vertical Experience Grid**: 2-column or list view showing all category items with distance and pricing indicators.
 
@@ -84,9 +97,10 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
 | Component | File Path | Responsibilities | Key Relationships |
 |---|---|---|---|
 | `BrowseExperiencesStep` | `src/features/discovery/screens/Discovery.tsx` | Main root discovery screen. Manages section caching, search query filtering, sub-screen navigation, and admin context triggers. | Mounted during create flow or discovery tab. |
-| `DiscoverSports` | `src/features/discovery/screens/DiscoverSports.tsx` | Dedicated sports showcase screen featuring turf and court filtering, duration suggestions, and booking links. | Child sub-screen of `Discovery.tsx`. |
-| `DiscoverMovies` | `src/features/discovery/screens/DiscoverMovies.tsx` | Dedicated cinema showcase screen filtering theater premiers and genre tags. | Child sub-screen of `Discovery.tsx`. |
 | `DiscoverDining` | `src/features/discovery/screens/DiscoverDining.tsx` | Dedicated dining showcase screen filtering cafes, bistros, and brunch venues. | Child sub-screen of `Discovery.tsx`. |
+| `DiscoverMovies` | `src/features/discovery/screens/DiscoverMovies.tsx` | Dedicated cinema showcase screen filtering latest releases, trending films, and popular movies with "Latest & Popular" header. | Child sub-screen of `Discovery.tsx`. |
+| `DiscoverSports` | `src/features/discovery/screens/DiscoverSports.tsx` | Dedicated sports showcase screen featuring turf and court filtering, duration suggestions, and booking links. | Child sub-screen of `Discovery.tsx`. |
+| `DiscoverActivities` | `src/features/discovery/screens/DiscoverActivities.tsx` | Dedicated recreational activity showcase screen filtering bowling, arcades, escape rooms, karting, and amusement venues. | Child sub-screen of `Discovery.tsx`. |
 | `DiscoveryCard` | `src/features/discovery/components/DiscoveryCard.tsx` | 230x310px vertical card component rendering cover photo, title, location snippet, and long-press admin listener. | Used across horizontal carousel rails. |
 | `EditCard` | `src/features/discovery/components/EditCard.tsx` | Admin form modal for creating or editing discovery item records. | Triggered by admin actions. |
 | `AdminDiscovery` | `src/features/discovery/screens/AdminDiscovery.tsx` | Admin context drawer and category config bindings. | Mounted when `isAdmin === true`. |
@@ -140,7 +154,13 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
 
 * **Target Supabase Environment**: Local instance at `http://127.0.0.1:54321` (DB: `127.0.0.1:54322`, ref: `wecmpncixopetvunkkyd`).
 
-### 1. Table: `public.discovery_sections`
+### 1. Maps Edge Function (`supabase/functions/maps`)
+* **Endpoint**: `/functions/v1/maps`
+* **Actions**:
+  * `places-discovery`: Accepts `{ action: 'places-discovery', lat, lng, radius }`. Queries Google Places API in parallel for Sports (turfs, badminton courts, football arenas, cricket grounds, tennis clubs), Movies (cinemas, movie theaters, multiplexes), and Dining (restaurants, cafes, bistros). Returns up to 50 places per category deduplicated by provider `place_id`. Server-side `GOOGLE_MAPS_API_KEY` is never exposed to the client.
+  * `photo`: Accepts `GET /functions/v1/maps?action=photo&photo_reference=...&maxwidth=800`. Fetches Google Place Photo with server key and issues a `302 Redirect` to Google's public signed CDN (`https://lh3.googleusercontent.com/...`) with `Cache-Control: public, max-age=86400`, allowing browser `<img src>` caching with zero API key exposure.
+
+### 2. Table: `public.discovery_sections`
 * **Role in Feature**: Groups discovery items into themed horizontal sections (e.g. "Popular Turfs", "Weekend Dining").
 * **Columns**:
   * `id` (`uuid`, PK, default `gen_random_uuid()`): Unique section identifier.
@@ -151,7 +171,7 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
   * `created_at` (`timestamptz`, default `now()`).
   * `updated_at` (`timestamptz`, default `now()`).
 
-### 2. Table: `public.discovery_items`
+### 3. Table: `public.discovery_items`
 * **Role in Feature**: Individual experience cards displayed within sections.
 * **Columns**:
   * `id` (`uuid`, PK, default `gen_random_uuid()`): Unique item UUID.
@@ -208,9 +228,10 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
 
 * `src/features/discovery/screens/Discovery.tsx`: Main discovery overview and category hub.
 * `src/features/discovery/components/DiscoveryCard.tsx`: Standard experience card component.
-* `src/features/discovery/screens/DiscoverSports.tsx`: Sports-specific venue showcase.
-* `src/features/discovery/screens/DiscoverMovies.tsx`: Cinema showcase screen.
 * `src/features/discovery/screens/DiscoverDining.tsx`: Dining and cafe showcase screen.
+* `src/features/discovery/screens/DiscoverMovies.tsx`: Cinema showcase screen.
+* `src/features/discovery/screens/DiscoverSports.tsx`: Sports-specific venue showcase.
+* `src/features/discovery/screens/DiscoverActivities.tsx`: Recreational activity and venue showcase screen.
 * `src/features/discovery/services/discoveryService.ts`: Caching and API layer.
 * `src/features/discovery/services/discoveryQueries.ts`: Supabase database queries.
 * `src/features/discovery/services/discoveryMapper.ts`: Database row to frontend model transformer.

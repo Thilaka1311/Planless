@@ -26,7 +26,7 @@ The **Profile** feature manages the public identity, personal presentation, and 
 2. **Client Validation**: `validateImageFile` verifies the file type and ensures the image size does not exceed 10MB.
 3. **Circular Crop & Scale**: `PlanImageEditorModal` opens with `cropShape="circle"`, presenting a "Move and Scale" interactive canvas where the user drags and pinches/zooms to frame their headshot.
 4. **Optimistic Preview (0ms Latency)**: Upon confirming the crop, `handleSaveAvatarCrop` immediately calls `updateProfileAvatar(previewUrl)` with an in-memory blob URL. The avatar in the UI updates instantly without network latency.
-5. **Background Storage Upload**: `useProfileUpload.uploadImage` retrieves the authenticated user ID (`auth.uid()`), creates a WebP blob, and uploads to Supabase Storage bucket `avatars` at key `{authUserId}/avatar` with `upsert: true` and `cacheControl: "0"`.
+5. **Background Storage Upload**: `useProfileUpload.uploadImage` retrieves the authenticated user ID (`auth.uid()`), creates a WebP blob, and uploads to Supabase Storage bucket `avatars` at key `{authUserId}/avatar` with `upsert: true` and `cacheControl: "public, max-age=86400, stale-while-revalidate=604800"`.
 6. **Obsolete File Cleanup**: Any legacy files in `{authUserId}/` (e.g., `avatar.webp`, `avatar.jpg`) are removed to ensure exactly one canonical avatar file exists.
 7. **Database Persistence & Cache Busting**: The canonical path (`avatars/{authUserId}/avatar`) is persisted to `public.users.profile_photo_path`. `evictImageCache` invalidates memory caches so all avatar instances across the app re-render with fresh query parameters.
 8. **Rollback on Failure**: If upload or DB update fails, the avatar reverts to the prior image URL with an error alert banner.

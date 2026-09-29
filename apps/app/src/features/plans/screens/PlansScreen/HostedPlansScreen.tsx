@@ -18,7 +18,6 @@ interface HostedPlansScreenProps {
   setSelectedPlanId: (planId: string | null) => void;
   onTogglePast?: () => void;
   onToggleSearch?: () => void;
-  onScroll?: (y: number) => void;
   onNavigateToCreate?: () => void;
 }
 
@@ -27,7 +26,6 @@ export const HostedPlansScreen = React.memo(({
   setSelectedPlanId,
   onTogglePast,
   onToggleSearch,
-  onScroll,
   onNavigateToCreate,
 }: HostedPlansScreenProps) => {
   const { plans, dbPlanParticipants } = usePlansStore();
@@ -318,7 +316,6 @@ export const HostedPlansScreen = React.memo(({
 
       {/* Scrollable Content Container */}
       <div
-        onScroll={(e) => onScroll?.(e.currentTarget.scrollTop)}
         className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pt-2 pb-6"
       >
         {renderGroupedPlans(hostedPlans)}

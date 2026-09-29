@@ -165,19 +165,24 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
   ├── `plan_team_assignments` (A/B team groupings)
   └── `users` (profiles)
          │
-         ▼ 1. Initial Load & Recovery (`getCurrentUserPlans` in `api/plans.ts`)
-         │   - Phase 1: Fetch plan IDs where user is participant or host
-         │   - Phase 2: Fetch full plan rows for those IDs
-         │   - Phase 3: Fetch all participant rows with linked user profiles
-         │   - Phase 4: Merge and return joined plan structures
+         ▼ 1. Initial Load & Recovery (`PlansContext.refreshPlans` in `state/PlansContext.tsx`)
+         │   - Background: Non-blocking `sync_overdue_plans` RPC (Postgres synchronization)
+         │   - Concurrent Load: `getCurrentUserPlans(userId)` and `fetchMemories()` run in parallel via `Promise.all`
+         │   - Plan Internal Concurrency: Phase 1 resolves IDs; Phase 2 & 3 concurrently fetch plans and participants
+         │   - Profile Hydration: Phase 3 participant join embeds complete user profiles (full_name, profile_photo_path, bio); synchronously seeds canonical `dbUsers` store to eliminate duplicate participant queries across cards and state
+         │   - Projection: Merges and stores `dbPlans`, `dbPlanParticipants`, `dbMemories`
          │
-         ▼ 2. Realtime Updates (`supabase.channel("plans-realtime-sync")`)
-         │   - Listens to INSERT, UPDATE, DELETE on `plans`, `plan_participants`, `memories`
-         │   - Updates `dbPlans`, `dbPlanParticipants`, `dbMemories` in React state
+         ▼ 2. Realtime Updates (`supabase.channel("plans-realtime-sync:${userId}")`)
+         │   - User-Scoped Channel: Subscribes cleanly per active user; automatically unsubscribes on logout/user switch
+         │   - Scoped Event Filtering: Drops unrelated plans, participants, and memories belonging to foreign plans
+         │   - Participant Join/Invite Detection: Participant INSERT for active user triggers targeted refresh (`plans`, `plan_participants`)
+         │   - Targeted State Mutations: Direct in-memory updates on `dbPlans`, `dbPlanParticipants`, `dbMemories` without expensive full re-fetches
          │
-         ▼ 3. Periodic Status Sync (`setInterval` every 15s)
+         ▼ 3. Visibility-Aware Periodic Status Sync (`setInterval` every 15s while visible)
+         │   - Visibility-Guarded: Polling runs exclusively while `document.visibilityState === 'visible'`; completely paused when backgrounded/hidden
+         │   - Immediate Foreground Check: Triggers instant overdue calculation upon returning to `visible` before resuming the 15s interval
          │   - Detects plans where `status === 'LIVE'` and `scheduled_at < now()`
-         │   - Optimistically sets status to `'OVERDUE'` and invokes `sync_overdue_plans` RPC
+         │   - Optimistically sets status to `'OVERDUE'` and invokes non-blocking `sync_overdue_plans` RPC
          │
          ▼ 4. Unified Data Projection (`mapPlansToLegacyPlans` in `lib/mappers.ts`)
 [PlansContext Store (`usePlansStore`)]
