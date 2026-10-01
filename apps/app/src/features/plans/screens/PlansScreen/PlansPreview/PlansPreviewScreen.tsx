@@ -12,8 +12,6 @@ import {
   MapPin,
   IndianRupee,
   ArrowLeft,
-  UtensilsCrossed,
-  Compass,
   Film,
   CalendarDays,
   CalendarClock,
@@ -26,6 +24,7 @@ import {
   AlertCircle,
   Camera
 } from "lucide-react";
+import { CategoryIcon } from "../../../../../shared/components/CategoryIcon";
 import { UserProfile, Plan } from "../../../../../core/types";
 import { usePlansStore } from "../../../state/PlansContext";
 import { useLivePlan } from "../../../hooks/useLivePlan";
@@ -133,17 +132,7 @@ export function hasUserEnteredDescription(plan: any): boolean {
 }
 
 function PlanCategoryIcon({ plan }: { plan: any }) {
-  const category = (plan.category || '').toLowerCase();
-  if (category === 'movies' || category === 'cinema') {
-    return <Film className="w-3 h-3 text-violet-400" strokeWidth={2} />;
-  }
-  if (category === 'dining' || category === 'restaurants' || category === 'restaurant' || category === 'cafe') {
-    return <UtensilsCrossed className="w-3 h-3 text-rose-400" strokeWidth={2} />;
-  }
-  if (category === 'sports' || category === 'football' || category === 'badminton') {
-    return <Compass className="w-3 h-3 text-emerald-400" strokeWidth={2} />;
-  }
-  return <CalendarDays className="w-3 h-3 text-zinc-400" strokeWidth={2} />;
+  return <CategoryIcon category={plan.category} className="w-3 h-3" strokeWidth={2} />;
 }
 
 // Removed duplicated ParticipantsSection. We now use InlineParticipantView with variant="flat".
@@ -630,6 +619,53 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [locationQuery, setLocationQuery] = useState("");
   const locationInputRef = useRef<HTMLInputElement>(null);
 
+  // Track unconstrained viewport height for createMode so mobile virtual keyboard
+  // doesn't push the lower actions (Manage Participants & Create Plan CTA) upward.
+  const [viewportHeight, setViewportHeight] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 844));
+
+  useEffect(() => {
+    if (!createMode || typeof window === 'undefined') return;
+
+    const handleResize = () => {
+      const activeEl = document.activeElement;
+      const isInputFocused = Boolean(
+        activeEl && (
+          activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          (activeEl as HTMLElement).isContentEditable
+        )
+      );
+      // If height increased, viewport expanded (keyboard closed or device rotated).
+      // If height decreased while an input is focused, virtual keyboard opened -> do NOT shrink viewportHeight.
+      if (!isInputFocused || window.innerHeight > viewportHeight) {
+        setViewportHeight(window.innerHeight);
+      }
+    };
+
+    const handleFocusOut = () => {
+      setTimeout(() => {
+        const activeEl = document.activeElement;
+        const stillFocused = Boolean(
+          activeEl && (
+            activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            (activeEl as HTMLElement).isContentEditable
+          )
+        );
+        if (!stillFocused) {
+          setViewportHeight(window.innerHeight);
+        }
+      }, 150);
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('focusout', handleFocusOut);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('focusout', handleFocusOut);
+    };
+  }, [createMode, viewportHeight]);
+
   const getLocalDateString = (d: Date) => {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -661,8 +697,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     return `${displayHour}:${displayMin}`;
   };
 
-  const openDateTimeSheet = () => {
+  const [dateTimeSheetInitialSection, setDateTimeSheetInitialSection] = useState<'datetime' | 'rsvp'>('datetime');
+
+  const openDateTimeSheet = (section: 'datetime' | 'rsvp' = 'datetime') => {
     if (isCancelled || isCompleted) return;
+    setDateTimeSheetInitialSection(section);
     const hasConfiguredDate = Boolean((selectedPlan as any).isDateConfigured || (!createMode && (selectedPlan.datetime || selectedPlan.time || (selectedPlan as any).scheduled_at)));
     let d = "";
     let t = "";
@@ -685,7 +724,22 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     setIsEditingDateTimeSheetOpen(true);
   };
 
+  const handleCancelDateTimeSheet = () => {
+    const initial = initialDateTimeRef.current;
+    setTempDate(initial.date);
+    setTempTime(initial.time);
+    setTempRSVPOption(initial.rsvpOption);
+    setIsEditingDateTimeSheetOpen(false);
+  };
+
   const handleCloseDateTimeSheet = async () => {
+    const initial = initialDateTimeRef.current;
+    const hasChanged = tempDate !== initial.date || tempTime !== initial.time || tempRSVPOption !== initial.rsvpOption;
+    if (!hasChanged) {
+      setIsEditingDateTimeSheetOpen(false);
+      return;
+    }
+
     const isLiveEditing = !createMode;
     const currentSavedRsvpDeadline = (selectedPlan as any)?.rsvp_deadline || selectedPlan?.response_deadline_at;
     const effectiveMinDate = getLocalDateString(new Date());
@@ -703,11 +757,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     }
 
     setIsEditingDateTimeSheetOpen(false);
-    const initial = initialDateTimeRef.current;
-    const hasChanged = tempDate !== initial.date || tempTime !== initial.time || tempRSVPOption !== initial.rsvpOption;
-    if (!hasChanged) {
-      return;
-    }
 
     if (!tempDate || !tempTime) {
       return;
@@ -1207,6 +1256,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const costText = useMemo(() => {
     if (!hasCost || currentTotalCost <= 0) return "Free";
 
+    // Existing cost-splitting implementation preserved
     const isCompleted = rawDbPlan?.status === 'COMPLETED';
     const planCapacity = currentPlanSize;
 
@@ -1219,8 +1269,13 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     const perPersonFormatted = perPerson % 1 === 0
       ? perPerson.toLocaleString("en-IN")
       : perPerson.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    void perPersonFormatted;
 
-    return `₹${perPersonFormatted} / person`;
+    const formattedTotal = currentTotalCost % 1 === 0
+      ? currentTotalCost.toLocaleString("en-IN")
+      : currentTotalCost.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    return `₹${formattedTotal}`;
   }, [hasCost, currentTotalCost, rawDbPlan, selectedPlan]);
 
   const rawWaitlistMode =
@@ -1245,20 +1300,35 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     return upper;
   }, [myParticipantRecord]);
 
-  const ctaState = useMemo(() => {
-    const acceptedCount = selectedPlan?.members
+  const isNoLimitPlan = rawDbPlan?.plan_size === null || (selectedPlan as any)?.plan_size === null;
+
+  const currentJoinedCount = useMemo(() => {
+    // 1. Check dbPlanParticipants if available for freshest real-time count
+    if (dbPlanParticipants && planUuid) {
+      const planRows = dbPlanParticipants.filter(pp => isParticipantInPlan(pp));
+      if (planRows.length > 0) {
+        return planRows.filter(
+          pp => normalizeStatus(pp.rsvp_status) === "JOINED" || pp.role === "HOST"
+        ).length;
+      }
+    }
+    // 2. Fall back to selectedPlan.members
+    return selectedPlan?.members
       ? selectedPlan.members.filter(
           m => normalizeStatus(m.joinState || (m as any).rsvp_status) === "JOINED" || m.role === 'HOST' || m.isHost === true
         ).length
       : 0;
+  }, [dbPlanParticipants, planUuid, isParticipantInPlan, selectedPlan?.members]);
+
+  const ctaState = useMemo(() => {
     return getPlanPreviewCtaState({
       isAssignedMode: isAssigned,
       assignedGroup,
-      joinedCount: acceptedCount,
-      planSize: currentPlanSize || 2,
+      joinedCount: currentJoinedCount,
+      planSize: isNoLimitPlan ? null : (currentPlanSize || 2),
       alreadySkipped,
     });
-  }, [selectedPlan, isAssigned, assignedGroup, currentPlanSize, alreadySkipped]);
+  }, [isAssigned, assignedGroup, currentJoinedCount, isNoLimitPlan, currentPlanSize, alreadySkipped]);
 
   const isFull = ctaState.isWaitlistTarget;
 
@@ -2207,6 +2277,10 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const isFixedViewportView = !isCancelled;
   const isLiveHostView = isHost && !isCancelled && !isCompleted;
 
+  const isMoviePlan = (selectedPlan?.category || "").toLowerCase() === "movies";
+  const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
+  const effectiveLocation = (isMoviePlan && isYearOnly(selectedPlan?.location)) ? "" : (selectedPlan?.location || "");
+
   const isTitleSet = Boolean(
     selectedPlan?.title &&
     selectedPlan.title.trim() &&
@@ -2215,15 +2289,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   );
   const isDateSet = Boolean((selectedPlan as any)?.isDateConfigured);
   const isLocationSet = Boolean(
-    selectedPlan?.location &&
-    selectedPlan.location.trim() &&
-    selectedPlan.location.trim() !== "Add a location" &&
-    selectedPlan.location.trim() !== "Add venue" &&
-    selectedPlan.location.trim() !== "Search for a place…"
+    effectiveLocation &&
+    effectiveLocation.trim() &&
+    effectiveLocation.trim() !== "Add a location" &&
+    effectiveLocation.trim() !== "Add venue" &&
+    effectiveLocation.trim() !== "Search for a place…"
   );
+  const isLocationValid = isMoviePlan ? true : isLocationSet;
   const isCreateDisabled = isQuickPlanMode
-    ? (!isTitleSet || !isLocationSet)
-    : (!isTitleSet || !isDateSet || !isLocationSet || isRsvpExpired);
+    ? (!isTitleSet || !isLocationValid)
+    : (!isTitleSet || !isDateSet || !isLocationValid || isRsvpExpired);
 
   return (
     <motion.div
@@ -2232,7 +2307,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 15 }}
       transition={{ duration: 0.18, ease: 'easeOut' }}
-      className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left"
+      className={`fixed ${createMode ? 'top-0 left-0 right-0' : 'inset-0'} bg-[#050505] z-[60] flex flex-col ${createMode ? '' : 'h-full'} overflow-hidden text-left`}
+      style={createMode ? { height: `${viewportHeight}px`, minHeight: `${viewportHeight}px`, maxHeight: `${viewportHeight}px` } : undefined}
     >
       <div id="immersive-plan-scroll-container" className={`flex-1 ${isFixedViewportView ? 'overflow-hidden flex flex-col h-full pb-20' : 'overflow-y-auto scrollbar-none pb-28'}`}>
         <div id="immersive-plan-hero-wrapper" className={`w-full flex-shrink-0 relative ${isEditingLocationInline ? 'z-50' : 'z-10'}`}>
@@ -2303,7 +2379,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   : () => setShowPlanSettingsScreen(true)
               }
               onSharePlanLink={
-                !createMode && !isCancelled && !isCompleted && (isHost || allowParticipantInvites)
+                !createMode && !isCancelled && !isCompleted && (isHost || allowParticipantInvites) && currentJoinedCount < 50
                   ? () => setShowSharePlanLinkSheet(true)
                   : undefined
               }
@@ -2332,7 +2408,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                       <button
                         type="button"
                         disabled={!isHost || isCancelled || isCompleted}
-                        onClick={openDateTimeSheet}
+                        onClick={() => openDateTimeSheet('datetime')}
                         className="flex-1 min-w-0 flex items-center gap-3 text-left hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent"
                       >
                         <CalendarClock className={`w-4 h-4 flex-shrink-0 ${createMode && !isDateSet ? "text-zinc-500 opacity-60" : "text-emerald-400"}`} />
@@ -2370,8 +2446,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                         >
                           <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
                           <span>
-                            {rawDbPlan?.plan_size === null || (selectedPlan as any)?.plan_size === null
-                              ? "No limit"
+                            {isNoLimitPlan
+                              ? (currentJoinedCount >= 50 ? "50 / 50" : "No limit")
                               : (currentPlanSize || 2)}
                           </span>
                         </button>
@@ -2389,8 +2465,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                         >
                           <Users className="w-4 h-4 text-white/70 flex-shrink-0" />
                           <span>
-                            {rawDbPlan?.plan_size === null || (selectedPlan as any)?.plan_size === null
-                              ? "No limit"
+                            {isNoLimitPlan
+                              ? (currentJoinedCount >= 50 ? "50 / 50" : "No limit")
                               : (currentPlanSize || 2)}
                           </span>
                         </button>
@@ -2402,16 +2478,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   <div>
                     <InlineLocationEditor
                       isHost={isHost && !isCancelled && !isCompleted}
-                      currentLocation={selectedPlan.location || ""}
+                      currentLocation={effectiveLocation}
                       isEditing={isEditingLocationInline}
                       isSaving={isSavingLocation}
                       locationQuery={locationQuery}
                       inputRef={locationInputRef}
-                      hasError={showValidationErrors && !isLocationSet}
+                      hasError={showValidationErrors && !isMoviePlan && !isLocationSet}
                       validationShakeKey={validationShakeKey}
                       onStartEditing={() => {
                         if (isHost && !isCancelled && !isCompleted) {
-                          setLocationQuery(selectedPlan.location || "");
+                          setLocationQuery(effectiveLocation);
                           setIsEditingLocationInline(true);
                           setTimeout(() => {
                             if (locationInputRef.current) {
@@ -2419,8 +2495,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                               locationInputRef.current.select();
                             }
                           }, 50);
-                        } else if (selectedPlan.location) {
-                          const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedPlan.location)}`;
+                        } else if (effectiveLocation) {
+                          const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(effectiveLocation)}`;
                           window.open(url, "_blank");
                         }
                       }}
@@ -2442,7 +2518,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                         <button
                           type="button"
                           disabled={!isHost || isCancelled}
-                          onClick={openDateTimeSheet}
+                          onClick={() => openDateTimeSheet('rsvp')}
                           className="flex items-center gap-3 hover:bg-white/[0.03] active:bg-white/[0.06] transition p-1.5 -m-1.5 rounded-xl cursor-pointer disabled:cursor-default disabled:hover:bg-transparent text-left"
                         >
                           <Hourglass className="w-4 h-4 flex-shrink-0" style={{ color: effectiveUrgencyColor }} />
@@ -2544,7 +2620,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
           {/* Fixed Manage Participants action for host — floating icon + text only, tightly anchored above LiveActionButton / Create Plan button */}
           {isHost && !isCancelled && (
-            <div className={`fixed ${createMode ? 'bottom-[54px]' : 'bottom-[58px]'} left-6 right-6 z-40 flex items-center justify-center pointer-events-auto`}>
+            <div className={`${createMode ? 'absolute bottom-[54px]' : 'fixed bottom-[58px]'} left-6 right-6 z-40 flex items-center justify-center pointer-events-auto`}>
               <button
                 type="button"
                 id="host_manage_participants_btn"
@@ -2591,7 +2667,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               <button
                 type="button"
                 id="participant_add_participants_btn"
-                onClick={() => setShowParticipantAddPicker(true)}
+                onClick={() => {
+                  if (currentJoinedCount >= 50) {
+                    showToast(
+                      "Plan size reached. This plan already has 50 participants. No more participants can join this plan.",
+                      "error"
+                    );
+                    return;
+                  }
+                  setShowParticipantAddPicker(true);
+                }}
                 className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
               >
                 <UserPlus className="w-4 h-4 text-white/70" />
@@ -2614,7 +2699,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             return (
               <div
                 style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
-                className="fixed bottom-0 left-0 right-0 px-6 pt-2 pb-4 bg-gradient-to-t from-black via-black/90 to-transparent z-40"
+                className={`${createMode ? 'absolute' : 'fixed'} bottom-0 left-0 right-0 px-6 pt-2 pb-4 bg-gradient-to-t from-black via-black/90 to-transparent z-40`}
               >
                 <button
                   type="button"
@@ -2647,9 +2732,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 className=""
                 onClick={
                   isCompleted
-                    ? () => setShowCancelPlanConfirm(true)
-                    : isHost && isCancelled
-                      ? () => setShowRestorePlanConfirm(true)
+                    ? (isHost ? () => setShowCancelPlanConfirm(true) : undefined)
+                    : isCancelled
+                      ? (isHost ? () => setShowRestorePlanConfirm(true) : undefined)
                       : isHost
                         ? () => setShowCancelPlanConfirm(true)
                         : myParticipantRecord?.rsvp_status === "JOINED" && myParticipantRecord?.leave_requested
@@ -2663,7 +2748,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                                 : (currentStatus === "REJOINED" || myParticipantRecord?.rsvp_status === "REJOINED")
                                   ? () => setShowCancelRejoinRequestSheet(true)
                                   : undefined
-              }
+                }
             />
           );
         })()}
@@ -2735,11 +2820,17 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                   planId,
                   {
                     plan_size: capacity,
+                    ...(capacity === null ? { participant_filtering: null } : {}),
                     ...(opts?.totalCost !== undefined ? { total_cost: opts.totalCost } : {}),
                   },
                   opts
                 )
               }
+              onWaitlistModeChange={async (mode) => {
+                await updatePlanDetails(selectedPlan?.id || planUuid, {
+                  participant_filtering: mode === 'assigned' ? 'ASSIGNED' : 'AUTOMATIC',
+                });
+              }}
               onCancelPlan={(planId) => cancelPlan(planId)}
               onAddParticipants={(planId, userIds, assignedGroup) => addParticipantsToPlan({
                 planId,
@@ -2856,6 +2947,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
       <CancelLeaveRequestBottomSheet
         isOpen={showCancelLeaveRequestConfirmation}
+        plan={selectedPlan}
         planTitle={selectedPlan?.title}
         isSubmitting={isCancellingLeaveRequest}
         onConfirm={handleConfirmCancelLeaveRequest}
@@ -3052,6 +3144,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         tempDate={tempDate}
         tempTime={tempTime}
         tempRSVPOption={tempRSVPOption}
+        initialSection={dateTimeSheetInitialSection}
         minDate={getLocalDateString(new Date())}
         isLiveEditing={!createMode}
         currentSavedRsvpDeadline={(selectedPlan as any)?.rsvp_deadline || selectedPlan?.response_deadline_at}
@@ -3059,6 +3152,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         onTempTimeChange={setTempTime}
         onTempRSVPOptionChange={setTempRSVPOption}
         onClose={handleCloseDateTimeSheet}
+        onCancel={handleCancelDateTimeSheet}
       />
 
       {/* ---------------- 💰 SET COST FULL SCREEN ---------------- */}
@@ -3069,7 +3163,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             planCoverImage={selectedPlan?.coverImage || (selectedPlan as any)?.cover_image || (selectedPlan as any)?.cover_photo || getPlanCover(selectedPlan?.category, (selectedPlan as any)?.subcategory)}
             initialCost={editTotalCostInput}
             participants={selectedPlan?.members || []}
-            planSize={currentPlanSize}
+            planSize={isNoLimitPlan ? null : currentPlanSize}
             onSave={async (parsedCost: number) => {
               setIsEditingCostSheetOpen(false);
               if (createMode) {
@@ -3115,16 +3209,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 : (currentPlanSize || 2))
         }
         invitedCount={createMode ? plan?.members?.length : totalActiveParticipants}
-        joinedCount={
-          selectedPlan?.members?.filter(
-            (m: any) =>
-              m.assignedGroup === 'GOING' ||
-              (m.assignedGroup as string)?.toLowerCase() === 'going' ||
-              m.joinState === 'JOINED' ||
-              m.role === 'HOST' ||
-              m.isHost
-          )?.length
-        }
+        joinedCount={currentJoinedCount}
         waitlistedCount={
           selectedPlan?.members?.filter(
             (m: any) =>
@@ -3134,13 +3219,20 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           )?.length
         }
         minCapacity={2}
-        maxCapacity={createMode ? (plan?.members ? plan.members.length : undefined) : (isAssigned ? previewMaxCapacity : 50)}
-        limitToInvitedCount={createMode ? true : isAssigned}
+        maxCapacity={isAssigned ? previewMaxCapacity : 50}
+        limitToInvitedCount={isAssigned}
         isAutomatic={!isAssigned}
         onCapacityChange={handleCapacityChange}
         onIncrement={onIncrementCapacity}
         onDecrement={onDecrementCapacity}
         onAddParticipants={() => {
+          if (currentJoinedCount >= 50) {
+            showToast(
+              "Plan size reached. This plan already has 50 participants. No more participants can join this plan.",
+              "error"
+            );
+            return;
+          }
           setIsEditingCapacitySheetOpen(false);
           setDraftCapacityOverride(null);
           if (createMode) {

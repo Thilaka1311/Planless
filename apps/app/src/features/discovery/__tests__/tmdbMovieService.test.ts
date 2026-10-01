@@ -120,7 +120,8 @@ describe("tmdbMovieService", () => {
       expect(item.rating).toBe(8.5);
       expect(item.user_ratings_total).toBe(3200);
       expect(item.release_date).toBe("2025-10-02");
-      expect(item.location).toBe("2025");
+      // Movies must never set location to the release year — it must always be empty
+      expect(item.location).toBe("");
       expect(item.original_language).toBe("kn");
       expect(item.language_name).toBe("Kannada");
       expect(item.genres).toEqual(["Action", "Fantasy", "Drama"]);
@@ -148,6 +149,7 @@ describe("tmdbMovieService", () => {
       const item = mapTmdbMovieToDiscoveryItem(bareMovie);
       expect(item.id).toBe("tmdb-99999");
       expect(item.title).toBe("Untitled Project");
+      // Movies always produce an empty location, even when release_date is present
       expect(item.location).toBe("");
       expect(item.subcategory).toBe("Feature Film");
       expect(item.language_name).toBe("Hindi");

@@ -231,5 +231,34 @@ describe("QuickPlansScreen Dedicated Screen", () => {
     const aliceIndex = html.indexOf("https://example.com/alice.jpg");
     expect(aliceIndex).toBeGreaterThan(-1);
   });
+
+  it("does not render three-dot overflow buttons on quick plan cards or list cards", async () => {
+    const { QuickPlanCard } = await import("../components/QuickPlanCard");
+    const plan: QuickPlan = {
+      id: "qp-turf",
+      creator_id: "user-1",
+      name: "Bengaluru Turf Inc.",
+      category: "SPORTS",
+      place_name: "Bengaluru Turf Inc.",
+      place_address: "Subbana Layout",
+      default_cost: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const html = renderToString(
+      <QuickPlanCard
+        plan={plan}
+        variant="collection"
+        onTap={vi.fn()}
+        onLongPress={vi.fn()}
+      />
+    );
+
+    // Verify there are no three-dot / overflow buttons or aria labels
+    expect(html).not.toContain("MoreHorizontal");
+    expect(html).not.toContain("overflow-menu");
+    expect(html).not.toContain("aria-label=\"Plan options\"");
+  });
 });
 

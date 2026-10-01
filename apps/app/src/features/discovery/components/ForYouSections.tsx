@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Loader2 } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { DiscoverySection } from "./DiscoverySection";
 import { ADMIN_CONFIGS, ContentConfig } from "../services/discoveryAdminService";
@@ -8,6 +9,7 @@ import {
   isMovieWithinSixMonths,
 } from "../services/tmdbMovieService";
 import { MoviePortraitCard } from "../screens/DiscoverMovies";
+import { usePlacesSearch } from "../hooks/usePlacesSearch";
 
 interface ForYouSectionsProps {
   sections: DiscoverySectionType[];
@@ -155,61 +157,116 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
 
   const { nowPlaying, popular, isLoading: moviesLoading } = useCreateMovieSections();
 
-  const filterByQuery = (items: DiscoveryItem[]) => {
-    if (!normalizedQuery) return items;
-    return items.filter(
-      (item) =>
-        item.title.toLowerCase().includes(normalizedQuery) ||
-        (item.description && item.description.toLowerCase().includes(normalizedQuery)) ||
-        (item.location && item.location.toLowerCase().includes(normalizedQuery)) ||
-        (item.place_address && item.place_address.toLowerCase().includes(normalizedQuery)) ||
-        (item.subcategory && item.subcategory.toLowerCase().includes(normalizedQuery))
-    );
-  };
+  const searchCategory =
+    categoryFilter === "dining"
+      ? "DINING"
+      : categoryFilter === "sports"
+      ? "SPORTS"
+      : categoryFilter === "activities"
+      ? "ACTIVITIES"
+      : "ALL";
 
-  const diningItems = filterByQuery(rawDiningItems);
-  const sportsItems = filterByQuery(rawSportsItems);
-  const activitiesItems = filterByQuery(rawActivitiesItems);
+  const {
+    isSearching,
+    isSearchLoading,
+    searchResults,
+  } = usePlacesSearch({
+    category: searchCategory,
+    searchQuery,
+    currentCoordinates: userCoordinates || undefined,
+  });
+
+  const diningItems = rawDiningItems;
+  const sportsItems = rawSportsItems;
+  const activitiesItems = rawActivitiesItems;
 
   // ── Search mode ──────────────────────────────────────────────────────────────
-  if (normalizedQuery) {
+  if (isSearching) {
+    if (isSearchLoading) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 space-y-3">
+          <Loader2 className="w-6 h-6 animate-spin text-rose-500" />
+          <p className="text-xs text-zinc-400 font-medium">Searching all places...</p>
+        </div>
+      );
+    }
+
+    const filterByQuery = (items: DiscoveryItem[]) => {
+      const q = searchQuery.toLowerCase().trim();
+      if (!q) return items;
+      return items.filter(
+        (item) =>
+          item.title.toLowerCase().includes(q) ||
+          (item.description && item.description.toLowerCase().includes(q)) ||
+          (item.location && item.location.toLowerCase().includes(q)) ||
+          (item.place_address && item.place_address.toLowerCase().includes(q)) ||
+          (item.subcategory && item.subcategory.toLowerCase().includes(q))
+      );
+    };
+
+    const hasDbResults = searchResults.length > 0;
+    const diningResults = hasDbResults
+      ? searchResults.filter((item) => item.category?.toUpperCase() === "DINING")
+      : filterByQuery(rawDiningItems);
+    const sportsResults = hasDbResults
+      ? searchResults.filter((item) => item.category?.toUpperCase() === "SPORTS")
+      : filterByQuery(rawSportsItems);
+    const activitiesResults = hasDbResults
+      ? searchResults.filter(
+          (item) => item.category?.toUpperCase() === "ACTIVITIES" || item.category?.toUpperCase() === "CUSTOM"
+        )
+      : filterByQuery(rawActivitiesItems);
+
+    const totalResults = diningResults.length + sportsResults.length + activitiesResults.length + searchResults.length;
+    if (totalResults === 0) {
+      return (
+        <div className="px-6 py-16 text-center space-y-2">
+          <p className="text-zinc-300 text-sm font-medium">
+            No places found
+          </p>
+          <p className="text-zinc-500 text-xs">
+            Try searching for another place.
+          </p>
+        </div>
+      );
+    }
+
     const searchSections: SectionDef[] = [];
-    if (diningItems.length > 0 && (categoryFilter === "all" || categoryFilter === "dining")) {
+    if (diningResults.length > 0 && (categoryFilter === "all" || categoryFilter === "dining")) {
       searchSections.push({
         id: "search_dining",
-        title: `Restaurants matching "${searchQuery}"`,
-        items: diningItems,
+        title: "Restaurants",
+        items: diningResults,
         colorAccent: "text-rose-500",
         adminConfig: ADMIN_CONFIGS.dining,
       });
     }
-    if (sportsItems.length > 0 && (categoryFilter === "all" || categoryFilter === "sports")) {
+    if (sportsResults.length > 0 && (categoryFilter === "all" || categoryFilter === "sports")) {
       searchSections.push({
         id: "search_sports",
-        title: `Sports matching "${searchQuery}"`,
-        items: sportsItems,
+        title: "Sports & Turfs",
+        items: sportsResults,
         colorAccent: "text-emerald-500",
         adminConfig: ADMIN_CONFIGS.turfs,
       });
     }
-    if (activitiesItems.length > 0 && (categoryFilter === "all" || categoryFilter === "activities")) {
+    if (activitiesResults.length > 0 && (categoryFilter === "all" || categoryFilter === "activities")) {
       searchSections.push({
         id: "search_activities",
-        title: `Activities matching "${searchQuery}"`,
-        items: activitiesItems,
+        title: "Activities & Recreation",
+        items: activitiesResults,
         colorAccent: "text-pink-500",
         adminConfig: ADMIN_CONFIGS.activities,
       });
     }
 
     if (searchSections.length === 0) {
-      return (
-        <div className="px-6 py-16 text-center space-y-2">
-          <p className="text-zinc-500 text-sm font-normal">
-            No places found matching &quot;{searchQuery}&quot;.
-          </p>
-        </div>
-      );
+      searchSections.push({
+        id: "search_all",
+        title: "Search Results",
+        items: searchResults,
+        colorAccent: "text-rose-500",
+      });
     }
 
     return (

@@ -6,15 +6,13 @@ import { normalizeStatus, sortGoingParticipants } from '../../../../lib/particip
 import {
   formatAssignedGoingList,
   formatAssignedWaitlist,
-  renumberWaitlist,
 } from './assignedCapacityLogic';
 import { WhoIsComingScreen } from '../../create/screens/WhoIsComingScreen';
 import { useFriendshipStore } from '../../friendships/state/FriendshipContext';
 import { getCompleteCurrentUserFriends } from '../../friendships/api/friendships';
 import { usePlansStore } from '../../plans/state/PlansContext';
 import { supabase } from '../../../../lib/supabaseClient';
-import { Split, Merge, ArrowLeft } from 'lucide-react';
-import { DiscoveryImages } from '../../../IMGfromDB/PlanImages';
+
 import {
   PlanIsFullBottomSheet,
   MoveToGoingCapacityBottomSheet,
@@ -24,6 +22,7 @@ import {
   MakeAnotherParticipantHostBottomSheet,
 } from '../../plans/components/BottomSheets';
 import { isUuid } from '../../plans/utils/planUtils';
+import { useToast } from '../../../shared/contexts/ToastContext';
 
 const getMemberFinalState = (m: any): string | null => {
   if (!m) return null;
@@ -96,7 +95,7 @@ export const memberToAssignedFriend = (
       ? (rawGroup.toUpperCase() as 'GOING' | 'WAITLIST')
       : null;
 
-  const assignedGroup = normalizedGroup || (status === 'WAITLISTED' ? 'WAITLIST' : 'GOING');
+  const assignedGroup = normalizedGroup || (status === 'JOINED' || isHostRole ? 'GOING' : 'WAITLIST');
 
   const isActivelyJoined =
     status === 'JOINED' || status === 'WAITLISTED' || status === 'REJOINED' || isHostRole;
@@ -152,6 +151,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
   onPromoteToHost,
   onDemoteFromHost,
   onUpdatePlanCapacity,
+  onWaitlistModeChange,
   onAddParticipants,
   onReorderWaitlist,
   onOpenSettings,
@@ -171,6 +171,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
   const {
     dbPlans,
     dbPlanParticipants,
+    updatePlanDetails,
     resolvePaidPlanLeaveRequest,
     replaceParticipant,
     moveParticipantToWaitlistAndDecreaseCapacity,
@@ -180,6 +181,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
   } = usePlansStore();
   const hostId = plan.hostId || '';
   const members: any[] = plan.members || [];
+  const { showToast } = useToast();
 
   const matchedDbPlan = useMemo(() => {
     return (dbPlans || []).find(
@@ -258,7 +260,6 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     return count;
   }, [members, dbPlanParticipants, isParticipantInPlan, getParticipantRsvpStatus]);
 
-  const [planFeeTotalCostOverride, setPlanFeeTotalCostOverride] = useState<number | null>(null);
   const [showHostLeaveReplacementSheet, setShowHostLeaveReplacementSheet] = useState(false);
   const [hostReplacementMode, setHostReplacementMode] = useState<'leave' | 'stop_hosting'>('leave');
   const [isSubmittingHostReplacement, setIsSubmittingHostReplacement] = useState(false);
@@ -363,87 +364,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     }
   }, [isCallerHost, isSoleHost, onLeavePlan, onRemoveParticipant, plan.id, resolvedUserUuid]);
 
-  const currentTotalCost = useMemo(() => {
-    if (planFeeTotalCostOverride !== null && planFeeTotalCostOverride > 0)
-      return planFeeTotalCostOverride;
-    const candidates = [
-      matchedDbPlan?.total_cost,
-      (plan as any)?.total_cost,
-      (plan as any)?.totalCost,
-      (plan as any)?.cost,
-      (plan as any)?.paymentAmount,
-    ];
-    for (const val of candidates) {
-      const num = Number(val);
-      if (!isNaN(num) && num > 0) {
-        return num;
-      }
-    }
-    return planFeeTotalCostOverride ?? 0;
-  }, [matchedDbPlan, plan, planFeeTotalCostOverride]);
-
-  useEffect(() => {
-    let isMounted = true;
-    const fetchPlanFeeCost = async () => {
-      const planUuid = isUuid(plan.id)
-        ? plan.id
-        : isUuid((plan as any).dbUuid || '')
-        ? (plan as any).dbUuid
-        : null;
-      if (planFeeTotalCostOverride === null && planUuid) {
-        const localCost = currentTotalCost;
-        if (localCost <= 0) {
-          try {
-            const { data: planRow } = await supabase
-              .from('plans')
-              .select('total_cost')
-              .eq('id', planUuid)
-              .maybeSingle();
-
-            if (isMounted && planRow && Number(planRow.total_cost || 0) > 0) {
-              setPlanFeeTotalCostOverride(Number(planRow.total_cost));
-              return;
-            }
-
-            const { data: expRow } = await (supabase as any)
-              .from('wallet_expenses')
-              .select('total_amount')
-              .eq('plan_id', planUuid)
-              .or('expense_type.eq.PLAN_EXPENSE,message_id.is.null')
-              .order('created_at', { ascending: true })
-              .limit(1)
-              .maybeSingle();
-
-            if (isMounted && expRow && Number(expRow.total_amount || 0) > 0) {
-              setPlanFeeTotalCostOverride(Number(expRow.total_amount));
-            }
-          } catch (err) {
-            console.error('[AssignedParticipantContainer fetchPlanFeeCost] Error:', err);
-          }
-        }
-      }
-    };
-    fetchPlanFeeCost();
-    return () => {
-      isMounted = false;
-    };
-  }, [plan.id, (plan as any).dbUuid, currentTotalCost, planFeeTotalCostOverride]);
-
-  const [showUpdatePlanFeeModal, setShowUpdatePlanFeeModal] = useState(false);
-  const [pendingCapacityTarget, setPendingCapacityTarget] = useState<number | null>(null);
-  const [pendingCostAction, setPendingCostAction] = useState<{
-    type: 'increase_and_promote' | 'decrease_and_demote' | 'increase_and_invite' | 'decrease_and_remove';
-    friend?: Friend;
-    targetCapacity: number;
-    friendIds?: string[];
-    initialCost?: number;
-  } | null>(null);
-  const [selectedPlanFeeOption, setSelectedPlanFeeOption] = useState<
-    'split_current_cost' | 'keep_cost_per_person' | null
-  >(null);
-  const [isSubmittingPlanFeeUpdate, setIsSubmittingPlanFeeUpdate] = useState(false);
-
-  // Staged session for unified Plan Size -> Participant Movement -> Cost flow
+  // Staged session for unified Plan Size -> Participant Movement flow
   const [pendingCapacityAdjustmentSession, setPendingCapacityAdjustmentSession] = useState<{
     originalCapacity: number;
     targetCapacity: number;
@@ -457,38 +378,31 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
       targetRsvpStatus: 'INVITED' | 'JOINED' | 'WAITLISTED';
       targetAssignedGroup: 'GOING' | 'WAITLIST';
     }>;
-    planCost: number;
   } | null>(null);
 
   const [reopenPlanSizeCapacity, setReopenPlanSizeCapacity] = useState<number | null>(null);
-  const [localCapacity, setLocalCapacity] = useState<number | null>(null);
+  const [localCapacity, setLocalCapacity] = useState<number | null | undefined>(undefined);
 
   useEffect(() => {
-    setLocalCapacity(null);
+    setLocalCapacity(undefined);
   }, [plan.plan_size, (plan as any).planSize, plan.capacity, plan.joinLimit]);
 
   const storedCapacity =
-    localCapacity !== null
+    localCapacity !== undefined
       ? localCapacity
-      : plan.plan_size || (plan as any).planSize || plan.joinLimit || plan.capacity || 2;
-  const capacity = Math.max(2, storedCapacity);
-
-  const effectiveCostForModal =
-    pendingCostAction?.initialCost && pendingCostAction.initialCost > 0
-      ? pendingCostAction.initialCost
-      : pendingCapacityAdjustmentSession?.planCost && pendingCapacityAdjustmentSession.planCost > 0
-      ? pendingCapacityAdjustmentSession.planCost
-      : currentTotalCost;
-  const planFeeCurrentTotal = effectiveCostForModal;
-  const planFeeCurrentPerPerson =
-    capacity > 0 ? Math.round((planFeeCurrentTotal / capacity) * 100) / 100 : 0;
-  const planFeeOptionANewTotal = pendingCapacityTarget
-    ? Math.round(pendingCapacityTarget * planFeeCurrentPerPerson * 100) / 100
-    : planFeeCurrentTotal;
-  const planFeeOptionBPerPerson =
-    pendingCapacityTarget && pendingCapacityTarget > 0
-      ? Math.round((planFeeCurrentTotal / pendingCapacityTarget) * 100) / 100
-      : 0;
+      : plan.plan_size !== undefined
+      ? plan.plan_size
+      : (plan as any).planSize !== undefined
+      ? (plan as any).planSize
+      : plan.joinLimit !== undefined
+      ? plan.joinLimit
+      : plan.capacity !== undefined
+      ? plan.capacity
+      : null;
+  const capacity: number | null =
+    storedCapacity !== null && storedCapacity !== undefined
+      ? Math.max(2, storedCapacity)
+      : null;
 
   const effectiveIsHost = useMemo(() => {
     const currentMember = members.find((m) => {
@@ -893,80 +807,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     const { friendIds, currentGoingCount } = pendingCapacityInvite;
     const newCapacity = currentGoingCount + friendIds.length;
 
-    let planCost = currentTotalCost;
-    if (planCost <= 0) {
-      const candidates = [
-        matchedDbPlan?.total_cost,
-        (plan as any)?.total_cost,
-        (plan as any)?.totalCost,
-        (plan as any)?.cost,
-        (plan as any)?.paymentAmount,
-      ];
-      for (const val of candidates) {
-        const num = Number(val);
-        if (!isNaN(num) && num > 0) {
-          planCost = num;
-          break;
-        }
-      }
-    }
-
-    if (planCost <= 0) {
-      const planUuid = isUuid(plan.id)
-        ? plan.id
-        : isUuid((plan as any).dbUuid || '')
-        ? (plan as any).dbUuid
-        : null;
-      if (planUuid) {
-        try {
-          const { data: planRow } = await supabase
-            .from('plans')
-            .select('total_cost')
-            .eq('id', planUuid)
-            .maybeSingle();
-          if (planRow && Number(planRow.total_cost || 0) > 0) {
-            planCost = Number(planRow.total_cost);
-          } else {
-            const { data: expRow } = await (supabase as any)
-              .from('wallet_expenses')
-              .select('total_amount')
-              .eq('plan_id', planUuid)
-              .or('expense_type.eq.PLAN_EXPENSE,message_id.is.null')
-              .order('created_at', { ascending: true })
-              .limit(1)
-              .maybeSingle();
-            if (expRow && Number(expRow.total_amount || 0) > 0) {
-              planCost = Number(expRow.total_amount);
-            }
-          }
-        } catch (err) {
-          console.error('[AssignedParticipantContainer Cost resolution error]:', err);
-        }
-      }
-    }
-
     setPendingCapacityInvite(null);
-
-    if (planCost > 0) {
-      const primaryFriend = allPlanMembers.find((m) => (m.dbUuid || m.id) === friendIds[0]) || {
-        id: friendIds[0],
-        name: friendIds.length === 1 ? 'New Participant' : `${friendIds.length} Participants`,
-        avatar: '',
-      };
-
-      setPlanFeeTotalCostOverride(planCost);
-      setPendingCapacityTarget(newCapacity);
-      setPendingCostAction({
-        type: 'increase_and_invite',
-        friend: primaryFriend,
-        targetCapacity: newCapacity,
-        friendIds,
-        initialCost: planCost,
-      });
-      setSelectedPlanFeeOption(null);
-      setShowUpdatePlanFeeModal(true);
-      return;
-    }
 
     try {
       if (onUpdatePlanCapacity) {
@@ -1170,7 +1011,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
 
       if (status === 'SKIPPED' || status === 'REJOINED') return false;
 
-      return group === 'GOING' || group === 'JOINED' || (!group && (status === 'JOINED' || status === 'INVITED'));
+      return group === 'GOING' || group === 'JOINED' || (!group && status === 'JOINED');
     });
   }, [allPlanMembers, dbPlanParticipants, isParticipantInPlan, isCompletedPlan]);
 
@@ -1218,9 +1059,8 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     );
   }, [goingMembers, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id]);
 
-  // Split rawGoingList and rawWaitlistList by capacity if capacity is finite
-  const { capacityAdjustedGoing, capacityAdjustedWaitlist } = useMemo(() => {
-    const rawWaitlist = waitlistMembers.map((m) =>
+  const rawWaitlistList: Friend[] = useMemo(() => {
+    return waitlistMembers.map((m) =>
       memberToAssignedFriend(
         m,
         hostId,
@@ -1231,57 +1071,16 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         plan.id
       )
     );
-
-    if (!capacity || capacity <= 0 || isCompletedPlan) {
-      return { capacityAdjustedGoing: rawGoingList, capacityAdjustedWaitlist: rawWaitlist };
-    }
-
-    if (rawGoingList.length <= capacity) {
-      return { capacityAdjustedGoing: rawGoingList, capacityAdjustedWaitlist: rawWaitlist };
-    }
-
-    const hostPart = rawGoingList.filter((f) => f.isHost);
-    const nonHost = rawGoingList.filter((f) => !f.isHost);
-    const sortedNonHost = [...nonHost].sort((a, b) =>
-      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
-    );
-
-    const availableSpots = Math.max(0, capacity - hostPart.length);
-    const keptNonHost = sortedNonHost.slice(0, availableSpots);
-    const demoted = sortedNonHost.slice(availableSpots).map((f) => ({
-      ...f,
-      assignedGroup: 'WAITLIST' as const,
-      rsvpStatus: f.rsvpStatus === 'JOINED' ? ('WAITLISTED' as const) : f.rsvpStatus,
-    }));
-
-    const nextGoing = [...hostPart, ...keptNonHost];
-    const nextWaitlist = renumberWaitlist([...rawWaitlist, ...demoted]);
-
-    return {
-      capacityAdjustedGoing: nextGoing,
-      capacityAdjustedWaitlist: nextWaitlist,
-    };
-  }, [
-    rawGoingList,
-    waitlistMembers,
-    hostId,
-    activeUserId,
-    dbPlanParticipants,
-    targetPlanUuid,
-    (plan as any).dbUuid,
-    plan.id,
-    capacity,
-    isCompletedPlan,
-  ]);
+  }, [waitlistMembers, hostId, activeUserId, dbPlanParticipants, targetPlanUuid, (plan as any).dbUuid, plan.id]);
 
   const goingList: Friend[] = useMemo(() => {
-    return prioritizeCurrentUserAndSort(capacityAdjustedGoing);
-  }, [capacityAdjustedGoing, prioritizeCurrentUserAndSort]);
+    return prioritizeCurrentUserAndSort(rawGoingList);
+  }, [rawGoingList, prioritizeCurrentUserAndSort]);
 
   const waitlistList: Friend[] = useMemo(() => {
-    const sorted = sortByWaitlistOrder(capacityAdjustedWaitlist);
+    const sorted = sortByWaitlistOrder(rawWaitlistList);
     return formatAssignedWaitlist(sorted, activeUserId);
-  }, [capacityAdjustedWaitlist, activeUserId, sortByWaitlistOrder]);
+  }, [rawWaitlistList, activeUserId, sortByWaitlistOrder]);
 
   const skippedList: Friend[] = useMemo(() => {
     const rawSkipped = allPlanMembers
@@ -1397,19 +1196,6 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
 
     setPendingPromoteToGoing(null);
 
-    const hasCost = planFeeCurrentTotal > 0;
-    if (hasCost) {
-      setPendingCapacityTarget(clampedVal);
-      setPendingCostAction({
-        type: 'increase_and_promote',
-        friend,
-        targetCapacity: clampedVal,
-      });
-      setSelectedPlanFeeOption(null);
-      setShowUpdatePlanFeeModal(true);
-      return;
-    }
-
     try {
       if (onUpdatePlanCapacity) {
         await onUpdatePlanCapacity(plan.id, clampedVal, { autoPromote: false });
@@ -1430,7 +1216,6 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     capacity,
     goingMembers.length,
     maxCapacity,
-    planFeeCurrentTotal,
     onUpdatePlanCapacity,
     plan.id,
     onMoveToGoing,
@@ -1456,19 +1241,6 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
 
     setPendingMoveToWaitlist(null);
 
-    const hasCost = planFeeCurrentTotal > 0;
-    if (hasCost) {
-      setPendingCapacityTarget(targetCapacity);
-      setPendingCostAction({
-        type: 'decrease_and_demote',
-        friend,
-        targetCapacity,
-      });
-      setSelectedPlanFeeOption(null);
-      setShowUpdatePlanFeeModal(true);
-      return;
-    }
-
     try {
       if (onUpdatePlanCapacity) {
         await onUpdatePlanCapacity(plan.id, targetCapacity);
@@ -1485,7 +1257,6 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
   }, [
     pendingMoveToWaitlist,
     capacity,
-    planFeeCurrentTotal,
     onUpdatePlanCapacity,
     plan.id,
     onMoveToWaitlist,
@@ -1529,26 +1300,26 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     setPendingRemoveGoing(null);
     setIsForcedDecreaseRemoval(false);
 
-    const hasCost = planFeeCurrentTotal > 0;
-    if (hasCost) {
-      setPendingCapacityTarget(targetCapacity);
-      setPendingCostAction({
-        type: 'decrease_and_remove',
-        friend,
-        targetCapacity,
-      });
-      setSelectedPlanFeeOption(null);
-      setShowUpdatePlanFeeModal(true);
-      return;
-    }
-
     try {
       await onUpdatePlanCapacity(plan.id, targetCapacity);
       await onRemoveParticipant(plan.id, friend.dbUuid || friend.id);
     } catch (err: any) {
       console.error('[AssignedParticipantContainer handleConfirmDecreaseCapacityForRemoveGoing] error:', err);
     }
-  }, [pendingRemoveGoing, capacity, onUpdatePlanCapacity, plan.id, onRemoveParticipant, planFeeCurrentTotal]);
+  }, [pendingRemoveGoing, capacity, onUpdatePlanCapacity, plan.id, onRemoveParticipant]);
+
+  const handleConfirmRemoveGoingDirect = useCallback(async () => {
+    if (!pendingRemoveGoing) return;
+    const friend = pendingRemoveGoing;
+    setPendingRemoveGoing(null);
+    setIsForcedDecreaseRemoval(false);
+
+    try {
+      await onRemoveParticipant(plan.id, friend.dbUuid || friend.id);
+    } catch (err: any) {
+      console.error('[AssignedParticipantContainer handleConfirmRemoveGoingDirect] error:', err);
+    }
+  }, [pendingRemoveGoing, plan.id, onRemoveParticipant]);
 
   const handleOpenRemoveGoingReplacePickerFull = useCallback(() => {
     if (!pendingRemoveGoing) return;
@@ -1578,17 +1349,6 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         return;
       }
 
-      // Case 1: INVITED + JOINED = plan_size -> removing a participant must require plan size to decrease
-      if (activeInvitedAndJoinedCount === capacity && capacity > 2) {
-        setIsForcedDecreaseRemoval(true);
-        setPendingRemoveGoing(friend);
-        return;
-      }
-
-      setIsForcedDecreaseRemoval(false);
-
-      // Case 2: INVITED + JOINED > plan_size -> use existing removal flow without forcing a plan-size decrease
-      // Other cases: keep existing normal removal behavior
       const isGoing = goingList.some((g) => (g.dbUuid || g.id) === friendId);
       if (isGoing) {
         setPendingRemoveGoing(friend);
@@ -1608,8 +1368,6 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
       resolvedUserUuid,
       userProfile?.user_id,
       handleLeavePlan,
-      activeInvitedAndJoinedCount,
-      capacity,
     ]
   );
 
@@ -1774,27 +1532,23 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
     targetCapacity: number;
     requiredCount: number;
     candidates: Friend[];
-    options?: { totalCost?: number };
   } | null>(null);
 
   const commitStagedCapacityAndParticipants = useCallback(
     async (
       targetCap: number,
-      targetTotalCost: number,
       mode: 'promote' | 'demote',
       selectedUserIds: string[]
     ) => {
       if (!onUpdatePlanCapacity) return;
 
-      await onUpdatePlanCapacity(plan.id, targetCap, {
-        totalCost: targetTotalCost,
-        autoPromote: false,
-      });
-
       setLocalGoingList(null);
       setLocalWaitlist(null);
 
       if (mode === 'promote') {
+        await onUpdatePlanCapacity(plan.id, targetCap, {
+          autoPromote: false,
+        });
         for (const uId of selectedUserIds) {
           await onMoveToGoing(plan.id, uId, { bypassCapacityCheck: true });
         }
@@ -1802,53 +1556,68 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         for (const uId of selectedUserIds) {
           await onMoveToWaitlist(plan.id, uId);
         }
+        await onUpdatePlanCapacity(plan.id, targetCap, {
+          autoPromote: false,
+        });
       }
     },
     [onUpdatePlanCapacity, plan.id, onMoveToGoing, onMoveToWaitlist]
   );
 
+  const handleWaitlistModeChange = useCallback(
+    async (mode: 'automatic' | 'assigned') => {
+      if (onWaitlistModeChange) {
+        await onWaitlistModeChange(mode);
+        return;
+      }
+      try {
+        await updatePlanDetails(plan.id, {
+          participant_filtering: mode === 'assigned' ? 'ASSIGNED' : 'AUTOMATIC',
+        });
+      } catch (err: any) {
+        console.error('[AssignedParticipantContainer] Error changing waitlist mode:', err);
+      }
+    },
+    [onWaitlistModeChange, updatePlanDetails, plan.id]
+  );
+
   const handleAdjustCapacity = useCallback(
-    async (newVal: number) => {
-      const clampedVal = Math.min(maxCapacity, Math.max(2, newVal));
-      if (clampedVal === capacity || !onUpdatePlanCapacity) return;
+    async (newVal: number | null) => {
+      if (!onUpdatePlanCapacity) return;
 
-      let planCost = currentTotalCost;
-
-      if (planCost <= 0 && isUuid(plan.id)) {
+      if (newVal === null || newVal === undefined) {
+        if (capacity === null) return;
+        setLocalCapacity(null);
         try {
-          const { data: expRow } = await (supabase as any)
-            .from('wallet_expenses')
-            .select('total_amount')
-            .eq('plan_id', plan.id)
-            .or('expense_type.eq.PLAN_EXPENSE,message_id.is.null')
-            .maybeSingle();
-
-          if (expRow && Number(expRow.total_amount || 0) > 0) {
-            planCost = Number(expRow.total_amount);
-            setPlanFeeTotalCostOverride(planCost);
-          }
-        } catch (err) {
-          console.error('[AssignedParticipantContainer handleAdjustCapacity] Error checking wallet_expenses:', err);
+          await onUpdatePlanCapacity(plan.id, null, { autoPromote: false });
+        } catch (err: any) {
+          console.error('[AssignedParticipantContainer handleAdjustCapacity] Error updating capacity to null:', err);
         }
+        return;
       }
 
-      if (clampedVal > capacity) {
+      const clampedVal = Math.min(maxCapacity, Math.max(2, newVal));
+      if (clampedVal === capacity) return;
+
+      // DO NOT call setLocalCapacity(clampedVal) here.
+      // Capacity changes must be treated as pending until required participant movement is confirmed.
+
+      if (clampedVal > (capacity ?? 2)) {
         const rawWaitlist = localWaitlist || waitlistList;
         const goingUserIds = new Set(goingList.map((g) => g.dbUuid || g.id));
         const eligibleWaitlist = rawWaitlist.filter((w) => !goingUserIds.has(w.dbUuid || w.id));
         const availableSpots = clampedVal - goingList.length;
         const requiredCount = Math.min(availableSpots, eligibleWaitlist.length);
 
-        if (requiredCount > 0) {
+        if (availableSpots > 0 && requiredCount > 0) {
           setPendingCapacityAdjustmentSession({
-            originalCapacity: capacity,
+            originalCapacity: capacity ?? 2,
             targetCapacity: clampedVal,
             mode: 'promote',
             requiredCount,
             candidates: eligibleWaitlist,
             selectedUserIds: [],
             stagedUpdates: [],
-            planCost,
           });
           setGuidedAdjustmentState({
             mode: 'promote',
@@ -1859,23 +1628,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
           return;
         }
 
-        if (planCost > 0) {
-          setPendingCapacityTarget(clampedVal);
-          setPendingCapacityAdjustmentSession({
-            originalCapacity: capacity,
-            targetCapacity: clampedVal,
-            mode: 'promote',
-            requiredCount: 0,
-            candidates: [],
-            selectedUserIds: [],
-            stagedUpdates: [],
-            planCost,
-          });
-          setSelectedPlanFeeOption(null);
-          setShowUpdatePlanFeeModal(true);
-          return;
-        }
-
+        setLocalCapacity(clampedVal);
         try {
           await onUpdatePlanCapacity(plan.id, clampedVal, { autoPromote: false });
         } catch (err: any) {
@@ -1884,24 +1637,24 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         return;
       }
 
-      if (clampedVal < capacity) {
+      if (clampedVal < (capacity ?? 2)) {
         const nonHostGoing = goingList.filter((f) => {
           const uId = f.dbUuid || f.id;
-          return !(f.isHost && activeUserId && uId === activeUserId);
+          const isUserHost = f.isHost || (f as any).role === 'HOST' || (activeUserId && uId === activeUserId && isHost);
+          return !isUserHost;
         });
-        const requiredCount = goingList.length - clampedVal;
+        const excessCount = goingList.length - clampedVal;
 
-        if (requiredCount > 0 && nonHostGoing.length > 0) {
-          const count = Math.min(requiredCount, nonHostGoing.length);
+        if (excessCount > 0 && nonHostGoing.length > 0) {
+          const count = Math.min(excessCount, nonHostGoing.length);
           setPendingCapacityAdjustmentSession({
-            originalCapacity: capacity,
+            originalCapacity: capacity ?? 2,
             targetCapacity: clampedVal,
             mode: 'demote',
             requiredCount: count,
             candidates: nonHostGoing,
             selectedUserIds: [],
             stagedUpdates: [],
-            planCost,
           });
           setGuidedAdjustmentState({
             mode: 'demote',
@@ -1912,23 +1665,7 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
           return;
         }
 
-        if (planCost > 0) {
-          setPendingCapacityTarget(clampedVal);
-          setPendingCapacityAdjustmentSession({
-            originalCapacity: capacity,
-            targetCapacity: clampedVal,
-            mode: 'demote',
-            requiredCount: 0,
-            candidates: [],
-            selectedUserIds: [],
-            stagedUpdates: [],
-            planCost,
-          });
-          setSelectedPlanFeeOption(null);
-          setShowUpdatePlanFeeModal(true);
-          return;
-        }
-
+        setLocalCapacity(clampedVal);
         try {
           await onUpdatePlanCapacity(plan.id, clampedVal, { autoPromote: false });
         } catch (err: any) {
@@ -1942,157 +1679,33 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
       maxCapacity,
       onUpdatePlanCapacity,
       plan.id,
-      currentTotalCost,
       localWaitlist,
       waitlistList,
       goingList,
       activeUserId,
+      isHost,
     ]
   );
-
-  const handleSelectAndApplyPlanFeeOption = async (
-    option: 'split_current_cost' | 'keep_cost_per_person'
-  ) => {
-    if (pendingCapacityTarget === null || !onUpdatePlanCapacity || isSubmittingPlanFeeUpdate) return;
-
-    setSelectedPlanFeeOption(option);
-    setIsSubmittingPlanFeeUpdate(true);
-    const targetCap = pendingCapacityTarget;
-    const planCost =
-      pendingCostAction?.initialCost && pendingCostAction.initialCost > 0
-        ? pendingCostAction.initialCost
-        : pendingCapacityAdjustmentSession?.planCost && pendingCapacityAdjustmentSession.planCost > 0
-        ? pendingCapacityAdjustmentSession.planCost
-        : planFeeCurrentTotal > 0
-        ? planFeeCurrentTotal
-        : currentTotalCost;
-    const currentPerPerson = capacity > 0 ? Math.round((planCost / capacity) * 100) / 100 : 0;
-
-    let targetTotalCost = planCost;
-    if (option === 'keep_cost_per_person') {
-      targetTotalCost = Math.round(targetCap * currentPerPerson * 100) / 100;
-    }
-
-    try {
-      const action = pendingCostAction;
-      const session = pendingCapacityAdjustmentSession;
-
-      setShowUpdatePlanFeeModal(false);
-      setPendingCapacityTarget(null);
-      setPendingCostAction(null);
-      setPendingCapacityAdjustmentSession(null);
-      setSelectedPlanFeeOption(null);
-
-      if (action?.type === 'increase_and_promote') {
-        await onUpdatePlanCapacity(plan.id, targetCap, {
-          totalCost: targetTotalCost,
-          autoPromote: false,
-        });
-        setLocalGoingList(null);
-        setLocalWaitlist(null);
-        await onMoveToGoing(plan.id, action.friend!.dbUuid || action.friend!.id, {
-          bypassCapacityCheck: true,
-        });
-      } else if (action?.type === 'increase_and_invite') {
-        await onUpdatePlanCapacity(plan.id, targetCap, {
-          totalCost: targetTotalCost,
-          autoPromote: false,
-        });
-        setLocalGoingList(null);
-        setLocalWaitlist(null);
-        await executeInviteFlow(action.friendIds || [], 'GOING');
-      } else if (action?.type === 'decrease_and_demote') {
-        await onUpdatePlanCapacity(plan.id, targetCap, { totalCost: targetTotalCost });
-        setLocalGoingList(null);
-        setLocalWaitlist(null);
-        await onMoveToWaitlist(plan.id, action.friend!.dbUuid || action.friend!.id);
-      } else if (action?.type === 'decrease_and_remove') {
-        await onUpdatePlanCapacity(plan.id, targetCap, { totalCost: targetTotalCost });
-        setLocalGoingList(null);
-        setLocalWaitlist(null);
-        await onRemoveParticipant(plan.id, action.friend!.dbUuid || action.friend!.id);
-      } else if (session) {
-        await commitStagedCapacityAndParticipants(
-          targetCap,
-          targetTotalCost,
-          session.mode,
-          session.selectedUserIds
-        );
-      } else {
-        await onUpdatePlanCapacity(plan.id, targetCap, {
-          totalCost: targetTotalCost,
-          autoPromote: false,
-        });
-      }
-    } catch (err: any) {
-      console.error('[AssignedParticipantContainer handleSelectAndApplyPlanFeeOption] Failed:', err);
-    } finally {
-      setIsSubmittingPlanFeeUpdate(false);
-      setLocalGoingList(null);
-      setLocalWaitlist(null);
-    }
-  };
 
   const handleConfirmGuidedAdjustment = useCallback(
     async (selectedUserIds: string[]) => {
       if (!guidedAdjustmentState || !pendingCapacityAdjustmentSession) return;
       const { mode, targetCapacity } = guidedAdjustmentState;
-      const planCost = pendingCapacityAdjustmentSession.planCost;
 
-      const stagedUpdates = selectedUserIds.map((userId) => {
-        const member = members.find(
-          (m) => (m.userId || m.userUuid || m.user_id || m.id || m.dbUuid) === userId
-        );
-        const pp = dbPlanParticipants.find((p: any) => p.user_id === userId);
-        const rawRsvp = pp ? pp.rsvp_status : member?.joinState || member?.rsvp_status;
-        const currentRsvp = normalizeStatus(rawRsvp);
-
-        if (mode === 'promote') {
-          const targetRsvp = currentRsvp === 'INVITED' ? 'INVITED' : 'JOINED';
-          return {
-            userId,
-            originalRsvpStatus: currentRsvp,
-            targetRsvpStatus: targetRsvp as 'INVITED' | 'JOINED',
-            targetAssignedGroup: 'GOING' as const,
-          };
-        } else {
-          const targetRsvp = currentRsvp === 'INVITED' ? 'INVITED' : 'WAITLISTED';
-          return {
-            userId,
-            originalRsvpStatus: currentRsvp,
-            targetRsvpStatus: targetRsvp as 'INVITED' | 'WAITLISTED',
-            targetAssignedGroup: 'WAITLIST' as const,
-          };
-        }
-      });
-
-      const updatedSession = {
-        ...pendingCapacityAdjustmentSession,
-        selectedUserIds,
-        stagedUpdates,
-      };
-      setPendingCapacityAdjustmentSession(updatedSession);
       setGuidedAdjustmentState(null);
+      setPendingCapacityAdjustmentSession(null);
+      setReopenPlanSizeCapacity(null);
+      setLocalCapacity(targetCapacity);
 
-      if (planCost > 0) {
-        setPendingCapacityTarget(targetCapacity);
-        setSelectedPlanFeeOption(null);
-        setShowUpdatePlanFeeModal(true);
-      } else {
-        try {
-          await commitStagedCapacityAndParticipants(targetCapacity, 0, mode, selectedUserIds);
-        } catch (err: any) {
-          console.error('[AssignedParticipantContainer handleConfirmGuidedAdjustment] Commit error:', err);
-        } finally {
-          setPendingCapacityAdjustmentSession(null);
-        }
+      try {
+        await commitStagedCapacityAndParticipants(targetCapacity, mode, selectedUserIds);
+      } catch (err: any) {
+        console.error('[AssignedParticipantContainer handleConfirmGuidedAdjustment] Commit error:', err);
       }
     },
     [
       guidedAdjustmentState,
       pendingCapacityAdjustmentSession,
-      members,
-      dbPlanParticipants,
       commitStagedCapacityAndParticipants,
     ]
   );
@@ -2151,7 +1764,6 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
 
   const isAnyBottomSheetOpen = Boolean(
     isActionSheetOpen ||
-      showUpdatePlanFeeModal ||
       pendingCapacityInvite ||
       pendingPromoteToGoing ||
       pendingMoveToWaitlist ||
@@ -2228,6 +1840,13 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         onAddFriends={
           canInvite
             ? (targetTab) => {
+                if (goingMembers.length >= 50) {
+                  showToast(
+                    "Plan size reached. This plan already has 50 participants. No more participants can join this plan.",
+                    "error"
+                  );
+                  return;
+                }
                 setAddFriendsTargetTab(targetTab === 'waitlist' ? 'WAITLIST' : 'GOING');
                 setShowAddFriendsPicker(true);
               }
@@ -2238,7 +1857,9 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         onOpenActivity={onOpenActivity}
         onPlanSizeEditingChange={onPlanSizeEditingChange}
         onBottomSheetStateChange={setIsActionSheetOpen}
-        showWaitlistMode={false}
+        showWaitlistMode={true}
+        onWaitlistModeChange={handleWaitlistModeChange}
+        isCapacityConfigured={capacity !== null && capacity !== undefined}
         onReorderWaitlist={effectiveIsHost ? handleReorderWaitlist : undefined}
         onReorderWaitlistComplete={effectiveIsHost ? handleReorderWaitlistComplete : undefined}
         canParticipantInvite={canParticipantInvite}
@@ -2341,16 +1962,9 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         goingCount={goingMembers.length}
         waitlistCount={waitlistList.length}
         planSize={capacity}
-        title={isForcedDecreaseRemoval ? 'Decrease Plan Size' : undefined}
-        subtitle={
-          isForcedDecreaseRemoval
-            ? `Plan size will decrease from ${capacity} to ${Math.max(2, capacity - 1)}.`
-            : undefined
-        }
         onDecreaseCapacity={handleConfirmDecreaseCapacityForRemoveGoing}
-        onReplaceParticipant={
-          isForcedDecreaseRemoval ? undefined : handleOpenRemoveGoingReplacePickerFull
-        }
+        onReplaceParticipant={handleOpenRemoveGoingReplacePickerFull}
+        onRemoveParticipant={handleConfirmRemoveGoingDirect}
         onCancelPlan={onCancelPlan ? () => onCancelPlan(plan.id) : undefined}
         onClose={handleCancelPendingRemoveGoing}
       />
@@ -2375,16 +1989,19 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         initialSelectedIds={pendingCapacityAdjustmentSession?.selectedUserIds || []}
         onConfirm={handleConfirmGuidedAdjustment}
         onBack={() => {
-          const target = guidedAdjustmentState?.targetCapacity;
+          // Reopen Plan Size sheet showing the CURRENT SAVED capacity (originalCapacity),
+          // NOT the pending target. The pending change is discarded on Back.
+          const originalCapacity = pendingCapacityAdjustmentSession?.originalCapacity ?? capacity;
           setGuidedAdjustmentState(null);
-          if (target !== undefined && target !== null) {
-            setReopenPlanSizeCapacity(target);
+          setPendingCapacityAdjustmentSession(null);
+          if (originalCapacity !== undefined && originalCapacity !== null) {
+            setReopenPlanSizeCapacity(originalCapacity);
           }
         }}
         onClose={() => {
           setGuidedAdjustmentState(null);
           setPendingCapacityAdjustmentSession(null);
-          setPendingCapacityTarget(null);
+          setReopenPlanSizeCapacity(null);
         }}
       />
 
@@ -2417,241 +2034,6 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
         onConfirm={handleConfirmSwap}
         onClose={() => setSwapState(null)}
       />
-
-      {showUpdatePlanFeeModal && pendingCapacityTarget !== null && (
-        <div
-          onClick={() => {
-            if (!isSubmittingPlanFeeUpdate) {
-              setShowUpdatePlanFeeModal(false);
-              setPendingCapacityTarget(null);
-              setPendingCostAction(null);
-              setSelectedPlanFeeOption(null);
-              setPendingCapacityAdjustmentSession(null);
-            }
-          }}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.6)',
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'flex-end',
-            animation: 'fadeIn 0.2s ease-out',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%',
-              background: '#1C1C1E',
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              paddingBottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
-              color: '#FFFFFF',
-              fontFamily: 'Inter, sans-serif',
-              boxShadow: '0 -8px 24px rgba(0, 0, 0, 0.3)',
-              animation: 'slideUp 0.28s cubic-bezier(0.25, 1, 0.5, 1)',
-            }}
-            className="select-none text-left"
-          >
-            <div className="flex justify-center pt-3 pb-4">
-              <div className="w-9 h-1 rounded-full bg-white/20" />
-            </div>
-
-            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
-              {pendingCapacityAdjustmentSession && pendingCapacityAdjustmentSession.requiredCount > 0 && (
-                <button
-                  type="button"
-                  disabled={isSubmittingPlanFeeUpdate}
-                  onClick={() => {
-                    if (isSubmittingPlanFeeUpdate) return;
-                    setShowUpdatePlanFeeModal(false);
-                    setPendingCapacityTarget(null);
-                    setSelectedPlanFeeOption(null);
-                    setGuidedAdjustmentState({
-                      mode: pendingCapacityAdjustmentSession.mode,
-                      targetCapacity: pendingCapacityAdjustmentSession.targetCapacity,
-                      requiredCount: pendingCapacityAdjustmentSession.requiredCount,
-                      candidates: pendingCapacityAdjustmentSession.candidates,
-                    });
-                  }}
-                  className="p-1 -ml-1 text-white hover:text-white/80 active:scale-95 transition cursor-pointer flex items-center justify-center shrink-0"
-                  title="Back"
-                  aria-label="Back to Move Participants"
-                >
-                  <ArrowLeft className="w-5 h-5 text-white" />
-                </button>
-              )}
-              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
-                <DiscoveryImages
-                  src={plan.coverImage || (plan as any).cover_image || (matchedDbPlan as any)?.cover_image}
-                  planId={targetPlanUuid || plan.id}
-                  category={plan.category || (matchedDbPlan as any)?.category}
-                  subcategory={(plan as any).subcategory || (matchedDbPlan as any)?.subcategory}
-                  screen="Plan Actions Avatar"
-                  alt={plan.title || 'Plan'}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
-                  {plan.title || 'Plan'}
-                </h3>
-                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
-                  Update the cost
-                </p>
-              </div>
-            </div>
-
-            <div className="px-4 pt-4 flex flex-col gap-2.5">
-              <button
-                type="button"
-                disabled={isSubmittingPlanFeeUpdate}
-                onClick={() => handleSelectAndApplyPlanFeeOption('split_current_cost')}
-                style={{
-                  width: '100%',
-                  height: 48,
-                  padding: '0 14px',
-                  background:
-                    selectedPlanFeeOption === 'split_current_cost'
-                      ? 'rgba(255, 255, 255, 0.12)'
-                      : 'rgba(255, 255, 255, 0.06)',
-                  border: 'none',
-                  borderRadius: 12,
-                  color: '#FFFFFF',
-                  textAlign: 'left',
-                  cursor: isSubmittingPlanFeeUpdate ? 'default' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  transition: 'all 0.15s ease',
-                  opacity:
-                    isSubmittingPlanFeeUpdate && selectedPlanFeeOption !== 'split_current_cost'
-                      ? 0.5
-                      : 1,
-                }}
-              >
-                <Split className="w-5 h-5 text-[#10B981] flex-shrink-0" />
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    minWidth: 0,
-                    flex: 1,
-                    justifyContent: 'center',
-                  }}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF', lineHeight: 1.2 }}>
-                    Split the total
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: 'rgba(255, 255, 255, 0.5)',
-                      lineHeight: 1.2,
-                      marginTop: 1,
-                    }}
-                  >
-                    {planFeeCurrentTotal > 0 && pendingCapacityTarget ? (
-                      `₹${Math.round(planFeeCurrentTotal).toLocaleString('en-IN')} ÷ ${pendingCapacityTarget} = ₹${Math.round(
-                        planFeeOptionBPerPerson
-                      ).toLocaleString('en-IN')}/person`
-                    ) : (
-                      'Keep the total cost and split it among participants'
-                    )}
-                  </span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                disabled={isSubmittingPlanFeeUpdate}
-                onClick={() => handleSelectAndApplyPlanFeeOption('keep_cost_per_person')}
-                style={{
-                  width: '100%',
-                  height: 48,
-                  padding: '0 14px',
-                  background:
-                    selectedPlanFeeOption === 'keep_cost_per_person'
-                      ? 'rgba(255, 255, 255, 0.12)'
-                      : 'rgba(255, 255, 255, 0.06)',
-                  border: 'none',
-                  borderRadius: 12,
-                  color: '#FFFFFF',
-                  textAlign: 'left',
-                  cursor: isSubmittingPlanFeeUpdate ? 'default' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  transition: 'all 0.15s ease',
-                  opacity:
-                    isSubmittingPlanFeeUpdate && selectedPlanFeeOption !== 'keep_cost_per_person'
-                      ? 0.5
-                      : 1,
-                }}
-              >
-                <Merge className="w-5 h-5 text-[#10B981] flex-shrink-0" />
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    minWidth: 0,
-                    flex: 1,
-                    justifyContent: 'center',
-                  }}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF', lineHeight: 1.2 }}>
-                    {planFeeCurrentTotal > 0
-                      ? `Keep ₹${Math.round(planFeeCurrentPerPerson).toLocaleString('en-IN')}/person`
-                      : 'Keep cost per person'}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: 'rgba(255, 255, 255, 0.5)',
-                      lineHeight: 1.2,
-                      marginTop: 1,
-                    }}
-                  >
-                    {planFeeCurrentTotal > 0
-                      ? `New total: ₹${Math.round(planFeeOptionANewTotal).toLocaleString('en-IN')}`
-                      : 'Calculate new total based on participant count'}
-                  </span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                disabled={isSubmittingPlanFeeUpdate}
-                onClick={() => {
-                  if (!isSubmittingPlanFeeUpdate) {
-                    setShowUpdatePlanFeeModal(false);
-                    setPendingCapacityTarget(null);
-                    setPendingCostAction(null);
-                    setSelectedPlanFeeOption(null);
-                    setPendingCapacityAdjustmentSession(null);
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: 'none',
-                  border: 'none',
-                  borderRadius: 12,
-                  color: 'rgba(255, 255, 255, 0.4)',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  cursor: isSubmittingPlanFeeUpdate ? 'default' : 'pointer',
-                  textAlign: 'center',
-                  marginTop: 6,
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };

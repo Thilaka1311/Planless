@@ -6,15 +6,24 @@ import {
   StatusTabItem,
 } from '../../plans/components/PlansDivider';
 
-interface ParticipantTabsProps {
+export interface ParticipantTabsProps {
   visibleTabs: ParticipantTab[];
   activeTab: ParticipantTab;
   goingCount: number;
-  capacity: number;
+  capacity?: number | null;
   waitlistCount: number;
-  invitedCount: number;
+  invitedCount?: number;
+  noLimitDenominator?: number;
+  skippedCount?: number;
+  isCompletedPlan?: boolean;
+  hideCapacityDenominator?: boolean;
   onTabChange: (tab: ParticipantTab) => void;
+  onTapInvited?: () => void;
   onAddFriends?: () => void;
+  className?: string;
+  containerClassName?: string;
+  layoutId?: string;
+  rightAction?: React.ReactNode;
 }
 
 export const ParticipantTabs: React.FC<ParticipantTabsProps> = ({
@@ -24,8 +33,17 @@ export const ParticipantTabs: React.FC<ParticipantTabsProps> = ({
   capacity,
   waitlistCount,
   invitedCount,
+  noLimitDenominator,
+  skippedCount,
+  isCompletedPlan,
+  hideCapacityDenominator = false,
   onTabChange,
+  onTapInvited,
   onAddFriends,
+  className,
+  containerClassName = "px-5 my-4 shrink-0",
+  layoutId = "participant_tabs_active_pill",
+  rightAction,
 }) => {
   if (visibleTabs.length === 0) {
     return null;
@@ -33,9 +51,21 @@ export const ParticipantTabs: React.FC<ParticipantTabsProps> = ({
 
   const tabs: StatusTabItem<ParticipantTab>[] = visibleTabs.map((key) => {
     let label = '';
-    if (key === 'invited') label = `Invited (${invitedCount})`;
-    if (key === 'going') label = `Going (${goingCount} / ${capacity})`;
-    if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
+    if (isCompletedPlan) {
+      if (key === 'going') label = `Attended (${goingCount})`;
+      if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
+    } else {
+      if (key === 'invited') label = `Invited (${invitedCount ?? goingCount})`;
+      if (key === 'going') {
+        const isNoLimit = capacity === undefined || capacity === null;
+        const denominator = isNoLimit ? (noLimitDenominator ?? invitedCount ?? goingCount) : capacity;
+        label = (!hideCapacityDenominator && denominator !== undefined && denominator !== null)
+          ? `Joined (${goingCount} / ${denominator})`
+          : `Joined (${goingCount})`;
+      }
+      if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
+      if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
+    }
 
     return {
       id: key,
@@ -44,15 +74,23 @@ export const ParticipantTabs: React.FC<ParticipantTabsProps> = ({
     };
   });
 
+  const handleSelect = (tab: ParticipantTab) => {
+    onTabChange(tab);
+    if (tab === 'invited' && onTapInvited) {
+      onTapInvited();
+    }
+  };
+
   return (
-    <div className="px-5 my-4 shrink-0 flex items-center gap-2">
+    <div className={containerClassName}>
       <SegmentedStatusToggle
-        className="flex-1"
+        className={className}
         tabs={tabs}
         selected={activeTab}
-        onSelect={onTabChange}
-        layoutId="shared_participant_tabs_active_pill"
+        onSelect={handleSelect}
+        layoutId={layoutId}
       />
+      {rightAction}
       {onAddFriends && (
         <button
           onClick={onAddFriends}

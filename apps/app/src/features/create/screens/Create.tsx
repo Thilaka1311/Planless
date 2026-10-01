@@ -216,12 +216,12 @@ export const CreatePlanScreen = ({
   };
 
   useEffect(() => {
-    const isFlow = createPhase !== 'category';
+    const isFlow = createPhase !== 'category' || lastSubScreen === 'quick-plans';
     onToggleBottomNav?.(isFlow);
     return () => {
       onToggleBottomNav?.(false);
     };
-  }, [createPhase, onToggleBottomNav]);
+  }, [createPhase, lastSubScreen, onToggleBottomNav]);
 
   const handleHostPlanSubmit = async () => {
     if (form.isSubmitting) return;
@@ -314,11 +314,6 @@ export const CreatePlanScreen = ({
     const responseDeadlineAt = deadlineDate.toISOString();
     const parsedIsoDateTime = planEventDate.toISOString();
 
-    const locationToUse = form.localLocation ? form.localLocation.trim() : "";
-    const placeAddressToUse = form.placeAddress ? form.placeAddress.trim() : (locationToUse || "");
-
-    const costToUse = Math.max(0, Number(form.costAmount) || 0);
-
     let dbCategory: string = "CUSTOM";
     let dbSubcategory: string = "OTHER";
 
@@ -327,14 +322,27 @@ export const CreatePlanScreen = ({
       dbSubcategory = selectedSubcategory ? selectedSubcategory.toUpperCase() : (selectedCategory === "sports" ? "FOOTBALL" : "OTHER");
     }
 
+    const isMovie = selectedCategory === "movies" || dbCategory === "MOVIES";
+    const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
+
+    let locationToUse = form.localLocation ? form.localLocation.trim() : "";
+    if (isMovie && isYearOnly(locationToUse)) {
+      locationToUse = "";
+    }
+
+    let placeAddressToUse = form.placeAddress ? form.placeAddress.trim() : (locationToUse || "");
+    if (isMovie && isYearOnly(placeAddressToUse)) {
+      placeAddressToUse = "";
+    }
+
+    const costToUse = Math.max(0, Number(form.costAmount) || 0);
+
     const isAssigned = form.waitlistMode === "assigned";
     const planSizeToUse = form.totalCapacity !== undefined && form.totalCapacity !== null ? Number(form.totalCapacity) : null;
 
     const newDbPlan = {
       public_id: planId,
-      discovery_item_id: form.discoveryItemId || null,
       category: dbCategory,
-      subcategory: dbSubcategory,
       title: titleToUse,
       place_id: form.placeId || null,
       place_name: locationToUse,
@@ -347,7 +355,7 @@ export const CreatePlanScreen = ({
       total_cost: costToUse,
       cover_image: coverUrl,
       status: "LIVE" as const,
-      participant_filtering: (isAssigned ? "ASSIGNED" : "AUTOMATIC") as 'AUTOMATIC' | 'ASSIGNED',
+      participant_filtering: planSizeToUse === null ? null : ((isAssigned ? "ASSIGNED" : "AUTOMATIC") as 'AUTOMATIC' | 'ASSIGNED'),
       waitlist_order_mode: (isAssigned ? "CUSTOM" : "AUTO") as 'AUTO' | 'CUSTOM',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -622,14 +630,15 @@ export const CreatePlanScreen = ({
 
         // 3. Pre-fill essential metadata only
         form.setLocalTitle(item.title);
-        form.setLocalLocation(item.location || "");
+        const isMovieItem = lowerCategory === "movies" || (item.category && item.category.toUpperCase() === "MOVIES");
+        form.setLocalLocation(isMovieItem ? "" : (item.location || ""));
         form.setCustomCoverImage(item.cover_image_url || defaultPlanCover);
 
         // Pre-populate coordinate mapping metadata from discovery selection
-        if (form.setPlaceId) form.setPlaceId((item as any).place_id || null);
-        if (form.setPlaceAddress) form.setPlaceAddress((item as any).place_address || item.location || null);
-        if (form.setLatitude) form.setLatitude((item as any).latitude || null);
-        if (form.setLongitude) form.setLongitude((item as any).longitude || null);
+        if (form.setPlaceId) form.setPlaceId(isMovieItem ? null : ((item as any).place_id || null));
+        if (form.setPlaceAddress) form.setPlaceAddress(isMovieItem ? null : ((item as any).place_address || item.location || null));
+        if (form.setLatitude) form.setLatitude(isMovieItem ? null : ((item as any).latitude || null));
+        if (form.setLongitude) form.setLongitude(isMovieItem ? null : ((item as any).longitude || null));
 
         // Notes, Cost, RSVP Deadline, and Participants are intentionally left empty/default
         form.setCostAmount(0);

@@ -435,7 +435,7 @@ export function ManageParticipantAnimation({
                     <div className="flex items-center gap-1 font-semibold text-right">
                       <IndianRupee className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400" />
                       <span className="font-sans tracking-tight text-[11.5px] xs:text-[12px] text-white/90 font-semibold">
-                        100 / person
+                        100
                       </span>
                     </div>
                   </div>

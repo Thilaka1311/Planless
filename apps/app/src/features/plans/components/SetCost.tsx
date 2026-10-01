@@ -53,27 +53,42 @@ export const SetCostScreen: React.FC<SetCostScreenProps> = ({
 
   const parsedAmount = parseFloat(costAmount) || 0;
 
-  // All invited participants (including waitlisted) for the avatar stack
+  // All invited participants (excluding skipped/waitlisted if needed) for the avatar stack
   const displayParticipants: ParticipantItem[] =
     participants && participants.length > 0
       ? participants
       : [{ id: "host", name: "You", avatar: "", isHost: true }];
 
-  // Cost split is strictly divided by Plan Size (capacity), not total invited count
-  const effectivePlanSize = Number(planSize) > 0 ? Number(planSize) : displayParticipants.length;
-  const splitCount = effectivePlanSize > 0 ? effectivePlanSize : 1;
+  // isNoLimit: when no plan size is set (null / undefined / 0)
+  const isNoLimit = planSize === null || planSize === undefined || Number(planSize) <= 0;
+
+  // Count logic:
+  //   No Limit → show total invited participants
+  //   Limited  → show plan size (the cost is split by plan size, not head count)
+  const displayCount = isNoLimit ? displayParticipants.length : Number(planSize);
+  const splitCount = displayCount > 0 ? displayCount : 1;
   const perPersonAmount = splitCount > 0 ? parsedAmount / splitCount : 0;
 
   const perPersonFormatted =
     perPersonAmount % 1 === 0
       ? perPersonAmount.toLocaleString("en-IN")
       : perPersonAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  void perPersonFormatted;
 
-  const peopleLabel = splitCount === 1 ? "1 person" : `${splitCount} people`;
+  const peopleLabel = displayCount === 1 ? "1 person" : `${displayCount} people`;
 
-  // Avatar stack slice (up to 4 avatars + remainder count) representing all invited people
-  const visibleAvatars = displayParticipants.slice(0, 4);
-  const remainingCount = displayParticipants.length - visibleAvatars.length;
+  // Sort avatar stack: real profile photos first, then default avatars
+  // This ensures users who uploaded photos are shown in the stack
+  const hasRealAvatar = (p: ParticipantItem) => Boolean(p.avatar && p.avatar.trim().length > 0);
+  const sortedParticipants = [...displayParticipants].sort((a, b) => {
+    const aReal = hasRealAvatar(a) ? 0 : 1;
+    const bReal = hasRealAvatar(b) ? 0 : 1;
+    return aReal - bReal;
+  });
+
+  // Avatar stack: up to 4 visible + remainder count
+  const visibleAvatars = sortedParticipants.slice(0, 4);
+  const remainingCount = sortedParticipants.length - visibleAvatars.length;
 
   const handleAddCost = () => {
     onSave(parsedAmount);
@@ -156,11 +171,11 @@ export const SetCostScreen: React.FC<SetCostScreenProps> = ({
           </div>
         </div>
 
-        {/* ── Middle Group: 'Split between' Label + Larger Avatar Stack + People Count ── */}
+        {/* ── Middle Group: 'Participants' Label + Larger Avatar Stack + People Count ── */}
         <div className="flex flex-col items-center text-center select-none my-auto">
-          {/* Muted 'Split between' Label (Visually stronger) */}
+          {/* Muted 'Participants' Label */}
           <span className="text-[15px] sm:text-[16px] text-zinc-400 font-medium tracking-tight mb-3 select-none">
-            Split between
+            Participants
           </span>
 
           {/* Overlapping Avatar Stack */}
@@ -181,7 +196,7 @@ export const SetCostScreen: React.FC<SetCostScreenProps> = ({
             )}
           </div>
 
-          {/* People Count (More prominent) */}
+          {/* People Count */}
           <span className="text-[16px] sm:text-[17px] text-zinc-300 font-medium tracking-tight mt-3 select-none">
             {peopleLabel}
           </span>
@@ -191,16 +206,11 @@ export const SetCostScreen: React.FC<SetCostScreenProps> = ({
         <div className="h-1" />
       </div>
 
-      {/* ── Fixed Bottom Action Section: Per-Person Cost & Add Cost Button ── */}
+      {/* ── Fixed Bottom Action Section: Total Plan Cost & Add Cost Button ── */}
       <div
         className="px-6 pt-2 pb-6 flex flex-col items-center select-none"
         style={{ paddingBottom: "max(24px, calc(16px + env(safe-area-inset-bottom, 0px)))" }}
       >
-        {/* Per-Person Cost directly above button */}
-        <span className="text-[22px] sm:text-[24px] text-white font-bold tracking-tight mb-3.5">
-          {parsedAmount > 0 ? `₹${perPersonFormatted} each` : "Free"}
-        </span>
-
         {/* Add Cost Button */}
         <button
           type="button"

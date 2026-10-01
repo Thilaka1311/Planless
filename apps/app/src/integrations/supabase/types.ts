@@ -688,12 +688,11 @@ export type Database = {
           cover_card_image: string | null
           cover_image: string | null
           created_at: string
-          discovery_item_id: string | null
           id: string
           invited_participants: number | null
           latitude: number | null
           longitude: number | null
-          participant_filtering: Database["public"]["Enums"]["participant_filtering_type"]
+          participant_filtering: Database["public"]["Enums"]["participant_filtering_type"] | null
           place_address: string
           place_id: string | null
           place_name: string
@@ -702,7 +701,6 @@ export type Database = {
           rsvp_deadline: string
           scheduled_at: string
           status: Database["public"]["Enums"]["plan_status"]
-          subcategory: string
           title: string
           total_cost: number
           updated_at: string
@@ -715,12 +713,11 @@ export type Database = {
           cover_card_image?: string | null
           cover_image?: string | null
           created_at?: string
-          discovery_item_id?: string | null
           id?: string
           invited_participants?: number | null
           latitude?: number | null
           longitude?: number | null
-          participant_filtering?: Database["public"]["Enums"]["participant_filtering_type"]
+          participant_filtering?: Database["public"]["Enums"]["participant_filtering_type"] | null
           place_address: string
           place_id?: string | null
           place_name: string
@@ -729,7 +726,6 @@ export type Database = {
           rsvp_deadline: string
           scheduled_at: string
           status?: Database["public"]["Enums"]["plan_status"]
-          subcategory?: string
           title: string
           total_cost?: number
           updated_at?: string
@@ -742,12 +738,11 @@ export type Database = {
           cover_card_image?: string | null
           cover_image?: string | null
           created_at?: string
-          discovery_item_id?: string | null
           id?: string
           invited_participants?: number | null
           latitude?: number | null
           longitude?: number | null
-          participant_filtering?: Database["public"]["Enums"]["participant_filtering_type"]
+          participant_filtering?: Database["public"]["Enums"]["participant_filtering_type"] | null
           place_address?: string
           place_id?: string | null
           place_name?: string
@@ -756,21 +751,12 @@ export type Database = {
           rsvp_deadline?: string
           scheduled_at?: string
           status?: Database["public"]["Enums"]["plan_status"]
-          subcategory?: string
           title?: string
           total_cost?: number
           updated_at?: string
           waitlist_order_mode?: Database["public"]["Enums"]["waitlist_order_mode_enum"]
         }
-        Relationships: [
-          {
-            foreignKeyName: "plans_discovery_item_id_fkey"
-            columns: ["discovery_item_id"]
-            isOneToOne: false
-            referencedRelation: "discovery_items"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       quick_plan_participants: {
         Row: {

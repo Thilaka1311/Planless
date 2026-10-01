@@ -286,6 +286,22 @@ export function useCreatePlanForm() {
     setIsCapacityManuallySet(nextVal !== undefined);
   }, []);
 
+  const handleSetWaitlistMode = useCallback((newMode: 'automatic' | 'assigned') => {
+    setWaitlistMode(newMode);
+    if (newMode === 'assigned') {
+      setTotalCapacity((prevCap) => {
+        if (prevCap !== undefined && prevCap !== null) {
+          const hostCount = isHostSelected ? 1 : 0;
+          const invited = hostCount + selectedFriends.length;
+          if (prevCap > invited) {
+            return Math.max(2, invited);
+          }
+        }
+        return prevCap;
+      });
+    }
+  }, [isHostSelected, selectedFriends.length]);
+
   const handleSetSelectedFriends = useCallback((updater: any[] | ((prev: any[]) => any[])) => {
     setSelectedFriends((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
@@ -402,7 +418,7 @@ export function useCreatePlanForm() {
     longitude, setLongitude,
     placeAddress, setPlaceAddress,
     discoveryItemId, setDiscoveryItemId,
-    waitlistMode, setWaitlistMode,
+    waitlistMode, setWaitlistMode: handleSetWaitlistMode,
     AVAILABLE_FRIENDS,
     totalInvitedCount,
     toggleFriendSelection,

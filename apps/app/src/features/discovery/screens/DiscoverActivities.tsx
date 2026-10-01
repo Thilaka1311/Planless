@@ -660,7 +660,7 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
             <div className="flex flex-col items-center justify-center py-20 space-y-3">
               <Loader2 className="w-6 h-6 animate-spin text-pink-500" />
               <p className="text-xs text-zinc-400 font-medium">
-                Searching places for &quot;{searchQuery.trim()}&quot;...
+                Searching all places...
               </p>
             </div>
           ) : searchResults.length > 0 ? (
@@ -680,11 +680,11 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
             />
           ) : (
             <div className="px-6 py-16 text-center space-y-2">
-              <p className="text-zinc-400 text-sm font-medium">
-                No activities found for &quot;{searchQuery}&quot;.
+              <p className="text-zinc-300 text-sm font-medium">
+                No places found
               </p>
               <p className="text-zinc-500 text-xs">
-                Try searching for a different area, landmark, or activity category.
+                Try searching for another place.
               </p>
             </div>
           )

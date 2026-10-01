@@ -34,10 +34,8 @@ export interface DbPlan {
   public_id: string;
   host_id?: string;
   created_by?: string;
-  discovery_item_id?: string | null;
-  discovery_items?: { category: string; subcategory: string | null } | null;
   category?: string;
-  subcategory?: string;
+  subcategory?: string | null;
   title: string;
   description: string;
   place_id: string;
@@ -57,7 +55,7 @@ export interface DbPlan {
   latitude?: number | null;
   longitude?: number | null;
   allow_participant_invites?: boolean;
-  participant_filtering?: 'AUTOMATIC' | 'ASSIGNED';
+  participant_filtering?: 'AUTOMATIC' | 'ASSIGNED' | null;
   waitlist_order_mode?: 'AUTO' | 'CUSTOM';
 }
 

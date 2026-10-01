@@ -113,7 +113,9 @@ export function mapTmdbMovieToDiscoveryItem(
     subcategory,
     description: movie.overview || "No synopsis available for this title.",
     cover_image_url: getTmdbPosterUrl(movie.poster_path, "w500"),
-    location: releaseYear ? `${releaseYear}` : "",
+    // Movies do not have a physical location — leave it empty so the create flow
+    // does not populate the location field with the release year.
+    location: "",
     suggested_duration_minutes: 150,
     suggested_cost_amount: null,
     suggested_capacity: 4,
@@ -180,7 +182,11 @@ export function getCachedMovieSection(key: string): DiscoveryItem[] {
     const raw = window.localStorage.getItem(`planless_tmdb_${key}`);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed?.items) ? parsed.items : [];
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    return items.map((item: any) => ({
+      ...item,
+      location: "",
+    }));
   } catch {
     return [];
   }

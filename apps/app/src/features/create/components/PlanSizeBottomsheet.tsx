@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { Minus, Plus, Users, UserPlus } from "lucide-react";
+import { useToast } from "../../../shared/contexts/ToastContext";
 
 export interface PlanSizeBottomsheetProps {
   isOpen: boolean;
@@ -40,6 +41,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   onClose,
   onAddParticipants,
 }) => {
+  const { showToast } = useToast();
   const isInitialNoLimit = capacity === null || capacity === undefined;
   const effectiveMaxCapacity =
     limitToInvitedCount && invitedCount !== undefined
@@ -71,7 +73,6 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
       hasCommittedRef.current = false;
       setShowInviteHint(false);
     } else if (!isOpen && prevIsOpenRef.current) {
-      // In case sheet was closed from external state without handleClose having been called
       if (!hasCommittedRef.current) {
         hasCommittedRef.current = true;
         const finalVal = draftCapacityRef.current;
@@ -101,7 +102,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
       return;
     }
     if (currentCapacity <= minCapacity) {
-      // 2 -> No limit
+      // When count reaches 2, pressing minus again switches to No Limit
       setDraftCapacity(null);
       draftCapacityRef.current = null;
       return;
@@ -113,7 +114,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
 
   const handleIncrement = () => {
     if (currentCapacity === null) {
-      // No limit -> 2
+      // Pressing plus from "No Limit" returns to numeric limit of 2 (minCapacity)
       setDraftCapacity(minCapacity);
       draftCapacityRef.current = minCapacity;
       return;
@@ -153,6 +154,14 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   };
 
   const handleAddParticipants = () => {
+    // If joined count has reached the 50 hard cap, show error and do NOT open add flow
+    if (joinedCount !== undefined && joinedCount >= 50) {
+      showToast(
+        "Plan size reached. This plan already has 50 participants. No more participants can join this plan.",
+        "error"
+      );
+      return;
+    }
     commitChangeIfDifferent();
     onClose();
     onAddParticipants?.();
@@ -161,28 +170,21 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   let capacitySummary: string;
   if (currentCapacity === null) {
     const totalCount = invitedCount ?? joinedCount ?? 0;
-    capacitySummary = totalCount > 0 ? `${totalCount} going • No waitlist` : "Unlimited capacity";
+    capacitySummary = `${totalCount} invited`;
   } else if (isAutomatic) {
     const going = currentCapacity;
     const waitlisted = Math.max(0, (invitedCount ?? currentCapacity) - currentCapacity);
-    capacitySummary = `${going} going • ${waitlisted} waitlisted`;
+    capacitySummary =
+      waitlisted > 0 ? `${going} going • ${waitlisted} waitlisted` : `${going} going`;
   } else {
-    const isCapacityReached = joinedCount !== undefined ? joinedCount >= currentCapacity : true;
-    const effectiveWaitlistedCount =
-      waitlistedCount !== undefined
-        ? waitlistedCount
-        : isCapacityReached && invitedCount !== undefined
-        ? Math.max(0, invitedCount - currentCapacity)
-        : 0;
-    const effectiveGoingCount =
-      joinedCount !== undefined
-        ? joinedCount
-        : Math.min(currentCapacity, invitedCount ?? currentCapacity);
+    const totalInvited = invitedCount ?? ((joinedCount ?? 0) + (waitlistedCount ?? 0));
+    const targetGoing = Math.min(currentCapacity, totalInvited);
+    const targetWaitlisted = Math.max(0, totalInvited - currentCapacity);
 
     capacitySummary =
-      effectiveWaitlistedCount > 0
-        ? `${effectiveGoingCount} going • ${effectiveWaitlistedCount} waitlisted`
-        : `${effectiveGoingCount} going`;
+      targetWaitlisted > 0
+        ? `${targetGoing} going • ${targetWaitlisted} waitlisted`
+        : `${targetGoing} going`;
   }
 
   const node = (
@@ -194,9 +196,10 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleClose}
-            onTouchMove={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
+            onPointerDown={(e) => {
+              if (e.target === e.currentTarget) {
+                handleClose();
+              }
             }}
             style={{ touchAction: "none" }}
             className="fixed inset-0 bg-black/60 z-[100] pointer-events-auto"
@@ -307,14 +310,9 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
 
                 <div className="flex flex-col items-center gap-1">
                   {currentCapacity === null ? (
-                    <>
-                      <span className="text-[26px] font-bold text-white leading-none tracking-tight">
-                        No limit
-                      </span>
-                      <span className="text-[12px] text-white/40 font-medium">
-                        Unlimited capacity
-                      </span>
-                    </>
+                    <span className="text-[26px] font-bold text-white leading-none tracking-tight">
+                      No Limit
+                    </span>
                   ) : (
                     <>
                       <span className="text-[28px] font-bold text-white leading-none tracking-tight">
@@ -367,7 +365,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
 
             {/* Error / Hint Message */}
             <AnimatePresence>
-              {showInviteHint && (
+              {showInviteHint && currentCapacity !== null && (
                 <motion.div
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}

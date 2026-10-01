@@ -13,7 +13,7 @@ interface ParticipantHeaderProps {
   mode?: string;
   waitlistMode?: 'automatic' | 'assigned' | string;
   hideTitle?: boolean;
-  capacity?: number;
+  capacity?: number | null;
 }
 
 export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
@@ -72,14 +72,9 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
             id="header_plan_size_btn"
             onClick={onOpenPlanSize}
             title="Plan Size"
-            className="h-8 px-2.5 rounded-lg bg-white/[0.06] hover:bg-white/10 border border-white/10 flex items-center gap-1.5 text-white active:scale-95 transition cursor-pointer pointer-events-auto select-none shrink-0"
+            className="p-2 -mr-2 flex items-center justify-center text-white/70 hover:text-white active:scale-95 transition cursor-pointer pointer-events-auto select-none shrink-0"
           >
-            <Users className="w-4 h-4 text-white/70 stroke-[2]" />
-            {capacity !== undefined && (
-              <span className="text-[13px] font-semibold text-white/90 tracking-tight font-sans">
-                {capacity}
-              </span>
-            )}
+            <Users className="w-5 h-5 stroke-[2]" />
           </button>
         )}
       </div>
@@ -136,7 +131,7 @@ export const ParticipantHeader: React.FC<ParticipantHeaderProps> = ({
               title="Plan Size"
             >
               <Users className="w-4 h-4 text-zinc-300" />
-              {capacity !== undefined && (
+              {capacity !== undefined && capacity !== null && (
                 <span className="text-[13px] font-semibold text-white/90 tracking-tight font-sans">
                   {capacity}
                 </span>

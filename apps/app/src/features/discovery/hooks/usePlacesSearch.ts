@@ -3,7 +3,7 @@ import { DiscoveryItem } from "../../../core/types/discovery";
 import { searchDiscoveryPlaces } from "../services/discoveryService";
 
 export interface UsePlacesSearchProps {
-  category: "DINING" | "SPORTS" | "ACTIVITIES";
+  category: "DINING" | "MOVIES" | "SPORTS" | "ACTIVITIES" | "ALL";
   searchQuery: string;
   subCategoryFilter?: string;
   currentCoordinates?: { latitude: number; longitude: number };

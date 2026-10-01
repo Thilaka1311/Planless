@@ -38,10 +38,7 @@ export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]
   ] = await Promise.all([
     supabase
       .from("plans")
-      .select(`
-        *,
-        discovery_items(category, subcategory, cover_image_url)
-      `)
+      .select("*")
       .in("id", allPlanIds),
     supabase
       .from("plan_participants")
@@ -74,9 +71,13 @@ export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]
 }
 
 export async function createPlan(newDbPlan: any): Promise<any> {
+  const { discovery_item_id, subcategory, ...planPayload } = newDbPlan;
+  if (planPayload.plan_size === null || planPayload.plan_size === undefined) {
+    planPayload.participant_filtering = null;
+  }
   const { data, error } = await supabase
     .from("plans")
-    .insert(newDbPlan)
+    .insert(planPayload)
     .select()
     .single();
 
@@ -106,9 +107,13 @@ export async function fetchMemories(): Promise<any[]> {
 }
 
 export async function updatePlanDetails(planId: string, updates: any): Promise<any> {
+  const { discovery_item_id, subcategory, ...sanitizedUpdates } = updates;
+  if (sanitizedUpdates.plan_size === null) {
+    sanitizedUpdates.participant_filtering = null;
+  }
   const { data, error } = await supabase
     .from("plans")
-    .update(updates)
+    .update(sanitizedUpdates)
     .eq("id", planId)
     .select()
     .single();

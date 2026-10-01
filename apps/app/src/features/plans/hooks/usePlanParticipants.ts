@@ -968,28 +968,25 @@ export function usePlanParticipants({
         );
 
     // Optimistic state update:
-    // If participant is still INVITED, remove them entirely from local state.
-    // If participant has interacted (e.g. JOINED, WAITLISTED), preserve existing transition to SKIPPED.
-    if (isTargetInvited) {
-      setDbPlanParticipants(prev => prev.filter(pp =>
-        !((pp.plan_id === planUuid || pp.plan_id === planId) &&
-          (pp.user_id === resolvedParticipantUuid || pp.user_id === participantUserUuid))
-      ));
-    } else {
-      setDbPlanParticipants(prev => prev.map(pp => {
-        if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedParticipantUuid || pp.user_id === participantUserUuid)) {
-          return {
-            ...pp,
-            rsvp_status: "SKIPPED" as const,
-            assigned_group: null,
-            waitlist_position: null,
-            leave_requested: false,
-            leave_requested_at: null,
-            skip_reason: isTargetLeaveRequested ? "LEFT" : "REMOVED"
-          };
-        }
-        return pp;
-      }));
+    // Update participant to SKIPPED with skip_reason = "REMOVED" (or "LEFT" if they requested leave).
+    // Never delete participant record/history regardless of initial RSVP status.
+    applyParticipantOptimisticUpdate(planUuid, resolvedParticipantUuid, {
+      rsvp_status: "SKIPPED",
+      assigned_group: null,
+      waitlist_position: null,
+      leave_requested: false,
+      leave_requested_at: null,
+      skip_reason: (isTargetLeaveRequested ? "LEFT" : "REMOVED") as any,
+    });
+    if (participantUserUuid && participantUserUuid !== resolvedParticipantUuid) {
+      applyParticipantOptimisticUpdate(planUuid, participantUserUuid, {
+        rsvp_status: "SKIPPED",
+        assigned_group: null,
+        waitlist_position: null,
+        leave_requested: false,
+        leave_requested_at: null,
+        skip_reason: (isTargetLeaveRequested ? "LEFT" : "REMOVED") as any,
+      });
     }
 
     // 1. Pre-emptively clean up any team assignment before deleting participant
@@ -1379,17 +1376,18 @@ export function usePlanParticipants({
     const isAssigned = waitlistMode === 'ASSIGNED';
 
     const existingPart = (dbPlanParticipants || []).find((p: any) => (p.plan_id === planUuid || p.plan_id === planId) && (p.user_id === resolvedUserUuid || p.user_id === participantUserUuid));
-    let nextRsvp = existingPart?.rsvp_status || 'INVITED';
-    if (nextRsvp === 'WAITLISTED' || nextRsvp === 'REJOINED') nextRsvp = 'JOINED';
+    // Core rule: RSVP STATUS IS IMMUTABLE ONCE AN INVITE EXISTS.
+    // Moving someone between Joined and Waitlist only changes their PARTICIPANT GROUP/ASSIGNMENT, never their RSVP status.
+    const preservedRsvp = existingPart?.rsvp_status || 'INVITED';
 
-    // Optimistic state update: update assigned_group to GOING and sync rsvp_status to JOINED where applicable
+    // Optimistic state update: update assigned_group to GOING, keep rsvp_status unchanged
     setDbPlanParticipants(prev => prev.map(pp => {
       if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedUserUuid || pp.user_id === participantUserUuid)) {
         return {
           ...pp,
           assigned_group: isAssigned ? 'GOING' : null,
           waitlist_position: null,
-          rsvp_status: nextRsvp as any,
+          rsvp_status: preservedRsvp as any,
           skip_reason: null,
           responded_at: pp.responded_at || new Date().toISOString()
         };
@@ -1405,7 +1403,7 @@ export function usePlanParticipants({
         .update({
           assigned_group: isAssigned ? "GOING" : null,
           waitlist_position: null,
-          rsvp_status: nextRsvp,
+          rsvp_status: preservedRsvp,
           skip_reason: existingSr,
           updated_at: new Date().toISOString()
         })
@@ -1443,10 +1441,11 @@ export function usePlanParticipants({
     const isAssigned = waitlistMode === 'ASSIGNED';
 
     const existingPart = (dbPlanParticipants || []).find((p: any) => (p.plan_id === planUuid || p.plan_id === planId) && (p.user_id === resolvedUserUuid || p.user_id === participantUserUuid));
-    let nextRsvp = existingPart?.rsvp_status || 'INVITED';
-    if (nextRsvp === 'JOINED' || nextRsvp === 'REJOINED') nextRsvp = 'WAITLISTED';
+    // Core rule: RSVP STATUS IS IMMUTABLE ONCE AN INVITE EXISTS.
+    // Moving someone between Joined and Waitlist only changes their PARTICIPANT GROUP/ASSIGNMENT, never their RSVP status.
+    const preservedRsvp = existingPart?.rsvp_status || 'INVITED';
 
-    // Optimistic state update: update assigned_group to WAITLIST and set waitlist_position immediately
+    // Optimistic state update: update assigned_group to WAITLIST, keep rsvp_status unchanged
     setDbPlanParticipants(prev => {
       const currentWaitlist = prev.filter(pp => {
         if (pp.plan_id !== planUuid && (pp as any).plan_id !== planId) return false;
@@ -1462,8 +1461,8 @@ export function usePlanParticipants({
             ...pp,
             assigned_group: isAssigned ? "WAITLIST" : null,
             waitlist_position: calculatedPos,
-            rsvp_status: nextRsvp as any,
-            responded_at: nextRsvp === 'WAITLISTED' ? (pp.responded_at || new Date().toISOString()) : pp.responded_at
+            rsvp_status: preservedRsvp as any,
+            responded_at: pp.responded_at
           };
         }
         return pp;
@@ -1489,7 +1488,7 @@ export function usePlanParticipants({
         .update({
           assigned_group: "WAITLIST",
           waitlist_position: dbCalculatedPos,
-          rsvp_status: nextRsvp,
+          rsvp_status: preservedRsvp,
           skip_reason: existingSr,
           updated_at: new Date().toISOString()
         })

@@ -1020,11 +1020,17 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                     pId,
                     {
                       plan_size: capacity,
+                      ...(capacity === null ? { participant_filtering: null } : {}),
                       ...(opts?.totalCost !== undefined ? { total_cost: opts.totalCost } : {}),
                     },
                     opts
                   )
                 }
+                onWaitlistModeChange={async (mode) => {
+                  await updatePlanDetails(plan.id, {
+                    participant_filtering: mode === 'assigned' ? 'ASSIGNED' : 'AUTOMATIC',
+                  });
+                }}
                 onCancelPlan={(pId) => cancelPlan(pId)}
                 onAddParticipants={(pId, userIds, assignedGroup) =>
                   addParticipantsToPlan({

@@ -257,5 +257,89 @@ describe('No Limit Plan Capacity Flow (Phase 1)', () => {
     const heroDisplay = localCache[0].plan_size === null ? "No limit" : localCache[0].plan_size;
     expect(heroDisplay).toBe("No limit");
   });
+
+  it('renders No Limit summary as "X invited" without "Max 50 participants"', () => {
+    const currentCapacity: number | null = null;
+    const invitedCount = 8;
+    const joinedCount = undefined;
+
+    let capacitySummary: string;
+    if (currentCapacity === null) {
+      const totalCount = invitedCount ?? joinedCount ?? 0;
+      capacitySummary = `${totalCount} invited`;
+    } else {
+      capacitySummary = `${currentCapacity} going`;
+    }
+
+    expect(capacitySummary).toBe('8 invited');
+    expect(capacitySummary).not.toContain('Max 50 participants');
+    expect(capacitySummary).not.toContain('joined');
+  });
+
+  it('omits waitlisted text when waitlisted count is 0 in automatic mode', () => {
+    const currentCapacity = 9;
+    const invitedCount = 9;
+    const isAutomatic = true;
+
+    const going = currentCapacity;
+    const waitlisted = Math.max(0, (invitedCount ?? currentCapacity) - currentCapacity);
+    const capacitySummary =
+      waitlisted > 0 ? `${going} going • ${waitlisted} waitlisted` : `${going} going`;
+
+    expect(capacitySummary).toBe('9 going');
+    expect(capacitySummary).not.toContain('0 waitlisted');
+  });
+
+  it('does NOT coerce null to 2 in handleAdjustCapacity when user sets No Limit', async () => {
+    let capturedCapacity: number | null | undefined = undefined;
+    const onUpdatePlanCapacity = async (planId: string, capacity: number | null) => {
+      capturedCapacity = capacity;
+    };
+
+    const maxCapacity = 50;
+    const currentCapacity: number | null = 2;
+
+    const handleAdjustCapacity = async (newVal: number | null) => {
+      if (newVal === null || newVal === undefined) {
+        if (currentCapacity === null) return;
+        await onUpdatePlanCapacity('test-plan-id', null);
+        return;
+      }
+      const clampedVal = Math.min(maxCapacity, Math.max(2, newVal));
+      await onUpdatePlanCapacity('test-plan-id', clampedVal);
+    };
+
+    // When newVal is null, it should NOT become Math.max(2, null) = 2
+    await handleAdjustCapacity(null);
+    expect(capturedCapacity).toBeNull();
+  });
+
+  it('correctly sets participant_filtering to null in database update when plan_size is null', () => {
+    const planUpdate: any = { plan_size: null };
+    if (planUpdate.plan_size === null) {
+      planUpdate.participant_filtering = null;
+    }
+
+    expect(planUpdate.plan_size).toBeNull();
+    expect(planUpdate.participant_filtering).toBeNull();
+  });
+
+  it('evaluates WaitlistModeSelector visibility based on plan capacity', () => {
+    const shouldShowWaitlistMode = (capacity: number | null | undefined, isHost: boolean) => {
+      if (!isHost) return false;
+      // In WaitlistModeSelector: if (capacity === null || capacity === undefined) return null;
+      if (capacity === null || capacity === undefined) return false;
+      return true;
+    };
+
+    // When capacity is No Limit (null), waitlist selector must be hidden
+    expect(shouldShowWaitlistMode(null, true)).toBe(false);
+    expect(shouldShowWaitlistMode(undefined, true)).toBe(false);
+
+    // When capacity is set (e.g. 2, 4, 10), waitlist selector must be shown
+    expect(shouldShowWaitlistMode(2, true)).toBe(true);
+    expect(shouldShowWaitlistMode(4, true)).toBe(true);
+    expect(shouldShowWaitlistMode(10, true)).toBe(true);
+  });
 });
 

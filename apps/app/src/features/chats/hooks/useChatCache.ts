@@ -67,6 +67,97 @@ const notifyListeners = (category: keyof PlanCacheStore, planUuid: string) => {
   }
 };
 
+export interface ChatSummaryItem {
+  unreadCount: number;
+  senderName: string;
+  isCurrentUser: boolean;
+  content: string;
+  createdAt?: string | null;
+  messageType?: string;
+}
+
+const CHAT_SUMMARIES_STORAGE_KEY = "planless_cached_chat_summaries";
+
+// Module-level in-memory cache for chat summaries, seeded from localStorage where available
+const chatSummariesCache: Map<string, ChatSummaryItem> = (() => {
+  const map = new Map<string, ChatSummaryItem>();
+  if (typeof window !== "undefined") {
+    try {
+      const stored = localStorage.getItem(CHAT_SUMMARIES_STORAGE_KEY) || sessionStorage.getItem(CHAT_SUMMARIES_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === "object") {
+          Object.entries(parsed).forEach(([k, v]) => {
+            if (k && v && typeof v === "object") {
+              map.set(k, v as ChatSummaryItem);
+            }
+          });
+        }
+      }
+    } catch {}
+  }
+  return map;
+})();
+
+/**
+ * Access cached chat summaries synchronously without triggering network fetch
+ */
+export const getCachedChatSummaries = (): Record<string, ChatSummaryItem> => {
+  const result: Record<string, ChatSummaryItem> = {};
+  chatSummariesCache.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+};
+
+/**
+ * Access cached chat summary for a specific plan
+ */
+export const getCachedChatSummary = (planId: string): ChatSummaryItem | undefined => {
+  if (!planId) return undefined;
+  return chatSummariesCache.get(planId);
+};
+
+/**
+ * Update cached chat summaries map and persist to storage
+ */
+export const setCachedChatSummaries = (summaries: Record<string, ChatSummaryItem>) => {
+  if (!summaries || typeof summaries !== "object") return;
+  Object.entries(summaries).forEach(([k, v]) => {
+    if (k && v) {
+      chatSummariesCache.set(k, v);
+    }
+  });
+
+  if (typeof window !== "undefined") {
+    try {
+      const obj: Record<string, ChatSummaryItem> = {};
+      chatSummariesCache.forEach((v, k) => {
+        obj[k] = v;
+      });
+      localStorage.setItem(CHAT_SUMMARIES_STORAGE_KEY, JSON.stringify(obj));
+    } catch {}
+  }
+};
+
+/**
+ * Update a single cached chat summary and persist
+ */
+export const setCachedChatSummary = (planId: string, item: ChatSummaryItem) => {
+  if (!planId || !item) return;
+  chatSummariesCache.set(planId, item);
+
+  if (typeof window !== "undefined") {
+    try {
+      const obj: Record<string, ChatSummaryItem> = {};
+      chatSummariesCache.forEach((v, k) => {
+        obj[k] = v;
+      });
+      localStorage.setItem(CHAT_SUMMARIES_STORAGE_KEY, JSON.stringify(obj));
+    } catch {}
+  }
+};
+
 /**
  * Access cached messages synchronously without triggering network fetch
  */
@@ -106,6 +197,15 @@ export const markPlanChatReadInCache = (planUuid: string, latestMessageId?: stri
     lastReadMessageId: latestMessageId || existing?.lastReadMessageId || null,
   });
   notifyListeners("unreadInfo", planUuid);
+
+  // Keep chatSummariesCache unreadCount in sync
+  const existingSummary = getCachedChatSummary(planUuid);
+  if (existingSummary && existingSummary.unreadCount > 0) {
+    setCachedChatSummary(planUuid, {
+      ...existingSummary,
+      unreadCount: 0,
+    });
+  }
 };
 
 /**
@@ -153,10 +253,11 @@ export const appendMessageToCache = (newMsg: ChatMessage, currentUserId?: string
 
   if (isEligible) {
     const unread = planCache.unreadInfo.get(planUuid);
+    const newCount = unread ? unread.count + 1 : 1;
     if (unread) {
       planCache.unreadInfo.set(planUuid, {
         ...unread,
-        count: unread.count + 1,
+        count: newCount,
         firstUnreadId: unread.count === 0 ? newMsg.id : unread.firstUnreadId,
         latestUnreadId: newMsg.id,
       });
@@ -170,6 +271,45 @@ export const appendMessageToCache = (newMsg: ChatMessage, currentUserId?: string
       });
     }
     notifyListeners("unreadInfo", planUuid);
+
+    // Keep chatSummariesCache warm for instant list rendering
+    const existingSummary = getCachedChatSummary(planUuid);
+    const isMe = Boolean(currentUserId && newMsg.sender_id === currentUserId);
+    const senderName = isMe ? "You" : (existingSummary?.senderName && existingSummary.senderName !== "You" ? existingSummary.senderName : "User");
+    let preview = newMsg.content || "";
+    if (newMsg.message_type === "cost") {
+      preview = isMe ? "You added an expense" : `${senderName} added an expense`;
+    } else if (newMsg.message_type === "poll") {
+      preview = isMe ? "You created a poll" : `${senderName} created a poll`;
+    }
+
+    setCachedChatSummary(planUuid, {
+      unreadCount: newCount,
+      senderName,
+      isCurrentUser: isMe,
+      content: preview,
+      createdAt: newMsg.created_at || new Date().toISOString(),
+      messageType: newMsg.message_type,
+    });
+  } else {
+    // Current user's own message
+    const existingSummary = getCachedChatSummary(planUuid);
+    const isMe = Boolean(currentUserId && newMsg.sender_id === currentUserId);
+    let preview = newMsg.content || "";
+    if (newMsg.message_type === "cost") {
+      preview = isMe ? "You added an expense" : "User added an expense";
+    } else if (newMsg.message_type === "poll") {
+      preview = isMe ? "You created a poll" : "User created a poll";
+    }
+
+    setCachedChatSummary(planUuid, {
+      unreadCount: existingSummary?.unreadCount || 0,
+      senderName: isMe ? "You" : existingSummary?.senderName || "User",
+      isCurrentUser: isMe,
+      content: preview,
+      createdAt: newMsg.created_at || new Date().toISOString(),
+      messageType: newMsg.message_type,
+    });
   }
 };
 
@@ -186,6 +326,7 @@ export const invalidatePlanCache = (planUuid?: string, category?: keyof PlanCach
       planCache.participants.delete(planUuid);
       planCache.activities.delete(planUuid);
       planCache.unreadInfo.delete(planUuid);
+      chatSummariesCache.delete(planUuid);
       notifyListeners("messages", planUuid);
       notifyListeners("participants", planUuid);
       notifyListeners("activities", planUuid);
@@ -196,6 +337,12 @@ export const invalidatePlanCache = (planUuid?: string, category?: keyof PlanCach
     planCache.participants.clear();
     planCache.activities.clear();
     planCache.unreadInfo.clear();
+    chatSummariesCache.clear();
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(CHAT_SUMMARIES_STORAGE_KEY);
+      } catch {}
+    }
     listeners.messages.forEach((set) => set.forEach((fn) => fn()));
     listeners.participants.forEach((set) => set.forEach((fn) => fn()));
     listeners.activities.forEach((set) => set.forEach((fn) => fn()));

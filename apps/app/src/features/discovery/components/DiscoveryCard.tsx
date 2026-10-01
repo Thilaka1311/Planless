@@ -339,7 +339,7 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
   const movieMeta = isMovie
     ? item.release_date
       ? new Date(item.release_date).toLocaleDateString("en-IN", { year: "numeric", month: "short" })
-      : item.location || ""
+      : ""
     : null;
 
   return (

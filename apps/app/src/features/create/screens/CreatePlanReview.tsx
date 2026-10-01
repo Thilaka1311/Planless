@@ -75,8 +75,14 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
     }
 
     const titleToUse = (form.localTitle || "").trim() || "Untitled Plan";
-    const locationToUse = (form.localLocation || "").trim();
-    const placeAddressToUse = (form.placeAddress || "").trim() || locationToUse;
+    const isMovieCategory = (selectedCategory || "").toLowerCase() === "movies";
+    const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
+
+    let locationToUse = (form.localLocation || "").trim();
+    if (isMovieCategory && isYearOnly(locationToUse)) locationToUse = "";
+
+    let placeAddressToUse = (form.placeAddress || "").trim() || locationToUse;
+    if (isMovieCategory && isYearOnly(placeAddressToUse)) placeAddressToUse = "";
     const costToUse = Math.max(0, Number(form.costAmount) || 0);
     const coverUrl = form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory || undefined);
     const participantIds: string[] = (form.selectedFriends || []).map((f: any) => f.id || f.dbUuid).filter(Boolean);
@@ -125,7 +131,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
   };
 
   const totalInvited = (form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0);
-  const capacity = form.totalCapacity !== undefined ? form.totalCapacity : (totalInvited || 2);
+  const capacity = form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null;
   const isAssignedMode = form.waitlistMode === 'assigned';
 
   const assignedParticipants = useMemo(() => {
@@ -216,10 +222,11 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
     const hostOffset = form.isHostSelected ? 1 : 0;
     const totalInvitedCount = hostOffset + (form.selectedFriends?.length || 0);
     const hasCapacityConfigured = form.totalCapacity !== undefined;
-    const hasWaitlist = isAssignedMode && hasCapacityConfigured && capacity < totalInvitedCount;
+    const hasWaitlist = isAssignedMode && hasCapacityConfigured && capacity !== null && capacity < totalInvitedCount;
 
     let allMembers: any[] = [];
     if (isAssignedMode && assignedParticipants) {
+      const isNoLimit = capacity === null;
       const goingMembers = assignedParticipants.going.map((f) => {
         const isHost = Boolean(f.isHost);
         const memberId = isHost ? hostId : (f.id || f.dbUuid);
@@ -232,7 +239,8 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
           isHost,
           role: isHost ? ('HOST' as const) : ('PARTICIPANT' as const),
           joinState: isHost ? ('JOINED' as const) : ('INVITED' as any),
-          assignedGroup: 'going' as const,
+          // When No Limit, assignedGroup is null so InlineParticipantView does not treat them as joined
+          assignedGroup: isNoLimit ? null : ('going' as const),
           waitlistPosition: null,
           reminderState: 'none' as const,
           joinedAt: null,
@@ -339,7 +347,10 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
       computedDeadlineIso = deadlineDate.toISOString();
     }
 
-    const resolvedLocation = form.localLocation || form.placeAddress || form.location || form.venueName || '';
+    const rawLocation = form.localLocation || form.placeAddress || form.location || form.venueName || '';
+    const isMovieCategory = (selectedCategory || '').toLowerCase() === 'movies';
+    const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || '').trim());
+    const resolvedLocation = (isMovieCategory && isYearOnly(rawLocation)) ? '' : rawLocation;
 
     return {
       id: 'create-plan-preview',
@@ -358,11 +369,11 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
       paymentAmount: isCostConfigured ? Number(form.costAmount || 0) : undefined,
       total_cost: isCostConfigured ? Number(form.costAmount || 0) : undefined,
       isCostConfigured: isCostConfigured,
-      capacity: form.totalCapacity !== undefined ? form.totalCapacity : undefined,
-      joinLimit: form.totalCapacity !== undefined ? form.totalCapacity : undefined,
-      maxSpots: form.totalCapacity !== undefined ? form.totalCapacity : undefined,
-      plan_size: form.totalCapacity !== undefined ? form.totalCapacity : null,
-      planSize: form.totalCapacity !== undefined ? form.totalCapacity : null,
+      capacity: form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null,
+      joinLimit: form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null,
+      maxSpots: form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null,
+      plan_size: form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null,
+      planSize: form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null,
       waitlistEnabled: form.waitlistEnabled ?? true,
       participantFiltering: isAssignedMode ? 'ASSIGNED' : 'AUTOMATIC',
       participant_filtering: isAssignedMode ? 'ASSIGNED' : 'AUTOMATIC',

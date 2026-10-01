@@ -57,45 +57,45 @@ describe("useUnreadChatsCount helpers", () => {
   describe("calculateUnreadChatsCount - Specification Cases", () => {
     const myIds = new Set(["user-123"]);
 
-    // CASE 1: Active Plan with 1 unread message → badge = 1
+    // CASE 1: Active Plan with 1 unread message → badge = 1 (one conversation)
     it("CASE 1: Active Plan with 1 unread message -> badge = 1", () => {
       const planA = createMockPlan("plan-a", "LIVE");
       const unreadMap = { "uuid-plan-a": 1 };
       expect(calculateUnreadChatsCount(unreadMap, [planA], myIds)).toBe(1);
     });
 
-    // CASE 2: Active Plan with 5 unread messages → badge = 5
-    it("CASE 2: Active Plan with 5 unread messages -> badge = 5", () => {
+    // CASE 2: Active Plan with 5 unread messages → badge = 1 (max 1 per conversation)
+    it("CASE 2: Active Plan with 5 unread messages -> badge = 1 (max 1 per conversation)", () => {
       const planA = createMockPlan("plan-a", "LIVE");
       const unreadMap = { "uuid-plan-a": 5 };
-      expect(calculateUnreadChatsCount(unreadMap, [planA], myIds)).toBe(5);
+      expect(calculateUnreadChatsCount(unreadMap, [planA], myIds)).toBe(1);
     });
 
-    // CASE 3: Active Plan with 5 unread + Completed Plan with 10 unread → badge = 5
-    it("CASE 3: Active Plan with 5 unread + Completed Plan with 10 unread -> badge = 5", () => {
+    // CASE 3: Active Plan (5 unread) + Completed Plan (10 unread) → badge = 1
+    it("CASE 3: Active Plan with 5 unread + Completed Plan with 10 unread -> badge = 1", () => {
       const planA = createMockPlan("plan-a", "LIVE");
       const planD = createMockPlan("plan-d", "COMPLETED");
       const unreadMap = {
         "uuid-plan-a": 5,
         "uuid-plan-d": 10,
       };
-      expect(calculateUnreadChatsCount(unreadMap, [planA, planD], myIds)).toBe(5);
+      expect(calculateUnreadChatsCount(unreadMap, [planA, planD], myIds)).toBe(1);
     });
 
-    // CASE 4: Active Plan with 5 unread + Cancelled Plan with 10 unread → badge = 5
-    it("CASE 4: Active Plan with 5 unread + Cancelled Plan with 10 unread -> badge = 5", () => {
+    // CASE 4: Active Plan (5 unread) + Cancelled Plan (10 unread) → badge = 1
+    it("CASE 4: Active Plan with 5 unread + Cancelled Plan with 10 unread -> badge = 1", () => {
       const planA = createMockPlan("plan-a", "LIVE");
       const planC = createMockPlan("plan-c", "CANCELLED");
       const unreadMap = {
         "uuid-plan-a": 5,
         "uuid-plan-c": 10,
       };
-      expect(calculateUnreadChatsCount(unreadMap, [planA, planC], myIds)).toBe(5);
+      expect(calculateUnreadChatsCount(unreadMap, [planA, planC], myIds)).toBe(1);
     });
 
-    // Example 3 from specification:
-    // Current Chat A: 5 unread, Current Chat B: 2 unread, Cancelled Plan C: 10 unread, Completed Plan D: 4 unread => 7 (not 21)
-    it("Specification Example 3: Chat A (5) + Chat B (2) + Cancelled C (10) + Completed D (4) -> badge = 7", () => {
+    // Specification Example: Chat A (5), Chat B (3), Chat C (1) → badge = 3 (3 conversations)
+    // NOT 9 (total message count)
+    it("Specification Example: Chat A (5) + Chat B (3) + Chat C (1) -> badge = 3 (conversations not messages)", () => {
       const planA = createMockPlan("plan-a", "LIVE");
       const planB = createMockPlan("plan-b", "LIVE");
       const planC = createMockPlan("plan-c", "CANCELLED");
@@ -108,10 +108,11 @@ describe("useUnreadChatsCount helpers", () => {
         "uuid-plan-d": 4,
       };
 
-      expect(calculateUnreadChatsCount(unreadMap, [planA, planB, planC, planD], myIds)).toBe(7);
+      // Only planA and planB are active → 2 conversations with unread, badge = 2
+      expect(calculateUnreadChatsCount(unreadMap, [planA, planB, planC, planD], myIds)).toBe(2);
     });
 
-    // CASE 5: Only unread messages belong to Completed/Cancelled Plans → no Chat badge should appear (badge = 0)
+    // CASE 5: Only unread messages belong to Completed/Cancelled Plans → badge = 0
     it("CASE 5: Only unread messages belong to Completed/Cancelled Plans -> badge = 0", () => {
       const planC = createMockPlan("plan-c", "CANCELLED");
       const planD = createMockPlan("plan-d", "COMPLETED");
@@ -134,7 +135,7 @@ describe("useUnreadChatsCount helpers", () => {
         "uuid-plan-c": 2,
       };
       const initialBadge = calculateUnreadChatsCount(initialMap, plans, myIds);
-      expect(initialBadge).toBe(3);
+      expect(initialBadge).toBe(1); // Only planA counts (1 conversation)
 
       // Incoming message to Cancelled Plan C
       const msg = { plan_id: "uuid-plan-c", sender_id: "other-user", message_type: "text" };
@@ -142,7 +143,7 @@ describe("useUnreadChatsCount helpers", () => {
       expect(nextMap["uuid-plan-c"]).toBe(3);
 
       const nextBadge = calculateUnreadChatsCount(nextMap, plans, myIds);
-      expect(nextBadge).toBe(3); // Does NOT increase!
+      expect(nextBadge).toBe(1); // Does NOT increase!
     });
 
     // CASE 7: New message arrives in a Completed Plan → bottom badge does not increase
@@ -157,7 +158,7 @@ describe("useUnreadChatsCount helpers", () => {
         "uuid-plan-d": 4,
       };
       const initialBadge = calculateUnreadChatsCount(initialMap, plans, myIds);
-      expect(initialBadge).toBe(3);
+      expect(initialBadge).toBe(1); // Only planA counts (1 conversation)
 
       // Incoming message to Completed Plan D
       const msg = { plan_id: "uuid-plan-d", sender_id: "other-user", message_type: "text" };
@@ -165,11 +166,11 @@ describe("useUnreadChatsCount helpers", () => {
       expect(nextMap["uuid-plan-d"]).toBe(5);
 
       const nextBadge = calculateUnreadChatsCount(nextMap, plans, myIds);
-      expect(nextBadge).toBe(3); // Does NOT increase!
+      expect(nextBadge).toBe(1); // Does NOT increase!
     });
 
-    // CASE 8: Active Plan becomes Completed → its unread messages stop contributing to the badge
-    it("CASE 8: Active Plan becomes Completed -> its unread messages stop contributing to the badge", () => {
+    // CASE 8: Active Plan becomes Completed → its conversation stops contributing to the badge
+    it("CASE 8: Active Plan becomes Completed -> its conversation stops contributing to the badge", () => {
       const planA = createMockPlan("plan-a", "LIVE");
       const planB = createMockPlan("plan-b", "LIVE");
       const planC = createMockPlan("plan-c", "LIVE");
@@ -180,16 +181,16 @@ describe("useUnreadChatsCount helpers", () => {
         "uuid-plan-c": 1,
       };
 
-      // Initially all 3 are active -> 5 + 2 + 1 = 8
-      expect(calculateUnreadChatsCount(unreadMap, [planA, planB, planC], myIds)).toBe(8);
+      // Initially all 3 are active → 3 conversations
+      expect(calculateUnreadChatsCount(unreadMap, [planA, planB, planC], myIds)).toBe(3);
 
       // Plan C becomes COMPLETED
       const updatedPlanC = { ...planC, status: "COMPLETED" as const };
-      expect(calculateUnreadChatsCount(unreadMap, [planA, planB, updatedPlanC], myIds)).toBe(7);
+      expect(calculateUnreadChatsCount(unreadMap, [planA, planB, updatedPlanC], myIds)).toBe(2);
     });
 
-    // CASE 9: Completed Plan is reopened and becomes active again → its existing unread messages become eligible to contribute again
-    it("CASE 9: Completed Plan is reopened and becomes active again -> its unread messages contribute again", () => {
+    // CASE 9: Completed Plan is reopened → its conversation becomes eligible again
+    it("CASE 9: Completed Plan is reopened and becomes active again -> its conversation contributes again", () => {
       const planA = createMockPlan("plan-a", "LIVE");
       const planD = createMockPlan("plan-d", "COMPLETED");
 
@@ -198,16 +199,16 @@ describe("useUnreadChatsCount helpers", () => {
         "uuid-plan-d": 4,
       };
 
-      // While planD is COMPLETED, badge is 5
-      expect(calculateUnreadChatsCount(unreadMap, [planA, planD], myIds)).toBe(5);
+      // While planD is COMPLETED, badge = 1 (only planA)
+      expect(calculateUnreadChatsCount(unreadMap, [planA, planD], myIds)).toBe(1);
 
       // Host reopens planD (status becomes LIVE)
       const reopenedPlanD = { ...planD, status: "LIVE" as const };
-      expect(calculateUnreadChatsCount(unreadMap, [planA, reopenedPlanD], myIds)).toBe(9);
+      expect(calculateUnreadChatsCount(unreadMap, [planA, reopenedPlanD], myIds)).toBe(2);
     });
 
-    // CASE 10: Opening an active chat marks it read using the existing read architecture → badge recalculates correctly
-    it("CASE 10: Opening an active chat marks it read using existing read architecture -> badge recalculates correctly", () => {
+    // CASE 10: Opening an active chat marks it read → badge recalculates correctly
+    it("CASE 10: Opening an active chat marks it read -> badge recalculates correctly", () => {
       const planA = createMockPlan("plan-a", "LIVE");
       const planB = createMockPlan("plan-b", "LIVE");
       const plans = [planA, planB];
@@ -216,12 +217,12 @@ describe("useUnreadChatsCount helpers", () => {
         "uuid-plan-a": 5,
         "uuid-plan-b": 2,
       };
-      expect(calculateUnreadChatsCount(initialMap, plans, myIds)).toBe(7);
+      expect(calculateUnreadChatsCount(initialMap, plans, myIds)).toBe(2); // 2 conversations
 
       // User opens chat for plan-a
       const afterA = handleChatReadInUnreadMap(initialMap, "uuid-plan-a", plans);
       expect(afterA["uuid-plan-a"]).toBe(0);
-      expect(calculateUnreadChatsCount(afterA, plans, myIds)).toBe(2);
+      expect(calculateUnreadChatsCount(afterA, plans, myIds)).toBe(1); // 1 conversation remaining
 
       // User opens chat for plan-b
       const afterB = handleChatReadInUnreadMap(afterA, "uuid-plan-b", plans);

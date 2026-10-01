@@ -25,14 +25,14 @@ The **Home** feature is the primary invitation and discovery feed in Planless. I
 * At the bottom of the feed past the final plan, an `<EndCard />` ("You're all caught up") appears with a "Create a Plan" button.
 
 ### 3. Inspecting Card Details & Badges
-* **Category Badge** (top-left): Displays category-specific iconography (Film for movies, Utensils for dining, Compass for sports, Calendar for custom). Tapping toggles a floating glass popover displaying the category title.
+* **Category Badge** (top-left): Displays category-specific iconography (Film for movies, Utensils for dining, Trophy for sports, CalendarDays for custom). Tapping toggles a floating glass popover displaying the category title.
 * **RSVP Countdown Badge** (top-right): Shows an hourglass icon with dynamic countdown urgency (`X days`, `X hours`, or `X minutes`). Tapping opens a glass popover with the full deadline timestamp (e.g., "Today • 20:00", "Tomorrow • 18:30"). Popovers auto-dismiss after 5 seconds or when the card loses focus.
 * **Participant Strip** (bottom): Shows the plan title, date/time, and a gradient capacity progress bar (`joinedCount / maxSpots`). Tapping anywhere on the strip toggles expansion.
 * **Expanded Participants View**: Reveals an avatar cluster of up to 4 participants (prioritizing members with uploaded profile photos) and an overflow pill (`+N`), along with a "View Participants →" action button.
 
 ### 4. Opening Full Plan Details Modal
 * Tapping the plan card (outside interactive buttons and hold gestures) or tapping "View Participants →" calls `setSelectedPlan(planId)`.
-* This mounts `<DetailedPlanModal />`, which renders `<HomePlansPreviewScreen />` with complete plan details, full participant roster, venue maps, and expense breakdowns.
+* This mounts `<DetailedPlanModal />`, which renders `<HomePlansPreviewScreen />` with complete plan details, full participant roster, venue maps, expense breakdowns, and the top-right three-dot menu (reusing Plan Preview's `HeroHeader` overflow menu with Chat, Settings, and permission-aware Share Plan which appears only if the host allows participant invites or for hosts).
 
 ### 5. Responding via "Hold to Accept"
 * The user presses and holds anywhere on the card surface (outside interactive elements with `.no-hold`).
@@ -69,8 +69,8 @@ The **Home** feature is the primary invitation and discovery feed in Planless. I
 * **Top Header Badges (Frosted Glass)**:
   * **Category Badge (Top-Left)**: Rounded pill with frosted glass styling (`rgba(10, 10, 12, 0.62)`, `backdrop-blur-[18px]`, `border border-white/10`). Houses category-specific iconography:
     * *Movies*: Violet Film icon (`text-violet-400`).
-    * *Dining*: Rose UtensilsCrossed icon (`text-rose-400`).
-    * *Sports*: Emerald Compass icon (`text-emerald-400`).
+    * *Dining*: Red Utensils icon (`text-[#EF4444]`).
+    * *Sports*: Emerald Trophy icon (`text-[#10B981]`).
     * *Custom*: Zinc CalendarDays icon (`text-zinc-400`).
     * *Interaction*: Tapping opens a floating glass popover displaying the category title with spring animations.
   * **RSVP Countdown Badge (Top-Right)**: Pill badge with `Hourglass` icon and dynamic color coding derived from urgency:

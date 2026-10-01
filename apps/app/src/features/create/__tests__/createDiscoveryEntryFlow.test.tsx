@@ -76,4 +76,62 @@ describe('Create Tab Experience: Discovery Screen as Entry Point', () => {
     expect(populatedTitle).toBe('');
     expect(nextPhase).toBe('who');
   });
+
+  it('leaves location and place details completely empty for movie plans, preserving them for non-movie categories', () => {
+    const movieDiscoveryItem = {
+      id: 'tmdb-12345',
+      title: 'Kantara: A Legend Chapter 1',
+      category: 'MOVIES',
+      subcategory: 'Action | Fantasy',
+      location: '',
+      release_date: '2025-10-02',
+      cover_image_url: 'https://image.tmdb.org/t/p/w500/kantara.jpg',
+      place_id: null,
+      place_address: null,
+      latitude: null,
+      longitude: null,
+    };
+
+    let populatedCategory = '';
+    let populatedLocation = 'initial';
+    let populatedPlaceId: string | null = 'init';
+    let populatedPlaceAddress: string | null = 'init';
+
+    const handleSelectDiscoveryItem = (item: typeof movieDiscoveryItem) => {
+      const lowerCategory = item.category ? item.category.toLowerCase() : 'custom';
+      populatedCategory = lowerCategory;
+      const isMovie = lowerCategory === 'movies' || (item.category && item.category.toUpperCase() === 'MOVIES');
+      populatedLocation = isMovie ? '' : (item.location || '');
+      populatedPlaceId = isMovie ? null : (item.place_id || null);
+      populatedPlaceAddress = isMovie ? null : (item.place_address || item.location || null);
+    };
+
+    handleSelectDiscoveryItem(movieDiscoveryItem);
+
+    expect(populatedCategory).toBe('movies');
+    expect(populatedLocation).toBe('');
+    expect(populatedPlaceId).toBeNull();
+    expect(populatedPlaceAddress).toBeNull();
+
+    // Verify non-movie retains location
+    const sportsItem = {
+      id: 'turf-1',
+      title: 'Turf Park',
+      category: 'SPORTS',
+      subcategory: 'Football',
+      location: 'Koramangala, Bangalore',
+      release_date: undefined,
+      cover_image_url: 'https://example.com/turf.jpg',
+      place_id: 'place-789',
+      place_address: '100ft Rd, Koramangala',
+      latitude: 12.935,
+      longitude: 77.62,
+    };
+
+    handleSelectDiscoveryItem(sportsItem as any);
+    expect(populatedCategory).toBe('sports');
+    expect(populatedLocation).toBe('Koramangala, Bangalore');
+    expect(populatedPlaceId).toBe('place-789');
+    expect(populatedPlaceAddress).toBe('100ft Rd, Koramangala');
+  });
 });

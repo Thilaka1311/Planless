@@ -93,8 +93,10 @@ The **Chats** feature is the real-time group communication and coordination hub 
     * Dimensions & interaction: Fixed height `h-[70px] w-full px-2 py-2 rounded-xl flex items-center hover:bg-white/[0.03] active:bg-white/[0.05] active:scale-[0.99] cursor-pointer transition-all duration-150 select-none`.
     * Leading thumbnail: 50x50px circular frame containing `<DiscoveryImages />` plan cover image.
     * Metadata column: Plan title in bold white; subtitle preview showing sender attribution snippet or fallback creator attribution.
-    * **Unread Badge**: When `unreadCount > 0`, an orange pill (`bg-[#FF6B2C] text-white text-[11px] font-bold rounded-full min-w-[20px] h-[20px] px-1.5 flex items-center justify-center`) shows the count (capped at "99+"). The subtitle text color shifts to `text-zinc-200 font-medium` when unread, vs. `text-zinc-400` when read.
-    * Motion transition: Animated entrance with Framer Motion (`layout`, `initial={{ opacity: 0, y: 4 }}`, `animate={{ opacity: 1, y: 0 }}`, duration 0.25s).
+    * **Unread Badge**: When `unreadCount > 0`, an emerald pill (`bg-[#10B981] text-zinc-950 text-[11px] font-bold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center`) shows the count. The subtitle text color shifts to `text-zinc-200 font-medium` when unread, vs. `text-zinc-400` when read.
+    * **Cache-First Immediate Rendering**: Seeded synchronously from module-level and localStorage persistent cache (`getCachedChatSummaries()`). When opening Chats, cached chats render instantly with zero network delay and zero loading animation.
+    * **Motion Transition**: Framer Motion uses `layout` and `initial={false}`, ensuring no jarring entrance animation or opacity flash on screen open, while providing smooth and subtle reordering transitions when new messages arrive.
+    * **Background Sync Equality Guard**: Asynchronous fetch (`supabase.rpc("get_user_chat_summaries")`) performs a deep field equality check against the existing state; if data has not changed, the state is untouched, preventing unnecessary re-renders or list rebuilds.
 * **Empty States**:
   * Zero involved plans: Centered `<EmptyState />` (`py-16`) with `<MessageSquare className="w-8 h-8 text-zinc-500 stroke-[1.5]" />`, title "No chats yet", and subtitle "Create or join a plan to start chatting with your group."
   * Zero search matches: Centered `<EmptyState />` (`py-16`) with `<Inbox className="w-8 h-8 text-zinc-600 stroke-[1.5]" />`, title "No chats found", and subtitle "Try searching with a different plan name."
@@ -345,3 +347,4 @@ The **Chats** feature is the real-time group communication and coordination hub 
 3. **Expense Message Card Verification**:
    - Add a shared cost via `AddCost.tsx`.
    - Verify the message appears in chat with styled "Added Expense" card showing currency formatted in INR and correct split calculation.
+

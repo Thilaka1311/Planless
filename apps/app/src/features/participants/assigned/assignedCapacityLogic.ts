@@ -19,9 +19,10 @@ export const renumberWaitlist = (friends: Friend[]): Friend[] => {
 
 /**
  * Orders Joined participants in Assigned mode:
- * 1. Current user as "You" when applicable.
- * 2. Host.
- * 3. Remaining Joined participants alphabetically.
+ * 1. Current user as "You" (always first).
+ * 2. JOINED/ACCEPTED participants, sorted alphabetically A → Z.
+ * 3. INVITED participants (not yet responded), sorted alphabetically A → Z.
+ * 4. Host appears in slot 1 if not the current user.
  */
 export const formatAssignedGoingList = <T extends Record<string, any>>(
   list: T[],
@@ -29,13 +30,12 @@ export const formatAssignedGoingList = <T extends Record<string, any>>(
 ): T[] => {
   if (!list || list.length === 0) return [];
 
+  const getName = (item: T): string =>
+    item.name || (item as any).full_name || (item as any).username || '';
+
   const sortAlpha = (items: T[]) =>
     [...items].sort((a, b) =>
-      (a.name || (a as any).full_name || (a as any).username || '').localeCompare(
-        b.name || (b as any).full_name || (b as any).username || '',
-        undefined,
-        { sensitivity: 'base' }
-      )
+      getName(a).localeCompare(getName(b), undefined, { sensitivity: 'base' })
     );
 
   const activeId = activeUserId ? String(activeUserId).toLowerCase() : '';
@@ -59,7 +59,22 @@ export const formatAssignedGoingList = <T extends Record<string, any>>(
   if (host) excluded.add(host);
 
   const remaining = list.filter((item) => !excluded.has(item));
-  const sortedRemaining = sortAlpha(remaining);
+
+  // Classify each remaining participant by their RSVP status:
+  // JOINED/ACCEPTED → first bucket; INVITED → second bucket
+  const isJoined = (item: T): boolean => {
+    const raw = String(
+      item.rsvpStatus || (item as any).rsvp_status || (item as any).joinState || ''
+    ).trim().toUpperCase();
+    if (raw === 'JOINED' || raw === 'ACCEPTED' || raw === 'GOING' || raw === 'CONFIRMED') return true;
+    if (raw === 'INVITED') return false;
+    // Fallback: if no recognised status, treat as joined (backward compat)
+    return true;
+  };
+
+  const joinedRemaining = sortAlpha(remaining.filter((item) => isJoined(item)));
+  const invitedRemaining = sortAlpha(remaining.filter((item) => !isJoined(item)));
+  const sortedRemaining = [...joinedRemaining, ...invitedRemaining];
 
   if (isCurrentUserHost) {
     return [
@@ -146,7 +161,7 @@ export function resolveAssignedParticipants(
 
   const hostArr = hostItem ? [hostItem] : [];
   const totalActive = (isHostSelected && hostItem ? 1 : 0) + selectedFriends.length;
-  const maxGoing = capacity !== undefined && capacity > 0 ? capacity : totalActive;
+  const maxGoing = capacity !== undefined && capacity > 0 ? Math.min(capacity, totalActive) : totalActive;
   const availableGuestSpots = Math.max(0, maxGoing - (hostItem ? 1 : 0));
 
   const friendMap = new Map<string, Friend>();
@@ -192,16 +207,30 @@ export function resolveAssignedParticipants(
 
     if (goingGuests.length > guestSpots) {
       finalGoingGuests = goingGuests.slice(0, guestSpots);
-      const overflowToWait = goingGuests.slice(guestSpots);
+      const overflowToWait = goingGuests.slice(guestSpots).map((f) => ({
+        ...f,
+        assignedGroup: 'WAITLIST' as const,
+        rsvpStatus: f.rsvpStatus === 'JOINED' ? ('WAITLISTED' as const) : f.rsvpStatus,
+      }));
       finalWaitGuests = [...overflowToWait, ...waitGuests, ...unallocatedGuests];
     } else {
       finalGoingGuests = [...goingGuests];
       const remainingSpots = guestSpots - finalGoingGuests.length;
-      const fillFromUnallocated = unallocatedGuests.slice(0, remainingSpots);
+      const promoteFromWait = waitGuests.slice(0, remainingSpots).map((f) => ({
+        ...f,
+        waitlistPosition: undefined,
+        assignedGroup: 'GOING' as const,
+        rsvpStatus: f.rsvpStatus === 'WAITLISTED' ? ('JOINED' as const) : f.rsvpStatus,
+      }));
+      finalGoingGuests.push(...promoteFromWait);
+      const remainingWait = waitGuests.slice(remainingSpots);
+
+      const stillRemainingSpots = guestSpots - finalGoingGuests.length;
+      const fillFromUnallocated = unallocatedGuests.slice(0, stillRemainingSpots);
       finalGoingGuests.push(...fillFromUnallocated);
 
-      const remainingUnallocated = unallocatedGuests.slice(remainingSpots);
-      finalWaitGuests = [...waitGuests, ...remainingUnallocated];
+      const remainingUnallocated = unallocatedGuests.slice(stillRemainingSpots);
+      finalWaitGuests = [...remainingWait, ...remainingUnallocated];
     }
 
     return {
@@ -216,11 +245,18 @@ export function resolveAssignedParticipants(
     const nonPriorityGuests = selectedFriends.filter((f) => !prioritySet.has(f.id));
 
     const goingGuests = priorityGuests.slice(0, availableGuestSpots);
-    const overflowPriority = priorityGuests.slice(availableGuestSpots);
-    const waitGuests = [...overflowPriority, ...nonPriorityGuests];
+    const overflowPriority = priorityGuests.slice(availableGuestSpots).map((f) => ({
+      ...f,
+      assignedGroup: 'WAITLIST' as const,
+      rsvpStatus: f.rsvpStatus === 'JOINED' ? ('WAITLISTED' as const) : f.rsvpStatus,
+    }));
+    const remainingSpots = availableGuestSpots - goingGuests.length;
+    const fillFromNonPriority = nonPriorityGuests.slice(0, remainingSpots);
+    const remainingNonPriority = nonPriorityGuests.slice(remainingSpots);
+    const waitGuests = [...overflowPriority, ...remainingNonPriority];
 
     return {
-      going: [...hostArr, ...sortGoingFriends(goingGuests)],
+      going: [...hostArr, ...sortGoingFriends([...goingGuests, ...fillFromNonPriority])],
       waitlist: renumberWaitlist(waitGuests),
     };
   }

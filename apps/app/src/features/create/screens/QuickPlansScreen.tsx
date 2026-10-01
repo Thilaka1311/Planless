@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ArrowLeft, Plus, Zap, Trash2, MoreVertical, Edit2 } from "lucide-react";
+import { ArrowLeft, Plus, Zap, Trash2, Edit2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { QuickPlan, QuickPlanList } from "../../../core/types";
 import { useQuickPlans } from "../hooks/useQuickPlans";
@@ -54,6 +54,55 @@ function resolveListCover(list: QuickPlanList, allPlans: QuickPlan[]): ListCover
   };
 }
 
+interface QuickPlanListCardProps {
+  list: QuickPlanList;
+  count: number;
+  cover: ListCoverInfo;
+  onTap: () => void;
+  onLongPress: () => void;
+}
+
+const QuickPlanListCard: React.FC<QuickPlanListCardProps> = ({
+  list,
+  count,
+  cover,
+  onTap,
+  onLongPress,
+}) => {
+  const longPress = useLongPress(onLongPress, {
+    threshold: 450,
+    onTap,
+  });
+
+  return (
+    <div
+      {...longPress}
+      className="flex flex-col cursor-pointer group text-left select-none"
+    >
+      {/* Cover Image Container — clean, image-focused, no three-dot menu */}
+      <div className="relative w-full aspect-[4/5] rounded-2xl overflow-hidden bg-[#121216] border border-white/[0.08] group-hover:border-white/20 transition-all shadow-md group-active:scale-[0.98]">
+        <DiscoveryImages
+          src={cover.src}
+          category={cover.category}
+          subcategory={cover.subcategory}
+          alt={list.name}
+          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 select-none pointer-events-none"
+        />
+      </div>
+
+      {/* Title & Metadata underneath */}
+      <div className="mt-2 min-w-0 px-0.5">
+        <h3 className="text-sm font-semibold text-white tracking-tight truncate font-sans group-hover:text-[#FF6B2C] transition-colors">
+          {list.name}
+        </h3>
+        <p className="text-xs text-zinc-400 font-medium truncate mt-0.5 font-sans">
+          {`${count} ${count === 1 ? "plan" : "plans"}`}
+        </p>
+      </div>
+    </div>
+  );
+};
+
 export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
   userId,
   onBack,
@@ -99,12 +148,6 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
   const plansInCurrentList = activeList
     ? quickPlans.filter((p) => p.quick_plan_list_id === activeList.id)
     : [];
-
-  const headerLongPress = useLongPress(() => {
-    if (activeList) {
-      setListMenuTarget(activeList);
-    }
-  }, { threshold: 450 });
 
   const handleCreateListSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -177,7 +220,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
 
   return (
     <div
-      className="flex-1 flex flex-col h-full bg-[#000000] text-left select-none overflow-y-auto no-scrollbar pb-24"
+      className="flex-1 flex flex-col h-full bg-[#000000] text-left select-none overflow-y-auto no-scrollbar pb-6 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]"
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
       {/* ── TOP HEADER ── */}
@@ -201,9 +244,13 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
           </button>
 
           <h2
-            {...(activeList ? headerLongPress : {})}
+            onClick={() => {
+              if (activeList) {
+                setListMenuTarget(activeList);
+              }
+            }}
             className="text-lg font-bold text-white tracking-tight font-sans truncate cursor-pointer select-none"
-            title={activeList ? "Hold to manage list" : undefined}
+            title={activeList ? "Tap or hold to manage list" : undefined}
           >
             {activeList ? activeList.name : "Quick Plans"}
           </h2>
@@ -260,7 +307,6 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                   variant="collection"
                   onTap={() => onSelectQuickPlan(plan)}
                   onLongPress={() => setPlanToDelete(plan)}
-                  onMenuPress={() => setPlanToDelete(plan)}
                 />
               ))}
             </div>
@@ -301,47 +347,14 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                 const cover = resolveListCover(list, quickPlans);
 
                 return (
-                  <div
+                  <QuickPlanListCard
                     key={list.id}
-                    onClick={() => setSelectedListId(list.id)}
-                    className="flex flex-col cursor-pointer group text-left select-none"
-                  >
-                    {/* Cover Image Container */}
-                    <div className="relative w-full aspect-[4/5] rounded-2xl overflow-hidden bg-[#121216] border border-white/[0.08] group-hover:border-white/20 transition-all shadow-md group-active:scale-[0.98]">
-                      <DiscoveryImages
-                        src={cover.src}
-                        category={cover.category}
-                        subcategory={cover.subcategory}
-                        alt={list.name}
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-
-                      {/* 3-dots Menu Button */}
-                      <div className="absolute top-2 right-2 z-10">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setListMenuTarget(list);
-                          }}
-                          className="w-7 h-7 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center justify-center text-zinc-300 hover:text-white hover:bg-black/80 active:scale-95 transition shadow-sm cursor-pointer"
-                          aria-label="List options"
-                        >
-                          <MoreVertical className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Title & Metadata underneath */}
-                    <div className="mt-2 min-w-0 px-0.5">
-                      <h3 className="text-sm font-semibold text-white tracking-tight truncate font-sans group-hover:text-[#FF6B2C] transition-colors">
-                        {list.name}
-                      </h3>
-                      <p className="text-xs text-zinc-400 font-medium truncate mt-0.5 font-sans">
-                        {`${count} ${count === 1 ? "plan" : "plans"}`}
-                      </p>
-                    </div>
-                  </div>
+                    list={list}
+                    count={count}
+                    cover={cover}
+                    onTap={() => setSelectedListId(list.id)}
+                    onLongPress={() => setListMenuTarget(list)}
+                  />
                 );
               })}
             </div>
@@ -349,40 +362,45 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
         )
       )}
 
-      {/* ── CREATE LIST MODAL SHEET ── */}
+      {/* ── CREATE LIST BOTTOM SHEET ── */}
       <AnimatePresence>
         {isCreateListOpen && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => !isCreatingList && setIsCreateListOpen(false)}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
             />
             <motion.div
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 280 }}
-              className="relative w-full max-w-md bg-[#121216] border-t border-white/10 rounded-t-3xl p-5 pb-8 shadow-2xl z-10 space-y-4"
+              transition={{ type: "spring", damping: 28, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto max-w-md mx-auto"
+              style={{
+                background: "#1C1C1E",
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+              }}
             >
-              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-2" />
+              <div className="flex justify-center pt-3 pb-4">
+                <div className="w-9 h-1 rounded-full bg-white/20" />
+              </div>
 
-              <div className="space-y-1 text-center">
-                <h3 className="text-base font-bold text-white tracking-tight">
+              <div className="px-5 pb-2 text-left">
+                <h2 className="text-[18px] font-bold text-white mb-1 font-sans">
                   Create Quick Plan List
-                </h3>
-                <p className="text-xs text-zinc-400">
+                </h2>
+                <p className="text-[13px] text-zinc-400 font-sans">
                   Group your setups into a dedicated list
                 </p>
               </div>
 
-              <form onSubmit={handleCreateListSubmit} className="space-y-4 pt-1">
+              <form onSubmit={handleCreateListSubmit} className="px-4 pt-2 space-y-4">
                 <div>
-                  <label htmlFor="new-list-name-input" className="block text-xs font-semibold text-zinc-300 mb-1.5">
-                    List Name
-                  </label>
                   <input
                     id="new-list-name-input"
                     type="text"
@@ -391,13 +409,13 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                     placeholder="e.g. Football, Movies, Dining"
                     autoFocus
                     maxLength={50}
-                    className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/10 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-[#FF6B2C] transition"
+                    className="w-full px-4 py-3 rounded-xl bg-white/[0.06] border border-white/10 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-white/25 transition font-sans"
                   />
                 </div>
 
                 {/* Suggestions */}
                 <div className="space-y-1.5">
-                  <span className="text-[11px] font-medium text-zinc-400">
+                  <span className="text-[11px] font-medium text-zinc-400 font-sans">
                     Suggestions:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
@@ -406,7 +424,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                         key={suggestion}
                         type="button"
                         onClick={() => setNewListName(suggestion)}
-                        className={`text-xs px-2.5 py-1 rounded-full border transition cursor-pointer ${
+                        className={`text-xs px-2.5 py-1 rounded-full border transition cursor-pointer font-sans ${
                           newListName === suggestion
                             ? "bg-[#FF6B2C]/20 border-[#FF6B2C] text-[#FF6B2C] font-semibold"
                             : "bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25"
@@ -418,14 +436,29 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-2 pt-2">
+                <div className="flex flex-col gap-2.5 pt-1">
                   <button
                     type="submit"
                     disabled={!newListName.trim() || isCreatingList}
-                    className="w-full py-3 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] transition shadow-lg shadow-[#FF6B2C]/20"
+                    style={{
+                      width: "100%",
+                      height: 48,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "rgba(255, 255, 255, 0.12)",
+                      border: "1px solid rgba(255, 255, 255, 0.18)",
+                      borderRadius: 12,
+                      color: "#FFFFFF",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    className="active:scale-[0.98] transition-transform font-sans disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <span>{isCreatingList ? "Creating…" : "Create List"}</span>
                   </button>
+
                   <button
                     type="button"
                     disabled={isCreatingList}
@@ -433,45 +466,97 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                       setIsCreateListOpen(false);
                       setNewListName("");
                     }}
-                    className="w-full py-3 rounded-full bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 font-semibold text-sm cursor-pointer active:scale-[0.98] transition"
+                    style={{
+                      width: "100%",
+                      height: 48,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "rgba(255, 255, 255, 0.06)",
+                      border: "none",
+                      borderRadius: 12,
+                      color: "#FFFFFF",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    className="active:scale-[0.98] transition-transform font-sans"
                   >
                     Cancel
                   </button>
                 </div>
               </form>
             </motion.div>
-          </div>
+          </>
         )}
       </AnimatePresence>
 
-      {/* ── LIST MENU ACTION SHEET ── */}
+      {/* ── LIST MENU ACTION SHEET (MATCHING PLAN ACTIONS DESIGN) ── */}
       <AnimatePresence>
         {listMenuTarget && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setListMenuTarget(null)}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
             />
             <motion.div
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 280 }}
-              className="relative w-full max-w-md bg-[#121216] border-t border-white/10 rounded-t-3xl p-5 pb-8 shadow-2xl z-10 space-y-3"
+              transition={{ type: "spring", damping: 28, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto max-w-md mx-auto"
+              style={{
+                background: "#1C1C1E",
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+              }}
             >
-              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-2" />
-
-              <div className="space-y-0.5 text-center">
-                <h3 className="text-sm font-bold text-white tracking-tight">
-                  {listMenuTarget.name}
-                </h3>
+              {/* Top Handle */}
+              <div className="flex justify-center pt-3 pb-4">
+                <div className="w-9 h-1 rounded-full bg-white/20" />
               </div>
 
-              <div className="space-y-2 pt-2">
+              {/* Identity Header matching Plan Actions visual hierarchy */}
+              <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+                <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900 flex items-center justify-center">
+                  {(() => {
+                    const cover = resolveListCover(listMenuTarget, quickPlans);
+                    return (
+                      <DiscoveryImages
+                        src={cover.src}
+                        category={cover.category}
+                        subcategory={cover.subcategory}
+                        screen="Plan Actions Avatar"
+                        alt={listMenuTarget.name}
+                        className="w-full h-full object-cover"
+                      />
+                    );
+                  })()}
+                </div>
+                <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                  <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                    {listMenuTarget.name}
+                  </h3>
+                  <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                    {(() => {
+                      const count =
+                        listMenuTarget.quick_plans_count !== undefined
+                          ? listMenuTarget.quick_plans_count
+                          : quickPlans.filter((p) => p.quick_plan_list_id === listMenuTarget.id).length;
+                      return `${count} ${count === 1 ? "plan" : "plans"}`;
+                    })()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Actions List */}
+              <div className="px-4 pt-4 flex flex-col gap-2.5">
                 <button
+                  id="quick_plan_rename_btn"
                   type="button"
                   onClick={() => {
                     const target = listMenuTarget;
@@ -479,69 +564,102 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                     setEditListName(target.name);
                     setListToEdit(target);
                   }}
-                  className="w-full py-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-zinc-200 font-semibold text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] transition border border-white/5"
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    padding: "0 14px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    background: "rgba(255, 255, 255, 0.06)",
+                    border: "none",
+                    borderRadius: 12,
+                    color: "#FFFFFF",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                  className="hover:bg-white/10 active:scale-[0.98] transition-all font-sans"
                 >
-                  <Edit2 className="w-4 h-4 text-zinc-400" />
-                  <span>Rename List</span>
+                  <Edit2 className="w-4 h-4 text-zinc-300 shrink-0" />
+                  <span className="truncate">Rename List</span>
                 </button>
 
                 <button
+                  id="quick_plan_delete_btn"
                   type="button"
                   onClick={() => {
                     const target = listMenuTarget;
                     setListMenuTarget(null);
                     setListToDelete(target);
                   }}
-                  className="w-full py-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 font-bold text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] transition"
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    padding: "0 14px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    background: "rgba(239, 68, 68, 0.08)",
+                    border: "none",
+                    borderRadius: 12,
+                    color: "#EF4444",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                  className="hover:bg-rose-500/15 active:scale-[0.98] transition-all font-sans"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Delete List</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setListMenuTarget(null)}
-                  className="w-full py-2.5 rounded-full bg-transparent text-zinc-400 font-medium text-xs cursor-pointer active:scale-[0.98] transition"
-                >
-                  Cancel
+                  <Trash2 className="w-4 h-4 text-[#EF4444] shrink-0" />
+                  <span className="truncate">Delete List</span>
                 </button>
               </div>
             </motion.div>
-          </div>
+          </>
         )}
       </AnimatePresence>
 
-      {/* ── EDIT / RENAME LIST MODAL SHEET ── */}
+      {/* ── RENAME LIST BOTTOM SHEET ── */}
       <AnimatePresence>
         {listToEdit && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => !isUpdatingList && setListToEdit(null)}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
             />
             <motion.div
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 280 }}
-              className="relative w-full max-w-md bg-[#121216] border-t border-white/10 rounded-t-3xl p-5 pb-8 shadow-2xl z-10 space-y-4"
+              transition={{ type: "spring", damping: 28, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto max-w-md mx-auto"
+              style={{
+                background: "#1C1C1E",
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+              }}
             >
-              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-2" />
-
-              <div className="space-y-1 text-center">
-                <h3 className="text-base font-bold text-white tracking-tight">
-                  Rename List
-                </h3>
+              <div className="flex justify-center pt-3 pb-4">
+                <div className="w-9 h-1 rounded-full bg-white/20" />
               </div>
 
-              <form onSubmit={handleUpdateListSubmit} className="space-y-4 pt-1">
+              <div className="px-5 pb-2 text-left">
+                <h2 className="text-[18px] font-bold text-white mb-1 font-sans">
+                  Rename List
+                </h2>
+                <p className="text-[13px] text-zinc-400 font-sans">
+                  Update the name of this Quick Plan list
+                </p>
+              </div>
+
+              <form onSubmit={handleUpdateListSubmit} className="px-4 pt-2 space-y-4">
                 <div>
-                  <label htmlFor="edit-list-name-input" className="block text-xs font-semibold text-zinc-300 mb-1.5">
-                    List Name
-                  </label>
                   <input
                     id="edit-list-name-input"
                     type="text"
@@ -549,136 +667,239 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                     onChange={(e) => setEditListName(e.target.value)}
                     autoFocus
                     maxLength={50}
-                    className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/10 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-[#FF6B2C] transition"
+                    placeholder="List Name"
+                    className="w-full px-4 py-3 rounded-xl bg-white/[0.06] border border-white/10 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-white/25 transition font-sans"
                   />
                 </div>
 
-                <div className="space-y-2 pt-2">
+                <div className="flex flex-col gap-2.5 pt-1">
                   <button
                     type="submit"
                     disabled={!editListName.trim() || isUpdatingList}
-                    className="w-full py-3 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] transition shadow-lg shadow-[#FF6B2C]/20"
+                    style={{
+                      width: "100%",
+                      height: 48,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "rgba(255, 255, 255, 0.12)",
+                      border: "1px solid rgba(255, 255, 255, 0.18)",
+                      borderRadius: 12,
+                      color: "#FFFFFF",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    className="active:scale-[0.98] transition-transform font-sans disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <span>{isUpdatingList ? "Saving…" : "Save Changes"}</span>
                   </button>
+
                   <button
                     type="button"
                     disabled={isUpdatingList}
                     onClick={() => setListToEdit(null)}
-                    className="w-full py-3 rounded-full bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 font-semibold text-sm cursor-pointer active:scale-[0.98] transition"
+                    style={{
+                      width: "100%",
+                      height: 48,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "rgba(255, 255, 255, 0.06)",
+                      border: "none",
+                      borderRadius: 12,
+                      color: "#FFFFFF",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                    className="active:scale-[0.98] transition-transform font-sans"
                   >
                     Cancel
                   </button>
                 </div>
               </form>
             </motion.div>
-          </div>
+          </>
         )}
       </AnimatePresence>
 
-      {/* ── DELETE LIST MODAL SHEET ── */}
+      {/* ── DELETE LIST CONFIRMATION BOTTOM SHEET ── */}
       <AnimatePresence>
         {listToDelete && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => !isDeletingList && setListToDelete(null)}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
             />
             <motion.div
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 280 }}
-              className="relative w-full max-w-md bg-[#121216] border-t border-white/10 rounded-t-3xl p-5 pb-8 shadow-2xl z-10 space-y-4"
+              transition={{ type: "spring", damping: 28, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto max-w-md mx-auto"
+              style={{
+                background: "#1C1C1E",
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+              }}
             >
-              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-2" />
+              <div className="flex justify-center pt-3 pb-4">
+                <div className="w-9 h-1 rounded-full bg-white/20" />
+              </div>
 
-              <div className="space-y-1 text-center">
-                <h3 className="text-base font-bold text-white tracking-tight">
-                  Delete List?
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  Are you sure you want to delete &ldquo;{listToDelete.name}&rdquo;? All quick plans inside this list will also be removed.
+              <div className="px-5 pb-2 text-left">
+                <h2 className="text-[18px] font-bold text-white mb-2 font-sans">
+                  Delete {listToDelete.name}?
+                </h2>
+                <p className="text-[14px] text-white/55 leading-[1.55] font-sans">
+                  This will delete this Quick Plan list and its plans.
                 </p>
               </div>
 
-              <div className="space-y-2 pt-2">
+              <div className="px-4 pt-5 flex flex-col gap-2.5">
                 <button
+                  id="delete_list_confirm_btn"
                   type="button"
                   disabled={isDeletingList}
                   onClick={confirmDeleteList}
-                  className="w-full py-3 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 font-bold text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] transition"
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "#EF4444",
+                    border: "none",
+                    borderRadius: 12,
+                    color: "#FFFFFF",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                  className="active:scale-[0.98] transition-transform font-sans disabled:opacity-50"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  <span>{isDeletingList ? "Deleting…" : "Delete List"}</span>
+                  {isDeletingList ? "Deleting…" : "Delete"}
                 </button>
+
                 <button
                   type="button"
                   disabled={isDeletingList}
                   onClick={() => setListToDelete(null)}
-                  className="w-full py-3 rounded-full bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 font-semibold text-sm cursor-pointer active:scale-[0.98] transition"
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(255, 255, 255, 0.06)",
+                    border: "none",
+                    borderRadius: 12,
+                    color: "#FFFFFF",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                  className="active:scale-[0.98] transition-transform font-sans"
                 >
                   Cancel
                 </button>
               </div>
             </motion.div>
-          </div>
+          </>
         )}
       </AnimatePresence>
 
-      {/* ── DELETE PLAN MODAL SHEET ── */}
+      {/* ── DELETE PLAN CONFIRMATION BOTTOM SHEET ── */}
       <AnimatePresence>
         {planToDelete && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => !isDeletingPlan && setPlanToDelete(null)}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
             />
             <motion.div
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 280 }}
-              className="relative w-full max-w-md bg-[#121216] border-t border-white/10 rounded-t-3xl p-5 pb-8 shadow-2xl z-10 space-y-4"
+              transition={{ type: "spring", damping: 28, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto max-w-md mx-auto"
+              style={{
+                background: "#1C1C1E",
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+              }}
             >
-              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-2" />
+              <div className="flex justify-center pt-3 pb-4">
+                <div className="w-9 h-1 rounded-full bg-white/20" />
+              </div>
 
-              <div className="space-y-1 text-center">
-                <h3 className="text-base font-bold text-white tracking-tight">
-                  Delete Quick Plan?
-                </h3>
-                <p className="text-xs text-zinc-400">
+              <div className="px-5 pb-2 text-left">
+                <h2 className="text-[18px] font-bold text-white mb-2 font-sans">
+                  Delete {planToDelete.name}?
+                </h2>
+                <p className="text-[14px] text-white/55 leading-[1.55] font-sans">
                   Are you sure you want to remove &ldquo;{planToDelete.name}&rdquo;?
                 </p>
               </div>
 
-              <div className="space-y-2 pt-2">
+              <div className="px-4 pt-5 flex flex-col gap-2.5">
                 <button
                   type="button"
                   disabled={isDeletingPlan}
                   onClick={confirmDeletePlan}
-                  className="w-full py-3 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 font-bold text-sm flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] transition"
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "#EF4444",
+                    border: "none",
+                    borderRadius: 12,
+                    color: "#FFFFFF",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                  className="active:scale-[0.98] transition-transform font-sans disabled:opacity-50"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  <span>{isDeletingPlan ? "Deleting…" : "Delete Quick Plan"}</span>
+                  {isDeletingPlan ? "Deleting…" : "Delete"}
                 </button>
+
                 <button
                   type="button"
                   disabled={isDeletingPlan}
                   onClick={() => setPlanToDelete(null)}
-                  className="w-full py-3 rounded-full bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 font-semibold text-sm cursor-pointer active:scale-[0.98] transition"
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "rgba(255, 255, 255, 0.06)",
+                    border: "none",
+                    borderRadius: 12,
+                    color: "#FFFFFF",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                  className="active:scale-[0.98] transition-transform font-sans"
                 >
                   Cancel
                 </button>
               </div>
             </motion.div>
-          </div>
+          </>
         )}
       </AnimatePresence>
     </div>

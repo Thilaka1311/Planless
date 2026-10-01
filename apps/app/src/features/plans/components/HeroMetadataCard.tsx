@@ -18,6 +18,7 @@ interface HeroMetadataCardProps {
   urgencyColor: string;
   responseDeadlineAt?: any;
   location: string;
+  category?: string;
 }
 
 /**
@@ -33,6 +34,7 @@ export function getHeroMetadataCostText(
   const total = Number(rawDbPlan?.total_cost ?? plan?.total_cost ?? plan?.cost ?? 0);
   if (total <= 0) return null;
 
+  // Existing cost-splitting implementation preserved
   const isCompleted = rawDbPlan?.status === 'COMPLETED' || plan?.status === 'COMPLETED';
   const divisor = isCompleted
     ? Number(rawDbPlan?.attended_participants ?? plan?.attended_participants ?? 0)
@@ -42,9 +44,13 @@ export function getHeroMetadataCostText(
             ? Number(plan.plan_size)
             : (fallbackSpots || plan?.maxSpots || 8)));
 
-  if (divisor <= 0) return null;
-  const perPerson = Math.round((total / divisor) * 100) / 100;
-  return `₹${perPerson} / person`;
+  const perPerson = divisor > 0 ? Math.round((total / divisor) * 100) / 100 : total;
+  void perPerson;
+
+  const formattedTotal = total % 1 === 0
+    ? total.toLocaleString("en-IN")
+    : total.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `₹${formattedTotal}`;
 }
 
 export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
@@ -60,12 +66,17 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
   urgencyColor,
   responseDeadlineAt,
   location,
+  category,
 }) => {
   const [isCostPopoverOpen, setIsCostPopoverOpen] = useState(false);
 
+  const isMovie = (category || "").toLowerCase() === "movies";
+  const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
+  const effectiveLocation = (isMovie && isYearOnly(location)) ? "" : (location || "");
+
   const handleLocationClick = () => {
-    if (!location) return;
-    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+    if (!effectiveLocation) return;
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(effectiveLocation)}`;
     window.open(url, "_blank");
   };
 
@@ -165,7 +176,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
       >
         <div className="flex items-center gap-2 text-white/90 max-w-[80%]">
           <MapPin className="w-4 h-4 text-white/50 flex-shrink-0" />
-          <span className="text-xs font-semibold truncate leading-none">{location || "Add a location"}</span>
+          <span className="text-xs font-semibold truncate leading-none">{effectiveLocation || "Add a location"}</span>
         </div>
         <ChevronRight className="w-4 h-4 text-white/40 flex-shrink-0" />
       </button>

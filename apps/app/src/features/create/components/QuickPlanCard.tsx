@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowRight, Users, MoreVertical } from "lucide-react";
+import { ArrowRight, Users } from "lucide-react";
 import { QuickPlan } from "../../../core/types";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
@@ -19,14 +19,13 @@ export const QuickPlanCard: React.FC<QuickPlanCardProps> = ({
   plan,
   onTap,
   onLongPress,
-  onMenuPress,
   className = "",
   style,
   variant = "rail",
 }) => {
   const longPress = useLongPress(() => {
     onLongPress?.();
-  }, { threshold: 450 });
+  }, { threshold: 450, onTap });
 
   const participants = plan.participants || [];
   const friendCount = participants.length;
@@ -53,7 +52,6 @@ export const QuickPlanCard: React.FC<QuickPlanCardProps> = ({
     return (
       <div
         {...longPress}
-        onClick={onTap}
         style={style}
         className={`flex flex-col cursor-pointer group text-left select-none ${className}`}
       >
@@ -105,7 +103,6 @@ export const QuickPlanCard: React.FC<QuickPlanCardProps> = ({
   return (
     <div
       {...longPress}
-      onClick={onTap}
       style={style}
       className={`rounded-2xl bg-[#121216] border border-white/[0.08] hover:border-[#FF6B2C]/40 p-4 flex flex-col justify-between shadow-md cursor-pointer group active:scale-[0.99] transition-all select-none relative overflow-hidden text-left ${className}`}
     >
@@ -125,19 +122,6 @@ export const QuickPlanCard: React.FC<QuickPlanCardProps> = ({
               {plan.name}
             </h4>
           </div>
-          {onMenuPress && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onMenuPress();
-              }}
-              className="w-7 h-7 -mr-1.5 -mt-1 rounded-full flex items-center justify-center text-zinc-500 hover:text-white hover:bg-white/10 active:scale-95 transition cursor-pointer shrink-0"
-              aria-label="Options"
-            >
-              <MoreVertical className="w-4 h-4" />
-            </button>
-          )}
         </div>
 
         {/* Subtitle: Category · Place */}

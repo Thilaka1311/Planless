@@ -10,11 +10,11 @@ describe("Location Setter & Discovery Flow Suite", () => {
     clearCachedSections();
   });
 
-  it("renders LocationSetter with clean header, search bar, and conditional device location option", () => {
+  it("renders LocationSetter with header, search bar, and location-status card states", () => {
     const onBackMock = vi.fn();
     const onSelectLocationMock = vi.fn();
 
-    // When location has NOT been set:
+    // When location has NOT been permitted / set:
     const htmlWithoutLoc = renderToString(
       <LocationSetter
         currentCity="Bengaluru"
@@ -31,13 +31,15 @@ describe("Location Setter & Discovery Flow Suite", () => {
     expect(htmlWithoutLoc).toContain("Search city, area, or landmark...");
     expect(htmlWithoutLoc).not.toContain("Active Discovery Location");
     expect(htmlWithoutLoc).not.toContain("Popular Discovery Hubs");
-    expect(htmlWithoutLoc).toContain("Use my current location");
+    // State 2: NOT_PERMITTED
+    expect(htmlWithoutLoc).toContain("Use your current location");
+    expect(htmlWithoutLoc).toContain("Tap to enable location access");
 
-    // When location has already been set:
+    // When location IS available / permitted:
     const htmlWithLoc = renderToString(
       <LocationSetter
         currentCity="Bengaluru"
-        currentLocality="Nearby"
+        currentLocality="Indiranagar"
         hasLocation={true}
         onBack={onBackMock}
         onSelectLocation={onSelectLocationMock}
@@ -45,7 +47,10 @@ describe("Location Setter & Discovery Flow Suite", () => {
     );
 
     expect(htmlWithLoc).toContain("Location");
-    expect(htmlWithLoc).not.toContain("Use my current location");
+    // State 1: AVAILABLE
+    expect(htmlWithLoc).toContain("Using your current location");
+    expect(htmlWithLoc).toContain("Indiranagar, Bengaluru");
+    expect(htmlWithLoc).not.toContain("Tap to enable location access");
   });
 
   it("handles location selection with valid coordinates and city/locality", () => {

@@ -292,9 +292,7 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
 
     const newDbPlan = {
       public_id: planId,
-      discovery_item_id: form.discoveryItemId || null,
       category: dbCategory,
-      subcategory: selectedSubcategory ? selectedSubcategory.toUpperCase() : "OTHER",
       title: titleToUse,
       place_id: form.placeId || null,
       place_name: locationToUse,
@@ -307,7 +305,7 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
       total_cost: costToUse,
       cover_image: coverUrl,
       status: "LIVE" as const,
-      participant_filtering: (isAssigned ? "ASSIGNED" : "AUTOMATIC") as "AUTOMATIC" | "ASSIGNED",
+      participant_filtering: planSizeToUse === null ? null : ((isAssigned ? "ASSIGNED" : "AUTOMATIC") as "AUTOMATIC" | "ASSIGNED"),
       waitlist_order_mode: (isAssigned ? "CUSTOM" : "AUTO") as "AUTO" | "CUSTOM",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

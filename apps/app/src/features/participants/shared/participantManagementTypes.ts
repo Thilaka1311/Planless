@@ -20,7 +20,8 @@ export interface PlanParticipantManagementWrapperProps {
   onChangePlanHost?: (planId: string, newHostId: string, currentHostId: string) => Promise<void>;
   onPromoteToHost?: (planId: string, userId: string) => Promise<void>;
   onDemoteFromHost?: (planId: string, userId: string) => Promise<void>;
-  onUpdatePlanCapacity?: (planId: string, capacity: number, options?: { totalCost?: number; autoPromote?: boolean }) => Promise<void> | void;
+  onUpdatePlanCapacity?: (planId: string, capacity: number | null, options?: { totalCost?: number; autoPromote?: boolean }) => Promise<void> | void;
+  onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => Promise<void> | void;
   onAddParticipants?: (planId: string, userIds: string[], targetGroup?: 'GOING' | 'WAITLIST') => Promise<void>;
   onReorderWaitlist?: (planId: string, orderedUserUuids: string[]) => Promise<void>;
   onOpenSettings?: () => void;

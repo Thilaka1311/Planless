@@ -42,10 +42,14 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
 * **Rejoining a Plan**: A skipped user can tap "Request to Rejoin" via `<RejoinPlanBottomSheet />`, setting status to `REJOINED` awaiting host approval.
 
 ### 6. Host Coordination & Roster Management
-* **Editing Plan Details**: Hosts can edit the title inline in the header, update date/time via `<EditDateTimeBottomSheet />`, update location via Google Places autocomplete, or change cover images via `<EditPlanImageScreen />` (which saves both the original image and a 9:16 card crop).
+* **Editing Plan Details**: Hosts can edit the title inline in the header, update date/time and RSVP deadline via `<EditDateTimeBottomSheet />` (which opens existing past plans normally with zero validation errors, separates loading existing values from newly edited values, supports tapping Cancel to discard and restore without error blocking, and only enforces past-time/date validation when newly edited), update location via Google Places autocomplete, or change cover images via `<EditPlanImageScreen />` (which saves both the original image and a 9:16 card crop).
 * **Setting Plan Cost**: The host opens `<SetCostScreen />` to enter a total plan expense. The per-person cost is automatically divided by the plan capacity (`plan_size`).
 * **Managing Roster**: The host opens `<PlanParticipantManagementWrapper />`:
-  * *Adjusting Capacity*: Pinned header Plan Size adjuster (`[ 👥 N ]`) opens `EditCapacityBottomSheet`. Adjusts freely and commits on close. In Automatic mode, capacity can be increased up to 50, persisting directly to the `plans.plan_size` column in Supabase and updating the UI and local cache synchronously. Decreasing to 2 and pressing minus toggles `No limit` (`plan_size: null`), which is preserved throughout. In Assigned mode, capacity adjustments can be host-guided with `GuidedCapacityAdjustmentBottomSheet`.
+  * *Adjusting Capacity*: Pinned header Plan Size adjuster opens `EditCapacityBottomSheet`. The host can choose between two explicit options:
+    - **No Limit**: Sets `plan_size: null`. No host-defined capacity is chosen. There is strictly NO waitlist. The platform enforces a hard system ceiling of 50 joined participants. Joins stop at 50 with "Plan size reached".
+    - **Limited**: Host sets a numeric capacity (`plan_size`, e.g. 10) constrained between 2 and 50. Existing waitlist lifecycle applies when full.
+    - *System Maximum = 50*: Across all plans, 50 joined participants is the absolute platform ceiling. When 50 joined is reached, Share is hidden, Add Participant remains visible but immediately shows a capacity error toast, and the plan is excluded from Home feed discovery. If a participant leaves (50 -> 49), capacity dynamically reopens and normal behavior resumes.
+    - Commits on close. In Assigned mode, capacity adjustments can be host-guided with `GuidedCapacityAdjustmentBottomSheet`.
   * *Automatic Mode*: Roster ordered by queue timestamp (`joined_queue_at ASC`).
   * *Assigned Mode*: Host explicitly assigns participants between `GOING` and `WAITLIST`, reorders the waitlist via drag-and-drop, or swaps individuals.
 * **Inviting Friends**: Hosts (or participants if `allow_participant_invites` is enabled) invite friends using `<WhoIsComingScreen />` or generate a shareable link via `<SharePlanLinkBottomSheet />` (which follows the Plan Actions visual hierarchy with actual plan avatar, plan title, and 'Plan Actions' context).
@@ -115,6 +119,7 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
     * "You're Hosting": White pill with crown icon.
     * "Waitlisted (#1)": Amber pill with queue rank.
     * "Leave Plan": Tappable link initiating leave flows.
+    * "Completed" & "Plan Cancelled": Read-only status pills for non-host participants; tapping does nothing (`onClick` is `undefined`, `pointer-events-none`). Hosts retain management/reopen/restore actions.
 * **Participant Roster (`InlineParticipantView.tsx`)**:
   * Segmented tabs: "Going" and "Waitlist".
   * List of participant rows with circular profile photos (`UserAvatar`), full names, RSVP status badges, and host administration trigger menus.
@@ -126,6 +131,7 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
   * *Cancel Plan*: Red destructive confirmation button (`#EF4444`) with cancellation reason field.
   * *Discard / Exit Plan*: Plan Action confirmation sheet with Plan identity header (`DiscoveryImages`, title, "Plan Actions" subtitle), unsaved changes advisory, and standard destructive action styling (`Discard`, text-only `Cancel`).
   * *Edit Date/Time*: Dual time wheels and quick-select day chips (Today, Tomorrow, Weekend).
+  * *Cancel Leave Request*: Plan Actions confirmation sheet with Plan identity header (`DiscoveryImages`, title, "Plan Actions" subtitle), "Cancel leave request?" title and explanation, single primary action "Stay in Plan", and simple text "Cancel" dismissal.
   * *Host Attendance*: Roster checklist to mark each member as `ATTENDED` or `DID_NOT_ATTEND` before final plan closure.
 
 ---
@@ -315,7 +321,8 @@ A plan exists in one of four states:
 * **Assigned Mode (`participant_filtering === 'ASSIGNED'`)**:
   * Host assigns each invitee to `assigned_group = 'GOING'` or `'WAITLIST'`.
   * Waitlist ordering uses explicit `waitlist_position` (1..N).
-  * On capacity increase, `auto_promote_waitlist_for_assigned` promotes top waitlisted candidates. If a candidate was `INVITED`, their `assigned_group` switches to `GOING` while their `rsvp_status` remains `INVITED`.
+  * **PLAN SIZE = NUMBER OF JOINED PARTICIPANTS** whenever enough eligible participants exist. Join slots are filled up to `plan_size`.
+  * **RSVP STATUS IS IMMUTABLE ONCE AN INVITE EXISTS**: Switching modes (Automatic ↔ Assigned), changing plan size, or moving a participant between Joined and Waitlist only changes group assignment (`assigned_group = 'GOING'` or `'WAITLIST'`), NEVER `rsvp_status`. An `INVITED` user remains `INVITED` until they personally RSVP.
 
 ### Host Rules & Invariants
 * Every plan must have at least one active Host (`role === 'HOST'`, `rsvp_status === 'JOINED'`).
@@ -400,3 +407,5 @@ After modifying the Plans feature, test the following:
 * [ ] **Capacity Adjustments**: Increase and decrease capacity in `PlanParticipantManagementWrapper`. Verify Automatic mode promotes/demotes based on FCFS timestamps and Assigned mode preserves manual assignments.
 * [ ] **Completion Flow**: Complete a live plan as host. Verify final attendance tracking, expense distribution mode selection, and the 24-hour post-completion edit window.
 * [ ] **Cancellation Flow**: Cancel a plan as host. Confirm confirmation modal, status transition to `CANCELLED`, team assignment cleanup, and display in `CancelledPlans`.
+* [ ] **Create Plan Keyboard Behavior**: In `createMode` (`PlansPreviewScreen`), verify focusing the Plan Title or Location input opens the virtual keyboard without pushing the `Manage Participants` button or `Create Plan` CTA upward; they remain locked under/behind the keyboard at their original bottom coordinates.
+

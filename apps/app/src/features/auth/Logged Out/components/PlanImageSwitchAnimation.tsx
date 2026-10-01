@@ -35,7 +35,7 @@ export const PLAN_SLIDES: PlanSlideConfig[] = [
     coverImage: movieCover,
     time: "Today • 19:00",
     location: "Movie Theater",
-    cost: "350 / person",
+    cost: "350",
     participants: ORIGINAL_DEMO_PEOPLE.slice(0, 4), // You, Alex, Sam, Maya
   },
   {
@@ -45,7 +45,7 @@ export const PLAN_SLIDES: PlanSlideConfig[] = [
     coverImage: diningCover,
     time: "Today • 19:00",
     location: "Restaurant",
-    cost: "800 / person",
+    cost: "800",
     participants: [ORIGINAL_DEMO_PEOPLE[0], ORIGINAL_DEMO_PEOPLE[1], ORIGINAL_DEMO_PEOPLE[3], ORIGINAL_DEMO_PEOPLE[4]], // You, Alex, Maya, Jordan
   },
   {
@@ -55,7 +55,7 @@ export const PLAN_SLIDES: PlanSlideConfig[] = [
     coverImage: sportsCover,
     time: "Today • 19:00",
     location: "Ground",
-    cost: "200 / person",
+    cost: "200",
     participants: [ORIGINAL_DEMO_PEOPLE[0], ORIGINAL_DEMO_PEOPLE[1], ORIGINAL_DEMO_PEOPLE[2], ORIGINAL_DEMO_PEOPLE[5]], // You, Alex, Sam, Leo
   },
   {
@@ -65,7 +65,7 @@ export const PLAN_SLIDES: PlanSlideConfig[] = [
     coverImage: customPlanCover,
     time: "Today • 19:00",
     location: "Go-To Spot",
-    cost: "100 / person",
+    cost: "100",
     participants: ORIGINAL_DEMO_PEOPLE, // All 6 canonical participants
   },
 ];

@@ -288,7 +288,7 @@ export function JoinPlanAnimation({
               isHolding={isHolding}
               isFull={false}
               formattedDateAndTime="Today • 19:00"
-              costText="₹400 / person"
+              costText="₹400"
               contentScale={0.72}
             />
           )}

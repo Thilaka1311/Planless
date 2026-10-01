@@ -70,7 +70,7 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
   * Search bar container (`px-5 pt-1 pb-3`) with rounded input (`h-11 bg-zinc-900/90 border border-white/[0.08] rounded-full px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-white/20`).
 * **Category Navigation Pills**:
   * Horizontal pill strip (`flex items-center gap-2.5 px-5 py-2 overflow-x-auto scrollbar-none`).
-  * Pills feature category icons (`Film`, `Compass`, `UtensilsCrossed`) with smooth scale and background transitions (`hover:bg-white/10 active:scale-95`).
+  * Pills feature category icons (`Film`, `Trophy`, `Utensils`) with smooth scale and background transitions (`hover:bg-white/10 active:scale-95`).
 
 ### Discovery Experience Card (`DiscoveryCard.tsx`)
 * **Card Dimensions**: Vertical card frame (`w-[230px] h-[310px] shrink-0 rounded-3xl relative overflow-hidden bg-zinc-950 border border-white/[0.04] shadow-2xl flex flex-col justify-end p-5 cursor-pointer hover:border-white/10 transition-all duration-300 group select-none`).
@@ -97,6 +97,7 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
 | Component | File Path | Responsibilities | Key Relationships |
 |---|---|---|---|
 | `BrowseExperiencesStep` | `src/features/discovery/screens/Discovery.tsx` | Main root discovery screen. Manages section caching, search query filtering, sub-screen navigation, and admin context triggers. | Mounted during create flow or discovery tab. |
+| `LocationSetter` | `src/features/discovery/screens/LocationSetter.tsx` | Location selection modal overlay with Google Places Autocomplete and a compact, real-device Location Status Card. | Rendered as an overlay in `Discovery.tsx`. |
 | `DiscoverDining` | `src/features/discovery/screens/DiscoverDining.tsx` | Dedicated dining showcase screen filtering cafes, bistros, and brunch venues. | Child sub-screen of `Discovery.tsx`. |
 | `DiscoverMovies` | `src/features/discovery/screens/DiscoverMovies.tsx` | Dedicated cinema showcase screen filtering latest releases, trending films, and popular movies with "Latest & Popular" header. | Child sub-screen of `Discovery.tsx`. |
 | `DiscoverSports` | `src/features/discovery/screens/DiscoverSports.tsx` | Dedicated sports showcase screen featuring turf and court filtering, duration suggestions, and booking links. | Child sub-screen of `Discovery.tsx`. |
@@ -268,7 +269,16 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
 3. **Admin Edit Flow**:
    - Long-press card as admin: verify context sheet appears, edit title, save, and verify immediate UI update.
 4. **Places Search Betterment Verification**:
-   - Search queries with singular/plural categories (e.g. "football", "cafes") dynamically filter items.
-   - Distances dynamically calculate from the active search origin coordinates or user coordinates.
+   - Initial Load vs. Search separation: Initial load retrieves nearby places based on device location; Search queries the entire database table (`discovery_items`) globally without radius, viewport, or loaded-array restrictions.
+   - Cross-category database matching: Supports DINING, MOVIES, SPORTS, ACTIVITIES, and ALL with server-side multi-term `ilike` search.
+   - Non-geographical pruning: Distances calculate relative to active origin coordinates for informational display, never dropping distant places.
+   - UI states: Displays "Searching all places..." during query execution, and "No places found" / "Try searching for another place." on empty results.
 5. **Streamlined Section Headers**:
    - Rail headers in `ForYouSections.tsx` show prominent clean titles without trailing "View all" buttons or secondary helper subtitles.
+6. **Location Status Card Verification**:
+   - Directly below the search bar with 12–16px vertical spacing (`mt-3.5 px-4`), maintaining search bar margins.
+   - Three dynamic states:
+     - **STATE 1: LOCATION AVAILABLE**: Shows MapPin icon, primary text "Using your current location", secondary text with detected readable area/city. Automatically detected on mount if permission granted without re-prompting. Entire card is tappable to select current location.
+     - **STATE 2: LOCATION NOT PERMITTED**: Primary text "Use your current location", secondary text "Tap to enable location access". Tapping triggers native `navigator.geolocation.getCurrentPosition`. If granted, resolves location and selects it; if denied, remains in prompt state without repeated popups.
+     - **STATE 3: LOCATION SERVICES OFF**: Primary text "Location is turned off", secondary text "Tap to enable location". Triggers retry/device settings prompt when tapped.
+

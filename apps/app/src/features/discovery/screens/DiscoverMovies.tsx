@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { ArrowLeft, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, AlertCircle, RefreshCw, Loader2 } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
 import {
@@ -9,6 +9,7 @@ import {
   TMDB_LANGUAGE_NAMES,
   isMovieWithinSixMonths,
 } from "../services/tmdbMovieService";
+import { searchDiscoveryPlaces } from "../services/discoveryService";
 import { ADMIN_CONFIGS } from "../services/discoveryAdminService";
 import { useLongPress } from "../../../shared/hooks/useLongPress";
 import { SearchBar } from "../../../shared/components/SearchBar";
@@ -63,7 +64,7 @@ export const MoviePortraitCard: React.FC<MoviePortraitCardProps> = ({
 
   const releaseYear = item.release_date
     ? new Date(item.release_date).getFullYear().toString()
-    : item.location || "";
+    : "";
 
   return (
     <div
@@ -151,7 +152,7 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  // Execute Search
+  // Execute Search across TMDB movies and places database
   useEffect(() => {
     if (!debouncedQuery) {
       setSearchResults([]);
@@ -162,13 +163,31 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
     let active = true;
     setIsSearching(true);
 
-    searchMovies(debouncedQuery, 1, selectedLanguage)
-      .then((res) => {
-        if (active) {
-          // On searching, those movies (even older than 6 months) should show up
-          setSearchResults(res.items);
-          setIsSearching(false);
+    Promise.allSettled([
+      searchMovies(debouncedQuery, 1, selectedLanguage),
+      searchDiscoveryPlaces({
+        category: "MOVIES",
+        query: debouncedQuery,
+        currentCoordinates,
+        defaultCity: currentCity,
+      }),
+    ])
+      .then(([tmdbRes, placesRes]) => {
+        if (!active) return;
+        const movieItems = tmdbRes.status === "fulfilled" ? tmdbRes.value.items || [] : [];
+        const placeItems = placesRes.status === "fulfilled" ? placesRes.value.items || [] : [];
+        const combined = [...placeItems, ...movieItems];
+        const seen = new Set<string>();
+        const deduped: DiscoveryItem[] = [];
+        for (const item of combined) {
+          const key = item.place_id || item.id;
+          if (!seen.has(key)) {
+            seen.add(key);
+            deduped.push(item);
+          }
         }
+        setSearchResults(deduped);
+        setIsSearching(false);
       })
       .catch((err) => {
         console.error("[DiscoverMovies] Search error:", err);
@@ -181,7 +200,7 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
     return () => {
       active = false;
     };
-  }, [debouncedQuery, selectedLanguage]);
+  }, [debouncedQuery, selectedLanguage, currentCoordinates, currentCity]);
 
   // Load Primary Movie Catalogue (strictly <= 6 months from current date)
   const loadCatalogue = useCallback(async () => {
@@ -287,7 +306,14 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
       {/* ── 5. COMPACT TWO-COLUMN MOVIE GRID ── */}
       <div className="flex-1 px-5 pt-1 pb-8">
         {/* Loading state */}
-        {(isLoadingFeeds || isSearching) && displayedMovies.length === 0 ? (
+        {isSearching ? (
+          <div className="flex flex-col items-center justify-center py-20 space-y-3">
+            <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
+            <p className="text-xs text-zinc-400 font-medium">
+              Searching all places...
+            </p>
+          </div>
+        ) : isLoadingFeeds && displayedMovies.length === 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div
@@ -331,11 +357,19 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
               />
             ))}
           </div>
+        ) : debouncedQuery ? (
+          <div className="px-6 py-16 text-center space-y-2">
+            <p className="text-zinc-300 text-sm font-medium">
+              No places found
+            </p>
+            <p className="text-zinc-500 text-xs">
+              Try searching for another place.
+            </p>
+          </div>
         ) : (
           <div className="py-16 text-center space-y-2">
             <p className="text-zinc-400 text-sm font-medium">
-              No movies found{debouncedQuery ? ` for "${debouncedQuery}"` : ""}{" "}
-              {activeLanguageLabel ? `in ${activeLanguageLabel}` : ""}.
+              No movies found {activeLanguageLabel ? `in ${activeLanguageLabel}` : ""}.
             </p>
             <p className="text-zinc-600 text-xs">
               Try switching the language filter or searching another title.

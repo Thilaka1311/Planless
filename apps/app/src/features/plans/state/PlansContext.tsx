@@ -743,6 +743,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     dbUsers: planUsers,
     userId,
     setDbPlans,
+    setDbPlanParticipants,
     setDbPlanTeamAssignments,
     refreshPlans,
     insertSystemMessage,
@@ -1115,7 +1116,21 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const isHostRole = ppRecord.role === "HOST";
 
       // Home screen visibility strictly determined by plan_participants: role = PARTICIPANT & rsvp_status = INVITED
-      return !isHostRole && rsvp === "INVITED";
+      if (isHostRole || rsvp !== "INVITED") return false;
+
+      // Exclude plans that have reached the hard maximum of 50 joined participants (dynamic capacity)
+      const isNoLimit = plan.plan_size === null || plan.plan_size === undefined;
+      const counts = getParticipantCounts(planUuid);
+      const joinedCount = counts.host + counts.going;
+
+      if (isNoLimit && joinedCount >= 50) {
+        return false;
+      }
+      if (!isNoLimit && joinedCount >= 50) {
+        return false;
+      }
+
+      return true;
     });
 
     return filtered.sort((a, b) => {
@@ -1203,6 +1218,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       plan_size: matchedPlan.plan_size,
       capacity: (matchedPlan as any).capacity,
       joinLimit: (matchedPlan as any).joinLimit,
+      participant_filtering: (matchedPlan as any).participant_filtering,
+      participantFiltering: (matchedPlan as any).participantFiltering,
     } : null;
 
     // Synchronously update local React state first so capacity bounds expand immediately
@@ -1211,21 +1228,17 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updateLocalPlan(planId, updates);
     }
     if (updates.plan_size !== undefined) {
-      updateLocalPlan(planUuid, {
+      const planSizeFields = {
         plan_size: updates.plan_size,
         planSize: updates.plan_size,
         capacity: updates.plan_size,
         joinLimit: updates.plan_size,
         maxSpots: updates.plan_size,
-      } as any);
+        ...(updates.plan_size === null ? { participant_filtering: null, participantFiltering: null } : {}),
+      };
+      updateLocalPlan(planUuid, planSizeFields as any);
       if (planId !== planUuid) {
-        updateLocalPlan(planId, {
-          plan_size: updates.plan_size,
-          planSize: updates.plan_size,
-          capacity: updates.plan_size,
-          joinLimit: updates.plan_size,
-          maxSpots: updates.plan_size,
-        } as any);
+        updateLocalPlan(planId, planSizeFields as any);
       }
     }
 

@@ -2,15 +2,14 @@ import React from "react";
 import { motion } from "motion/react";
 import { HomeHeader } from "../../../components/HomeHeader";
 import { UserProfile } from "../../../core/types";
-import diningCategoryIcon from "../../../assets/categories/dining.png";
+import { CategoryIcon } from "../../../shared/components/CategoryIcon";
 import moviesCategoryIcon from "../../../assets/categories/movies.png";
-import sportsCategoryIcon from "../../../assets/categories/sports.png";
 import activitiesCategoryIcon from "../../../assets/Activities.png";
 
 export interface CreateCategoryOption {
   id: "dining" | "movies" | "sports" | "activities";
   title: string;
-  image: string;
+  image?: string;
   glow?: string;
 }
 
@@ -18,8 +17,7 @@ export const CREATE_CATEGORIES: CreateCategoryOption[] = [
   {
     id: "dining",
     title: "Dining",
-    image: diningCategoryIcon,
-    glow: "hover:border-rose-500/30 hover:shadow-[0_0_24px_rgba(244,63,94,0.18)]",
+    glow: "hover:border-red-500/30 hover:shadow-[0_0_24px_rgba(239,68,68,0.18)]",
   },
   {
     id: "movies",
@@ -30,7 +28,6 @@ export const CREATE_CATEGORIES: CreateCategoryOption[] = [
   {
     id: "sports",
     title: "Sports",
-    image: sportsCategoryIcon,
     glow: "hover:border-emerald-500/30 hover:shadow-[0_0_24px_rgba(16,185,129,0.18)]",
   },
   {
@@ -85,13 +82,21 @@ export const CreateCategoryScreen: React.FC<CreateCategoryScreenProps> = ({
               transition={{ duration: 0.2, delay: index * 0.04 }}
               className={`relative h-[96px] rounded-2xl border border-white/[0.08] bg-[#121216]/90 hover:bg-[#18181f] active:scale-[0.97] transition-all duration-200 cursor-pointer flex flex-col items-center justify-center p-2.5 group shadow-md ${category.glow || ""}`}
             >
-              {/* Category Illustration */}
+              {/* Category Icon / Illustration */}
               <div className="w-13 h-13 flex items-center justify-center shrink-0">
-                <img
-                  src={category.image}
-                  alt={category.title}
-                  className="w-full h-full object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
-                />
+                {category.id === "sports" || category.id === "dining" ? (
+                  <CategoryIcon
+                    category={category.id}
+                    className="w-8 h-8 transition-transform duration-200 group-hover:scale-110"
+                    strokeWidth={2}
+                  />
+                ) : (
+                  <img
+                    src={category.image}
+                    alt={category.title}
+                    className="w-full h-full object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
+                  />
+                )}
               </div>
 
               {/* Category Name Underneath */}

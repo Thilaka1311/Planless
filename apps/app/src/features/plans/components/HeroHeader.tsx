@@ -358,7 +358,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                       >
                         <Share2 className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
                         <span className="text-xs font-semibold text-white tracking-tight">
-                          Share Plan Link
+                          Share Plan
                         </span>
                       </button>
                     )}

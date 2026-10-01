@@ -17,9 +17,8 @@ import { DiscoverDining } from "./DiscoverDining";
 import { DiscoverActivities } from "./DiscoverActivities";
 import { LocationSetter, DiscoveryLocation } from "./LocationSetter";
 import { useUserLocation } from "../hooks/useUserLocation";
-import diningCategoryIcon from "../../../assets/categories/dining.png";
+import { CategoryIcon } from "../../../shared/components/CategoryIcon";
 import moviesCategoryIcon from "../../../assets/categories/movies.png";
-import sportsCategoryIcon from "../../../assets/categories/sports.png";
 import activitiesCategoryIcon from "../../../assets/Activities.png";
 import { QuickPlansScreen } from "../../create/screens/QuickPlansScreen";
 import { QuickPlan } from "../../../core/types";
@@ -44,8 +43,7 @@ const PLANLESS_CATEGORIES = [
   {
     id: "dining" as const,
     title: "Dining",
-    image: diningCategoryIcon,
-    glow: "hover:border-rose-500/30 hover:shadow-[0_0_20px_rgba(244,63,94,0.15)]",
+    glow: "hover:border-red-500/30 hover:shadow-[0_0_20px_rgba(239,68,68,0.15)]",
   },
   {
     id: "movies" as const,
@@ -56,7 +54,6 @@ const PLANLESS_CATEGORIES = [
   {
     id: "sports" as const,
     title: "Sports",
-    image: sportsCategoryIcon,
     glow: "hover:border-emerald-500/30 hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]",
   },
   {
@@ -281,13 +278,21 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
                  (isAdmin ? longPressDining : {}))}
               className={`relative h-[86px] rounded-2xl border border-white/[0.08] bg-[#121216]/90 hover:bg-[#18181f] active:scale-[0.97] transition-all duration-200 cursor-pointer flex flex-col items-center justify-center p-1.5 group shadow-sm ${cat.glow}`}
             >
-              {/* Category Illustration (occupying ~55-60% of card height) */}
+              {/* Category Icon / Illustration (occupying ~55-60% of card height) */}
               <div className="w-11 h-11 flex items-center justify-center shrink-0">
-                <img
-                  src={cat.image}
-                  alt={cat.title}
-                  className="w-full h-full object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
-                />
+                {cat.id === "sports" || cat.id === "dining" ? (
+                  <CategoryIcon
+                    category={cat.id}
+                    className="w-7 h-7 transition-transform duration-200 group-hover:scale-110"
+                    strokeWidth={2}
+                  />
+                ) : (
+                  <img
+                    src={cat.image}
+                    alt={cat.title}
+                    className="w-full h-full object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
+                  />
+                )}
               </div>
 
               {/* Category Name Underneath */}
@@ -483,7 +488,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
 
       {/* ── DEDICATED QUICK PLANS SCREEN ── */}
       {activeSubScreen === "quick-plans" && (
-        <div className="fixed inset-0 z-40 bg-black">
+        <div className="fixed inset-0 z-50 bg-black">
           <QuickPlansScreen
             userId={resolvedUserId}
             onBack={() => handleSubScreenChange(null)}
