@@ -17,13 +17,13 @@ describe("Places API Discovery Integration Suite", () => {
           id: `place_${placeId}`,
           public_id: `place_${placeId}`,
           section_id: `places_${prefix.toLowerCase()}`,
-          title: `${prefix} Venue ${i}`,
-          name: `${prefix} Venue ${i}`,
+          title: prefix === "DINING" ? `Restaurant ${i}` : prefix === "MOVIES" ? `Cinema ${i}` : `Turf ${i}`,
+          name: prefix === "DINING" ? `Restaurant ${i}` : prefix === "MOVIES" ? `Cinema ${i}` : `Turf ${i}`,
           category: prefix.toUpperCase() as "SPORTS" | "MOVIES" | "DINING",
-          subcategory: "turfs",
-          description: "123 Main St",
+          subcategory: prefix === "DINING" ? "restaurant" : prefix === "MOVIES" ? "cinema" : "turfs",
+          description: "123 Main St, Bengaluru",
           cover_image_url: `/functions/v1/maps?action=photo&photo_reference=ref_${i}`,
-          location: "123 Main St",
+          location: "123 Main St, Bengaluru",
           display_order: i + 1,
           featured: i < 3,
           status: "ACTIVE" as const,
@@ -31,7 +31,7 @@ describe("Places API Discovery Integration Suite", () => {
           updated_at: new Date().toISOString(),
           place_id: placeId,
           provider_place_id: placeId,
-          place_address: "123 Main St",
+          place_address: "123 Main St, Bengaluru",
         };
       });
     };

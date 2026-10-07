@@ -20,7 +20,20 @@ export interface PlaceDetails {
       lat: number;
       lng: number;
     };
+    viewport?: {
+      northeast: { lat: number; lng: number };
+      southwest: { lat: number; lng: number };
+    };
+    bounds?: {
+      northeast: { lat: number; lng: number };
+      southwest: { lat: number; lng: number };
+    };
   };
+  address_components?: Array<{
+    long_name: string;
+    short_name: string;
+    types: string[];
+  }>;
 }
 
 /**
@@ -225,6 +238,12 @@ export function useGooglePlacesAutocomplete(query: string) {
     formatted_address: string;
     city: string;
     locality: string;
+    cityBounds?: {
+      north: number;
+      south: number;
+      east: number;
+      west: number;
+    };
   } | null> => {
     setIsLoading(true);
     setError(null);
@@ -255,11 +274,23 @@ export function useGooglePlacesAutocomplete(query: string) {
             locality = comp.long_name;
           }
         }
+
+        const bounds = result.geometry?.bounds || result.geometry?.viewport;
+        const cityBounds = bounds
+          ? {
+              north: bounds.northeast.lat,
+              south: bounds.southwest.lat,
+              east: bounds.northeast.lng,
+              west: bounds.southwest.lng,
+            }
+          : undefined;
+
         return {
           name: locality || city || "Current Location",
           formatted_address: result.formatted_address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
           city: city || "Bengaluru",
           locality: locality || "Nearby",
+          cityBounds,
         };
       }
       return null;

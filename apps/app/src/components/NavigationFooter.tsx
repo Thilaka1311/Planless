@@ -146,7 +146,7 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
         }}
         className="flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer"
       >
-        <div className={`w-[34px] h-[34px] rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center ${activeTab === "create" ? "border-[#ff8b66]" : ""}`}>
+        <div className={`w-[34px] h-[34px] rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center ${(activeTab === "create" || activeTab === "sports" || activeTab === "dining" || activeTab === "movies" || activeTab === "activities") ? "border-[#ff8b66]" : ""}`}>
           <Plus className="w-5 h-5 text-[#ff8b66]" />
         </div>
         <span className="text-[10.5px] font-sans tracking-wide mt-0.5 font-medium">Create</span>

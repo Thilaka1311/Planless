@@ -1,12 +1,53 @@
-export type AppTab = 'home' | 'plans' | 'create' | 'chats' | 'wallet' | 'profile';
+export type AppTab =
+  | 'home'
+  | 'plans'
+  | 'create'
+  | 'chats'
+  | 'wallet'
+  | 'profile'
+  | 'sports'
+  | 'dining'
+  | 'movies'
+  | 'activities';
+
 export type CreatePhase = 'category' | 'who' | 'who-actually' | 'when' | 'review' | 'confirmation';
+export type DiscoveryCategory = 'sports' | 'dining' | 'movies' | 'activities';
 
 export interface AppRoute {
   tab: AppTab;
   createPhase?: CreatePhase;
+  discoveryCategory?: DiscoveryCategory | null;
   selectedPlanId?: string | null;
   selectedChatPlanId?: string | null;
   inviteToken?: string | null;
+}
+
+// Track in-app navigation depth so in-screen back buttons can call window.history.back()
+// when there is valid in-app history, or fallback to an appropriate route on direct URL entry.
+let inAppNavigationDepth = 0;
+
+export function getInAppNavigationDepth(): number {
+  return inAppNavigationDepth;
+}
+
+export function resetInAppNavigationDepth(): void {
+  inAppNavigationDepth = 0;
+}
+
+/**
+ * Checks if a given pathname corresponds to a recognized, valid Planless application route.
+ */
+export function isValidRoute(pathname: string): boolean {
+  if (!pathname) return false;
+  const clean = pathname.replace(/\/+$/, '') || '/';
+  if (clean === '/' || clean === '/home') return true;
+  if (clean === '/create' || clean.startsWith('/create/')) return true;
+  if (clean === '/sports' || clean === '/dining' || clean === '/movies' || clean === '/activities') return true;
+  if (clean === '/plans' || clean.startsWith('/plans/') || clean.startsWith('/plan/')) return true;
+  if (clean === '/chats' || clean.startsWith('/chats/') || clean.startsWith('/chat/')) return true;
+  if (clean === '/profile' || clean === '/wallet') return true;
+  if (clean.startsWith('/join/')) return true;
+  return false;
 }
 
 /**
@@ -26,9 +67,19 @@ export function parseCurrentRoute(): AppRoute {
 
   const primary = parts[0].toLowerCase();
 
+  // Top-level discovery categories: /sports, /dining, /movies, /activities
+  if (primary === 'sports' || primary === 'dining' || primary === 'movies' || primary === 'activities') {
+    return { tab: primary as AppTab, discoveryCategory: primary as DiscoveryCategory };
+  }
+
   // Create flow: /create, /create/who, /create/participants, /create/when, /create/review, /create/confirmation
   if (primary === 'create') {
     const sub = (parts[1] || '').toLowerCase();
+    // Sub-routes for discovery categories under create
+    if (sub === 'sports' || sub === 'dining' || sub === 'movies' || sub === 'activities') {
+      return { tab: sub as AppTab, discoveryCategory: sub as DiscoveryCategory };
+    }
+
     let createPhase: CreatePhase = 'category';
     if (sub === 'who' || sub === 'friends') {
       createPhase = 'who';
@@ -51,13 +102,11 @@ export function parseCurrentRoute(): AppRoute {
     return { tab: 'plans', selectedPlanId: planId };
   }
 
-  // Chats: /chats, /chats/:id
+  // Chats: /chats, /chats/:id, /chat/:id
   if (primary === 'chats' || primary === 'chat') {
     const chatPlanId = parts[1] || null;
     return { tab: 'chats', selectedChatPlanId: chatPlanId };
   }
-
-
 
   // Shared plan invite: /join/:token
   if (primary === 'join') {
@@ -87,6 +136,20 @@ export function getRoutePath(route: AppRoute): string {
     return `/join/${encodeURIComponent(route.inviteToken)}`;
   }
 
+  // Dedicated discovery category routes under create: /create/sports, /create/dining, /create/movies, /create/activities
+  if (route.discoveryCategory) {
+    return `/create/${route.discoveryCategory}`;
+  }
+  if (route.tab === 'sports') return '/create/sports';
+  if (route.tab === 'dining') return '/create/dining';
+  if (route.tab === 'movies') return '/create/movies';
+  if (route.tab === 'activities') return '/create/activities';
+
+  // Plan detail route
+  if (route.selectedPlanId) {
+    return `/plans/${encodeURIComponent(route.selectedPlanId)}`;
+  }
+
   if (route.tab === 'create') {
     if (!route.createPhase || route.createPhase === 'category') return '/create';
     if (route.createPhase === 'who') return '/create/who';
@@ -98,7 +161,6 @@ export function getRoutePath(route: AppRoute): string {
   }
 
   if (route.tab === 'plans') {
-    if (route.selectedPlanId) return `/plans/${encodeURIComponent(route.selectedPlanId)}`;
     return '/plans';
   }
 
@@ -106,8 +168,6 @@ export function getRoutePath(route: AppRoute): string {
     if (route.selectedChatPlanId) return `/chats/${encodeURIComponent(route.selectedChatPlanId)}`;
     return '/chats';
   }
-
-
 
   if (route.tab === 'wallet') return '/wallet';
   if (route.tab === 'profile') return '/profile';
@@ -131,11 +191,26 @@ export function navigateToRoute(route: AppRoute, options?: { replace?: boolean }
       window.history.replaceState(route, '', fullTarget);
     } else {
       window.history.pushState(route, '', fullTarget);
+      inAppNavigationDepth++;
     }
   }
 
   // Dispatch custom event so listeners can synchronize state immediately
   window.dispatchEvent(new CustomEvent('planless-navigation', { detail: route }));
+}
+
+/**
+ * Smart back navigation: uses browser history back if in-app history exists,
+ * otherwise navigates cleanly to the specified fallback route.
+ */
+export function navigateBack(fallbackRoute: AppRoute = { tab: 'home' }): void {
+  if (typeof window === 'undefined') return;
+
+  if (inAppNavigationDepth > 0 && window.history.length > 1) {
+    window.history.back();
+  } else {
+    navigateToRoute(fallbackRoute);
+  }
 }
 
 /**
@@ -145,6 +220,9 @@ export function listenToNavigation(callback: (route: AppRoute) => void): () => v
   if (typeof window === 'undefined') return () => {};
 
   const handlePopState = () => {
+    if (inAppNavigationDepth > 0) {
+      inAppNavigationDepth--;
+    }
     callback(parseCurrentRoute());
   };
 

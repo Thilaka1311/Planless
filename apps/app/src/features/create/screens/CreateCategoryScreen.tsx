@@ -2,9 +2,10 @@ import React from "react";
 import { motion } from "motion/react";
 import { HomeHeader } from "../../../components/HomeHeader";
 import { UserProfile } from "../../../core/types";
-import { CategoryIcon } from "../../../shared/components/CategoryIcon";
 import moviesCategoryIcon from "../../../assets/categories/movies.png";
-import activitiesCategoryIcon from "../../../assets/Activities.png";
+import activitiesCategoryIcon from "../../../assets/categories/activity.png";
+import diningCategoryIcon from "../../../assets/categories/dining.png";
+import sportsCategoryIcon from "../../../assets/categories/sports.png";
 
 export interface CreateCategoryOption {
   id: "dining" | "movies" | "sports" | "activities";
@@ -17,6 +18,7 @@ export const CREATE_CATEGORIES: CreateCategoryOption[] = [
   {
     id: "dining",
     title: "Dining",
+    image: diningCategoryIcon,
     glow: "hover:border-red-500/30 hover:shadow-[0_0_24px_rgba(239,68,68,0.18)]",
   },
   {
@@ -28,6 +30,7 @@ export const CREATE_CATEGORIES: CreateCategoryOption[] = [
   {
     id: "sports",
     title: "Sports",
+    image: sportsCategoryIcon,
     glow: "hover:border-emerald-500/30 hover:shadow-[0_0_24px_rgba(16,185,129,0.18)]",
   },
   {
@@ -84,19 +87,11 @@ export const CreateCategoryScreen: React.FC<CreateCategoryScreenProps> = ({
             >
               {/* Category Icon / Illustration */}
               <div className="w-13 h-13 flex items-center justify-center shrink-0">
-                {category.id === "sports" || category.id === "dining" ? (
-                  <CategoryIcon
-                    category={category.id}
-                    className="w-8 h-8 transition-transform duration-200 group-hover:scale-110"
-                    strokeWidth={2}
-                  />
-                ) : (
-                  <img
-                    src={category.image}
-                    alt={category.title}
-                    className="w-full h-full object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
-                  />
-                )}
+                <img
+                  src={category.image}
+                  alt={category.title}
+                  className="w-full h-full object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
+                />
               </div>
 
               {/* Category Name Underneath */}

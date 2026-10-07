@@ -4,28 +4,37 @@ import { getSectionsByCategory, getCachedSections, clearCachedSections } from ".
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { ADMIN_CONFIGS, ContentConfig } from "../services/discoveryAdminService";
-import { useLongPress } from "../../../shared/hooks/useLongPress";
-import { AdminContextSheet, AdminDrawer } from "./AdminDiscovery";
+import { AdminContextSheet } from "./AdminDiscovery";
 import { EditCard } from "../components/EditCard";
 import { DiscoveryCard, RestaurantCard, SportsCard, MovieCard } from "../components/DiscoveryCard";
 import { DiscoverySection } from "../components/DiscoverySection";
 import { ForYouSections } from "../components/ForYouSections";
 import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
+import { AdminPlaceEditSheet } from "../components/AdminPlaceEditSheet";
+import { subscribePlaceOverrides } from "../services/placeOverridesService";
 import { DiscoverSports } from "./DiscoverSports";
 import { DiscoverMovies } from "./DiscoverMovies";
 import { DiscoverDining } from "./DiscoverDining";
 import { DiscoverActivities } from "./DiscoverActivities";
 import { LocationSetter, DiscoveryLocation } from "./LocationSetter";
 import { useUserLocation } from "../hooks/useUserLocation";
-import { CategoryIcon } from "../../../shared/components/CategoryIcon";
 import moviesCategoryIcon from "../../../assets/categories/movies.png";
-import activitiesCategoryIcon from "../../../assets/Activities.png";
+import activitiesCategoryIcon from "../../../assets/categories/activity.png";
+import diningCategoryIcon from "../../../assets/categories/dining.png";
+import sportsCategoryIcon from "../../../assets/categories/sports.png";
 import { QuickPlansScreen } from "../../create/screens/QuickPlansScreen";
 import { QuickPlan } from "../../../core/types";
+import { MasterSearchScreen } from "./MasterSearchScreen";
+import {
+  navigateToRoute,
+  navigateBack,
+  parseCurrentRoute,
+  listenToNavigation,
+} from "../../navigation/appRouter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type DiscoverySubScreen = "sports" | "movies" | "dining" | "activities" | "quick-plans" | null;
+export type DiscoverySubScreen = "sports" | "movies" | "dining" | "activities" | "quick-plans" | "master-search" | null;
 
 interface DiscoveryProps {
   userProfile: any;
@@ -43,6 +52,7 @@ const PLANLESS_CATEGORIES = [
   {
     id: "dining" as const,
     title: "Dining",
+    image: diningCategoryIcon,
     glow: "hover:border-red-500/30 hover:shadow-[0_0_20px_rgba(239,68,68,0.15)]",
   },
   {
@@ -54,6 +64,7 @@ const PLANLESS_CATEGORIES = [
   {
     id: "sports" as const,
     title: "Sports",
+    image: sportsCategoryIcon,
     glow: "hover:border-emerald-500/30 hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]",
   },
   {
@@ -97,18 +108,80 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<"all" | "sports" | "movies" | "dining" | "activities">("all");
   const [previewItem, setPreviewItem] = useState<DiscoveryItem | null>(null);
+
   const [sections, setSections] = useState<DiscoverySectionType[]>(() => {
-    return getCachedSections(activeCoordinates) || [];
+    return (
+      getCachedSections({
+        latitude: activeCoordinates.latitude,
+        longitude: activeCoordinates.longitude,
+        city: displayCity,
+        cityBounds: discoveryLocation?.cityBounds,
+      }, displayCity) || []
+    );
   });
   const [isLoading, setIsLoading] = useState(() => {
-    return !getCachedSections(activeCoordinates);
+    return !getCachedSections({
+      latitude: activeCoordinates.latitude,
+      longitude: activeCoordinates.longitude,
+      city: displayCity,
+      cityBounds: discoveryLocation?.cityBounds,
+    }, displayCity);
   });
   const [discoveryVersion, setDiscoveryVersion] = useState(0);
-  const [activeSubScreen, setActiveSubScreen] = useState<DiscoverySubScreen>(initialSubScreen || null);
+  const [activeSubScreen, setActiveSubScreen] = useState<DiscoverySubScreen>(() => {
+    if (initialSubScreen) return initialSubScreen;
+    const current = parseCurrentRoute();
+    if (
+      current.tab === "sports" ||
+      current.tab === "dining" ||
+      current.tab === "movies" ||
+      current.tab === "activities"
+    ) {
+      return current.tab;
+    }
+    return null;
+  });
+
+  // Keep activeSubScreen in sync if initialSubScreen changes from parent
+  useEffect(() => {
+    if (initialSubScreen !== undefined && initialSubScreen !== activeSubScreen) {
+      setActiveSubScreen(initialSubScreen);
+    }
+  }, [initialSubScreen]);
+
+  // Synchronize activeSubScreen with browser navigation (Back / Forward / popstate)
+  useEffect(() => {
+    const removeListener = listenToNavigation((route) => {
+      if (
+        route.tab === "sports" ||
+        route.tab === "dining" ||
+        route.tab === "movies" ||
+        route.tab === "activities"
+      ) {
+        setActiveSubScreen(route.tab);
+      } else if (
+        route.tab === "create" ||
+        route.tab === "home" ||
+        route.tab === "plans" ||
+        route.tab === "chats" ||
+        route.tab === "profile"
+      ) {
+        setActiveSubScreen(null);
+      }
+    });
+    return removeListener;
+  }, []);
 
   const handleSubScreenChange = (screen: DiscoverySubScreen) => {
     setActiveSubScreen(screen);
     onSubScreenChange?.(screen);
+    if (screen === "sports" || screen === "dining" || screen === "movies" || screen === "activities") {
+      setActiveTab?.(screen);
+      navigateToRoute({ tab: screen });
+    } else if (screen === null) {
+      setActiveTab?.("create");
+      navigateBack({ tab: "create" });
+    }
   };
 
   const handleCategoryClick = (category: "sports" | "movies" | "dining" | "activities" | "custom") => {
@@ -118,9 +191,8 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     }
     if (onSelectCategory) {
       onSelectCategory(category);
-    } else {
-      handleSubScreenChange(category);
     }
+    handleSubScreenChange(category);
   };
 
   const handleLocationSelect = (loc: DiscoveryLocation) => {
@@ -130,69 +202,31 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     setShowLocationSetter(false);
   };
 
-  const longPressSports = useLongPress(() => {
-    if (isAdmin) {
-      const sec = sections.find((s) => s.category?.toUpperCase() === "SPORTS");
-      const baseConfig = { ...ADMIN_CONFIGS.turfs };
-      if (sec) baseConfig.section_id = sec.id;
-      setAddConfig(baseConfig);
-    }
-  }, { threshold: 500 });
-
-  const longPressMovies = useLongPress(() => {
-    if (isAdmin) {
-      const sec = sections.find((s) => s.category?.toUpperCase() === "MOVIES");
-      const baseConfig = { ...ADMIN_CONFIGS.movies };
-      if (sec) baseConfig.section_id = sec.id;
-      setAddConfig(baseConfig);
-    }
-  }, { threshold: 500 });
-
-  const longPressDining = useLongPress(() => {
-    if (isAdmin) {
-      const sec = sections.find((s) => s.category?.toUpperCase() === "DINING");
-      const baseConfig = { ...ADMIN_CONFIGS.dining };
-      if (sec) baseConfig.section_id = sec.id;
-      setAddConfig(baseConfig);
-    }
-  }, { threshold: 500 });
-
-  const longPressActivities = useLongPress(() => {
-    if (isAdmin) {
-      const sec = sections.find((s) => s.category?.toUpperCase() === "ACTIVITIES");
-      const baseConfig = { ...ADMIN_CONFIGS.activities };
-      if (sec) baseConfig.section_id = sec.id;
-      setAddConfig(baseConfig);
-    }
-  }, { threshold: 500 });
-
-  const longPressCustom = useLongPress(() => {
-    if (isAdmin) {
-      const sec = sections.find((s) => s.category?.toUpperCase() === "CUSTOM");
-      const baseConfig: ContentConfig = {
-        type: "custom",
-        title: "Custom Card",
-        category: "CUSTOM",
-        section_id: sec ? sec.id : "",
-        fields: [
-          { name: "title", label: "Card Title", type: "text", required: true, placeholder: "e.g. Board Game Night" },
-          { name: "description", label: "Description", type: "textarea", placeholder: "e.g. Fun games and drinks" },
-          { name: "location", label: "Location", type: "text", required: true, placeholder: "e.g. Community Clubhouse" },
-          { name: "cover_image_url", label: "Cover Image", type: "image", defaultValue: "" },
-          { name: "display_order", label: "Display Order", type: "number", defaultValue: 1 },
-        ],
-      };
-      setAddConfig(baseConfig);
-    }
-  }, { threshold: 500 });
-
   // Admin overlay state
   type ContextTarget = { item: any; config: ContentConfig } | null;
   const [contextTarget, setContextTarget] = useState<ContextTarget>(null);
   const [editTarget, setEditTarget] = useState<ContextTarget>(null);
-  const [addConfig, setAddConfig] = useState<ContentConfig | null>(null);
+  const [adminEditPlace, setAdminEditPlace] = useState<DiscoveryItem | null>(null);
 
   const refresh = () => setDiscoveryVersion((v) => v + 1);
+
+  // Subscribe to real-time place exclusions / overrides
+  useEffect(() => {
+    const unsubscribe = subscribePlaceOverrides(({ action, placeId }) => {
+      if (action === "hide") {
+        setSections((prev) =>
+          prev.map((sec) => ({
+            ...sec,
+            items: sec.items.filter((i) => {
+              const pId = i.place_id || (typeof i.id === "string" ? i.id.replace(/^place_/, "") : i.id);
+              return pId !== placeId;
+            }),
+          }))
+        );
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   // Load discovery sections
   useEffect(() => {
@@ -201,7 +235,13 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     if (forceRefresh) {
       setIsLoading(true);
     }
-    getSectionsByCategory("all", forceRefresh, activeCoordinates)
+    const locationParams = {
+      latitude: activeCoordinates.latitude,
+      longitude: activeCoordinates.longitude,
+      city: displayCity,
+      cityBounds: discoveryLocation?.cityBounds,
+    };
+    getSectionsByCategory("all", forceRefresh, locationParams)
       .then((data) => {
         if (active) {
           setSections(data);
@@ -213,7 +253,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
         if (active) setIsLoading(false);
       });
     return () => { active = false; };
-  }, [discoveryVersion, activeCoordinates.latitude, activeCoordinates.longitude]);
+  }, [discoveryVersion, activeCoordinates.latitude, activeCoordinates.longitude, displayCity]);
 
   // Resolve CMS config for a section
   const getAdminConfig = (section: DiscoverySectionType): ContentConfig | null => {
@@ -253,15 +293,26 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           </div>
         </button>
 
-        {/* ── Top Right: Quick Plans Icon Button ── */}
-        <button
-          type="button"
-          onClick={() => handleSubScreenChange("quick-plans")}
-          className="w-8 h-8 rounded-full bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] active:scale-95 hover:bg-[#FF6B2C]/20 transition cursor-pointer shrink-0 shadow-sm"
-          aria-label="Quick Plans"
-        >
-          <Zap className="w-4 h-4 fill-[#FF6B2C]" />
-        </button>
+        {/* ── Top Right: Master Search Icon + Quick Plans Icon ── */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleSubScreenChange("master-search")}
+            className="w-8 h-8 rounded-full bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] active:scale-95 hover:bg-[#FF6B2C]/20 transition cursor-pointer shrink-0 shadow-sm"
+            aria-label="Search"
+          >
+            <Search className="w-4 h-4 text-[#FF6B2C]" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSubScreenChange("quick-plans")}
+            className="w-8 h-8 rounded-full bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] active:scale-95 hover:bg-[#FF6B2C]/20 transition cursor-pointer shrink-0 shadow-sm"
+            aria-label="Quick Plans"
+          >
+            <Zap className="w-4 h-4 fill-[#FF6B2C]" />
+          </button>
+        </div>
       </section>
 
       {/* ── 2. THE FOUR PLANLESS CATEGORIES (DINING, MOVIES, SPORTS, ACTIVITIES) ── */}
@@ -272,27 +323,15 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
               key={cat.id}
               type="button"
               onClick={() => handleCategoryClick(cat.id)}
-              {...(cat.id === "sports" ? (isAdmin ? longPressSports : {}) :
-                 cat.id === "movies" ? (isAdmin ? longPressMovies : {}) :
-                 cat.id === "activities" ? (isAdmin ? longPressActivities : {}) :
-                 (isAdmin ? longPressDining : {}))}
               className={`relative h-[86px] rounded-2xl border border-white/[0.08] bg-[#121216]/90 hover:bg-[#18181f] active:scale-[0.97] transition-all duration-200 cursor-pointer flex flex-col items-center justify-center p-1.5 group shadow-sm ${cat.glow}`}
             >
               {/* Category Icon / Illustration (occupying ~55-60% of card height) */}
               <div className="w-11 h-11 flex items-center justify-center shrink-0">
-                {cat.id === "sports" || cat.id === "dining" ? (
-                  <CategoryIcon
-                    category={cat.id}
-                    className="w-7 h-7 transition-transform duration-200 group-hover:scale-110"
-                    strokeWidth={2}
-                  />
-                ) : (
-                  <img
-                    src={cat.image}
-                    alt={cat.title}
-                    className="w-full h-full object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
-                  />
-                )}
+                <img
+                  src={cat.image}
+                  alt={cat.title}
+                  className="w-full h-full object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
+                />
               </div>
 
               {/* Category Name Underneath */}
@@ -307,7 +346,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
       {/* ── 3. DYNAMIC MULTI-SECTION DISCOVERY FEED ── */}
       {isLoading ? (
         <div className="space-y-7 pt-2">
-          {["Restaurants near you", "Sports near you", "More dining spots"].map((catTitle) => (
+          {["Sports", "Movies", "Restaurants", "Activities"].map((catTitle) => (
             <div key={catTitle} className="space-y-3">
               <div className="px-6 flex items-center justify-between">
                 <div className="h-4 w-32 bg-white/[0.06] rounded-md animate-pulse" />
@@ -344,10 +383,37 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           categoryFilter={selectedCategoryFilter === "movies" ? "all" : selectedCategoryFilter}
           onSelectItem={(item) => setPreviewItem(item)}
           isAdmin={isAdmin}
+          onLongPressAdmin={isAdmin ? (item) => setAdminEditPlace(item) : undefined}
           userCoordinates={activeCoordinates}
-          onLongPressAdmin={(item, config) => setContextTarget({ item, config })}
+          currentCity={displayCity}
           onViewAllCategory={(cat) => handleSubScreenChange(cat)}
           onViewAllMovies={() => handleSubScreenChange("movies")}
+        />
+      )}
+
+      {/* ── ADMIN: PLACE EDIT SHEET ── */}
+      {isAdmin && adminEditPlace && (
+        <AdminPlaceEditSheet
+          item={adminEditPlace}
+          userCoordinates={activeCoordinates}
+          onClose={() => setAdminEditPlace(null)}
+          onSaved={() => {
+            setAdminEditPlace(null);
+            refresh();
+          }}
+          onHidden={(hiddenPlaceId) => {
+            setAdminEditPlace(null);
+            setSections((prev) =>
+              prev.map((sec) => ({
+                ...sec,
+                items: sec.items.filter((i) => {
+                  const pId = i.place_id || (typeof i.id === "string" ? i.id.replace(/^place_/, "") : i.id);
+                  return pId !== hiddenPlaceId;
+                }),
+              }))
+            );
+            refresh();
+          }}
         />
       )}
 
@@ -364,6 +430,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
         />
       )}
 
+
       {/* ── ADMIN: CONTEXT ACTION SHEET ── */}
       {isAdmin && contextTarget && (
         <AdminContextSheet
@@ -373,10 +440,6 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
           onClose={() => setContextTarget(null)}
           onEdit={(item) => {
             setEditTarget({ item, config: contextTarget.config });
-            setContextTarget(null);
-          }}
-          onAdd={() => {
-            setAddConfig(contextTarget.config);
             setContextTarget(null);
           }}
           onDeleted={() => {
@@ -400,19 +463,6 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
         />
       )}
 
-      {/* ── ADMIN: ADD CARD DRAWER ── */}
-      {isAdmin && addConfig && (
-        <AdminDrawer
-          config={addConfig}
-          token={adminToken}
-          onClose={() => setAddConfig(null)}
-          onMutated={() => {
-            setAddConfig(null);
-            refresh();
-          }}
-        />
-      )}
-
       {/* ── SUB-SCREEN OVERLAYS ── */}
       {activeSubScreen === "sports" && (
         <div className="fixed inset-0 z-40 bg-black">
@@ -421,9 +471,8 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             isAdmin={isAdmin}
             onBack={() => handleSubScreenChange(null)}
             onSelectDiscoveryItem={onSelectDiscoveryItem}
-            onLongPressAdmin={(item, section) => {
-              const config = getAdminConfig(section);
-              if (config) setContextTarget({ item, config });
+            onLongPressAdmin={(item) => {
+              if (isAdmin) setAdminEditPlace(item);
             }}
             currentCity={displayCity}
             currentLocality={displayLocality}
@@ -439,10 +488,6 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             isAdmin={isAdmin}
             onBack={() => handleSubScreenChange(null)}
             onSelectDiscoveryItem={onSelectDiscoveryItem}
-            onLongPressAdmin={(item, section) => {
-              const config = getAdminConfig(section);
-              if (config) setContextTarget({ item, config });
-            }}
             currentCity={displayCity}
             currentLocality={displayLocality}
             currentCoordinates={activeCoordinates}
@@ -457,9 +502,8 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             isAdmin={isAdmin}
             onBack={() => handleSubScreenChange(null)}
             onSelectDiscoveryItem={onSelectDiscoveryItem}
-            onLongPressAdmin={(item, section) => {
-              const config = getAdminConfig(section);
-              if (config) setContextTarget({ item, config });
+            onLongPressAdmin={(item) => {
+              if (isAdmin) setAdminEditPlace(item);
             }}
             currentCity={displayCity}
             currentLocality={displayLocality}
@@ -475,9 +519,8 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             isAdmin={isAdmin}
             onBack={() => handleSubScreenChange(null)}
             onSelectDiscoveryItem={onSelectDiscoveryItem}
-            onLongPressAdmin={(item, section) => {
-              const config = getAdminConfig(section);
-              if (config) setContextTarget({ item, config });
+            onLongPressAdmin={(item) => {
+              if (isAdmin) setAdminEditPlace(item);
             }}
             currentCity={displayCity}
             currentLocality={displayLocality}
@@ -500,6 +543,20 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
               handleSubScreenChange(null);
               onAddQuickPlan?.(listId);
             }}
+          />
+        </div>
+      )}
+
+      {/* ── DEDICATED MASTER SEARCH SCREEN ── */}
+      {activeSubScreen === "master-search" && (
+        <div className="fixed inset-0 z-50 bg-black">
+          <MasterSearchScreen
+            onBack={() => handleSubScreenChange(null)}
+            onSelectDiscoveryItem={onSelectDiscoveryItem}
+            currentCity={displayCity}
+            currentLocality={displayLocality}
+            currentCoordinates={activeCoordinates}
+            isAdmin={isAdmin}
           />
         </div>
       )}

@@ -1,9 +1,13 @@
 import React from "react";
 import { DiscoveryItem } from "../../../core/types/discovery";
-import { useLongPress } from "../../../shared/hooks/useLongPress";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
-import { getStoredDiscoveryLocation } from "../hooks/useUserLocation";
 import { TMDB_LANGUAGE_NAMES } from "../services/tmdbMovieService";
+import { getSportsVenueLabel, extractSportsList } from "../services/sportsRelevance";
+import { getStoredDiscoveryLocation } from "../hooks/useUserLocation";
+import { useLongPress } from "../../../shared/hooks/useLongPress";
+import { resolveVenueLocality } from "../services/addressUtils";
+
+export { resolveVenueLocality };
 
 export interface DiscoveryCardProps {
   item: DiscoveryItem;
@@ -13,189 +17,158 @@ export interface DiscoveryCardProps {
   onTap: () => void;
   onLongPressAdmin?: () => void;
   userCoordinates?: { latitude: number; longitude: number } | null;
+  showLocality?: boolean;
+}
+
+/**
+ * Filter out Google's raw generic provider types (e.g. "Establishment | Point Of Interest", "Athletic Field | Sports Club").
+ */
+function isGenericGoogleProviderType(str: string): boolean {
+  const s = str.trim().toLowerCase();
+  return (
+    s === "establishment" ||
+    s === "point of interest" ||
+    s === "premise" ||
+    s === "feature" ||
+    s === "neighborhood" ||
+    s === "generic business" ||
+    s === "establishment | point of interest" ||
+    s === "point of interest | establishment" ||
+    s === "athletic field" ||
+    s === "sports club" ||
+    s === "sports complex" ||
+    s === "sports activity location" ||
+    s === "playground" ||
+    s === "stadium" ||
+    s === "association or organization" ||
+    s === "sports coaching" ||
+    s === "sports school" ||
+    s === "athletic field | sports club" ||
+    s === "sports club | athletic field" ||
+    s === "sports complex | athletic field" ||
+    s === "sports club | association or organization" ||
+    s === "sports complex | sports activity location"
+  );
+}
+
+
+/** Canonical display names for normalized sport category IDs. */
+const SPORT_LABELS: Record<string, string> = {
+  football: "Football",
+  badminton: "Badminton",
+  pickleball: "Pickleball",
+  tennis: "Tennis",
+  basketball: "Basketball",
+  cricket: "Cricket",
+  "table-tennis": "Table Tennis",
+  swimming: "Swimming",
+  squash: "Squash",
+  volleyball: "Volleyball",
+};
+
+/**
+ * Formats a list of sport IDs or names for compact card display.
+ * Up to 2 sports shown by name; excess are shown as "+N".
+ * Example: ["football", "badminton", "pickleball"] → "Football · Badminton +1"
+ */
+function formatSupportedSportsList(sports: string[], maxVisible = 2): string {
+  const names = sports.map((s) => {
+    const lower = s.toLowerCase();
+    return SPORT_LABELS[lower] || s.charAt(0).toUpperCase() + s.slice(1);
+  });
+  if (names.length <= maxVisible) return names.join(" · ");
+  return `${names.slice(0, maxVisible).join(" · ")} +${names.length - maxVisible}`;
 }
 
 /**
  * Resolves exact categories for a venue based on its metadata and name.
+ * For Sports venues, uses the Planless ranked sports venue label engine (e.g. "Football Turf", "Badminton Court").
  * Multiple categories are cleanly separated with " | " (e.g., "Bar | Restaurant", "North Indian | Dhaba").
  */
 export function resolveVenueCategories(item: DiscoveryItem): string {
   const cat = (item.category || "").toUpperCase();
-  const titleLower = (item.title || "").toLowerCase();
-  const sub = item.subcategory || "";
-  const subLower = sub.toLowerCase();
-  const descLower = (item.description || "").toLowerCase();
-  const combined = `${titleLower} ${subLower} ${descLower}`;
+  let sub = item.subcategory || "";
+  if (Array.isArray(sub)) {
+    sub = (sub as string[]).join(" | ");
+  }
+  const sportCat = (item as any)._sportCategory;
 
-  // If subcategory already contains a customized pipe-separated list, preserve it
-  if (sub.includes("|")) {
-    return sub
-      .split("|")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 2)
-      .join(" | ");
+  // 1. Movies: use TMDB genres
+  if (cat === "MOVIES" && item.genres && item.genres.length > 0) {
+    return item.genres.slice(0, 2).join(" · ");
   }
 
-  const matched: string[] = [];
+  // 2. Specific Sport Category (filtered view): show the relevant sport label for that section
+  if (sportCat && sportCat !== "all") {
+    return getSportsVenueLabel(item, sportCat);
+  }
 
-  if (cat === "DINING") {
-    // Specific cuisines and venue formats
-    if (combined.includes("punjab") || combined.includes("dhaba") || combined.includes("balle") || combined.includes("tandoor")) {
-      matched.push("North Indian");
-      if (combined.includes("dhaba") || combined.includes("balle")) {
-        matched.push("Dhaba");
-      }
+  // 3. Sports All-view: show every supported sport compactly (e.g. "Football · Badminton +1")
+  if (cat === "SPORTS") {
+    // Prefer stamped supported_sports / supportedSports array
+    const supported: string[] =
+      Array.isArray((item as any).supported_sports) && (item as any).supported_sports.length > 0
+        ? (item as any).supported_sports
+        : Array.isArray((item as any).supportedSports) && (item as any).supportedSports.length > 0
+        ? (item as any).supportedSports
+        : [];
+    if (supported.length > 0) {
+      return formatSupportedSportsList(supported);
     }
-    if (combined.includes("south indian") || combined.includes("dosa") || combined.includes("idli") || combined.includes("darshini") || combined.includes("bhavan") || combined.includes("sagar") || combined.includes("udupi")) {
-      matched.push("South Indian");
+    // Fall back to subcategory if non-generic (e.g. from database override ["Football", "Pickleball"] or "Football | Pickleball" or "Badminton")
+    const extractedSports = extractSportsList(item.subcategory).filter(
+      (s) => !isGenericGoogleProviderType(s)
+    );
+    if (extractedSports.length > 0) {
+      return formatSupportedSportsList(extractedSports);
     }
-    if (combined.includes("biryani") || combined.includes("donne") || combined.includes("ambur")) {
-      matched.push("Biryani");
-    }
-    if (combined.includes("bar") || combined.includes("pub") || combined.includes("brewery") || combined.includes("taproom")) {
-      matched.push(combined.includes("brewery") ? "Brewery" : combined.includes("pub") ? "Pub" : "Bar");
-    }
-    if (combined.includes("lounge") || combined.includes("club") || combined.includes("nightlife")) {
-      matched.push("Lounge");
-    }
-    if (combined.includes("rooftop")) {
-      matched.push("Rooftop");
-    }
-    if (combined.includes("cafe") || combined.includes("coffee") || combined.includes("tea") || combined.includes("chai")) {
-      matched.push("Cafe");
-    }
-    if (combined.includes("bakery") || combined.includes("bake") || combined.includes("cake") || combined.includes("dessert") || combined.includes("waffle") || combined.includes("ice cream")) {
-      matched.push("Bakery & Desserts");
-    }
-    if (combined.includes("chicken") || combined.includes("burger") || combined.includes("pizza") || combined.includes("fast food") || combined.includes("roll") || combined.includes("quick bite") || combined.includes("takeaway")) {
-      matched.push("Fast Food");
-      matched.push("Quick Bites");
-    }
-    if (combined.includes("chinese") || combined.includes("momo") || combined.includes("noodle") || combined.includes("asian")) {
-      matched.push("Chinese");
-    }
-    if (combined.includes("restaurant") || combined.includes("dine") || combined.includes("dining") || combined.includes("kitchen")) {
-      if (matched.includes("Bar") || matched.includes("Pub") || matched.includes("Brewery")) {
-        matched.push("Restaurant");
-      } else if (!matched.includes("Fast Food") && !matched.includes("Cafe") && !matched.includes("Bakery & Desserts")) {
-        matched.push("Casual Dining");
-      }
-    }
+    // Fallback: use ranked sports venue label engine (which checks name keywords)
+    return getSportsVenueLabel(item, sportCat);
+  }
 
-    if (matched.length === 0) {
-      if (sub && !["restaurants", "restaurant", "dining"].includes(subLower)) {
-        matched.push(sub.charAt(0).toUpperCase() + sub.slice(1));
-      } else {
-        matched.push("Casual Dining");
+  // 4. Non-sports Admin Override / Grouped Categories (Dining, Activities)
+  if (sub && !isGenericGoogleProviderType(sub)) {
+    if (sub.includes("|")) {
+      const parts = sub
+        .split("|")
+        .map((s) => s.trim())
+        .filter((s) => Boolean(s) && !isGenericGoogleProviderType(s));
+      if (parts.length > 0) {
+        return parts.join(" | ");
       }
-    }
-  } else if (cat === "SPORTS") {
-    if (combined.includes("pickleball")) {
-      matched.push("Pickleball");
-    }
-    if (combined.includes("badminton") || combined.includes("shuttle")) {
-      matched.push("Badminton");
-    }
-    if (combined.includes("cricket") || combined.includes("box cricket")) {
-      matched.push("Box Cricket");
-    }
-    if (combined.includes("football") || combined.includes("futsal") || combined.includes("soccer")) {
-      matched.push("Football");
-    }
-    if (combined.includes("tennis") && !combined.includes("table tennis")) {
-      matched.push("Tennis");
-    }
-    if (combined.includes("swimming") || combined.includes("pool")) {
-      matched.push("Swimming");
-    }
-    if (combined.includes("fitness") || combined.includes("gym") || combined.includes("crossfit")) {
-      matched.push("Fitness");
-    }
-    if (combined.includes("turf")) {
-      matched.push("Turf");
-    }
-    if (combined.includes("court") && !matched.includes("Badminton") && !matched.includes("Pickleball")) {
-      matched.push("Court");
-    }
-    if (combined.includes("arena") || combined.includes("sports complex") || combined.includes("academy")) {
-      if (!matched.includes("Turf")) matched.push("Sports Arena");
-    }
-
-    if (matched.length === 0) {
-      if (sub && !["turfs", "turf", "sports"].includes(subLower)) {
-        matched.push(sub.charAt(0).toUpperCase() + sub.slice(1));
-      } else {
-        matched.push("Sports & Turf");
-      }
-    }
-  } else if (cat === "MOVIES") {
-    if (item.genres && item.genres.length > 0) {
-      return item.genres.slice(0, 2).join(" · ");
-    }
-    if (sub && !["cinemas", "screenings", "premieres", "custom"].includes(subLower)) {
-      return sub.includes("|") ? sub.split("|").slice(0, 2).map((s) => s.trim()).join(" · ") : sub;
-    }
-    if (combined.includes("imax")) matched.push("IMAX");
-    if (combined.includes("4dx")) matched.push("4DX");
-    if (combined.includes("multiplex") || combined.includes("pvr") || combined.includes("inox") || combined.includes("cinepolis")) {
-      matched.push("Multiplex");
-    }
-    if (matched.length === 0) {
-      matched.push("Cinema");
-    }
-  } else if (cat === "ACTIVITIES") {
-    if (combined.includes("bowl")) {
-      matched.push("Bowling");
-    }
-    if (combined.includes("escape") || combined.includes("mystery") || combined.includes("breakout")) {
-      matched.push("Mystery Rooms");
-    }
-    if (combined.includes("kart") || combined.includes("karting")) {
-      matched.push("Go-Karting");
-    }
-    if (combined.includes("amusement") || combined.includes("theme park") || combined.includes("water park") || combined.includes("wonderla")) {
-      matched.push("Amusement Parks");
-    }
-    if (combined.includes("arcade") || combined.includes("gaming") || combined.includes("game zone") || combined.includes("smaash") || combined.includes("timezone") || combined.includes("vr")) {
-      matched.push("Arcades");
-    }
-    if (combined.includes("trampoline") || combined.includes("bounce")) {
-      matched.push("Trampoline Park");
-    }
-    if (combined.includes("laser tag") || combined.includes("laser")) {
-      matched.push("Laser Tag");
-    }
-    if (combined.includes("paintball")) {
-      matched.push("Paintball");
-    }
-    if (combined.includes("mini golf") || combined.includes("golf")) {
-      matched.push("Mini Golf");
-    }
-    if (combined.includes("skat") || combined.includes("ice skat")) {
-      matched.push("Skating");
-    }
-    if (combined.includes("adventure") || combined.includes("climbing") || combined.includes("rope") || combined.includes("play arena")) {
-      matched.push("Adventure & Fun");
-    }
-
-    if (matched.length === 0) {
-      if (sub && !["activities", "activity", "custom"].includes(subLower)) {
-        matched.push(sub.charAt(0).toUpperCase() + sub.slice(1));
-      } else {
-        matched.push("Adventure & Fun");
-      }
+    } else if (item._hasPlanlessOverride) {
+      return sub;
     }
   }
 
-  const unique = Array.from(new Set(matched)).slice(0, 2);
-  return unique.join(" | ");
+  // 5. Sports via sportCat (legacy path)
+  if (sportCat) {
+    return getSportsVenueLabel(item, sportCat);
+  }
+
+  if (sub && !isGenericGoogleProviderType(sub)) {
+    return sub;
+  }
+
+  // Fallback if no specific subcategory exists
+  if (cat === "MOVIES") return "Cinema";
+  if (cat === "DINING") return "Dining";
+  if (cat === "SPORTS") return getSportsVenueLabel(item);
+  if (cat === "ACTIVITIES") {
+    const t = (item.title || "").toLowerCase();
+    if (t.includes("kart")) return "Go-Karting";
+    if (t.includes("bowl")) return "Bowling";
+    if (t.includes("mystery") || t.includes("escape")) return "Mystery Rooms";
+    if (t.includes("arcade") || t.includes("gaming") || t.includes("timezone")) return "Arcades";
+    if (t.includes("mini golf") || t.includes("golf")) return "Mini Golf";
+    if (t.includes("amusement") || t.includes("theme park")) return "Amusement Parks";
+    if (t.includes("adventure") || t.includes("trampoline")) return "Adventure & Fun";
+    return "Activities";
+  }
+
+  return "Venue";
 }
 
-/**
- * Format category, subcategory and price text for discovery card.
- * Uses exact multi-categories separated by " | " (e.g. "Bar | Restaurant").
- */
 const getCategoryPriceText = (item: DiscoveryItem): string => {
   const cat = (item.category || "").toUpperCase();
   const categoryLabel = resolveVenueCategories(item);
@@ -205,13 +178,7 @@ const getCategoryPriceText = (item: DiscoveryItem): string => {
       item.language_name ||
       (item.original_language ? TMDB_LANGUAGE_NAMES[item.original_language.toLowerCase()] || item.original_language.toUpperCase() : "");
 
-    const genreText =
-      item.genres && item.genres.length > 0
-        ? item.genres.slice(0, 2).join(" · ")
-        : item.subcategory &&
-          !["cinemas", "screenings", "premieres", "custom", "feature film"].includes(item.subcategory.toLowerCase())
-        ? item.subcategory.replace(/\s*\|\s*/g, " · ")
-        : "";
+    const genreText = categoryLabel.replace(/\s*\|\s*/g, " · ");
 
     if (genreText && langLabel) {
       return `${genreText} · ${langLabel}`;
@@ -285,14 +252,33 @@ export function resolveVenueDistance(
   item: DiscoveryItem,
   originCoords?: { latitude: number; longitude: number } | null
 ): string {
+  // If item already has a computed numeric distance in km, use it
+  if (
+    typeof (item as any)._distanceKm === "number" &&
+    !isNaN((item as any)._distanceKm) &&
+    (item as any)._distanceKm !== Infinity
+  ) {
+    return formatDistanceKm((item as any)._distanceKm);
+  }
+
   // Determine origin coordinates: explicit parameter or single source of truth discovery location
   const origin = originCoords || getStoredDiscoveryLocation();
   const originLat = origin?.latitude;
   const originLng = origin?.longitude;
 
   // Determine venue destination coordinates
-  const destLat = item.latitude != null ? Number(item.latitude) : (item as any).metadata?.latitude;
-  const destLng = item.longitude != null ? Number(item.longitude) : (item as any).metadata?.longitude;
+  const rawLat =
+    item.latitude ??
+    (item as any).geometry?.location?.lat ??
+    (item as any).metadata?.latitude ??
+    (item as any).lat;
+  const rawLng =
+    item.longitude ??
+    (item as any).geometry?.location?.lng ??
+    (item as any).metadata?.longitude ??
+    (item as any).lng;
+  const destLat = rawLat != null ? Number(rawLat) : undefined;
+  const destLng = rawLng != null ? Number(rawLng) : undefined;
 
   if (
     typeof originLat === "number" &&
@@ -309,7 +295,11 @@ export function resolveVenueDistance(
   }
 
   // If item already has a distance string property
-  if (typeof (item as any).distance === "string" && (item as any).distance) {
+  if (
+    typeof (item as any).distance === "string" &&
+    (item as any).distance &&
+    (item as any).distance !== "Nearby"
+  ) {
     return (item as any).distance;
   }
 
@@ -321,104 +311,186 @@ export function resolveVenueDistance(
  * - Upper section: Pure, clean venue photograph (zero text overlays, zero gradients).
  * - Lower section: Structured information (Venue Name, Rating/Cuisine/Price, Distance). Address is omitted from the card.
  */
-export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
+export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
   item,
   isAdmin = false,
   onTap,
   onLongPressAdmin,
   userCoordinates,
+  showLocality,
 }) => {
-  const longPress = useLongPress(() => {
-    if (isAdmin && onLongPressAdmin) onLongPressAdmin();
-  }, { threshold: 500 });
+  const isMovie = (item.category || "").toUpperCase() === "MOVIES";
+  const cat = (item.category || "").toUpperCase();
+  const isSports = !isMovie && (showLocality === true || cat === "SPORTS");
+  const locality = isSports ? resolveVenueLocality(item) : null;
+  const shouldEnableAdminHold = isAdmin && Boolean(onLongPressAdmin) && !isMovie;
+
+  const longPress = useLongPress(
+    () => {
+      if (shouldEnableAdminHold && onLongPressAdmin) {
+        onLongPressAdmin();
+      }
+    },
+    { threshold: 500, onTap }
+  );
 
   const rating = resolveVenueRating(item);
   const distance = resolveVenueDistance(item, userCoordinates);
-  const categoryPrice = getCategoryPriceText(item);
-  const isMovie = (item.category || "").toUpperCase() === "MOVIES";
   const movieMeta = isMovie
     ? item.release_date
       ? new Date(item.release_date).toLocaleDateString("en-IN", { year: "numeric", month: "short" })
       : ""
     : null;
 
+  const costText =
+    typeof item.suggested_cost_amount === "number" && item.suggested_cost_amount > 0
+      ? (item.category || "").toUpperCase() === "DINING"
+        ? `₹${item.suggested_cost_amount} for two`
+        : `₹${item.suggested_cost_amount}`
+      : null;
+
   return (
     <div
-      {...(isAdmin && onLongPressAdmin ? longPress : {})}
-      onClick={onTap}
+      {...(shouldEnableAdminHold ? longPress : { onClick: onTap })}
+      draggable={false}
+      onDragStart={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        if (shouldEnableAdminHold) e.preventDefault();
+      }}
       style={{
         width: "220px",
         minWidth: "220px",
         maxWidth: "220px",
         height: "225px",
         minHeight: "225px",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        touchAction: "pan-x pan-y",
       }}
-      className="shrink-0 rounded-2xl snap-start overflow-hidden bg-[#121216] border border-white/[0.08] shadow-lg flex flex-col cursor-pointer hover:border-white/20 transition-all duration-300 group select-none active:scale-[0.98]"
+      className="shrink-0 rounded-2xl snap-start overflow-hidden bg-[#121216] border border-white/[0.08] shadow-lg flex flex-col cursor-pointer hover:border-white/20 transition-all duration-300 group select-none active:brightness-95"
     >
-      {/* 1. Pure Photograph Section - Clean image, zero text or overlays */}
-      <div className="relative w-full h-[130px] overflow-hidden bg-zinc-900 shrink-0">
+      {/* 1. Pure Photograph Section - Display only, non-interactive */}
+      <div
+        className="relative w-full h-[130px] overflow-hidden bg-zinc-900 shrink-0 pointer-events-none select-none"
+        style={{ userSelect: "none", WebkitUserSelect: "none", pointerEvents: "none" }}
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
+        onContextMenu={(e) => e.preventDefault()}
+      >
         <DiscoveryImages
           src={item.cover_image_url}
           category={item.category}
           alt={item.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 1 }}
+          draggable={false}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none select-none"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            opacity: 1,
+            pointerEvents: "none",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+          }}
         />
       </div>
 
-      {/* 2. Information Section Below Image */}
-      <div className="p-3 flex flex-col justify-between flex-1 min-w-0 text-left bg-[#121216]">
-        {/* Venue / Movie Name */}
-        <h4 className="text-[14px] font-bold text-white tracking-tight leading-snug truncate">
-          {item.title}
-        </h4>
+      {/* 2. Information Section Below Image - Display only, parent card handles click */}
+      <div
+        className="p-3 flex flex-col justify-between flex-1 min-w-0 text-left bg-[#121216] pointer-events-none select-none"
+        style={{ userSelect: "none", WebkitUserSelect: "none", pointerEvents: "none" }}
+      >
+        {isSports ? (
+          <>
+            {/* Top Block: Place Name & Area / Locality */}
+            <div className="min-w-0 flex flex-col">
+              <h4 className="text-[14px] font-bold text-white tracking-tight leading-snug truncate select-none">
+                {item.title}
+              </h4>
+              {locality && (
+                <p className="text-[12px] text-zinc-400 font-normal truncate leading-tight mt-0.5 select-none">
+                  {locality}
+                </p>
+              )}
+            </div>
 
-        {/* Rating, Category & Price */}
-        <div className="flex items-center gap-1.5 text-[11px] min-w-0">
-          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#178544] text-white font-bold rounded text-[10px] shrink-0 leading-none">
-            {rating}
-            <span className="text-[9px]">★</span>
-          </span>
-          <span className="text-zinc-400 truncate font-normal">
-            {categoryPrice}
-          </span>
-        </div>
+            {/* Rating */}
+            <div className="flex items-center gap-1.5 text-[11px] min-w-0 select-none">
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#178544] text-white font-bold rounded text-[10px] shrink-0 leading-none select-none">
+                {rating}
+                <span className="text-[9px]">★</span>
+              </span>
+              {costText && (
+                <span className="text-zinc-400 truncate font-normal select-none">
+                  {costText}
+                </span>
+              )}
+            </div>
 
-        {/* Distance for venues or Release Date for movies */}
-        <div className="text-[11px] text-zinc-400 font-normal">
-          <span className="text-zinc-300 font-medium">
-            {isMovie ? movieMeta : distance}
-          </span>
-        </div>
+            {/* Distance */}
+            <div className="text-[11px] text-zinc-400 font-normal select-none">
+              <span className="text-zinc-300 font-medium select-none">
+                {distance}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Venue / Movie Name */}
+            <h4 className="text-[14px] font-bold text-white tracking-tight leading-snug truncate select-none">
+              {item.title}
+            </h4>
+
+            {/* Rating & Optional Price (Zero Category Labels) */}
+            <div className="flex items-center gap-1.5 text-[11px] min-w-0 select-none">
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#178544] text-white font-bold rounded text-[10px] shrink-0 leading-none select-none">
+                {rating}
+                <span className="text-[9px]">★</span>
+              </span>
+              {costText && (
+                <span className="text-zinc-400 truncate font-normal select-none">
+                  {costText}
+                </span>
+              )}
+            </div>
+
+            {/* Distance for venues or Release Date for movies */}
+            <div className="text-[11px] text-zinc-400 font-normal select-none">
+              <span className="text-zinc-300 font-medium select-none">
+                {isMovie ? movieMeta : distance}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
-};
+});
 
 /**
  * RestaurantCard - Venue card for dining places.
  */
-export const RestaurantCard: React.FC<DiscoveryCardProps> = (props) => {
+export const RestaurantCard = React.memo<DiscoveryCardProps>((props) => {
   return <DiscoveryCard {...props} colorAccent={props.colorAccent || "text-rose-500"} />;
-};
+});
 
 /**
  * SportsCard - Venue card for sports, turfs, and courts.
  */
-export const SportsCard: React.FC<DiscoveryCardProps> = (props) => {
-  return <DiscoveryCard {...props} colorAccent={props.colorAccent || "text-emerald-500"} />;
-};
+export const SportsCard = React.memo<DiscoveryCardProps>((props) => {
+  return <DiscoveryCard {...props} showLocality={true} colorAccent={props.colorAccent || "text-emerald-500"} />;
+});
 
 /**
  * MovieCard - Venue card for movies.
  */
-export const MovieCard: React.FC<DiscoveryCardProps> = (props) => {
+export const MovieCard = React.memo<DiscoveryCardProps>((props) => {
   return <DiscoveryCard {...props} colorAccent={props.colorAccent || "text-violet-500"} />;
-};
+});
 
 /**
  * ActivityCard - Venue card for activities, gaming, and recreation.
  */
-export const ActivityCard: React.FC<DiscoveryCardProps> = (props) => {
+export const ActivityCard = React.memo<DiscoveryCardProps>((props) => {
   return <DiscoveryCard {...props} colorAccent={props.colorAccent || "text-pink-500"} />;
-};
+});

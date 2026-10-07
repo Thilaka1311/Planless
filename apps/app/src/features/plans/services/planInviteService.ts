@@ -105,12 +105,9 @@ export async function claimPlanInviteRPC(
   }
 
   const client = customClient || supabase;
-  console.log('[INVITE_TRACE] claimPlanInviteRPC: calling RPC claim_plan_invite with p_plan_id=', planId.trim());
   const { data, error } = await client.rpc("claim_plan_invite" as any, {
     p_plan_id: planId.trim(),
   });
-
-  console.log('[INVITE_TRACE] claimPlanInviteRPC: raw response data=', JSON.stringify(data), '| error=', error ? JSON.stringify(error) : null);
 
   if (error) {
     console.error("[planInviteService] claimPlanInviteRPC failed:", error);
@@ -186,12 +183,9 @@ export async function resolveUserPlanParticipant(
     try {
       const { data: authData } = await client.auth.getUser();
       resolvedUserId = authData?.user?.id;
-      console.log('[INVITE_TRACE] resolveUserPlanParticipant: no userId passed, got from auth.getUser()=', resolvedUserId);
     } catch {
       // Ignore auth fetch error, checked below
     }
-  } else {
-    console.log('[INVITE_TRACE] resolveUserPlanParticipant: planId=', cleanId, '| userId=', resolvedUserId);
   }
 
   if (!resolvedUserId) {
@@ -205,8 +199,6 @@ export async function resolveUserPlanParticipant(
     .eq("plan_id", cleanId)
     .eq("user_id", resolvedUserId)
     .maybeSingle();
-
-  console.log('[INVITE_TRACE] resolveUserPlanParticipant: plan_participants query result: partData=', JSON.stringify(partData), '| partError=', partError ? JSON.stringify(partError) : null);
 
   if (!partError && partData) {
     const roleNorm = (partData.role || "").toUpperCase();

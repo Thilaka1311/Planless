@@ -1,8 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 
 export interface UserCoordinates {
   latitude: number;
   longitude: number;
+}
+
+export interface CityBoundingBox {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
 }
 
 export interface DiscoveryLocation {
@@ -12,6 +19,7 @@ export interface DiscoveryLocation {
   longitude: number;
   city?: string;
   locality?: string;
+  cityBounds?: CityBoundingBox;
 }
 
 // Fallback center: Bangalore (India's major hub)
@@ -27,6 +35,12 @@ export const DEFAULT_DISCOVERY_LOCATION: DiscoveryLocation = {
   longitude: 77.5946,
   city: "Bengaluru",
   locality: "Nearby",
+  cityBounds: {
+    north: 13.1425,
+    south: 12.8335,
+    east: 77.7841,
+    west: 77.4599,
+  },
 };
 
 const STORAGE_KEY = "planless_selected_discovery_loc";
@@ -52,6 +66,14 @@ let inMemoryLocation: DiscoveryLocation = (() => {
             longitude: Number(parsed.longitude),
             city: parsed.city || parsed.name || "Bengaluru",
             locality: parsed.locality || "Nearby",
+            cityBounds: parsed.cityBounds
+              ? {
+                  north: Number(parsed.cityBounds.north),
+                  south: Number(parsed.cityBounds.south),
+                  east: Number(parsed.cityBounds.east),
+                  west: Number(parsed.cityBounds.west),
+                }
+              : DEFAULT_DISCOVERY_LOCATION.cityBounds,
           };
         }
       }
@@ -70,6 +92,16 @@ function notifyListeners() {
       console.error("[useUserLocation] Listener notification error:", err);
     }
   });
+}
+
+/**
+ * Register a callback whenever the user selects or changes discovery location.
+ */
+export function onDiscoveryLocationChange(callback: () => void): () => void {
+  listeners.add(callback);
+  return () => {
+    listeners.delete(callback);
+  };
 }
 
 /**
@@ -103,6 +135,14 @@ export function setStoredDiscoveryLocation(location: DiscoveryLocation): void {
     longitude: Number(location.longitude),
     city: location.city || location.name || "Bengaluru",
     locality: location.locality || "Nearby",
+    cityBounds: location.cityBounds
+      ? {
+          north: Number(location.cityBounds.north),
+          south: Number(location.cityBounds.south),
+          east: Number(location.cityBounds.east),
+          west: Number(location.cityBounds.west),
+        }
+      : undefined,
   };
 
   inMemoryLocation = normalized;
@@ -115,6 +155,20 @@ export function setStoredDiscoveryLocation(location: DiscoveryLocation): void {
     } catch {}
   }
 
+  notifyListeners();
+}
+
+/**
+ * Resets the Discovery location to default and clears storage.
+ */
+export function clearStoredDiscoveryLocation(): void {
+  inMemoryLocation = DEFAULT_DISCOVERY_LOCATION;
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  }
   notifyListeners();
 }
 
@@ -146,10 +200,13 @@ export function useUserLocation() {
     setStoredDiscoveryLocation(location);
   }, []);
 
-  const coordinates: UserCoordinates = {
-    latitude: currentLocation.latitude,
-    longitude: currentLocation.longitude,
-  };
+  const coordinates: UserCoordinates = useMemo(
+    () => ({
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+    }),
+    [currentLocation.latitude, currentLocation.longitude]
+  );
 
   const cityName = currentLocation.city || currentLocation.name || "Bengaluru";
   const localityName = currentLocation.locality || "Nearby";

@@ -40,6 +40,23 @@ export interface DiscoveryItem {
   distance?: string | null;
   rating?: number | null;
   user_ratings_total?: number | null;
+  _sportCategory?: string | null;
+  /**
+   * Derived list of sports this venue supports (e.g. ["football", "pickleball"]).
+   * A multi-sport venue will appear in all matching sport sections.
+   * Populated at runtime by getSupportedSports() in sportsRelevance.ts.
+   */
+  supportedSports?: string[] | null;
+  /**
+   * All Google photo references for this venue (for sport-aware photo selection).
+   * Index 0 is always the primary photo (used as cover_image_url).
+   */
+  photo_references?: string[] | null;
+  /**
+   * Indicates whether this venue's details/image are overridden by a Planless admin.
+   */
+  _hasPlanlessOverride?: boolean;
+
   // TMDB Movie metadata
   movie_id?: number | null;
   original_title?: string | null;

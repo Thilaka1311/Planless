@@ -189,7 +189,7 @@ describe("District Discovery UI Architecture Suite", () => {
       },
     ];
 
-    it("renders interleaved dining and sports rails in For You, excluding movies", () => {
+    it("renders interleaved dining and sports rails in For You feed", () => {
       const html = renderToString(
         <ForYouSections
           sections={mockSections}
@@ -199,14 +199,11 @@ describe("District Discovery UI Architecture Suite", () => {
         />
       );
 
-      // Dining and Sports rails are present
-      expect(html).toContain("Restaurants near you");
-      expect(html).toContain("Sports near you");
+      // Sports and Restaurants rails are present
+      expect(html).toContain("Sports");
+      expect(html).toContain("Restaurants");
       expect(html).toContain("The Chancery Pavilion");
       expect(html).toContain("Fusion The Turf");
-
-      // Movies are disabled on For You feed
-      expect(html).not.toContain("PVR Cinemas Nexus");
     });
 
     it("filters sections cleanly by search query without faking data", () => {

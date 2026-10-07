@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
       result = await handlePlaceDetails(body);
     } else if (action === "geocode") {
       result = await handleGeocode(body);
-    } else if (action === "places-discovery" || action === "nearby-places") {
+    } else if (action === "places-discovery" || action === "nearby-places" || action === "places-search") {
       result = await handleDiscoveryPlaces(body, req);
     } else if (action === "photo" || action === "place-photo") {
       const photoRef = body?.photo_reference || body?.photoreference;

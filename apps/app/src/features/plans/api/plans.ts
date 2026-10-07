@@ -9,7 +9,6 @@ export async function syncOverduePlansRPC(): Promise<void> {
 }
 
 export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]> {
-  console.log('[INVITE_TRACE] getCurrentUserPlans: called with activeUserUuid=', activeUserUuid);
   // Non-blocking background sync: Postgres overdue status is synchronized in the background
   // without adding a blocking network round-trip to startup (PlansContext evaluates overdue in-memory).
   void syncOverduePlansRPC().catch((err) => {
@@ -25,7 +24,6 @@ export async function getCurrentUserPlans(activeUserUuid: string): Promise<any[]
   if (partError) throw partError;
 
   const allPlanIds = Array.from(new Set((partData || []).map(p => p.plan_id))).filter(Boolean);
-  console.log('[INVITE_TRACE] getCurrentUserPlans: found plan_ids=', allPlanIds.length, 'planIds=', allPlanIds);
 
   if (allPlanIds.length === 0) {
     return [];

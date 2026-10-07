@@ -27,7 +27,8 @@ describe("Activities Discovery Category Suite", () => {
     category: "ACTIVITIES",
     subcategory: "Mystery Rooms",
     description: "Real life escape game experience with immersive puzzles",
-    cover_image_url: "/assets/Activities.png",
+    cover_image_url: "https://maps.googleapis.com/maps/api/place/photo?ref=mystery_owner_photo",
+    photo_references: ["mystery_owner_photo"],
     location: "Koramangala, Bangalore",
     suggested_duration_minutes: 60,
     suggested_cost_amount: 900,
@@ -54,7 +55,8 @@ describe("Activities Discovery Category Suite", () => {
     category: "ACTIVITIES",
     subcategory: "Bowling",
     description: "Cosmic bowling alley with arcade games",
-    cover_image_url: "/assets/Activities.png",
+    cover_image_url: "https://maps.googleapis.com/maps/api/place/photo?ref=amoeba_owner_photo",
+    photo_references: ["amoeba_owner_photo"],
     location: "Church Street, Bangalore",
     suggested_duration_minutes: 90,
     suggested_cost_amount: 500,
@@ -125,7 +127,7 @@ describe("Activities Discovery Category Suite", () => {
       },
     ];
 
-    it("renders dedicated Activities screen with ArrowLeft, pink subtitle, search bar, and pink chips", () => {
+    it("renders dedicated Activities screen with ArrowLeft, pink subtitle, search bar, and stream feed", () => {
       const html = renderToString(
         <DiscoverActivities
           sections={mockSections}
@@ -145,17 +147,8 @@ describe("Activities Discovery Category Suite", () => {
       expect(html).toContain("search-activities-input");
       expect(html).toContain("Search activities, places...");
 
-      // Pink chips
-      expect(html).toContain("Bowling");
-      expect(html).toContain("Mystery Rooms");
-      expect(html).toContain("Mini Golf");
-      expect(html).toContain("Go-Karting");
-      expect(html).toContain("Amusement Parks");
-      expect(html).toContain("Arcades");
-      expect(html).toContain("Adventure &amp; Fun");
-      expect(html).toContain("bg-pink-500"); // Selected 'All' chip
-
-      // Content section
+      // Content section with distance-tiered stream row
+      expect(html).toContain("Activities Around You");
       expect(html).toContain("Mystery Rooms Koramangala");
     });
   });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { ArrowLeft, AlertCircle, RefreshCw, Loader2 } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
@@ -9,10 +9,11 @@ import {
   TMDB_LANGUAGE_NAMES,
   isMovieWithinSixMonths,
 } from "../services/tmdbMovieService";
-import { searchDiscoveryPlaces } from "../services/discoveryService";
 import { ADMIN_CONFIGS } from "../services/discoveryAdminService";
 import { useLongPress } from "../../../shared/hooks/useLongPress";
 import { SearchBar } from "../../../shared/components/SearchBar";
+import { useProfileStore } from "../../profile/state/ProfileContext";
+
 
 interface DiscoverMoviesProps {
   sections?: DiscoverySectionType[];
@@ -49,60 +50,80 @@ interface MoviePortraitCardProps {
 export const MoviePortraitCard: React.FC<MoviePortraitCardProps> = ({
   item,
   onTap,
-  isAdmin = false,
-  onLongPressAdmin,
 }) => {
-  const longPress = useLongPress(() => {
-    if (isAdmin && onLongPressAdmin) onLongPressAdmin();
-  }, { threshold: 500 });
+  const effectiveItem = item;
+
 
   const langLabel =
-    item.language_name ||
-    (item.original_language
-      ? TMDB_LANGUAGE_NAMES[item.original_language.toLowerCase()] || item.original_language.toUpperCase()
+    effectiveItem.language_name ||
+    (effectiveItem.original_language
+      ? TMDB_LANGUAGE_NAMES[effectiveItem.original_language.toLowerCase()] || effectiveItem.original_language.toUpperCase()
       : "");
 
-  const releaseYear = item.release_date
-    ? new Date(item.release_date).getFullYear().toString()
+  const releaseYear = effectiveItem.release_date
+    ? new Date(effectiveItem.release_date).getFullYear().toString()
     : "";
 
   return (
     <div
-      {...(isAdmin && onLongPressAdmin ? longPress : {})}
       onClick={onTap}
-      className="group relative flex flex-col rounded-2xl overflow-hidden bg-[#121216] border border-white/[0.08] shadow-md hover:border-white/20 active:scale-[0.98] transition-all duration-200 cursor-pointer select-none"
+      draggable={false}
+      onDragStart={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        touchAction: "pan-x pan-y",
+      }}
+      className="group relative flex flex-col rounded-2xl overflow-hidden bg-[#121216] border border-white/[0.08] shadow-md hover:border-white/20 active:brightness-95 transition-all duration-200 cursor-pointer select-none"
     >
-      {/* 1. Portrait Poster Area (Exact 2:3 ratio ensuring the entire poster is visible) */}
-      <div className="relative w-full aspect-[2/3] overflow-hidden bg-[#0a0a0d] shrink-0">
+      {/* 1. Portrait Poster Area (Exact 2:3 ratio ensuring the entire poster is visible) - Display only */}
+      <div
+        className="relative w-full aspect-[2/3] overflow-hidden bg-[#0a0a0d] shrink-0 pointer-events-none select-none"
+        style={{ userSelect: "none", WebkitUserSelect: "none", pointerEvents: "none" }}
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
+        onContextMenu={(e) => e.preventDefault()}
+      >
         <img
-          src={item.cover_image_url || "/assets/plan-covers/movie.png"}
-          alt={item.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          src={effectiveItem.cover_image_url || "/assets/plan-covers/movie.png"}
+          alt={effectiveItem.title}
+          draggable={false}
+          onDragStart={(e) => e.preventDefault()}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none select-none"
           loading="lazy"
+          style={{
+            pointerEvents: "none",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+          }}
           onError={(e) => {
             (e.currentTarget as HTMLImageElement).src = "/assets/plan-covers/movie.png";
           }}
         />
       </div>
 
-      {/* 2. Structured Information Section */}
-      <div className="p-2.5 flex flex-col justify-between flex-1 min-w-0 text-left bg-[#121216]">
+      {/* 2. Structured Information Section - Display only, parent card handles click & hold */}
+      <div
+        className="p-2.5 flex flex-col justify-between flex-1 min-w-0 text-left bg-[#121216] pointer-events-none select-none"
+        style={{ userSelect: "none", WebkitUserSelect: "none", pointerEvents: "none" }}
+      >
         {/* Movie Title (max 2 lines with consistent min-height for uniform card alignment) */}
-        <h4 className="text-[13px] font-bold text-white tracking-tight leading-snug line-clamp-2 min-h-[34px] group-hover:text-violet-300 transition-colors">
-          {item.title}
+        <h4 className="text-[13px] font-bold text-white tracking-tight leading-snug line-clamp-2 min-h-[34px] group-hover:text-violet-300 transition-colors select-none">
+          {effectiveItem.title}
         </h4>
 
         {/* Language and Release Year */}
-        <div className="pt-1.5 flex items-center justify-between text-[11px] min-w-0">
+        <div className="pt-1.5 flex items-center justify-between text-[11px] min-w-0 select-none">
           {langLabel ? (
-            <span className="text-zinc-300 font-medium truncate text-[11px]">
+            <span className="text-zinc-300 font-medium truncate text-[11px] select-none">
               {langLabel}
             </span>
           ) : (
             <div />
           )}
           {releaseYear && (
-            <span className="text-zinc-500 font-normal text-[11px] shrink-0">
+            <span className="text-zinc-500 font-normal text-[11px] shrink-0 select-none">
               {releaseYear}
             </span>
           )}
@@ -113,7 +134,7 @@ export const MoviePortraitCard: React.FC<MoviePortraitCardProps> = ({
 };
 
 export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
-  isAdmin = false,
+  isAdmin: propIsAdmin = false,
   onBack,
   onSelectDiscoveryItem,
   onLongPressAdmin,
@@ -121,10 +142,14 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
   currentLocality,
   currentCoordinates,
 }) => {
+  const { isAdmin: storeIsAdmin } = useProfileStore();
+  const isAdmin = Boolean(propIsAdmin || storeIsAdmin);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [cycleCount, setCycleCount] = useState<number>(1);
 
   // Pre-load from localStorage cache for instant zero-flash render (filtered to <= 6 months)
   const [movies, setMovies] = useState<DiscoveryItem[]>(() =>
@@ -140,9 +165,36 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [previewItem, setPreviewItem] = useState<DiscoveryItem | null>(null);
+  const [adminEditTarget, setAdminEditTarget] = useState<DiscoveryItem | null>(null);
 
   const activeLanguageLabel =
     selectedLanguage !== "all" ? TMDB_LANGUAGE_NAMES[selectedLanguage] || selectedLanguage : null;
+
+  // Pagination refs for endless movie feed
+  const pageRef = useRef<number>(1);
+  const totalPagesRef = useRef<number>(10);
+  const uniquePoolRef = useRef<DiscoveryItem[]>([]);
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const cycleCountRef = useRef<number>(1);
+  const searchPageRef = useRef<number>(1);
+  const searchUniquePoolRef = useRef<DiscoveryItem[]>([]);
+  const searchSeenIdsRef = useRef<Set<string>>(new Set());
+  const searchCycleCountRef = useRef<number>(1);
+
+  // Independent state cache per language filter
+  const languageStateCache = useRef<
+    Map<
+      string,
+      {
+        items: DiscoveryItem[];
+        uniquePool: DiscoveryItem[];
+        seenIds: Set<string>;
+        page: number;
+        totalPages: number;
+        cycleCount: number;
+      }
+    >
+  >(new Map());
 
   // Search debounce
   useEffect(() => {
@@ -157,33 +209,33 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
     if (!debouncedQuery) {
       setSearchResults([]);
       setIsSearching(false);
+      searchPageRef.current = 1;
+      searchUniquePoolRef.current = [];
+      searchSeenIdsRef.current.clear();
+      searchCycleCountRef.current = 1;
       return;
     }
 
     let active = true;
     setIsSearching(true);
+    searchPageRef.current = 1;
+    searchUniquePoolRef.current = [];
+    searchSeenIdsRef.current.clear();
+    searchCycleCountRef.current = 1;
 
-    Promise.allSettled([
-      searchMovies(debouncedQuery, 1, selectedLanguage),
-      searchDiscoveryPlaces({
-        category: "MOVIES",
-        query: debouncedQuery,
-        currentCoordinates,
-        defaultCity: currentCity,
-      }),
-    ])
-      .then(([tmdbRes, placesRes]) => {
+    searchMovies(debouncedQuery, 1, selectedLanguage)
+      .then((res) => {
         if (!active) return;
-        const movieItems = tmdbRes.status === "fulfilled" ? tmdbRes.value.items || [] : [];
-        const placeItems = placesRes.status === "fulfilled" ? placesRes.value.items || [] : [];
-        const combined = [...placeItems, ...movieItems];
+        const movieItems = res.items || [];
         const seen = new Set<string>();
         const deduped: DiscoveryItem[] = [];
-        for (const item of combined) {
-          const key = item.place_id || item.id;
-          if (!seen.has(key)) {
+        for (const item of movieItems) {
+          const key = item.id || item.public_id;
+          if (key && !seen.has(key)) {
             seen.add(key);
             deduped.push(item);
+            searchSeenIdsRef.current.add(key);
+            searchUniquePoolRef.current.push(item);
           }
         }
         setSearchResults(deduped);
@@ -200,19 +252,60 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
     return () => {
       active = false;
     };
-  }, [debouncedQuery, selectedLanguage, currentCoordinates, currentCity]);
+  }, [debouncedQuery, selectedLanguage]);
 
   // Load Primary Movie Catalogue (strictly <= 6 months from current date)
   const loadCatalogue = useCallback(async () => {
+    // Check if state is already cached for this language tab to restore immediately
+    const cached = languageStateCache.current.get(selectedLanguage);
+    if (cached && cached.items.length > 0) {
+      setMovies(cached.items);
+      pageRef.current = cached.page;
+      totalPagesRef.current = cached.totalPages;
+      uniquePoolRef.current = cached.uniquePool;
+      seenIdsRef.current = cached.seenIds;
+      cycleCountRef.current = cached.cycleCount;
+      setCycleCount(cached.cycleCount);
+      setIsLoadingFeeds(false);
+      return;
+    }
+
     setLoadError(null);
     setIsLoadingFeeds(true);
+    pageRef.current = 1;
+    totalPagesRef.current = 10;
+    uniquePoolRef.current = [];
+    seenIdsRef.current.clear();
+    cycleCountRef.current = 1;
+    setCycleCount(1);
 
     try {
       const res = await fetchDiscoverMovies("now_playing", 1, undefined, selectedLanguage);
       const filtered = (res.items || []).filter((m) =>
         isMovieWithinSixMonths(m.release_date)
       );
+
+      filtered.forEach((m) => {
+        const key = m.id || m.public_id;
+        if (key && !seenIdsRef.current.has(key)) {
+          seenIdsRef.current.add(key);
+          uniquePoolRef.current.push(m);
+        }
+      });
+
+      if (res.totalPages) {
+        totalPagesRef.current = res.totalPages;
+      }
+
       setMovies(filtered);
+      languageStateCache.current.set(selectedLanguage, {
+        items: filtered,
+        uniquePool: [...uniquePoolRef.current],
+        seenIds: new Set(seenIdsRef.current),
+        page: 1,
+        totalPages: totalPagesRef.current,
+        cycleCount: 1,
+      });
     } catch (err: any) {
       console.error("[DiscoverMovies] Error loading movie catalogue:", err);
       setLoadError("Failed to load movies. Tap below to retry.");
@@ -225,7 +318,150 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
     loadCatalogue();
   }, [loadCatalogue]);
 
-  // When searching, show searchResults (regardless of age). Otherwise show only movies within 6 months.
+  // Endless pagination loader
+  const loadMoreMovies = useCallback(async () => {
+    if (isLoadingFeeds || isLoadingMore) return;
+
+    if (debouncedQuery.trim()) {
+      setIsLoadingMore(true);
+      try {
+        const nextSearchPage = searchPageRef.current + 1;
+        const [tmdbRes] = await Promise.allSettled([
+          searchMovies(debouncedQuery, nextSearchPage, selectedLanguage),
+        ]);
+
+        const nextMovieItems =
+          tmdbRes.status === "fulfilled" && tmdbRes.value.items ? tmdbRes.value.items : [];
+
+        const newItems: DiscoveryItem[] = [];
+        for (const item of nextMovieItems) {
+          const key = item.id || item.public_id;
+          if (key && !searchSeenIdsRef.current.has(key)) {
+            searchSeenIdsRef.current.add(key);
+            searchUniquePoolRef.current.push(item);
+            newItems.push(item);
+          }
+        }
+
+        if (newItems.length > 0) {
+          searchPageRef.current = nextSearchPage;
+          setSearchResults((prev) => [...prev, ...newItems]);
+        } else if (searchUniquePoolRef.current.length > 0) {
+          searchCycleCountRef.current += 1;
+          const cycle = searchCycleCountRef.current;
+          const cycled = searchUniquePoolRef.current.map((item, idx) => ({
+            ...item,
+            id: `${item.id || item.public_id}_c${cycle}_${idx}`,
+          }));
+          setSearchResults((prev) => [...prev, ...cycled]);
+        }
+      } catch (err) {
+        console.warn("[DiscoverMovies] Error loading more search results:", err);
+      } finally {
+        setIsLoadingMore(false);
+      }
+      return;
+    }
+
+    setIsLoadingMore(true);
+    try {
+      if (pageRef.current < totalPagesRef.current) {
+        const nextPage = pageRef.current + 1;
+        const res = await fetchDiscoverMovies("now_playing", nextPage, undefined, selectedLanguage);
+        const validMovies = (res.items || []).filter((m) => isMovieWithinSixMonths(m.release_date));
+
+        const newBatch: DiscoveryItem[] = [];
+        for (const m of validMovies) {
+          const key = m.id || m.public_id;
+          if (key && !seenIdsRef.current.has(key)) {
+            seenIdsRef.current.add(key);
+            uniquePoolRef.current.push(m);
+            newBatch.push(m);
+          }
+        }
+
+        if (newBatch.length > 0) {
+          pageRef.current = nextPage;
+          if (res.totalPages) totalPagesRef.current = res.totalPages;
+          setMovies((prev) => {
+            const nextList = [...prev, ...newBatch];
+            languageStateCache.current.set(selectedLanguage, {
+              items: nextList,
+              uniquePool: [...uniquePoolRef.current],
+              seenIds: new Set(seenIdsRef.current),
+              page: pageRef.current,
+              totalPages: totalPagesRef.current,
+              cycleCount: cycleCountRef.current,
+            });
+            return nextList;
+          });
+          setIsLoadingMore(false);
+          return;
+        }
+      }
+
+      // Provider exhausted for current language: cycle through available unique pool
+      if (uniquePoolRef.current.length > 0) {
+        cycleCountRef.current += 1;
+        const cycle = cycleCountRef.current;
+        setCycleCount(cycle);
+        pageRef.current = 1;
+
+        const cycledBatch = uniquePoolRef.current.map((item, idx) => ({
+          ...item,
+          id: `${item.id || item.public_id}_c${cycle}_${idx}`,
+        }));
+
+        setMovies((prev) => {
+          const nextList = [...prev, ...cycledBatch];
+          languageStateCache.current.set(selectedLanguage, {
+            items: nextList,
+            uniquePool: [...uniquePoolRef.current],
+            seenIds: new Set(seenIdsRef.current),
+            page: 1,
+            totalPages: totalPagesRef.current,
+            cycleCount: cycle,
+          });
+          return nextList;
+        });
+      }
+    } catch (err) {
+      console.warn("[DiscoverMovies] Error loading more movies:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [debouncedQuery, selectedLanguage, isLoadingFeeds, isLoadingMore]);
+
+  // Auto-prefetch sentinel using IntersectionObserver (rootMargin: 500px)
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreRef = useRef(loadMoreMovies);
+  loadMoreRef.current = loadMoreMovies;
+
+  const sentinelRef = useCallback((node: HTMLElement | null) => {
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+
+    if (node && typeof IntersectionObserver !== "undefined") {
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          const first = entries[0];
+          if (first && first.isIntersecting) {
+            loadMoreRef.current();
+          }
+        },
+        {
+          root: null,
+          rootMargin: "500px",
+          threshold: 0,
+        }
+      );
+      observerRef.current.observe(node);
+    }
+  }, []);
+
+  // When searching, show searchResults. Otherwise show filtered catalogue.
   const displayedMovies = useMemo(() => {
     if (debouncedQuery) {
       return searchResults;
@@ -235,7 +471,7 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
 
   return (
     <div
-      className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-24 text-left select-none"
+      className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-6 pb-[env(safe-area-inset-bottom,16px)] text-left select-none"
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
       {/* ── 1. HEADER BAR ── */}
@@ -343,19 +579,33 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
           </div>
         ) : displayedMovies.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {displayedMovies.map((item) => (
+            {displayedMovies.map((item, idx) => (
               <MoviePortraitCard
-                key={item.id}
+                key={`${item.id || item.public_id || idx}_${idx}`}
                 item={item}
                 onTap={() => setPreviewItem(item)}
                 isAdmin={isAdmin}
                 onLongPressAdmin={
-                  onLongPressAdmin
-                    ? () => onLongPressAdmin(item, ADMIN_CONFIGS.movies)
+                  isAdmin
+                    ? () => {
+                        setAdminEditTarget(item);
+                        if (onLongPressAdmin) onLongPressAdmin(item, ADMIN_CONFIGS.movies);
+                      }
                     : undefined
                 }
               />
             ))}
+
+            {/* Endless Scroll Sentinel & Subtle Bottom Loading Indicator */}
+            <div ref={sentinelRef} className="h-6 w-full pointer-events-none col-span-full" />
+            {isLoadingMore && (
+              <div className="flex items-center justify-center py-6 gap-2 text-zinc-400 col-span-full">
+                <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
+                <span className="text-xs font-medium">
+                  {cycleCount > 1 ? "Continuing feed..." : "Loading more movies..."}
+                </span>
+              </div>
+            )}
           </div>
         ) : debouncedQuery ? (
           <div className="px-6 py-16 text-center space-y-2">

@@ -3,6 +3,18 @@ import { supabase, SUPABASE_URL } from "../../../../lib/supabaseClient";
 import * as queries from "./discoveryQueries";
 import * as mapper from "./discoveryMapper";
 import { calculateDistanceKm, formatDistanceKm } from "../components/DiscoveryCard";
+import { isRelevantVenueForCategory } from "./venueRelevance";
+import {
+  SPORTS_CONFIGS,
+  SportCategoryId,
+  scoreSportsVenueRelevance,
+  sortSportsVenues,
+} from "./sportsRelevance";
+import { searchCoordinator, planlessSearchCache } from "../search";
+import { applyPlaceOverrides, subscribePlaceOverrides } from "./placeOverridesService";
+
+import { isPlaceInCity, CityBoundingBox, cleanCityString } from "./cityBoundary";
+import { onDiscoveryLocationChange, getStoredDiscoveryLocation } from "../hooks/useUserLocation";
 
 const sectionsCache = new Map<string, DiscoverySection[]>();
 let inFlightRequest: Promise<DiscoverySection[]> | null = null;
@@ -10,34 +22,57 @@ let inFlightRequest: Promise<DiscoverySection[]> | null = null;
 export interface DiscoveryLocationParams {
   latitude?: number;
   longitude?: number;
+  city?: string;
+  cityBounds?: CityBoundingBox;
 }
 
-export function getCacheKey(coords?: DiscoveryLocationParams): string {
+export function getCacheKey(coords?: DiscoveryLocationParams, city?: string): string {
+  const rawCity = coords?.city || city;
+  const cityPart = rawCity ? `_${rawCity.trim().toLowerCase()}` : "";
   if (
     typeof coords?.latitude === "number" &&
     !isNaN(coords.latitude) &&
     typeof coords?.longitude === "number" &&
     !isNaN(coords.longitude)
   ) {
-    return `${coords.latitude.toFixed(4)}_${coords.longitude.toFixed(4)}`;
+    return `${coords.latitude.toFixed(4)}_${coords.longitude.toFixed(4)}${cityPart}`;
   }
-  return "default";
+  return `default${cityPart}`;
 }
 
-export function getCachedSections(coords?: DiscoveryLocationParams): DiscoverySection[] | null {
+export function getCachedSections(coords?: DiscoveryLocationParams, city?: string): DiscoverySection[] | null {
+  let raw: DiscoverySection[] | null = null;
+  const effectiveCity = coords?.city || city;
   if (coords) {
-    return sectionsCache.get(getCacheKey(coords)) || null;
+    raw = sectionsCache.get(getCacheKey(coords, effectiveCity)) || sectionsCache.get(getCacheKey(coords)) || null;
+  } else if (effectiveCity && sectionsCache.has(`default_${effectiveCity.toLowerCase()}`)) {
+    raw = sectionsCache.get(`default_${effectiveCity.toLowerCase()}`) || null;
+  } else if (sectionsCache.has("default")) {
+    raw = sectionsCache.get("default") || null;
+  } else if (sectionsCache.has("default_bengaluru")) {
+    raw = sectionsCache.get("default_bengaluru") || null;
+  } else if (sectionsCache.size > 0) {
+    raw = Array.from(sectionsCache.values())[0];
   }
-  // If no coords specified, return any existing cached sections or default
-  if (sectionsCache.has("default")) return sectionsCache.get("default") || null;
-  if (sectionsCache.size > 0) return Array.from(sectionsCache.values())[0];
-  return null;
+
+  if (!raw) return null;
+  return raw;
 }
 
 export function clearCachedSections(): void {
   sectionsCache.clear();
   inFlightRequest = null;
 }
+
+// Invalidate section cache whenever an override or exclusion changes
+subscribePlaceOverrides(() => {
+  clearCachedSections();
+});
+
+// Invalidate section cache whenever the user changes discovery location/city
+onDiscoveryLocationChange(() => {
+  clearCachedSections();
+});
 
 /**
  * Public API endpoint for retrieval of active sections and their nested items.
@@ -49,7 +84,18 @@ export async function getSectionsByCategory(
   coords?: DiscoveryLocationParams
 ): Promise<DiscoverySection[]> {
   try {
-    const cacheKey = getCacheKey(coords);
+    const activeStored = getStoredDiscoveryLocation();
+    const effectiveCity = coords?.city || activeStored?.city;
+    const isSameCity =
+      !coords?.city ||
+      (activeStored?.city && cleanCityString(activeStored.city) === cleanCityString(coords.city));
+    const effectiveBounds =
+      coords?.cityBounds !== undefined
+        ? coords.cityBounds
+        : isSameCity
+        ? activeStored?.cityBounds
+        : undefined;
+    const cacheKey = getCacheKey(coords, effectiveCity);
     const hasCached = sectionsCache.has(cacheKey);
 
     if (!hasCached || forceRefresh) {
@@ -65,12 +111,22 @@ export async function getSectionsByCategory(
                 category: "ALL",
                 latitude: coords?.latitude,
                 longitude: coords?.longitude,
+                city: effectiveCity,
+                cityBounds: effectiveBounds,
                 photoBaseUrl,
               },
             });
 
             if (error) {
-              throw error;
+              let errorDetail = error.message;
+              try {
+                if ((error as any).context && typeof (error as any).context.text === "function") {
+                  const status = (error as any).context.status;
+                  const body = await (error as any).context.clone().text();
+                  errorDetail = `HTTP ${status}: ${body || error.message}`;
+                }
+              } catch {}
+              throw new Error(errorDetail);
             }
 
             let loadedSections: DiscoverySection[] = [];
@@ -80,6 +136,22 @@ export async function getSectionsByCategory(
               // Fallback to database queries
               const rawSections = await queries.fetchActiveSectionsWithItems();
               loadedSections = (rawSections || []).map(mapper.mapDbSectionToFrontend);
+            }
+
+            // Apply Planless strict relevance filter AND city boundary filter to every loaded section
+            loadedSections = loadedSections.map((sec) => ({
+              ...sec,
+              items: (sec.items || []).filter((item) =>
+                isRelevantVenueForCategory(item, sec.category || "ALL") &&
+                (!effectiveCity || isPlaceInCity(item, effectiveCity, effectiveBounds))
+              ),
+            }));
+
+            // Apply place overrides and exclusion filtering (is_deleted === true)
+            for (const sec of loadedSections) {
+              if (sec.items && sec.items.length > 0) {
+                sec.items = await applyPlaceOverrides(sec.items);
+              }
             }
 
             // Calculate exact distance for each item if coords provided
@@ -96,6 +168,7 @@ export async function getSectionsByCategory(
                   if (typeof pLat === "number" && !isNaN(pLat) && typeof pLng === "number" && !isNaN(pLng)) {
                     const distKm = calculateDistanceKm(coords.latitude, coords.longitude, pLat, pLng);
                     (item as any).distance = formatDistanceKm(distKm);
+                    (item as any)._distanceKm = distKm;
                   }
                 }
               }
@@ -107,7 +180,23 @@ export async function getSectionsByCategory(
             console.warn("[DiscoveryService] Places API failed, using database items:", err?.message || err);
             try {
               const rawSections = await queries.fetchActiveSectionsWithItems();
-              const fallbackSections = (rawSections || []).map(mapper.mapDbSectionToFrontend);
+              let fallbackSections = (rawSections || []).map(mapper.mapDbSectionToFrontend);
+              
+              // Apply Planless strict relevance filter to fallback items
+              fallbackSections = fallbackSections.map((sec) => ({
+                ...sec,
+                items: (sec.items || []).filter((item) =>
+                  isRelevantVenueForCategory(item, sec.category || "ALL")
+                ),
+              }));
+
+              // Apply place overrides and exclusion filtering to fallback items
+              for (const sec of fallbackSections) {
+                if (sec.items && sec.items.length > 0) {
+                  sec.items = await applyPlaceOverrides(sec.items);
+                }
+              }
+
               if (
                 typeof coords?.latitude === "number" &&
                 !isNaN(coords.latitude) &&
@@ -121,6 +210,7 @@ export async function getSectionsByCategory(
                     if (typeof pLat === "number" && !isNaN(pLat) && typeof pLng === "number" && !isNaN(pLng)) {
                       const distKm = calculateDistanceKm(coords.latitude, coords.longitude, pLat, pLng);
                       (item as any).distance = formatDistanceKm(distKm);
+                      (item as any)._distanceKm = distKm;
                     }
                   }
                 }
@@ -201,15 +291,19 @@ export async function adminDeleteItem(id: string): Promise<void> {
 export interface PlacesSearchParams {
   category: "DINING" | "MOVIES" | "SPORTS" | "ACTIVITIES" | "ALL";
   query: string;
+  queries?: string[];
   subCategoryFilter?: string;
   currentCoordinates?: { latitude: number; longitude: number };
   defaultCity?: string;
+  pageToken?: string;
+  radius?: number;
 }
 
 export interface PlacesSearchResult {
   items: DiscoveryItem[];
   searchCoordinates: { latitude: number; longitude: number };
   resolvedLocationName: string;
+  nextPageToken?: string | null;
 }
 
 const placesSearchCache = new Map<string, PlacesSearchResult>();
@@ -219,18 +313,73 @@ export function getPlacesSearchCacheKey(params: PlacesSearchParams): string {
   const q = params.query.trim().toLowerCase();
   const sub = (params.subCategoryFilter || "all").toLowerCase();
   const cat = params.category.toUpperCase();
-  return `${cat}:${q}:${sub}`;
+  const lat = params.currentCoordinates?.latitude?.toFixed(4) || "default";
+  const lng = params.currentCoordinates?.longitude?.toFixed(4) || "default";
+  const rad = params.radius || 15000;
+  const page = params.pageToken || "p1";
+  return `${cat}:${q}:${sub}:${lat}_${lng}:${rad}:${page}`;
 }
 
 export function clearPlacesSearchCache(): void {
   placesSearchCache.clear();
   placesInFlightSearches.clear();
+  planlessSearchCache.clear();
 }
 
 /**
  * Resolves geographical coordinates for a user search query using Google Maps Geocoding API.
  * Detects whether the query is a locality/area (e.g. "Koramangala", "Indiranagar") vs a generic keyword.
  */
+function isGeographicalArea(result: any): boolean {
+  if (!result || !result.geometry?.location) return false;
+  if (result.geometry.location_type === "ROOFTOP") return false;
+
+  const types: string[] = result.types || [];
+  const venueTypes = [
+    "establishment",
+    "point_of_interest",
+    "store",
+    "food",
+    "restaurant",
+    "cafe",
+    "bar",
+    "bakery",
+    "premise",
+  ];
+  if (types.some((t) => venueTypes.includes(t))) {
+    return false;
+  }
+
+  if (types.length > 0) {
+    const areaTypes = [
+      "locality",
+      "sublocality",
+      "sublocality_level_1",
+      "sublocality_level_2",
+      "sublocality_level_3",
+      "neighborhood",
+      "administrative_area_level_1",
+      "administrative_area_level_2",
+      "administrative_area_level_3",
+      "postal_code",
+      "colloquial_area",
+      "political",
+    ];
+    return types.some((t) => areaTypes.includes(t));
+  }
+
+  return true;
+}
+
+function extractAreaName(result: any, fallback: string): string {
+  const comp = result.address_components?.find((c: any) =>
+    c.types?.some((t: string) =>
+      ["sublocality_level_1", "sublocality", "neighborhood", "locality"].includes(t)
+    )
+  );
+  return comp?.long_name || result.formatted_address?.split(",")?.[0]?.trim() || fallback;
+}
+
 async function resolveSearchCoordinates(
   query: string,
   currentCoordinates?: { latitude: number; longitude: number },
@@ -256,15 +405,17 @@ async function resolveSearchCoordinates(
     });
     if (data?.status === "OK" && data.results && data.results.length > 0) {
       const first = data.results[0];
-      const lat = first.geometry?.location?.lat;
-      const lng = first.geometry?.location?.lng;
-      if (typeof lat === "number" && typeof lng === "number") {
-        const shortName = first.address_components?.[0]?.long_name || first.formatted_address?.split(",")?.[0]?.trim() || trimmed;
-        return {
-          coordinates: { latitude: lat, longitude: lng },
-          locationName: shortName,
-          isGeocodedLocation: true,
-        };
+      if (isGeographicalArea(first)) {
+        const lat = first.geometry?.location?.lat;
+        const lng = first.geometry?.location?.lng;
+        if (typeof lat === "number" && typeof lng === "number") {
+          const shortName = extractAreaName(first, trimmed);
+          return {
+            coordinates: { latitude: lat, longitude: lng },
+            locationName: shortName,
+            isGeocodedLocation: true,
+          };
+        }
       }
     }
   } catch (err) {
@@ -278,15 +429,17 @@ async function resolveSearchCoordinates(
     });
     if (data?.status === "OK" && data.results && data.results.length > 0) {
       const first = data.results[0];
-      const lat = first.geometry?.location?.lat;
-      const lng = first.geometry?.location?.lng;
-      if (typeof lat === "number" && typeof lng === "number") {
-        const shortName = first.address_components?.[0]?.long_name || first.formatted_address?.split(",")?.[0]?.trim() || trimmed;
-        return {
-          coordinates: { latitude: lat, longitude: lng },
-          locationName: shortName,
-          isGeocodedLocation: true,
-        };
+      if (isGeographicalArea(first)) {
+        const lat = first.geometry?.location?.lat;
+        const lng = first.geometry?.location?.lng;
+        if (typeof lat === "number" && typeof lng === "number") {
+          const shortName = extractAreaName(first, trimmed);
+          return {
+            coordinates: { latitude: lat, longitude: lng },
+            locationName: shortName,
+            isGeocodedLocation: true,
+          };
+        }
       }
     }
   } catch (err) {
@@ -333,14 +486,48 @@ function matchesCategoryFilter(
       return full.includes("pub") || full.includes("bar") || full.includes("brewery") || full.includes("beer") || full.includes("taproom");
     }
   } else if (category === "SPORTS") {
-    if (filter === "turf" || filter === "turfs" || filter === "football") {
-      return full.includes("turf") || full.includes("football") || full.includes("soccer") || full.includes("futsal");
+    if (filter === "football" || filter === "turf" || filter === "turfs") {
+      return (
+        full.includes("football") ||
+        full.includes("turf") ||
+        full.includes("soccer") ||
+        full.includes("futsal") ||
+        full.includes("5-a-side") ||
+        full.includes("7-a-side")
+      );
     }
     if (filter === "badminton" || filter === "court" || filter === "courts") {
-      return full.includes("badminton") || full.includes("court") || full.includes("shuttle");
+      return full.includes("badminton") || full.includes("shuttle");
     }
-    if (filter === "box-cricket" || filter === "cricket") {
-      return full.includes("cricket");
+    if (filter === "pickleball") {
+      return full.includes("pickleball") || full.includes("pickle ball") || full.includes("dink");
+    }
+    if (filter === "tennis") {
+      return full.includes("tennis") && !full.includes("table tennis");
+    }
+    if (filter === "basketball") {
+      return full.includes("basketball") || full.includes("hoop");
+    }
+    if (filter === "cricket" || filter === "box-cricket") {
+      return full.includes("cricket") || full.includes("pitch") || full.includes("nets");
+    }
+    if (filter === "table-tennis" || filter === "table tennis") {
+      return full.includes("table tennis") || full.includes("ping pong") || full.includes("tt ");
+    }
+    if (filter === "other") {
+      return (
+        full.includes("swim") ||
+        full.includes("squash") ||
+        full.includes("golf") ||
+        full.includes("volleyball") ||
+        full.includes("skate") ||
+        full.includes("sports complex") ||
+        full.includes("sports club") ||
+        full.includes("stadium") ||
+        full.includes("gym") ||
+        full.includes("fitness") ||
+        full.includes("athletic")
+      );
     }
     if (filter === "swimming") {
       return full.includes("swim") || full.includes("pool");
@@ -373,6 +560,11 @@ function matchesCategoryFilter(
  * Queries the entire database table directly without geographic limitations,
  * resolves search coordinates for distance information, and retains all matching places.
  */
+/**
+ * @deprecated Legacy search entry point.
+ * Migrated to decoupled search domain (src/features/discovery/search).
+ * Delegates to searchCoordinator to guarantee intent-aware ranking, relevance filtering, and clean pagination.
+ */
 export async function searchDiscoveryPlaces(params: PlacesSearchParams): Promise<PlacesSearchResult> {
   const { category, query, subCategoryFilter = "all", currentCoordinates, defaultCity = "Bengaluru" } = params;
   const trimmed = query.trim();
@@ -382,185 +574,25 @@ export async function searchDiscoveryPlaces(params: PlacesSearchParams): Promise
       items: [],
       searchCoordinates: currentCoordinates || { latitude: 12.9716, longitude: 77.5946 },
       resolvedLocationName: defaultCity,
+      nextPageToken: null,
     };
   }
 
-  const cacheKey = getPlacesSearchCacheKey(params);
-  if (placesSearchCache.has(cacheKey)) {
-    return placesSearchCache.get(cacheKey)!;
-  }
+  const session = await searchCoordinator.executeSearch(trimmed, {
+    category,
+    subcategory: subCategoryFilter,
+    discoveryCoordinates: currentCoordinates,
+    city: defaultCity,
+    pageToken: params.pageToken,
+  });
 
-  if (placesInFlightSearches.has(cacheKey)) {
-    return placesInFlightSearches.get(cacheKey)!;
-  }
-
-  const searchPromise = (async (): Promise<PlacesSearchResult> => {
-    try {
-      const seen = new Set<string>();
-      const combinedItems: DiscoveryItem[] = [];
-
-      // 1. Query the entire database table first (server-side indexed search)
-      try {
-        const dbRecords = await queries.searchDiscoveryItems({
-          query: trimmed,
-          category,
-        });
-        if (dbRecords && dbRecords.length > 0) {
-          const mapped = dbRecords.map(mapper.mapDbItemToFrontend);
-          for (const item of mapped) {
-            const key = item.place_id || item.id;
-            if (!seen.has(key)) {
-              seen.add(key);
-              combinedItems.push(item);
-            }
-          }
-        }
-      } catch (dbErr) {
-        console.warn("[DiscoveryService] DB search query error:", dbErr);
-      }
-
-      // 2. Resolve search coordinates and location context
-      const { coordinates: searchCoords, locationName, isGeocodedLocation } =
-        await resolveSearchCoordinates(trimmed, currentCoordinates, defaultCity);
-
-      // 3. If query is a geocoded location, or if additional places can be found via Places API:
-      try {
-        const photoBaseUrl = `${SUPABASE_URL}/functions/v1/maps`;
-        const { data, error } = await supabase.functions.invoke("maps", {
-          body: {
-            action: "places-discovery",
-            category: category === "ALL" ? "ALL" : category.toUpperCase(),
-            latitude: searchCoords.latitude,
-            longitude: searchCoords.longitude,
-            photoBaseUrl,
-          },
-        });
-
-        if (!error && data?.sections && Array.isArray(data.sections)) {
-          const placesItems: DiscoveryItem[] = data.sections.flatMap((s: any) => s.items || []);
-          for (const item of placesItems) {
-            const key = item.place_id || item.id;
-            if (!seen.has(key)) {
-              seen.add(key);
-              combinedItems.push(item);
-            }
-          }
-        }
-      } catch (placesErr) {
-        console.warn("[DiscoveryService] Places API discovery query failed:", placesErr);
-      }
-
-      // 4. If query is a specific brand/venue (e.g. "Toit", "Truffles", "PVR", "Decathlon"),
-      // query autocomplete across India to find matching venues
-      if (trimmed.length >= 3 && !isGeocodedLocation) {
-        try {
-          const { data: autoData } = await supabase.functions.invoke("maps", {
-            body: { action: "autocomplete", input: trimmed },
-          });
-          if (autoData?.predictions && Array.isArray(autoData.predictions) && autoData.predictions.length > 0) {
-            for (const top of autoData.predictions.slice(0, 3)) {
-              if (top?.place_id && !seen.has(top.place_id)) {
-                const { data: detailsData } = await supabase.functions.invoke("maps", {
-                  body: { action: "place-details", place_id: top.place_id },
-                });
-                const dResult = detailsData?.result;
-                if (dResult?.geometry?.location) {
-                  const dLat = dResult.geometry.location.lat;
-                  const dLng = dResult.geometry.location.lng;
-
-                  const specificItem: DiscoveryItem = {
-                    id: `place-${top.place_id}`,
-                    public_id: `place-${top.place_id}`,
-                    section_id: `search-${category.toLowerCase()}`,
-                    title: dResult.name || top.structured_formatting?.main_text || trimmed,
-                    category: category === "ALL" ? "DINING" : category,
-                    subcategory:
-                      category === "DINING"
-                        ? "Restaurant"
-                        : category === "SPORTS"
-                        ? "Sports Venue"
-                        : category === "MOVIES"
-                        ? "Cinema"
-                        : "Activity",
-                    description: dResult.formatted_address || top.description,
-                    cover_image_url: dResult.photos?.[0]?.photo_reference
-                      ? `${SUPABASE_URL}/functions/v1/maps?action=photo&photo_reference=${dResult.photos[0].photo_reference}&maxwidth=800`
-                      : null,
-                    location: dResult.vicinity || dResult.formatted_address || "Nearby",
-                    place_address: dResult.formatted_address || top.description,
-                    latitude: dLat,
-                    longitude: dLng,
-                    place_id: top.place_id,
-                    rating: dResult.rating || null,
-                    user_ratings_total: dResult.user_ratings_total || null,
-                    suggested_duration_minutes: category === "DINING" ? 60 : 90,
-                    suggested_cost_amount: null,
-                    suggested_capacity: null,
-                    default_rsvp_offset_minutes: 30,
-                    display_order: 0,
-                    featured: true,
-                    status: "ACTIVE",
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString(),
-                  };
-                  combinedItems.unshift(specificItem);
-                  seen.add(top.place_id);
-                }
-              }
-            }
-          }
-        } catch (autoErr) {
-          console.warn("[DiscoveryService] Specific place autocomplete lookup bypassed:", autoErr);
-        }
-      }
-
-      // 5. Calculate exact distances relative to origin for display, without dropping distant places
-      const origin = isGeocodedLocation ? searchCoords : (currentCoordinates || searchCoords);
-      for (const item of combinedItems) {
-        const pLat = item.latitude != null ? Number(item.latitude) : (item as any).metadata?.latitude;
-        const pLng = item.longitude != null ? Number(item.longitude) : (item as any).metadata?.longitude;
-        if (typeof pLat === "number" && !isNaN(pLat) && typeof pLng === "number" && !isNaN(pLng)) {
-          const distKm = calculateDistanceKm(origin.latitude, origin.longitude, pLat, pLng);
-          item.distance = formatDistanceKm(distKm);
-        }
-      }
-
-      // 6. Filter by subcategory chip if selected
-      let filtered = combinedItems.filter((item) =>
-        matchesCategoryFilter(item, category, subCategoryFilter)
-      );
-
-      // 7. If non-geocoded keywords (e.g. "pizza", "toit", "badminton", "mcdonald's hyderabad"),
-      // ensure items match each search term across fields
-      if (!isGeocodedLocation) {
-        const terms = trimmed.toLowerCase().split(/\s+/).filter(Boolean);
-        filtered = filtered.filter((item) => {
-          const fullText = `${item.title || ""} ${item.description || ""} ${item.subcategory || ""} ${item.place_address || ""} ${item.location || ""}`.toLowerCase();
-          return terms.every((term) => fullText.includes(term));
-        });
-      }
-
-      const result: PlacesSearchResult = {
-        items: filtered,
-        searchCoordinates: searchCoords,
-        resolvedLocationName: locationName,
-      };
-
-      placesSearchCache.set(cacheKey, result);
-      return result;
-    } catch (err: any) {
-      console.error(`[DiscoveryService] Places search failed for ${category} "${trimmed}":`, err?.message || err);
-      const fallbackResult: PlacesSearchResult = {
-        items: [],
-        searchCoordinates: currentCoordinates || { latitude: 12.9716, longitude: 77.5946 },
-        resolvedLocationName: defaultCity,
-      };
-      return fallbackResult;
-    } finally {
-      placesInFlightSearches.delete(cacheKey);
-    }
-  })();
-
-  placesInFlightSearches.set(cacheKey, searchPromise);
-  return searchPromise;
+  return {
+    items: session.items,
+    searchCoordinates: session.searchCoordinates || currentCoordinates || { latitude: 12.9716, longitude: 77.5946 },
+    resolvedLocationName:
+      session.parsedQuery.locationQualifier?.raw ||
+      (session.parsedQuery.intent === "SEARCH_LOCATION" ? session.parsedQuery.cleanSearchTerm : defaultCity),
+    nextPageToken: session.nextPageToken,
+  };
 }
+

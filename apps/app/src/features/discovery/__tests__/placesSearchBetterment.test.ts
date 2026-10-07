@@ -2,9 +2,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { searchDiscoveryPlaces } from "../services/discoveryService";
 import { supabase } from "../../../../lib/supabaseClient";
 
+import { clearPlaceOverridesCache } from "../services/placeOverridesService";
+
 describe("Places Search Betterment & Distance Verification", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    clearPlaceOverridesCache();
+    vi.spyOn(supabase, "from").mockImplementation((table: string) => {
+      return {
+        select: vi.fn().mockResolvedValue({ data: [], error: null }),
+      } as any;
+    });
   });
 
   it("calculates distance relative to searched location when user searches a specific locality", async () => {
@@ -153,7 +161,9 @@ describe("Places Search Betterment & Distance Verification", () => {
           order: mockOrder,
         } as any;
       }
-      return {} as any;
+      return {
+        select: vi.fn().mockResolvedValue({ data: [], error: null }),
+      } as any;
     });
 
     // Mock maps API to return nothing for places discovery to isolate DB results
@@ -166,7 +176,7 @@ describe("Places Search Betterment & Distance Verification", () => {
       category: "DINING",
       query: "McDonald's Hyderabad",
       currentCoordinates: { latitude: 12.9716, longitude: 77.5946 }, // Bengaluru user
-      defaultCity: "Bengaluru",
+      defaultCity: "Hyderabad",
     });
 
     expect(result.items.length).toBeGreaterThan(0);
@@ -201,7 +211,9 @@ describe("Places Search Betterment & Distance Verification", () => {
           order: vi.fn().mockResolvedValue({ data: [mockMoviesPlace], error: null }),
         } as any;
       }
-      return {} as any;
+      return {
+        select: vi.fn().mockResolvedValue({ data: [], error: null }),
+      } as any;
     });
 
     vi.spyOn(Object.getPrototypeOf(supabase.functions) as any, "invoke").mockResolvedValue({

@@ -2,7 +2,7 @@ import defaultPlanCover from "../../../assets/planimagedefault.webp";
 import sportsCover from "../../../assets/sports.webp";
 import movieCover from "../../../assets/Movies.webp";
 import diningCover from "../../../assets/dining.webp";
-import activitiesCover from "../../../assets/Activities.png";
+import activitiesCover from "../../../assets/categories/activity.png";
 
 export const PLAN_COVER_IMAGES = {
   sports: sportsCover,

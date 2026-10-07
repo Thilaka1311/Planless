@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { Loader2 } from "lucide-react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Loader2, ChevronRight } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { DiscoverySection } from "./DiscoverySection";
 import { ADMIN_CONFIGS, ContentConfig } from "../services/discoveryAdminService";
@@ -9,9 +9,11 @@ import {
   isMovieWithinSixMonths,
 } from "../services/tmdbMovieService";
 import { MoviePortraitCard } from "../screens/DiscoverMovies";
-import { usePlacesSearch } from "../hooks/usePlacesSearch";
+import { usePlanlessSearch } from "../search";
+import { useProfileStore } from "../../profile/state/ProfileContext";
+import { useDiscoveryStream } from "../hooks/useDiscoveryStream";
 
-interface ForYouSectionsProps {
+export interface ForYouSectionsProps {
   sections: DiscoverySectionType[];
   searchQuery: string;
   categoryFilter?: "all" | "sports" | "dining" | "activities";
@@ -21,6 +23,7 @@ interface ForYouSectionsProps {
   onViewAllCategory?: (category: "sports" | "dining" | "activities") => void;
   onViewAllMovies?: () => void;
   userCoordinates?: { latitude: number; longitude: number } | null;
+  currentCity?: string;
 }
 
 interface SectionDef {
@@ -33,30 +36,63 @@ interface SectionDef {
 
 // ─── Movie Rail Section ───────────────────────────────────────────────────────
 
-interface MovieRailProps {
+export interface MovieRailProps {
+  id?: string;
   title: string;
   movies: DiscoveryItem[];
   isLoading: boolean;
   onSelectItem: (item: DiscoveryItem) => void;
+  isAdmin?: boolean;
+  onLongPressAdmin?: (item: DiscoveryItem) => void;
+  onViewAll?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
-const MovieRailSection: React.FC<MovieRailProps> = ({
+export const MovieRailSection: React.FC<MovieRailProps> = ({
+  id,
   title,
   movies,
   isLoading,
   onSelectItem,
+  isAdmin,
+  onLongPressAdmin,
+  onViewAll,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
 }) => {
   if (!isLoading && movies.length === 0) return null;
 
   return (
-    <div className="space-y-3">
+    <div id={id} className="space-y-3">
       <div className="px-6 flex items-end justify-between">
         <div className="space-y-0.5 text-left">
           <h4 className="text-sm font-bold text-white tracking-wide">{title}</h4>
         </div>
+        {onViewAll && (
+          <button
+            type="button"
+            onClick={onViewAll}
+            className="text-[11px] font-semibold text-[#FF6B2C] hover:text-[#ff8552] flex items-center gap-0.5 pb-0.5 transition cursor-pointer"
+          >
+            <span>View all</span>
+            <ChevronRight className="w-3 h-3" />
+          </button>
+        )}
       </div>
 
-      <div className="flex gap-3 overflow-x-auto no-scrollbar px-6 pb-2.5 scroll-smooth snap-x snap-mandatory">
+      <div
+        className="flex gap-3 overflow-x-auto no-scrollbar px-6 pb-2.5 scroll-smooth snap-x snap-mandatory"
+        onScroll={(e) => {
+          if (!hasMore || isLoadingMore || !onLoadMore) return;
+          const el = e.currentTarget;
+          if (el.scrollLeft + el.clientWidth >= el.scrollWidth - 200) {
+            onLoadMore();
+          }
+        }}
+      >
         {isLoading && movies.length === 0
           ? [1, 2, 3, 4, 5].map((i) => (
               <div
@@ -77,60 +113,229 @@ const MovieRailSection: React.FC<MovieRailProps> = ({
                 style={{ width: 130, minWidth: 130 }}
                 className="shrink-0 snap-start"
               >
-                <MoviePortraitCard item={item} onTap={() => onSelectItem(item)} />
+                <MoviePortraitCard
+                  item={item}
+                  onTap={() => onSelectItem(item)}
+                  isAdmin={isAdmin}
+                  onLongPressAdmin={
+                    onLongPressAdmin ? () => onLongPressAdmin(item) : undefined
+                  }
+                />
               </div>
             ))}
+        {isLoadingMore && (
+          <div
+            style={{ width: 130, minWidth: 130 }}
+            className="shrink-0 aspect-[2/3] rounded-2xl bg-[#121216] border border-white/[0.06] flex flex-col items-center justify-center gap-2 snap-start"
+          >
+            <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
+            <span className="text-[10px] text-zinc-500 font-medium">Loading...</span>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-// ─── TMDB movie hook ──────────────────────────────────────────────────────────
+// ─── TMDB movie hook with progressive pagination ──────────────────────────────
 const NOW_PLAYING_KEY = "discover_now_playing_lall_p1_gall";
-const POPULAR_KEY = "discover_popular_lall_p1_gall";
 
-function useCreateMovieSections() {
-  const [nowPlaying, setNowPlaying] = useState<DiscoveryItem[]>(() =>
-    getCachedMovieSection(NOW_PLAYING_KEY).filter((m) => isMovieWithinSixMonths(m.release_date))
-  );
-  const [popular, setPopular] = useState<DiscoveryItem[]>(() =>
-    getCachedMovieSection(POPULAR_KEY).filter((m) => isMovieWithinSixMonths(m.release_date))
-  );
-  const [isLoading, setIsLoading] = useState(
-    () =>
-      getCachedMovieSection(NOW_PLAYING_KEY).length === 0 &&
-      getCachedMovieSection(POPULAR_KEY).length === 0
-  );
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const [npRes, popRes] = await Promise.all([
-          fetchDiscoverMovies("now_playing", 1, undefined, "all"),
-          fetchDiscoverMovies("popular", 1, undefined, "all"),
-        ]);
-        if (!active) return;
-        setNowPlaying((npRes.items || []).filter((m) => isMovieWithinSixMonths(m.release_date)));
-        setPopular((popRes.items || []).filter((m) => isMovieWithinSixMonths(m.release_date)));
-      } catch (err) {
-        console.error("[ForYouSections] Failed loading movie sections:", err);
-      } finally {
-        if (active) setIsLoading(false);
-      }
-    })();
-    return () => { active = false; };
-  }, []);
-
-  return { nowPlaying, popular, isLoading };
+export interface UseMoviesStreamResult {
+  movies: DiscoveryItem[];
+  isLoadingInitial: boolean;
+  isLoadingMore: boolean;
+  hasMore: boolean;
+  loadMore: () => Promise<void>;
 }
 
-// ─── Unified feed slot type ───────────────────────────────────────────────────
+export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStreamResult {
+  const [movies, setMovies] = useState<DiscoveryItem[]>(() => {
+    if (initialMovies && initialMovies.length > 0) {
+      // Filter strictly for authentic TMDB movie items; never accept Google Places venues
+      const validMovies = initialMovies.filter(
+        (m) =>
+          m.category === "MOVIES" &&
+          (m.movie_id || String(m.id || "").startsWith("tmdb-")) &&
+          !String(m.id || "").startsWith("place_") &&
+          !(m as any).place_id
+      );
+      if (validMovies.length > 0) return validMovies;
+    }
+    return getCachedMovieSection(NOW_PLAYING_KEY).filter((m) =>
+      isMovieWithinSixMonths(m.release_date)
+    );
+  });
 
-type FeedSlot =
-  | { kind: "venue"; sec: SectionDef }
-  | { kind: "movies_now_playing" }
-  | { kind: "movies_popular" };
+  const [isLoadingInitial, setIsLoadingInitial] = useState(() => {
+    if (initialMovies && initialMovies.length > 0) {
+      const validMovies = initialMovies.filter(
+        (m) =>
+          m.category === "MOVIES" &&
+          (m.movie_id || String(m.id || "").startsWith("tmdb-")) &&
+          !String(m.id || "").startsWith("place_") &&
+          !(m as any).place_id
+      );
+      if (validMovies.length > 0) return false;
+    }
+    return getCachedMovieSection(NOW_PLAYING_KEY).length === 0;
+  });
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
+  const pageRef = useRef(1);
+  const totalPagesRef = useRef(5);
+  const seenIdsRef = useRef<Set<string | number>>(new Set());
+
+  // Populate seen IDs
+  useEffect(() => {
+    movies.forEach((m) => {
+      const key = m.id || m.public_id || (m as any).movie_id;
+      if (key) seenIdsRef.current.add(key);
+    });
+  }, []);
+
+  // Sync if initialMovies changes (e.g. from props or test mocks)
+  useEffect(() => {
+    if (initialMovies && initialMovies.length > 0 && movies.length === 0) {
+      const validMovies = initialMovies.filter(
+        (m) =>
+          m.category === "MOVIES" &&
+          (m.movie_id || String(m.id || "").startsWith("tmdb-")) &&
+          !String(m.id || "").startsWith("place_") &&
+          !(m as any).place_id
+      );
+      if (validMovies.length > 0) {
+        validMovies.forEach((m) => {
+          const key = m.id || m.public_id || (m as any).movie_id;
+          if (key) seenIdsRef.current.add(key);
+        });
+        setMovies(validMovies);
+        setIsLoadingInitial(false);
+      }
+    }
+  }, [initialMovies]);
+
+  // Initial fetch / background revalidation from TMDB API
+  useEffect(() => {
+    let active = true;
+    if (movies.length === 0) {
+      setIsLoadingInitial(true);
+    }
+
+    (async () => {
+      try {
+        const res = await fetchDiscoverMovies("now_playing", 1, undefined, "all");
+        if (!active) return;
+        const valid = (res.items || []).filter((m) => isMovieWithinSixMonths(m.release_date));
+        valid.forEach((m) => {
+          const key = m.id || m.public_id || (m as any).movie_id;
+          if (key) seenIdsRef.current.add(key);
+        });
+        totalPagesRef.current = res.totalPages || 5;
+        if (valid.length > 0) {
+          setMovies((prev) => {
+            if (prev.length === 0 || pageRef.current === 1) return valid;
+            return prev;
+          });
+        }
+      } catch (err) {
+        console.error("[ForYouSections] Failed loading movie stream:", err);
+      } finally {
+        if (active) setIsLoadingInitial(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const loadMore = useCallback(async () => {
+    if (isLoadingMore || !hasMore || pageRef.current >= totalPagesRef.current) return;
+    setIsLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      const res = await fetchDiscoverMovies("now_playing", nextPage, undefined, "all");
+      const valid = (res.items || []).filter((m) => isMovieWithinSixMonths(m.release_date));
+      const newItems: DiscoveryItem[] = [];
+      valid.forEach((m) => {
+        const key = m.id || m.public_id || (m as any).movie_id;
+        if (key && !seenIdsRef.current.has(key)) {
+          seenIdsRef.current.add(key);
+          newItems.push(m);
+        }
+      });
+      pageRef.current = nextPage;
+      totalPagesRef.current = res.totalPages || 5;
+      if (nextPage >= totalPagesRef.current) {
+        setHasMore(false);
+      }
+      if (newItems.length > 0) {
+        setMovies((prev) => [...prev, ...newItems]);
+      }
+    } catch (err) {
+      console.warn("[ForYouSections] Failed loading more movies:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, hasMore]);
+
+  return {
+    movies,
+    isLoadingInitial,
+    isLoadingMore,
+    hasMore,
+    loadMore,
+  };
+}
+
+// ─── Approaching Sentinel for Progressive Loading ─────────────────────────────
+const ApproachingSentinel: React.FC<{
+  onNearEnd: () => void;
+  enabled: boolean;
+}> = ({ onNearEnd, enabled }) => {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const el = ref.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          onNearEnd();
+        }
+      },
+      {
+        root: null,
+        rootMargin: "600px 0px 600px 0px",
+        threshold: 0,
+      }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onNearEnd, enabled]);
+
+  return <div ref={ref} className="h-0 w-full pointer-events-none" aria-hidden="true" />;
+};
+
+// ─── Repeating Interleaved Constants ──────────────────────────────────────────
+export const DISCOVERY_CARDS_PER_ROW = 7;
+
+type CategoryType = "SPORTS" | "MOVIES" | "DINING" | "ACTIVITIES";
+
+interface InterleavedFeedSection {
+  key: string;
+  category: CategoryType;
+  title: string;
+  items: DiscoveryItem[];
+  colorAccent?: string;
+  adminConfig?: ContentConfig;
+  isLastOfCategory: boolean;
+}
 
 // ─── Main ForYouSections ──────────────────────────────────────────────────────
 
@@ -139,24 +344,54 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
   searchQuery,
   categoryFilter = "all",
   onSelectItem,
-  isAdmin = false,
+  isAdmin: propIsAdmin = false,
   onLongPressAdmin,
   onViewAllCategory,
   onViewAllMovies,
   userCoordinates,
+  currentCity,
 }) => {
+  const { isAdmin: storeIsAdmin } = useProfileStore();
+  const isAdmin = Boolean(propIsAdmin || storeIsAdmin);
   const normalizedQuery = searchQuery.toLowerCase().trim();
 
   const diningSection = sections.find((s) => s.category?.toUpperCase() === "DINING");
   const sportsSection = sections.find((s) => s.category?.toUpperCase() === "SPORTS");
   const activitiesSection = sections.find((s) => s.category?.toUpperCase() === "ACTIVITIES");
 
-  const rawDiningItems = diningSection?.items || [];
-  const rawSportsItems = sportsSection?.items || [];
-  const rawActivitiesItems = activitiesSection?.items || [];
+  const rawDiningItems = useMemo(() => diningSection?.items || [], [diningSection]);
+  const rawSportsItems = useMemo(() => sportsSection?.items || [], [sportsSection]);
+  const rawActivitiesItems = useMemo(() => activitiesSection?.items || [], [activitiesSection]);
 
-  const { nowPlaying, popular, isLoading: moviesLoading } = useCreateMovieSections();
+  // ── Independent Progressive Streams for All 4 Categories ───────────────────
+  const sportsStream = useDiscoveryStream({
+    category: "SPORTS",
+    initialItems: rawSportsItems,
+    currentCoordinates: userCoordinates,
+    currentCity,
+    initialBatchSize: 21,
+  });
 
+  // Movies strictly use TMDB API only — never Google Places or backend places discovery
+  const moviesStream = useMoviesStream();
+
+  const diningStream = useDiscoveryStream({
+    category: "DINING",
+    initialItems: rawDiningItems,
+    currentCoordinates: userCoordinates,
+    currentCity,
+    initialBatchSize: 21,
+  });
+
+  const activitiesStream = useDiscoveryStream({
+    category: "ACTIVITIES",
+    initialItems: rawActivitiesItems,
+    currentCoordinates: userCoordinates,
+    currentCity,
+    initialBatchSize: 21,
+  });
+
+  // ── Search mode ─────────────────────────────────────────────────────────────
   const searchCategory =
     categoryFilter === "dining"
       ? "DINING"
@@ -170,108 +405,145 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
     isSearching,
     isSearchLoading,
     searchResults,
-  } = usePlacesSearch({
+  } = usePlanlessSearch({
     category: searchCategory,
     searchQuery,
     currentCoordinates: userCoordinates || undefined,
   });
 
-  const diningItems = rawDiningItems;
-  const sportsItems = rawSportsItems;
-  const activitiesItems = rawActivitiesItems;
+  // Preserve pre-sorted raw items as immediate fallback for SSR / initial tests
+  const sortedRawSports = useMemo(() => {
+    return [...rawSportsItems].sort((a, b) => {
+      const da = typeof (a as any)._distanceKm === "number" ? (a as any)._distanceKm : Infinity;
+      const db = typeof (b as any)._distanceKm === "number" ? (b as any)._distanceKm : Infinity;
+      return da - db;
+    });
+  }, [rawSportsItems]);
 
-  // ── Search mode ──────────────────────────────────────────────────────────────
+  const sortedRawDining = useMemo(() => {
+    return [...rawDiningItems].sort((a, b) => {
+      const da = typeof (a as any)._distanceKm === "number" ? (a as any)._distanceKm : Infinity;
+      const db = typeof (b as any)._distanceKm === "number" ? (b as any)._distanceKm : Infinity;
+      return da - db;
+    });
+  }, [rawDiningItems]);
+
+  const sortedRawActivities = useMemo(() => {
+    return [...rawActivitiesItems].sort((a, b) => {
+      const da = typeof (a as any)._distanceKm === "number" ? (a as any)._distanceKm : Infinity;
+      const db = typeof (b as any)._distanceKm === "number" ? (b as any)._distanceKm : Infinity;
+      return da - db;
+    });
+  }, [rawActivitiesItems]);
+
+  const sportsItems = sportsStream.allVenues.length > 0 ? sportsStream.allVenues : sortedRawSports;
+  const diningItems = diningStream.allVenues.length > 0 ? diningStream.allVenues : sortedRawDining;
+  const activitiesItems = activitiesStream.allVenues.length > 0 ? activitiesStream.allVenues : sortedRawActivities;
+  const movieItems = moviesStream.movies;
+
+  // ── Search mode rendering ────────────────────────────────────────────────────
   if (isSearching) {
     if (isSearchLoading) {
       return (
-        <div className="flex flex-col items-center justify-center py-20 space-y-3">
-          <Loader2 className="w-6 h-6 animate-spin text-rose-500" />
-          <p className="text-xs text-zinc-400 font-medium">Searching all places...</p>
+        <div className="space-y-6 pt-2">
+          {["Search results", "More matches"].map((title) => (
+            <div key={title} className="space-y-3">
+              <div className="px-6 flex items-end justify-between">
+                <div className="h-4 w-32 bg-white/[0.08] rounded animate-pulse" />
+              </div>
+              <div className="flex gap-3 overflow-x-auto no-scrollbar px-6 pb-2.5">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    style={{ width: 220, minWidth: 220, height: 225 }}
+                    className="shrink-0 rounded-2xl bg-[#121216] border border-white/[0.06] overflow-hidden animate-pulse"
+                  >
+                    <div className="h-[130px] w-full bg-white/[0.04]" />
+                    <div className="p-3 space-y-2">
+                      <div className="h-3.5 w-3/4 bg-white/[0.07] rounded" />
+                      <div className="h-3 w-1/2 bg-white/[0.04] rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       );
     }
 
-    const filterByQuery = (items: DiscoveryItem[]) => {
-      const q = searchQuery.toLowerCase().trim();
-      if (!q) return items;
-      return items.filter(
+    const filterByQuery = (items: DiscoveryItem[]) =>
+      items.filter(
         (item) =>
-          item.title.toLowerCase().includes(q) ||
-          (item.description && item.description.toLowerCase().includes(q)) ||
-          (item.location && item.location.toLowerCase().includes(q)) ||
-          (item.place_address && item.place_address.toLowerCase().includes(q)) ||
-          (item.subcategory && item.subcategory.toLowerCase().includes(q))
+          item.title.toLowerCase().includes(normalizedQuery) ||
+          (item.description && item.description.toLowerCase().includes(normalizedQuery)) ||
+          (item.location && item.location.toLowerCase().includes(normalizedQuery)) ||
+          (item.place_address && item.place_address.toLowerCase().includes(normalizedQuery)) ||
+          (item.subcategory && item.subcategory.toLowerCase().includes(normalizedQuery))
       );
-    };
 
-    const hasDbResults = searchResults.length > 0;
-    const diningResults = hasDbResults
-      ? searchResults.filter((item) => item.category?.toUpperCase() === "DINING")
-      : filterByQuery(rawDiningItems);
-    const sportsResults = hasDbResults
-      ? searchResults.filter((item) => item.category?.toUpperCase() === "SPORTS")
-      : filterByQuery(rawSportsItems);
-    const activitiesResults = hasDbResults
-      ? searchResults.filter(
-          (item) => item.category?.toUpperCase() === "ACTIVITIES" || item.category?.toUpperCase() === "CUSTOM"
-        )
-      : filterByQuery(rawActivitiesItems);
+    const apiDining = Array.isArray(searchResults)
+      ? searchResults.filter((item) => (item.category || "").toUpperCase() === "DINING")
+      : [];
+    const apiSports = Array.isArray(searchResults)
+      ? searchResults.filter((item) => (item.category || "").toUpperCase() === "SPORTS")
+      : [];
+    const apiActivities = Array.isArray(searchResults)
+      ? searchResults.filter((item) => (item.category || "").toUpperCase() === "ACTIVITIES")
+      : [];
 
-    const totalResults = diningResults.length + sportsResults.length + activitiesResults.length + searchResults.length;
-    if (totalResults === 0) {
+    const dining = apiDining.length > 0 ? (apiDining as DiscoveryItem[]) : filterByQuery(sortedRawDining);
+    const sports = apiSports.length > 0 ? (apiSports as DiscoveryItem[]) : filterByQuery(sortedRawSports);
+    const activities = apiActivities.length > 0 ? (apiActivities as DiscoveryItem[]) : filterByQuery(sortedRawActivities);
+
+    const hasAnyResults =
+      dining.length > 0 || sports.length > 0 || activities.length > 0;
+
+    if (!hasAnyResults) {
       return (
         <div className="px-6 py-16 text-center space-y-2">
-          <p className="text-zinc-300 text-sm font-medium">
-            No places found
+          <p className="text-white text-base font-semibold">
+            No results for &ldquo;{searchQuery}&rdquo;
           </p>
-          <p className="text-zinc-500 text-xs">
-            Try searching for another place.
+          <p className="text-zinc-500 text-sm font-normal">
+            Try searching for a different food, sport, turf, activity, or place name.
           </p>
         </div>
       );
     }
 
-    const searchSections: SectionDef[] = [];
-    if (diningResults.length > 0 && (categoryFilter === "all" || categoryFilter === "dining")) {
-      searchSections.push({
-        id: "search_dining",
-        title: "Restaurants",
-        items: diningResults,
-        colorAccent: "text-rose-500",
-        adminConfig: ADMIN_CONFIGS.dining,
-      });
-    }
-    if (sportsResults.length > 0 && (categoryFilter === "all" || categoryFilter === "sports")) {
-      searchSections.push({
-        id: "search_sports",
-        title: "Sports & Turfs",
-        items: sportsResults,
+    const searchSecs: SectionDef[] = [];
+    if (sports.length > 0) {
+      searchSecs.push({
+        id: "search_sec_sports",
+        title: "Sports",
+        items: sports,
         colorAccent: "text-emerald-500",
         adminConfig: ADMIN_CONFIGS.turfs,
       });
     }
-    if (activitiesResults.length > 0 && (categoryFilter === "all" || categoryFilter === "activities")) {
-      searchSections.push({
-        id: "search_activities",
-        title: "Activities & Recreation",
-        items: activitiesResults,
+    if (dining.length > 0) {
+      searchSecs.push({
+        id: "search_sec_dining",
+        title: "Restaurants",
+        items: dining,
+        colorAccent: "text-rose-500",
+        adminConfig: ADMIN_CONFIGS.dining,
+      });
+    }
+    if (activities.length > 0) {
+      searchSecs.push({
+        id: "search_sec_activities",
+        title: "Activities",
+        items: activities,
         colorAccent: "text-pink-500",
         adminConfig: ADMIN_CONFIGS.activities,
       });
     }
 
-    if (searchSections.length === 0) {
-      searchSections.push({
-        id: "search_all",
-        title: "Search Results",
-        items: searchResults,
-        colorAccent: "text-rose-500",
-      });
-    }
-
     return (
       <div className="space-y-8 pt-2">
-        {searchSections.map((sec) => (
+        {searchSecs.map((sec) => (
           <DiscoverySection
             key={sec.id}
             id={sec.id}
@@ -282,8 +554,8 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
             isAdmin={isAdmin}
             onSelectItem={onSelectItem}
             onLongPressAdmin={
-              onLongPressAdmin && sec.adminConfig
-                ? (item) => onLongPressAdmin(item, sec.adminConfig!)
+              onLongPressAdmin
+                ? (item) => onLongPressAdmin(item, (sec.adminConfig || ADMIN_CONFIGS.turfs) as any)
                 : undefined
             }
           />
@@ -304,7 +576,7 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
       <div className="space-y-8 pt-2">
         {secs.map((sec) => (
           <DiscoverySection key={sec.id} id={sec.id} title={sec.title} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
-            onLongPressAdmin={onLongPressAdmin && sec.adminConfig ? (item) => onLongPressAdmin(item, sec.adminConfig!) : undefined} />
+            onLongPressAdmin={onLongPressAdmin ? (item) => onLongPressAdmin(item, (sec.adminConfig || ADMIN_CONFIGS.dining) as any) : undefined} />
         ))}
       </div>
     );
@@ -321,7 +593,7 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
       <div className="space-y-8 pt-2">
         {secs.map((sec) => (
           <DiscoverySection key={sec.id} id={sec.id} title={sec.title} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
-            onLongPressAdmin={onLongPressAdmin && sec.adminConfig ? (item) => onLongPressAdmin(item, sec.adminConfig!) : undefined} />
+            onLongPressAdmin={onLongPressAdmin ? (item) => onLongPressAdmin(item, (sec.adminConfig || ADMIN_CONFIGS.turfs) as any) : undefined} />
         ))}
       </div>
     );
@@ -338,98 +610,151 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
       <div className="space-y-8 pt-2">
         {secs.map((sec) => (
           <DiscoverySection key={sec.id} id={sec.id} title={sec.title} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
-            onLongPressAdmin={onLongPressAdmin && sec.adminConfig ? (item) => onLongPressAdmin(item, sec.adminConfig!) : undefined} />
+            onLongPressAdmin={onLongPressAdmin ? (item) => onLongPressAdmin(item, (sec.adminConfig || ADMIN_CONFIGS.activities) as any) : undefined} />
         ))}
       </div>
     );
   }
 
-  // ── "all" — Build the interleaved mixed feed ──────────────────────────────────
+  // ── "all" — Repeating Interleaved Pattern: Sports → Movies → Restaurants → Activities ──
   //
-  // Strategy: build all available venue sections first, then interleave them with
-  // movie slots using a fixed template. The template defines the desired ordering
-  // and is evaluated once per render based on available data (useMemo).
-  // Movie slots reserve their position immediately (shown as skeleton while loading),
-  // so the page layout never jumps when TMDB data arrives.
+  // Order:
+  // 1. Sports — first 7 Sports cards (closest)
+  // 2. Movies — first 7 Movies cards
+  // 3. Restaurants — first 7 Dining cards
+  // 4. Activities — first 7 Activities cards
+  // Repeat:
+  // 5. Sports — next 7 Sports cards
+  // 6. Movies — next 7 Movies cards
+  // 7. Restaurants — next 7 Dining cards
+  // 8. Activities — next 7 Activities cards
+  // ...
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const interleavedFeed = useMemo((): FeedSlot[] => {
-    // Collect all venue section defs
-    const dSecs: SectionDef[] = [];
-    if (diningItems.length > 0) dSecs.push({ id: "foryou_dining_1", title: "Restaurants near you", items: diningItems.slice(0, 10), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
-    if (diningItems.length > 10) dSecs.push({ id: "foryou_dining_2", title: "More dining spots", items: diningItems.slice(10, 20), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
-    if (diningItems.length > 20) dSecs.push({ id: "foryou_dining_3", title: "More restaurants", items: diningItems.slice(20, 32), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
-    if (diningItems.length > 32) dSecs.push({ id: "foryou_dining_4", title: "More places to eat", items: diningItems.slice(32, 50), colorAccent: "text-rose-500", adminConfig: ADMIN_CONFIGS.dining });
+  // Chunk each category into 7-card slices
+  const sportsChunks = useMemo(() => {
+    const chunks: DiscoveryItem[][] = [];
+    for (let i = 0; i < sportsItems.length; i += DISCOVERY_CARDS_PER_ROW) {
+      chunks.push(sportsItems.slice(i, i + DISCOVERY_CARDS_PER_ROW));
+    }
+    return chunks;
+  }, [sportsItems]);
 
-    const sSecs: SectionDef[] = [];
-    if (sportsItems.length > 0) sSecs.push({ id: "foryou_sports_1", title: "Sports near you", items: sportsItems.slice(0, 10), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
-    if (sportsItems.length > 10) sSecs.push({ id: "foryou_sports_2", title: "Turfs & courts near you", items: sportsItems.slice(10, 20), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
-    if (sportsItems.length > 20) sSecs.push({ id: "foryou_sports_3", title: "More sports facilities", items: sportsItems.slice(20, 32), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
-    if (sportsItems.length > 32) sSecs.push({ id: "foryou_sports_4", title: "More sports venues", items: sportsItems.slice(32, 50), colorAccent: "text-emerald-500", adminConfig: ADMIN_CONFIGS.turfs });
+  const moviesChunks = useMemo(() => {
+    const chunks: DiscoveryItem[][] = [];
+    for (let i = 0; i < movieItems.length; i += DISCOVERY_CARDS_PER_ROW) {
+      chunks.push(movieItems.slice(i, i + DISCOVERY_CARDS_PER_ROW));
+    }
+    return chunks;
+  }, [movieItems]);
 
-    const aSecs: SectionDef[] = [];
-    if (activitiesItems.length > 0) aSecs.push({ id: "foryou_activities_1", title: "Activities near you", items: activitiesItems.slice(0, 10), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
-    if (activitiesItems.length > 10) aSecs.push({ id: "foryou_activities_2", title: "More fun activities", items: activitiesItems.slice(10, 20), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
-    if (activitiesItems.length > 20) aSecs.push({ id: "foryou_activities_3", title: "More recreational spots", items: activitiesItems.slice(20, 32), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
-    if (activitiesItems.length > 32) aSecs.push({ id: "foryou_activities_4", title: "Explore more activities", items: activitiesItems.slice(32, 50), colorAccent: "text-pink-500", adminConfig: ADMIN_CONFIGS.activities });
+  const diningChunks = useMemo(() => {
+    const chunks: DiscoveryItem[][] = [];
+    for (let i = 0; i < diningItems.length; i += DISCOVERY_CARDS_PER_ROW) {
+      chunks.push(diningItems.slice(i, i + DISCOVERY_CARDS_PER_ROW));
+    }
+    return chunks;
+  }, [diningItems]);
 
-    const showMovies = nowPlaying.length > 0 || popular.length > 0 || moviesLoading;
+  const activityChunks = useMemo(() => {
+    const chunks: DiscoveryItem[][] = [];
+    for (let i = 0; i < activitiesItems.length; i += DISCOVERY_CARDS_PER_ROW) {
+      chunks.push(activitiesItems.slice(i, i + DISCOVERY_CARDS_PER_ROW));
+    }
+    return chunks;
+  }, [activitiesItems]);
 
-    // Ordered venue interleaving pool:
-    // [dining0, sports0, activities0, dining1, sports1, activities1, ...]
-    const venueSecs: SectionDef[] = [];
-    const maxLen = Math.max(dSecs.length, sSecs.length, aSecs.length);
-    for (let i = 0; i < maxLen; i++) {
-      if (dSecs[i]) venueSecs.push(dSecs[i]);
-      if (sSecs[i]) venueSecs.push(sSecs[i]);
-      if (aSecs[i]) venueSecs.push(aSecs[i]);
+  // Interleave repeating cycles: Sports -> Movies -> Restaurants -> Activities
+  const interleavedSections = useMemo((): InterleavedFeedSection[] => {
+    const result: InterleavedFeedSection[] = [];
+    const maxCycles = Math.max(
+      sportsChunks.length,
+      moviesChunks.length,
+      diningChunks.length,
+      activityChunks.length,
+      1
+    );
+
+    for (let c = 0; c < maxCycles; c++) {
+      // 1. Sports
+      if (sportsChunks[c] && sportsChunks[c].length > 0) {
+        result.push({
+          key: `foryou_sports_cycle_${c}`,
+          category: "SPORTS",
+          title: "Sports",
+          items: sportsChunks[c],
+          colorAccent: "text-emerald-500",
+          adminConfig: ADMIN_CONFIGS.turfs,
+          isLastOfCategory: c === sportsChunks.length - 1,
+        });
+      }
+
+      // 2. Movies
+      if (moviesChunks[c] && moviesChunks[c].length > 0) {
+        result.push({
+          key: `foryou_movies_cycle_${c}`,
+          category: "MOVIES",
+          title: "Movies",
+          items: moviesChunks[c],
+          colorAccent: "text-purple-500",
+          adminConfig: ADMIN_CONFIGS.movies,
+          isLastOfCategory: c === moviesChunks.length - 1,
+        });
+      } else if (c === 0 && moviesStream.isLoadingInitial && movieItems.length === 0) {
+        // Reserve cycle 0 movie skeleton while initial TMDB page loads
+        result.push({
+          key: "foryou_movies_cycle_0_loading",
+          category: "MOVIES",
+          title: "Movies",
+          items: [],
+          colorAccent: "text-purple-500",
+          adminConfig: ADMIN_CONFIGS.movies,
+          isLastOfCategory: true,
+        });
+      }
+
+      // 3. Restaurants
+      if (diningChunks[c] && diningChunks[c].length > 0) {
+        result.push({
+          key: `foryou_dining_cycle_${c}`,
+          category: "DINING",
+          title: "Restaurants",
+          items: diningChunks[c],
+          colorAccent: "text-rose-500",
+          adminConfig: ADMIN_CONFIGS.dining,
+          isLastOfCategory: c === diningChunks.length - 1,
+        });
+      }
+
+      // 4. Activities
+      if (activityChunks[c] && activityChunks[c].length > 0) {
+        result.push({
+          key: `foryou_activities_cycle_${c}`,
+          category: "ACTIVITIES",
+          title: "Activities",
+          items: activityChunks[c],
+          colorAccent: "text-pink-500",
+          adminConfig: ADMIN_CONFIGS.activities,
+          isLastOfCategory: c === activityChunks.length - 1,
+        });
+      }
     }
 
-    if (!showMovies) {
-      // No movies: just return venue sections
-      return venueSecs.map((sec) => ({ kind: "venue", sec }));
-    }
-
-    // Interleaved template with movies:
-    // [dining0] [movies_now_playing] [sports0] [activities0] [movies_popular] [dining1] [sports1] [activities1] ...
-    const feed: FeedSlot[] = [];
-    const remainingVenues = [...venueSecs];
-
-    // Slot 0: first dining section (Restaurants near you)
-    if (remainingVenues.length > 0) feed.push({ kind: "venue", sec: remainingVenues.shift()! });
-
-    // Slot 1: Latest Movies
-    feed.push({ kind: "movies_now_playing" });
-
-    // Slot 2: next venue section (Sports near you)
-    if (remainingVenues.length > 0) feed.push({ kind: "venue", sec: remainingVenues.shift()! });
-
-    // Slot 3: next venue section (Activities near you, if present)
-    if (remainingVenues.length > 0) feed.push({ kind: "venue", sec: remainingVenues.shift()! });
-
-    // Slot 4: Popular Movies
-    feed.push({ kind: "movies_popular" });
-
-    // Remaining venue sections
-    while (remainingVenues.length > 0) {
-      feed.push({ kind: "venue", sec: remainingVenues.shift()! });
-    }
-
-    return feed;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return result;
   }, [
-    // Stable identity deps: re-evaluate when item counts change (new data), but not on every re-render
-    diningItems.length,
-    sportsItems.length,
-    activitiesItems.length,
-    nowPlaying.length,
-    popular.length,
-    moviesLoading,
+    sportsChunks,
+    moviesChunks,
+    diningChunks,
+    activityChunks,
+    moviesStream.isLoadingInitial,
+    movieItems.length,
   ]);
 
   const hasContent =
-    interleavedFeed.length > 0 ||
-    moviesLoading;
+    interleavedSections.length > 0 ||
+    sportsStream.isLoadingInitial ||
+    moviesStream.isLoadingInitial ||
+    diningStream.isLoadingInitial ||
+    activitiesStream.isLoadingInitial;
 
   if (!hasContent) {
     return (
@@ -443,56 +768,114 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
 
   return (
     <div className="space-y-8 pt-2">
-      {interleavedFeed.map((slot, idx) => {
-        if (slot.kind === "venue") {
-          const sec = slot.sec;
+      {interleavedSections.map((section) => {
+        const isLastSports = section.category === "SPORTS" && section.isLastOfCategory;
+        const isLastMovies = section.category === "MOVIES" && section.isLastOfCategory;
+        const isLastDining = section.category === "DINING" && section.isLastOfCategory;
+        const isLastActivities = section.category === "ACTIVITIES" && section.isLastOfCategory;
+
+        if (section.category === "MOVIES") {
           return (
+            <React.Fragment key={section.key}>
+              <MovieRailSection
+                id={section.key}
+                title={section.title}
+                movies={section.items}
+                isLoading={moviesStream.isLoadingInitial && movieItems.length === 0}
+                onSelectItem={onSelectItem}
+                isAdmin={isAdmin}
+                onLongPressAdmin={
+                  onLongPressAdmin
+                    ? (item) => onLongPressAdmin(item, ADMIN_CONFIGS.movies)
+                    : undefined
+                }
+                onViewAll={onViewAllMovies}
+                hasMore={isLastMovies ? moviesStream.hasMore : false}
+                isLoadingMore={isLastMovies ? moviesStream.isLoadingMore : false}
+                onLoadMore={isLastMovies ? moviesStream.loadMore : undefined}
+              />
+              {isLastMovies && (
+                <ApproachingSentinel
+                  onNearEnd={moviesStream.loadMore}
+                  enabled={moviesStream.hasMore && !moviesStream.isLoadingMore}
+                />
+              )}
+            </React.Fragment>
+          );
+        }
+
+        // Venue rails (Sports, Dining, Activities)
+        const isSports = section.category === "SPORTS";
+        const isDining = section.category === "DINING";
+        const isActivities = section.category === "ACTIVITIES";
+
+        const categoryStream = isSports
+          ? sportsStream
+          : isDining
+          ? diningStream
+          : activitiesStream;
+
+        const isLastOfThisCategory = isSports
+          ? isLastSports
+          : isDining
+          ? isLastDining
+          : isLastActivities;
+
+        const viewAllHandler = isSports
+          ? onViewAllCategory ? () => onViewAllCategory("sports") : undefined
+          : isDining
+          ? onViewAllCategory ? () => onViewAllCategory("dining") : undefined
+          : onViewAllCategory ? () => onViewAllCategory("activities") : undefined;
+
+        return (
+          <React.Fragment key={section.key}>
             <DiscoverySection
-              key={sec.id}
-              id={sec.id}
-              title={sec.title}
-              items={sec.items}
-              colorAccent={sec.colorAccent}
+              id={section.key}
+              title={section.title}
+              items={section.items}
+              colorAccent={section.colorAccent}
               userCoordinates={userCoordinates}
               isAdmin={isAdmin}
               onSelectItem={onSelectItem}
               onLongPressAdmin={
-                onLongPressAdmin && sec.adminConfig
-                  ? (item) => onLongPressAdmin(item, sec.adminConfig!)
+                onLongPressAdmin
+                  ? (item) =>
+                      onLongPressAdmin(
+                        item,
+                        (section.adminConfig || ADMIN_CONFIGS.turfs) as any
+                      )
                   : undefined
               }
+              onViewAll={viewAllHandler}
+              hasMore={isLastOfThisCategory ? categoryStream.hasMore : false}
+              isLoadingMore={isLastOfThisCategory ? categoryStream.isLoadingMore : false}
+              onLoadMore={isLastOfThisCategory ? categoryStream.loadMore : undefined}
             />
-          );
-        }
-
-        if (slot.kind === "movies_now_playing") {
-          return (
-            <MovieRailSection
-              key="movies_now_playing"
-              title="Latest Movies"
-              movies={nowPlaying.slice(0, 12)}
-              isLoading={moviesLoading && nowPlaying.length === 0}
-              onSelectItem={onSelectItem}
-            />
-          );
-        }
-
-        if (slot.kind === "movies_popular") {
-          if (moviesLoading && popular.length === 0) return null;
-          if (!moviesLoading && popular.length === 0) return null;
-          return (
-            <MovieRailSection
-              key="movies_popular"
-              title="Popular Movies"
-              movies={popular.slice(0, 12)}
-              isLoading={moviesLoading && popular.length === 0}
-              onSelectItem={onSelectItem}
-            />
-          );
-        }
-
-        return null;
+            {isLastOfThisCategory && (
+              <ApproachingSentinel
+                onNearEnd={categoryStream.loadMore}
+                enabled={categoryStream.hasMore && !categoryStream.isLoadingMore}
+              />
+            )}
+          </React.Fragment>
+        );
       })}
+
+      {/* Bottom Sentinel to ensure seamless endless streaming when reaching feed bottom */}
+      <ApproachingSentinel
+        onNearEnd={() => {
+          if (sportsStream.hasMore && !sportsStream.isLoadingMore) sportsStream.loadMore();
+          if (moviesStream.hasMore && !moviesStream.isLoadingMore) moviesStream.loadMore();
+          if (diningStream.hasMore && !diningStream.isLoadingMore) diningStream.loadMore();
+          if (activitiesStream.hasMore && !activitiesStream.isLoadingMore) activitiesStream.loadMore();
+        }}
+        enabled={
+          (sportsStream.hasMore && !sportsStream.isLoadingMore) ||
+          (moviesStream.hasMore && !moviesStream.isLoadingMore) ||
+          (diningStream.hasMore && !diningStream.isLoadingMore) ||
+          (activitiesStream.hasMore && !activitiesStream.isLoadingMore)
+        }
+      />
     </div>
   );
 };

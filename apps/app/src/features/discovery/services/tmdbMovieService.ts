@@ -287,28 +287,29 @@ export async function fetchDiscoverMovies(
         };
 
         if (type === "now_playing") {
-          // Fetch pages 1, 2, and 3 from now_playing for India
+          // Fetch 3 pages per batch based on the requested page offset
+          const pageBase = (page - 1) * 3;
           const [r1, r2, r3] = await Promise.all([
-            fetch(buildTmdbUrl("/movie/now_playing", { page: "1" }), { headers })
+            fetch(buildTmdbUrl("/movie/now_playing", { page: String(pageBase + 1) }), { headers })
               .then((r) => r.json())
               .catch(() => ({ results: [] })),
-            fetch(buildTmdbUrl("/movie/now_playing", { page: "2" }), { headers })
+            fetch(buildTmdbUrl("/movie/now_playing", { page: String(pageBase + 2) }), { headers })
               .then((r) => r.json())
               .catch(() => ({ results: [] })),
-            fetch(buildTmdbUrl("/movie/now_playing", { page: "3" }), { headers })
+            fetch(buildTmdbUrl("/movie/now_playing", { page: String(pageBase + 3) }), { headers })
               .then((r) => r.json())
               .catch(() => ({ results: [] })),
           ]);
 
           const npRaw = [...(r1.results || []), ...(r2.results || []), ...(r3.results || [])];
 
-          // Also fetch top recent releases for the supported languages
+          // Also fetch top recent releases for the supported languages for this page
           let popRaw: any[] = [];
           if (normalizedLang === "all") {
             const popPromises = TMDB_SUPPORTED_LANGUAGES.map((l) =>
               fetch(
                 buildTmdbUrl("/discover/movie", {
-                  page: "1",
+                  page: String(page),
                   with_original_language: l,
                   sort_by: "popularity.desc",
                   include_adult: "false",
@@ -325,7 +326,7 @@ export async function fetchDiscoverMovies(
           } else {
             const d = await fetch(
               buildTmdbUrl("/discover/movie", {
-                page: "1",
+                page: String(page),
                 with_original_language: normalizedLang,
                 sort_by: "popularity.desc",
                 include_adult: "false",
@@ -372,7 +373,8 @@ export async function fetchDiscoverMovies(
             ]);
           }
 
-          rawData = { results: filtered, total_pages: 1 };
+          const calculatedTotalPages = r1.total_pages ? Math.max(1, Math.ceil(r1.total_pages / 3)) : 10;
+          rawData = { results: filtered, total_pages: calculatedTotalPages };
         } else if (type === "top_rated") {
           if (normalizedLang !== "all") {
             const d = await fetch(

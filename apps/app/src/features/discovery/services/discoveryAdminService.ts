@@ -13,9 +13,17 @@ export const CATEGORY_OPTIONS = [
 
 export const SUBCATEGORY_MAP: Record<string, { label: string; value: string }[]> = {
   SPORTS: [
-    { label: "Football", value: "FOOTBALL" },
     { label: "Badminton", value: "BADMINTON" },
+    { label: "Football", value: "FOOTBALL" },
     { label: "Pickleball", value: "PICKLEBALL" },
+    { label: "Tennis", value: "TENNIS" },
+    { label: "Cricket", value: "CRICKET" },
+    { label: "Basketball", value: "BASKETBALL" },
+    { label: "Table Tennis", value: "TABLE_TENNIS" },
+    { label: "Swimming", value: "SWIMMING" },
+    { label: "Squash", value: "SQUASH" },
+    { label: "Football | Pickleball", value: "Football | Pickleball" },
+    { label: "Badminton | Table Tennis", value: "Badminton | Table Tennis" },
   ],
   MOVIES: [
     { label: "English", value: "ENGLISH" },
@@ -46,7 +54,11 @@ export function validateSubcategory(category: string, subcategory: string | null
   }
   const allowed = SUBCATEGORY_MAP[cat];
   if (!allowed) return true; // Accept other categories by default
-  return subcategory !== null && allowed.some((opt) => opt.value === subcategory.toUpperCase());
+  return (
+    subcategory !== null &&
+    (allowed.some((opt) => opt.value.toUpperCase() === subcategory.toUpperCase() || opt.label.toUpperCase() === subcategory.toUpperCase()) ||
+      subcategory.includes("|"))
+  );
 }
 
 export interface FieldConfig {

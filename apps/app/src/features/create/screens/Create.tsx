@@ -9,7 +9,7 @@ import { getPlanCover } from "../../plans/config/planCoverImages";
 import { formatDateTimeStandard } from "../../../shared/components/NativeDateTimeField";
 
 // Sub-components
-import { BrowseExperiencesStep } from "../../discovery/screens/Discovery";
+import { BrowseExperiencesStep, DiscoverySubScreen } from "../../discovery/screens/Discovery";
 import { CreateCategoryScreen } from "./CreateCategoryScreen";
 import { CreatePlanReview } from "./CreatePlanReview";
 import { WhenIsPlanScreen } from "./WhenIsPlanScreen";
@@ -32,10 +32,11 @@ import {
 } from "../../navigation/appRouter";
 
 interface CreatePlanScreenProps {
-  setActiveTab: (tab: "home" | "plans" | "create" | "wallet" | "profile") => void;
+  setActiveTab: (tab: any) => void;
   onToggleBottomNav?: (hidden: boolean) => void;
   setPlansFilter?: (filter: 'JOINED' | 'WAITLISTED' | 'SKIPPED') => void;
   setSelectedPlanId?: (id: string | null) => void;
+  initialDiscoveryCategory?: DiscoverySubScreen;
 }
 
 export const CreatePlanScreen = ({
@@ -43,6 +44,7 @@ export const CreatePlanScreen = ({
   onToggleBottomNav,
   setPlansFilter,
   setSelectedPlanId,
+  initialDiscoveryCategory,
 }: CreatePlanScreenProps) => {
   const { createPlan } = usePlansStore();
   const { friends, loading: friendshipLoading } = useFriendshipStore();
@@ -56,7 +58,18 @@ export const CreatePlanScreen = ({
     }
     return 'category';
   });
-  const [lastSubScreen, setLastSubScreen] = useState<"sports" | "movies" | "dining" | "activities" | "quick-plans" | null>(null);
+  const [lastSubScreen, setLastSubScreen] = useState<DiscoverySubScreen>(() => {
+    if (initialDiscoveryCategory) return initialDiscoveryCategory;
+    if (
+      initialRoute.tab === "sports" ||
+      initialRoute.tab === "dining" ||
+      initialRoute.tab === "movies" ||
+      initialRoute.tab === "activities"
+    ) {
+      return initialRoute.tab;
+    }
+    return null;
+  });
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [postedPlanUuid, setPostedPlanUuid] = useState<string | null>(null);
   const [isCopying, setIsCopying] = useState(false);
@@ -82,9 +95,29 @@ export const CreatePlanScreen = ({
   };
 
   useEffect(() => {
+    if (initialDiscoveryCategory && initialDiscoveryCategory !== lastSubScreen) {
+      setLastSubScreen(initialDiscoveryCategory);
+      setCreatePhase('category');
+    }
+  }, [initialDiscoveryCategory]);
+
+  useEffect(() => {
     const removeListener = listenToNavigation((route) => {
-      if (route.tab === "create" && route.createPhase && route.createPhase !== createPhase) {
-        setCreatePhase(route.createPhase);
+      if (route.tab === "create") {
+        if (route.createPhase && route.createPhase !== createPhase) {
+          setCreatePhase(route.createPhase);
+        } else if (!route.createPhase || route.createPhase === 'category') {
+          setCreatePhase('category');
+          setLastSubScreen(null);
+        }
+      } else if (
+        route.tab === "sports" ||
+        route.tab === "dining" ||
+        route.tab === "movies" ||
+        route.tab === "activities"
+      ) {
+        setCreatePhase('category');
+        setLastSubScreen(route.tab);
       }
     });
     return removeListener;
@@ -117,6 +150,7 @@ export const CreatePlanScreen = ({
     setIsQuickPlanCategorySelect(false);
     setTargetQuickPlanListId(null);
     setCreatePhase('category');
+    setLastSubScreen(null);
     navigateToRoute({ tab: 'create' });
   };
 
@@ -216,7 +250,14 @@ export const CreatePlanScreen = ({
   };
 
   useEffect(() => {
-    const isFlow = createPhase !== 'category' || lastSubScreen === 'quick-plans';
+    const isFlow =
+      createPhase !== 'category' ||
+      lastSubScreen === 'quick-plans' ||
+      lastSubScreen === 'sports' ||
+      lastSubScreen === 'dining' ||
+      lastSubScreen === 'movies' ||
+      lastSubScreen === 'activities' ||
+      lastSubScreen === 'master-search';
     onToggleBottomNav?.(isFlow);
     return () => {
       onToggleBottomNav?.(false);
@@ -612,7 +653,12 @@ export const CreatePlanScreen = ({
       userProfile={form.userProfile}
       setActiveTab={setActiveTab}
       initialSubScreen={lastSubScreen}
-      onSubScreenChange={setLastSubScreen}
+      onSubScreenChange={(screen) => {
+        setLastSubScreen(screen);
+        if (screen === null && (lastSubScreen === "sports" || lastSubScreen === "dining" || lastSubScreen === "movies" || lastSubScreen === "activities")) {
+          setActiveTab("create");
+        }
+      }}
       onAddQuickPlan={handleStartAddQuickPlan}
       onSelectQuickPlan={handleSelectExistingQuickPlan}
 

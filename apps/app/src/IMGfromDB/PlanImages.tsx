@@ -18,6 +18,8 @@ export interface DiscoveryImagesProps {
   alt?: string;
   /** Extra CSS styles */
   className?: string;
+  /** Draggable attribute */
+  draggable?: boolean;
   /** Click handler */
   onClick?: (e: React.MouseEvent<HTMLImageElement>) => void;
   style?: React.CSSProperties;
@@ -214,10 +216,17 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
       src={resolvedUrl}
       alt={alt}
       className={className}
+      draggable={false}
+      onDragStart={(e) => e.preventDefault()}
+      onContextMenu={(e) => e.preventDefault()}
       onLoad={handleLoadSuccess}
       onError={handleLoadFailure}
       onClick={onClick}
-      style={style}
+      style={{
+        ...style,
+        userSelect: "none",
+        WebkitUserSelect: "none",
+      }}
       referrerPolicy="no-referrer"
     />
   );

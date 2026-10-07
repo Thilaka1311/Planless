@@ -33,6 +33,8 @@ import {
   parseCurrentRoute,
   navigateToRoute,
   listenToNavigation,
+  AppTab,
+  AppRoute,
 } from "./features/navigation/appRouter";
 import { getSavedCreatePlanDraft } from "./features/create/utils/draftParticipantStorage";
 import {
@@ -84,7 +86,7 @@ export default function MainApp({
   // Always start on "home" — never restore last visited tab from localStorage.
   // Tab persistence across reloads was causing users to land on non-home screens
   // after login, logout, or session recovery, which breaks expected app behavior.
-  const [activeTab, setActiveTab] = useState<any>(() => {
+  const [activeTab, setActiveTab] = useState<AppTab>(() => {
     if (initialRoute.tab && initialRoute.tab !== "wallet") return initialRoute.tab;
     return "home";
   });
@@ -92,6 +94,13 @@ export default function MainApp({
   const isFullScreenRoute = React.useCallback((route: typeof initialRoute): boolean => {
     if (route.selectedPlanId) return true;
     if (route.selectedChatPlanId) return true;
+    if (
+      route.tab === "sports" ||
+      route.tab === "dining" ||
+      route.tab === "movies" ||
+      route.tab === "activities" ||
+      Boolean(route.discoveryCategory)
+    ) return true;
     if (route.tab === "create") {
       // In Create flow: category screen has bottom nav; wizard screens (who, who-actually, when, review, confirmation) do not
       if (route.createPhase && route.createPhase !== "category") return true;
@@ -124,9 +133,12 @@ export default function MainApp({
     return pendingInviteToken || initialRoute.inviteToken || getStoredPendingInviteToken() || null;
   });
 
-  const handleTabChange = React.useCallback((tab: any) => {
+  const [currentRoute, setCurrentRoute] = useState<AppRoute>(() => parseCurrentRoute());
+
+  const handleTabChange = React.useCallback((tab: AppTab) => {
     setChildrenWantBottomNavHidden(false);
     setActiveTab(tab);
+    setCurrentRoute(parseCurrentRoute());
   }, []);
 
   const prevTabRef = useRef(activeTab);
@@ -141,32 +153,47 @@ export default function MainApp({
   const isFirstRouteSync = React.useRef(true);
   React.useEffect(() => {
     localStorage.setItem("planless_active_tab", activeTab);
-    if (activeTab !== "create") {
-      const isInitial = isFirstRouteSync.current;
-      isFirstRouteSync.current = false;
-      if (selectedPlanId) {
-        localStorage.setItem("planless_selected_plan_id", selectedPlanId);
-        // Resolve readable slug from plan if available
-        const matchedPlan = findPlanBySlugOrId(plans, selectedPlanId);
-        const routePlanParam = matchedPlan ? (matchedPlan.slug || getPlanSlug(matchedPlan, plans)) : selectedPlanId;
-        navigateToRoute({ tab: activeTab, selectedPlanId: routePlanParam }, { replace: isInitial });
-      } else if (activeTab === "chats" && selectedChatPlanId) {
-        localStorage.removeItem("planless_selected_plan_id");
-        navigateToRoute({ tab: "chats", selectedChatPlanId }, { replace: isInitial });
-      } else {
-        localStorage.removeItem("planless_selected_plan_id");
-        // On initial load, preserve /join/:token so it isn't prematurely replaced by /home
-        if (isInitial && (initialRoute.inviteToken || pendingInviteToken)) {
-          return;
-        }
-        navigateToRoute({ tab: activeTab }, { replace: isInitial });
+    const isInitial = isFirstRouteSync.current;
+    isFirstRouteSync.current = false;
+
+    if (selectedPlanId) {
+      localStorage.setItem("planless_selected_plan_id", selectedPlanId);
+      // Resolve readable slug from plan if available
+      const matchedPlan = findPlanBySlugOrId(plans, selectedPlanId);
+      const routePlanParam = matchedPlan ? (matchedPlan.slug || getPlanSlug(matchedPlan, plans)) : selectedPlanId;
+      navigateToRoute({ tab: activeTab, selectedPlanId: routePlanParam }, { replace: isInitial });
+    } else if (activeTab === "chats" && selectedChatPlanId) {
+      localStorage.removeItem("planless_selected_plan_id");
+      navigateToRoute({ tab: "chats", selectedChatPlanId }, { replace: isInitial });
+    } else if (
+      activeTab === "sports" ||
+      activeTab === "dining" ||
+      activeTab === "movies" ||
+      activeTab === "activities"
+    ) {
+      localStorage.removeItem("planless_selected_plan_id");
+      navigateToRoute({ tab: activeTab }, { replace: isInitial });
+    } else if (activeTab === "create") {
+      localStorage.removeItem("planless_selected_plan_id");
+      const currentRoute = parseCurrentRoute();
+      if (currentRoute.tab === "create" && currentRoute.createPhase && currentRoute.createPhase !== "category") {
+        return;
       }
+      navigateToRoute({ tab: "create" }, { replace: isInitial });
+    } else {
+      localStorage.removeItem("planless_selected_plan_id");
+      // On initial load, preserve /join/:token so it isn't prematurely replaced by /home
+      if (isInitial && (initialRoute.inviteToken || pendingInviteToken)) {
+        return;
+      }
+      navigateToRoute({ tab: activeTab }, { replace: isInitial });
     }
   }, [activeTab, selectedPlanId, selectedChatPlanId, plans, initialRoute.inviteToken, pendingInviteToken]);
 
   // Listen for external / popstate route changes
   React.useEffect(() => {
     const unsubscribe = listenToNavigation((route) => {
+      setCurrentRoute(route);
       if (route.tab && route.tab !== activeTab && route.tab !== "wallet") {
         setActiveTab(route.tab);
       }
@@ -197,15 +224,25 @@ export default function MainApp({
         processedTokensRef.current.delete(cleanToken);
       }
 
+      // Category discovery screens always hide bottom nav
+      const isCategoryDiscovery =
+        route.tab === "sports" ||
+        route.tab === "dining" ||
+        route.tab === "movies" ||
+        route.tab === "activities" ||
+        Boolean(route.discoveryCategory);
+
       // If returning to a main/root route, reset childrenWantBottomNavHidden immediately
       const isRoot =
         route.tab === "home" ||
         (route.tab === "plans" && !route.selectedPlanId) ||
         (route.tab === "chats" && !route.selectedChatPlanId) ||
-        (route.tab === "create" && (!route.createPhase || route.createPhase === "category")) ||
+        (route.tab === "create" && (!route.createPhase || route.createPhase === "category") && !route.discoveryCategory) ||
         route.tab === "profile";
 
-      if (isRoot) {
+      if (isCategoryDiscovery) {
+        setChildrenWantBottomNavHidden(true);
+      } else if (isRoot) {
         setChildrenWantBottomNavHidden(false);
       }
     });
@@ -218,10 +255,8 @@ export default function MainApp({
 
   React.useEffect(() => {
     const tokenToProcess = pendingInviteToken || getStoredPendingInviteToken();
-    console.log('[INVITE_TRACE] MainApp processInvite useEffect: pendingInviteToken=', pendingInviteToken, '| storageToken=', getStoredPendingInviteToken(), '| resolved=', tokenToProcess, '| dbUuid=', userProfile?.dbUuid, '| activeUserId=', activeUserId);
     if (!tokenToProcess) return;
     if (processedTokensRef.current.has(tokenToProcess) || isResolvingInviteRef.current) {
-      console.log('[INVITE_TRACE] MainApp processInvite: SKIPPED (already processed or in-flight). processed=', processedTokensRef.current.has(tokenToProcess), 'in-flight=', isResolvingInviteRef.current);
       return;
     }
 
@@ -233,9 +268,7 @@ export default function MainApp({
         // isResolvingInviteRef above still prevents concurrent duplicate attempts.
         processedTokensRef.current.add(tokenToProcess);
         const userUuid = userProfile?.dbUuid || activeUserId;
-        console.log('[INVITE_TRACE] MainApp processInvite: calling resolveInviteDestination with planId=', tokenToProcess, 'userUuid=', userUuid);
         const resolution = await resolveInviteDestination(tokenToProcess, userUuid);
-        console.log('[INVITE_TRACE] MainApp processInvite: resolveInviteDestination result=', JSON.stringify(resolution));
 
         if (resolution.destination === "PLAN_PREVIEW") {
           // Cases 3, 4, 5, 6: Existing JOINED / WAITLISTED / SKIPPED / HOST
@@ -311,7 +344,7 @@ export default function MainApp({
     type: "chats" | "plan";
     planId?: string;
     planSource?: string;
-    previousTab?: string;
+    previousTab?: AppTab;
   } | null>(null);
 
   // Reset sub-screens when changing tabs
@@ -554,33 +587,79 @@ export default function MainApp({
     return [];
   }, []);
 
-  // Guard against stale child state leaking onto root routes
-  const isChildHidingBottomNav = React.useMemo(() => {
-    if (activeTab === "home" || activeTab === "plans" || activeTab === "chats") {
-      // Root tabs never inherit child hidden state
+  // Derive bottom navigation visibility strictly from current active route/screen
+  const shouldShowBottomNav = React.useMemo(() => {
+    // 1. Fullscreen modal overlays hide bottom navigation across the entire app
+    if (
+      selectedPlanId ||
+      currentRoute.selectedPlanId ||
+      selectedChatPlanId ||
+      currentRoute.selectedChatPlanId ||
+      showPlansSearchScreen ||
+      showHostedPlansScreen ||
+      showPastPlansScreen ||
+      showFriendsScreen
+    ) {
       return false;
     }
-    if (activeTab === "create") {
-      // In create flow: root category screen (/create) must always show bottom nav
-      const currentRoute = parseCurrentRoute();
-      if (currentRoute.tab === "create" && (!currentRoute.createPhase || currentRoute.createPhase === "category")) {
-        return false;
-      }
-      return childrenWantBottomNavHidden;
-    }
-    // Profile, wallet can request hiding for sub-sheets/sub-screens
-    return childrenWantBottomNavHidden;
-  }, [activeTab, childrenWantBottomNavHidden]);
 
-  const shouldShowBottomNav =
-    !selectedPlan &&
-    !selectedPlanId &&
-    !selectedChatPlanId &&
-    !showPlansSearchScreen &&
-    !showHostedPlansScreen &&
-    !showPastPlansScreen &&
-    !showFriendsScreen &&
-    !isChildHidingBottomNav;
+    // 2. Category discovery screens (Sports, Dining, Movies, Activities) ALWAYS hide bottom navigation
+    const isCategoryDiscovery =
+      currentRoute.tab === "sports" ||
+      currentRoute.tab === "dining" ||
+      currentRoute.tab === "movies" ||
+      currentRoute.tab === "activities" ||
+      Boolean(currentRoute.discoveryCategory) ||
+      activeTab === "sports" ||
+      activeTab === "dining" ||
+      activeTab === "movies" ||
+      activeTab === "activities";
+
+    if (isCategoryDiscovery) {
+      return false;
+    }
+
+    // 3. Main Create/Discovery screen ALWAYS shows bottom navigation
+    const isMainCreateDiscovery =
+      (currentRoute.tab === "create" || activeTab === "create") &&
+      (!currentRoute.createPhase || currentRoute.createPhase === "category") &&
+      !currentRoute.discoveryCategory;
+
+    if (isMainCreateDiscovery) {
+      return true;
+    }
+
+    // 4. Create multi-phase wizard screens (who, when, review, confirmation) hide bottom navigation
+    if (
+      (currentRoute.tab === "create" || activeTab === "create") &&
+      currentRoute.createPhase &&
+      currentRoute.createPhase !== "category"
+    ) {
+      return false;
+    }
+
+    // 5. Main root tabs (Home, Plans, Chats) ALWAYS show bottom navigation
+    if (activeTab === "home" || activeTab === "plans" || activeTab === "chats") {
+      return true;
+    }
+
+    // 6. Profile screen shows bottom navigation unless a sub-sheet requested hiding
+    if (activeTab === "profile") {
+      return !childrenWantBottomNavHidden;
+    }
+
+    return !childrenWantBottomNavHidden;
+  }, [
+    currentRoute,
+    activeTab,
+    selectedPlanId,
+    selectedChatPlanId,
+    showPlansSearchScreen,
+    showHostedPlansScreen,
+    showPastPlansScreen,
+    showFriendsScreen,
+    childrenWantBottomNavHidden,
+  ]);
 
   return (
     <div className="w-full h-full bg-[#050505] flex flex-col justify-between relative overflow-hidden select-none">
@@ -639,7 +718,14 @@ export default function MainApp({
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
-            key={activeTab}
+            key={
+              activeTab === "sports" ||
+              activeTab === "dining" ||
+              activeTab === "movies" ||
+              activeTab === "activities"
+                ? "create"
+                : activeTab
+            }
             variants={tabVariants}
             initial="initial"
             animate="animate"
@@ -682,14 +768,26 @@ export default function MainApp({
               />
             )}
 
-            {/* TAB 3: SPONTANEOUS CREATOR - INSTANT PRODUCTIVITY AESTHETICS */}
-            {activeTab === "create" && (
+            {/* TAB 3: SPONTANEOUS CREATOR & DISCOVERY CATEGORIES */}
+            {(activeTab === "create" ||
+              activeTab === "sports" ||
+              activeTab === "dining" ||
+              activeTab === "movies" ||
+              activeTab === "activities") && (
               <React.Suspense fallback={ScreenLoadingFallback}>
                 <CreatePlanScreen
                   setActiveTab={handleTabChange}
                   onToggleBottomNav={setChildrenWantBottomNavHidden}
                   setPlansFilter={setPlansFilter}
                   setSelectedPlanId={setSelectedPlanId}
+                  initialDiscoveryCategory={
+                    activeTab === "sports" ||
+                    activeTab === "dining" ||
+                    activeTab === "movies" ||
+                    activeTab === "activities"
+                      ? activeTab
+                      : undefined
+                  }
                 />
               </React.Suspense>
             )}

@@ -19,23 +19,24 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
   onConfirmPlan,
   userCoordinates,
 }) => {
-  if (!item) return null;
+  const effectiveItem = item;
+  if (!effectiveItem) return null;
 
-  const isMovie = (item.category || "").toUpperCase() === "MOVIES";
+  const isMovie = (effectiveItem.category || "").toUpperCase() === "MOVIES";
 
   // Single source of truth across DiscoveryCard and Place Details sheet
-  const rating = resolveVenueRating(item);
-  const placeType = resolveVenueCategories(item);
-  const distance = resolveVenueDistance(item, userCoordinates);
+  const rating = resolveVenueRating(effectiveItem);
+  const placeType = resolveVenueCategories(effectiveItem);
+  const distance = resolveVenueDistance(effectiveItem, userCoordinates);
 
-  const locationText = item.place_address || item.location || "Nearby";
+  const locationText = effectiveItem.place_address || effectiveItem.location || "Nearby";
   const hasDistinctDescription =
-    Boolean(item.description) &&
-    item.description !== item.location &&
-    item.description !== item.place_address;
+    Boolean(effectiveItem.description) &&
+    effectiveItem.description !== effectiveItem.location &&
+    effectiveItem.description !== effectiveItem.place_address;
 
-  const formattedReleaseDate = item.release_date
-    ? new Date(item.release_date).toLocaleDateString("en-IN", {
+  const formattedReleaseDate = effectiveItem.release_date
+    ? new Date(effectiveItem.release_date).toLocaleDateString("en-IN", {
         day: "numeric",
         month: "long",
         year: "numeric",
@@ -43,14 +44,14 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
     : null;
 
   const languageLabel =
-    item.language_name ||
-    (item.original_language
-      ? TMDB_LANGUAGE_NAMES[item.original_language.toLowerCase()] || item.original_language.toUpperCase()
+    effectiveItem.language_name ||
+    (effectiveItem.original_language
+      ? TMDB_LANGUAGE_NAMES[effectiveItem.original_language.toLowerCase()] || effectiveItem.original_language.toUpperCase()
       : null);
 
   const heroImageSrc = isMovie
-    ? item.backdrop_url || item.cover_image_url
-    : item.cover_image_url;
+    ? effectiveItem.backdrop_url || effectiveItem.cover_image_url
+    : effectiveItem.cover_image_url;
 
   const content = (
     <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -78,8 +79,8 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
           <div className="relative w-full h-52 rounded-2xl overflow-hidden bg-zinc-900 border border-white/[0.06] shrink-0">
             <DiscoveryImages
               src={heroImageSrc}
-              category={item.category}
-              alt={item.title}
+              category={effectiveItem.category}
+              alt={effectiveItem.title}
               className="w-full h-full object-cover"
             />
           </div>
@@ -88,7 +89,7 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
           <div className="space-y-2 text-left">
             {/* Title */}
             <h3 className="text-xl font-bold text-white tracking-tight leading-snug font-sans">
-              {item.title}
+              {effectiveItem.title}
             </h3>
 
             {isMovie ? (

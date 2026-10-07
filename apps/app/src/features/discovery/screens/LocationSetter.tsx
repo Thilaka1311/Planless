@@ -3,6 +3,8 @@ import { ArrowLeft, MapPin, Loader2, AlertCircle } from "lucide-react";
 import { useGooglePlacesAutocomplete } from "../../../shared/hooks/useGooglePlacesAutocomplete";
 import { SearchBar } from "../../../shared/components/SearchBar";
 
+import { getCityBoundingBox, CityBoundingBox } from "../services/cityBoundary";
+
 export interface DiscoveryLocation {
   name: string;
   address?: string;
@@ -10,6 +12,7 @@ export interface DiscoveryLocation {
   longitude: number;
   city?: string;
   locality?: string;
+  cityBounds?: CityBoundingBox;
 }
 
 export interface LocationSetterProps {
@@ -97,6 +100,8 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
                 ? `${locality}, ${city}`
                 : resolved?.name || locality || city || "Current Location";
 
+            const cityBounds = resolved?.cityBounds || (await getCityBoundingBox(city)) || undefined;
+
             const loc: DiscoveryLocation = {
               name: readableName,
               address: resolved?.formatted_address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
@@ -104,6 +109,7 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
               longitude: lng,
               city,
               locality,
+              cityBounds,
             };
 
             setDetectedLocation(loc);
@@ -229,36 +235,66 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
       const mainText = suggestion.structured_formatting?.main_text || suggestion.description;
       const secondaryText = suggestion.structured_formatting?.secondary_text || "";
 
-      let city = "Bengaluru";
+      let city = "";
       let locality = mainText;
 
-      if (secondaryText) {
+      // Extract structured city & locality from Google's address_components
+      if (Array.isArray(details?.address_components) && details.address_components.length > 0) {
+        for (const comp of details.address_components) {
+          if (comp.types.includes("locality")) {
+            city = comp.long_name;
+          } else if (!city && (comp.types.includes("administrative_area_level_2") || comp.types.includes("postal_town"))) {
+            city = comp.long_name;
+          }
+          if (
+            comp.types.includes("sublocality") ||
+            comp.types.includes("sublocality_level_1") ||
+            comp.types.includes("neighborhood")
+          ) {
+            locality = comp.long_name;
+          }
+        }
+      }
+
+      // Fallback: parse secondary text
+      if (!city && secondaryText) {
         const parts = secondaryText.split(",").map((p) => p.trim());
         if (parts.length > 0) {
           city = parts[0];
         }
       }
 
+      if (!city) {
+        city = currentCity || "Bengaluru";
+      }
+
       const resolvedLat = typeof lat === "number" ? lat : (currentCoordinates?.latitude || 12.9716);
       const resolvedLng = typeof lng === "number" ? lng : (currentCoordinates?.longitude || 77.5946);
+
+      // Resolve city boundary box for strict geographical restriction
+      const cityBounds = await getCityBoundingBox(city);
 
       onSelectLocation({
         name: mainText,
         address: details?.formatted_address || suggestion.description,
         latitude: resolvedLat,
         longitude: resolvedLng,
-        city: city || "Bengaluru",
+        city,
         locality: locality || "Nearby",
+        cityBounds: cityBounds || undefined,
       });
     } catch (err: any) {
       console.error("[LocationSetter] Failed to resolve place details:", err);
+      const fallbackCity = currentCity || "Bengaluru";
+      const cityBounds = await getCityBoundingBox(fallbackCity);
       onSelectLocation({
         name: suggestion.structured_formatting?.main_text || suggestion.description,
         address: suggestion.description,
         latitude: currentCoordinates?.latitude || 12.9716,
         longitude: currentCoordinates?.longitude || 77.5946,
-        city: "Bengaluru",
+        city: fallbackCity,
         locality: suggestion.structured_formatting?.main_text || "Nearby",
+        cityBounds: cityBounds || undefined,
       });
     } finally {
       setIsResolvingPlaceId(null);

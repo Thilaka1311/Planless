@@ -5,17 +5,27 @@ const GOOGLE_PLACE_PHOTO_URL = "https://maps.googleapis.com/maps/api/place/photo
 
 /**
  * Handle place photo retrieval with secure 302 redirect.
+ * Supports both legacy photoreference strings and Google Places API (New) resource names
+ * (e.g., "places/{placeId}/photos/{photoId}").
  * Client receives Google's signed CDN image URL without exposing the secret API key.
  */
 export async function handlePlacePhoto(photoReference: string, maxWidth = "800"): Promise<Response> {
   const apiKey = getGoogleApiKey();
-  const params = new URLSearchParams({
-    maxwidth: maxWidth,
-    photoreference: photoReference,
-    key: apiKey,
-  });
+  const cleanRef = photoReference.trim();
+  const isNewPlacesPhoto = cleanRef.startsWith("places/") || cleanRef.includes("/photos/");
 
-  const photoUrl = `${GOOGLE_PLACE_PHOTO_URL}?${params.toString()}`;
+  let photoUrl: string;
+  if (isNewPlacesPhoto) {
+    const resourceName = cleanRef.startsWith("places/") ? cleanRef : `places/${cleanRef}`;
+    photoUrl = `https://places.googleapis.com/v1/${resourceName}/media?maxWidthPx=${maxWidth}&key=${apiKey}`;
+  } else {
+    const params = new URLSearchParams({
+      maxwidth: maxWidth,
+      photoreference: cleanRef,
+      key: apiKey,
+    });
+    photoUrl = `${GOOGLE_PLACE_PHOTO_URL}?${params.toString()}`;
+  }
 
   try {
     // Manual redirect inspection keeps Google CDN URL direct to client while hiding apiKey

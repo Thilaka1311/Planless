@@ -39,6 +39,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      discovery_place_overrides: {
+        Row: {
+          id: string
+          place_id: string
+          name_override: string | null
+          address_override: string | null
+          latitude_override: number | null
+          longitude_override: number | null
+          image_path: string | null
+          image_source: string | null
+          google_photo_reference: string | null
+          description_override: string | null
+          category_override: string | null
+          subcategory: string | null
+          provider: string
+          is_deleted: boolean
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          place_id: string
+          name_override?: string | null
+          address_override?: string | null
+          latitude_override?: number | null
+          longitude_override?: number | null
+          image_path?: string | null
+          image_source?: string | null
+          google_photo_reference?: string | null
+          description_override?: string | null
+          category_override?: string | null
+          subcategory?: string | null
+          provider?: string
+          is_deleted?: boolean
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          place_id?: string
+          name_override?: string | null
+          address_override?: string | null
+          latitude_override?: number | null
+          longitude_override?: number | null
+          image_path?: string | null
+          image_source?: string | null
+          google_photo_reference?: string | null
+          description_override?: string | null
+          category_override?: string | null
+          subcategory?: string | null
+          provider?: string
+          is_deleted?: boolean
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       discovery_items: {
         Row: {
           category: Database["public"]["Enums"]["discovery_category"]
