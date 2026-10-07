@@ -321,15 +321,18 @@ class PwaManager {
       console.warn('[PWA] Force update cache purge error:', e);
     }
 
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && window.location) {
       try {
         sessionStorage.removeItem('planless_update_dismissed');
-        sessionStorage.removeItem('planless_vite_preload_reload');
-        sessionStorage.removeItem('planless_chunk_auto_reload');
       } catch {}
-      const targetUrl = new URL(window.location.href);
+      const currentHref = window.location.href || 'https://planless.life';
+      const targetUrl = new URL(currentHref);
       targetUrl.searchParams.set('_v', String(Date.now()));
-      window.location.replace(targetUrl.toString());
+      if (typeof window.location.replace === 'function') {
+        window.location.replace(targetUrl.toString());
+      } else {
+        window.location.href = targetUrl.toString();
+      }
     }
   }
 
@@ -347,45 +350,55 @@ class PwaManager {
     }
 
     try {
-      // 1. Purge CacheStorage of stale chunks
-      if ('caches' in window) {
-        const cacheKeys = await caches.keys();
-        await Promise.all(cacheKeys.map((k) => caches.delete(k)));
-      }
-
-      // 2. Instruct service workers to skip waiting
+      // Check for waiting service worker
       if (!this.registration && 'serviceWorker' in navigator) {
         this.registration = await navigator.serviceWorker.getRegistration();
       }
+
+      let hasWaitingWorker = !!this.registration?.waiting;
       if (this.registration?.waiting) {
         this.registration.waiting.postMessage({ type: 'SKIP_WAITING' });
       }
+
       if ('serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistrations === 'function') {
         const registrations = await navigator.serviceWorker.getRegistrations();
         for (const reg of registrations) {
           if (reg.waiting) {
+            hasWaitingWorker = true;
             reg.waiting.postMessage({ type: 'SKIP_WAITING' });
           }
         }
       }
 
-      // 3. Trigger workbox skipWaiting reload
+      // If updateSwFn is registered, invoke it to activate the waiting service worker
       if (this.updateSwFn) {
         await this.updateSwFn(true);
+      } else if (!hasWaitingWorker) {
+        // If neither waiting worker nor updateSwFn was found, force hard update directly from network
+        await this.forceHardUpdate();
+        return;
       }
     } catch (err) {
       console.error('[PWA] Error activating waiting service worker:', err);
+      // Fallback to hard update on error
+      await this.forceHardUpdate();
+      return;
     }
 
-    // Safety fallback: if controllerchange hasn't reloaded the page within 600ms, reload with cache busting
+    // Safety fallback: if controllerchange hasn't reloaded the page within 800ms, reload with cache busting
     setTimeout(() => {
-      if (typeof window !== 'undefined' && !this.hasReloaded) {
+      if (typeof window !== 'undefined' && window.location && !this.hasReloaded) {
         this.hasReloaded = true;
-        const targetUrl = new URL(window.location.href);
+        const currentHref = window.location.href || 'https://planless.life';
+        const targetUrl = new URL(currentHref);
         targetUrl.searchParams.set('_v', String(Date.now()));
-        window.location.replace(targetUrl.toString());
+        if (typeof window.location.replace === 'function') {
+          window.location.replace(targetUrl.toString());
+        } else {
+          window.location.href = targetUrl.toString();
+        }
       }
-    }, 600);
+    }, 800);
   }
 }
 

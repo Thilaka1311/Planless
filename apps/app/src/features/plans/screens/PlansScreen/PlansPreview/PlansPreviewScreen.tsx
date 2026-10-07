@@ -47,9 +47,11 @@ import { InlineParticipantView } from "../../../components/InlineParticipantView
 import { HeroHeader } from "../../../components/HeroHeader";
 import { HeroMetadataCard } from "../../../components/HeroMetadataCard";
 import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGooglePlacesAutocomplete";
+import { lazyWithRetry } from "../../../../../shared/utils/lazyWithRetry";
 
-const PlanChatScreen = React.lazy(() =>
-  import("../../../../chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen }))
+const PlanChatScreen = lazyWithRetry(
+  () => import("../../../../chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen })),
+  "PlanChatScreen"
 );
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";

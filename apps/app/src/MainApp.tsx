@@ -46,12 +46,15 @@ import {
   resolveInviteDestination,
 } from "./features/plans/services/planInviteService";
 import { tabVariants, screenModalVariants } from "./shared/transitions/motionTokens";
+import { lazyWithRetry } from "./shared/utils/lazyWithRetry";
 
-const CreatePlanScreen = React.lazy(() =>
-  import("./features/create/screens/Create").then((m) => ({ default: m.CreatePlanScreen }))
+const CreatePlanScreen = lazyWithRetry(
+  () => import("./features/create/screens/Create").then((m) => ({ default: m.CreatePlanScreen })),
+  "CreatePlanScreen"
 );
-const PlanChatScreen = React.lazy(() =>
-  import("./features/chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen }))
+const PlanChatScreen = lazyWithRetry(
+  () => import("./features/chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen })),
+  "PlanChatScreen"
 );
 
 const ScreenLoadingFallback = (

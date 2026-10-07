@@ -15,13 +15,15 @@ import {
   clearStoredPendingInviteToken,
 } from "./features/plans/services/planInviteService";
 import { isValidRoute } from "./features/navigation/appRouter";
+import { lazyWithRetry } from "./shared/utils/lazyWithRetry";
 
 const PlansProviderComp = PlansProvider as React.ComponentType<{ children: React.ReactNode; userId?: string }>;
 
-const OnboardingFlow = lazy(() =>
-  import("./features/auth/Logged Out/screens/OnboardingFlow").then((m) => ({ default: m.OnboardingFlow }))
+const OnboardingFlow = lazyWithRetry(
+  () => import("./features/auth/Logged Out/screens/OnboardingFlow").then((m) => ({ default: m.OnboardingFlow })),
+  "OnboardingFlow"
 );
-const MainApp = lazy(() => import("./MainApp"));
+const MainApp = lazyWithRetry(() => import("./MainApp"), "MainApp");
 
 const FlowLoadingFallback = (
   <div className="h-[100dvh] w-screen bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">

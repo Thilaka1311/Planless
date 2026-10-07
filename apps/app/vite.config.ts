@@ -109,6 +109,8 @@ export default defineConfig(() => {
             /^\/\.well-known\//,
             /.*supabase\.co.*/,
             /.*\.ngrok(-free)?\.(app|dev).*/,
+            /[?&]_v=/,
+            /[?&]nocache=/,
           ],
           runtimeCaching: [
             {

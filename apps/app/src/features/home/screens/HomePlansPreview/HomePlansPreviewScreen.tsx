@@ -25,8 +25,11 @@ import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPrev
 import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../../plans/utils/planUtils";
 import { getPlanPreviewCtaState } from "../../../plans/utils/planPreviewCtaUtils";
-const PlanChatScreen = React.lazy(() =>
-  import("../../../chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen }))
+import { lazyWithRetry } from "../../../../shared/utils/lazyWithRetry";
+
+const PlanChatScreen = lazyWithRetry(
+  () => import("../../../chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen })),
+  "PlanChatScreen"
 );
 
 export interface PlansPreviewScreenProps {

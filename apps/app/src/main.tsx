@@ -12,12 +12,22 @@ if (typeof window !== "undefined") {
     } as any;
   }
 
+  // Clean up cache-busting _v query parameter from browser address bar once app boots
+  if (window.location.search && window.location.search.includes('_v=')) {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('_v');
+      const cleanUrl = url.pathname + (url.search ? url.search : '') + url.hash;
+      window.history.replaceState(null, '', cleanUrl);
+    } catch {}
+  }
+
   // Intercept Vite dynamic chunk preload errors (triggered when a deployment changes chunk hashes)
   window.addEventListener('vite:preloadError', (event) => {
-    console.warn('[Vite] Chunk preload error detected, executing hard cache purge & reload:', event);
+    console.warn('[Vite] Chunk preload error detected, executing controlled recovery reload:', event);
     const lastReload = sessionStorage.getItem('planless_preload_reload');
     const now = Date.now();
-    if (!lastReload || now - parseInt(lastReload, 10) > 10000) {
+    if (!lastReload || now - parseInt(lastReload, 10) > 30000) {
       sessionStorage.setItem('planless_preload_reload', String(now));
       pwaManager.forceHardUpdate();
     }
@@ -30,6 +40,7 @@ import App from './App.tsx';
 import './index.css';
 import { pwaManager } from './shared/pwa/pwaService';
 import { PwaUpdatePrompt } from './shared/pwa/PwaUpdatePrompt';
+import { isChunkLoadError } from './shared/utils/lazyWithRetry';
 
 // Initialize PWA lifecycle management and update listener
 pwaManager.init();
@@ -54,7 +65,7 @@ interface ErrorBoundaryState {
   isUpdating: boolean;
 }
 
-class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   private unsubscribePwa: (() => void) | null = null;
 
   public state: ErrorBoundaryState = {
@@ -83,15 +94,13 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("[RootErrorBoundary] Uncaught application error:", error, errorInfo);
 
-    const errorMessage = error?.message || "";
-    const isChunkOrNetworkError =
-      /dynamically imported module|Loading chunk|Failed to fetch|Importing a module script/i.test(errorMessage);
+    const isChunkMismatch = isChunkLoadError(error);
 
     // Auto-recover once on chunk mismatch caused by fresh deployment
-    if (isChunkOrNetworkError && typeof window !== "undefined") {
+    if (isChunkMismatch && typeof window !== "undefined") {
       const lastAttempt = sessionStorage.getItem("planless_chunk_auto_reload");
       const now = Date.now();
-      if (!lastAttempt || now - parseInt(lastAttempt, 10) > 15000) {
+      if (!lastAttempt || now - parseInt(lastAttempt, 10) > 30000) {
         sessionStorage.setItem("planless_chunk_auto_reload", String(now));
         console.log("[RootErrorBoundary] Chunk error detected, auto-reloading to latest deployment...");
         pwaManager.forceHardUpdate();
@@ -101,7 +110,15 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
 
   private handleHardReload = async () => {
     this.setState({ isUpdating: true });
-    await pwaManager.forceHardUpdate();
+    try {
+      sessionStorage.removeItem("planless_chunk_auto_reload");
+      sessionStorage.removeItem("planless_preload_reload");
+    } catch {}
+    if (pwaManager.getHasUpdate()) {
+      await pwaManager.updateApp();
+    } else {
+      await pwaManager.forceHardUpdate();
+    }
   };
 
   private handleResetSession = async () => {
@@ -111,17 +128,15 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
         const keysToRemove = Object.keys(localStorage).filter((k) => k.startsWith("planless_"));
         keysToRemove.forEach((k) => localStorage.removeItem(k));
       }
+      sessionStorage.removeItem("planless_chunk_auto_reload");
+      sessionStorage.removeItem("planless_preload_reload");
     } catch {}
     await pwaManager.forceHardUpdate();
   };
 
   public render() {
     if (this.state.hasError) {
-      const isChunkError =
-        this.state.error?.message &&
-        /dynamically imported module|Loading chunk|Failed to fetch|Importing a module script/i.test(
-          this.state.error.message
-        );
+      const isChunkError = isChunkLoadError(this.state.error);
       const isUpdateAvailable = this.state.hasUpdate || isChunkError;
 
       return (
@@ -176,17 +191,6 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
                 Reset Session & Sign In
               </button>
             </div>
-
-            {this.state.error?.message && (
-              <details className="mt-6 text-left w-full text-xs text-zinc-500 bg-zinc-950/60 p-3 rounded-lg border border-zinc-900">
-                <summary className="cursor-pointer text-zinc-400 font-mono hover:text-zinc-300">
-                  Diagnostics
-                </summary>
-                <p className="mt-2 text-zinc-400 font-mono break-words whitespace-pre-wrap">
-                  {this.state.error.message}
-                </p>
-              </details>
-            )}
           </div>
         </div>
       );
@@ -196,11 +200,14 @@ class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState
   }
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <PwaUpdatePrompt />
-    <RootErrorBoundary>
-      <App />
-    </RootErrorBoundary>
-  </StrictMode>,
-);
+const rootEl = typeof document !== 'undefined' ? document.getElementById('root') : null;
+if (rootEl) {
+  createRoot(rootEl).render(
+    <StrictMode>
+      <PwaUpdatePrompt />
+      <RootErrorBoundary>
+        <App />
+      </RootErrorBoundary>
+    </StrictMode>,
+  );
+}
