@@ -137,4 +137,56 @@ describe('PWA Service and Update Lifecycle', () => {
 
     expect(postMessageMock).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
   });
+
+  it('detects a new deployment when /version.json returns a newer version', async () => {
+    (pwaManager as any).setHasUpdate(false);
+    pwaManager.setBuildId('build-1.0.0');
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ version: 'build-1.0.1', builtAt: 123456789 }),
+    }) as any;
+
+    const hasNew = await pwaManager.checkVersionEndpoint();
+
+    expect(hasNew).toBe(true);
+    expect(pwaManager.getHasUpdate()).toBe(true);
+
+    globalThis.fetch = originalFetch;
+    (pwaManager as any).setHasUpdate(false);
+  });
+
+  it('does not trigger update when /version.json matches the current build ID', async () => {
+    (pwaManager as any).setHasUpdate(false);
+    pwaManager.setBuildId('build-1.0.0');
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ version: 'build-1.0.0', builtAt: 123456789 }),
+    }) as any;
+
+    const hasNew = await pwaManager.checkVersionEndpoint();
+
+    expect(hasNew).toBe(false);
+    expect(pwaManager.getHasUpdate()).toBe(false);
+
+    globalThis.fetch = originalFetch;
+  });
+
+  it('gracefully handles fetch errors when querying /version.json', async () => {
+    (pwaManager as any).setHasUpdate(false);
+    pwaManager.setBuildId('build-1.0.0');
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network offline')) as any;
+
+    const hasNew = await pwaManager.checkVersionEndpoint();
+
+    expect(hasNew).toBe(false);
+    expect(pwaManager.getHasUpdate()).toBe(false);
+
+    globalThis.fetch = originalFetch;
+  });
 });

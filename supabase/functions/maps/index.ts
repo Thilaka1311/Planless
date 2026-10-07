@@ -4,6 +4,7 @@ import { handlePlaceDetails } from "./handlers/placeDetails.ts";
 import { handleGeocode } from "./handlers/geocode.ts";
 import { handlePlacePhoto } from "./handlers/placePhoto.ts";
 import { handleDiscoveryPlaces } from "./handlers/discoveryPlaces.ts";
+import { handleMovies } from "./handlers/movies.ts";
 
 declare const Deno: any;
 
@@ -65,6 +66,14 @@ Deno.serve(async (req: Request) => {
         throw new Error("Missing 'photo_reference' parameter.");
       }
       return await handlePlacePhoto(photoRef, maxWidth);
+    } else if (
+      action === "movies-discover" ||
+      action === "movies-search" ||
+      action === "movie-details" ||
+      action === "movies-genres" ||
+      action === "movies"
+    ) {
+      result = await handleMovies(body);
     } else {
       return new Response(JSON.stringify({ error: `Invalid action: ${action}` }), {
         status: 400,

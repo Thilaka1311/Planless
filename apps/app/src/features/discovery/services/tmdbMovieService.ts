@@ -1,4 +1,5 @@
 import { DiscoveryItem, TmdbMovie } from "../../../core/types/discovery";
+import { supabase } from "../../../../lib/supabaseClient";
 
 export const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/";
 export const TMDB_REGION = "IN";
@@ -242,27 +243,47 @@ export async function fetchDiscoverMovies(
     try {
       let rawData: any = null;
 
-      // 1. First attempt: call local/production backend proxy
+      // 1. Primary: invoke Supabase Edge Function (production & remote)
       try {
-        const queryParams = new URLSearchParams({
-          type,
-          page: String(page),
-          lang: normalizedLang,
+        const { data, error } = await supabase.functions.invoke("maps", {
+          body: {
+            action: "movies-discover",
+            type,
+            page,
+            genre,
+            lang: normalizedLang,
+          },
         });
-        if (genre) queryParams.set("genre", String(genre));
-
-        const proxyRes = await fetch(`/api/movies/discover?${queryParams.toString()}`);
-        if (proxyRes.ok) {
-          const contentType = proxyRes.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            rawData = await proxyRes.json();
-          }
+        if (!error && data && Array.isArray(data.results)) {
+          rawData = data;
         }
-      } catch (proxyErr) {
-        console.warn("[tmdbMovieService] Backend proxy unavailable, falling back to direct API:", proxyErr);
+      } catch (edgeErr) {
+        console.warn("[tmdbMovieService] Supabase Edge Function invoke failed, trying local proxy fallback:", edgeErr);
       }
 
-      // 2. Direct TMDB fallback if backend proxy not reachable
+      // 2. Fallback: call local backend proxy (for local development without Edge Function)
+      if (!rawData || !Array.isArray(rawData.results)) {
+        try {
+          const queryParams = new URLSearchParams({
+            type,
+            page: String(page),
+            lang: normalizedLang,
+          });
+          if (genre) queryParams.set("genre", String(genre));
+
+          const proxyRes = await fetch(`/api/movies/discover?${queryParams.toString()}`);
+          if (proxyRes.ok) {
+            const contentType = proxyRes.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+              rawData = await proxyRes.json();
+            }
+          }
+        } catch (proxyErr) {
+          console.warn("[tmdbMovieService] Backend proxy unavailable, falling back to direct API:", proxyErr);
+        }
+      }
+
+      // 3. Direct TMDB fallback if proxy/edge function not reachable
       if (!rawData || !Array.isArray(rawData.results)) {
         const token =
           (typeof import.meta !== "undefined" && import.meta.env?.VITE_TMDB_ACCESS_TOKEN) ||
@@ -519,26 +540,45 @@ export async function searchMovies(
     try {
       let rawData: any = null;
 
-      // 1. First attempt: call backend proxy
+      // 1. Primary: invoke Supabase Edge Function
       try {
-        const queryParams = new URLSearchParams({
-          query: trimmed,
-          page: String(page),
-          lang: normalizedLang,
+        const { data, error } = await supabase.functions.invoke("maps", {
+          body: {
+            action: "movies-search",
+            query: trimmed,
+            page,
+            lang: normalizedLang,
+          },
         });
-
-        const proxyRes = await fetch(`/api/movies/search?${queryParams.toString()}`);
-        if (proxyRes.ok) {
-          const contentType = proxyRes.headers.get("content-type");
-          if (contentType && contentType.includes("application/json")) {
-            rawData = await proxyRes.json();
-          }
+        if (!error && data && Array.isArray(data.results)) {
+          rawData = data;
         }
-      } catch (proxyErr) {
-        console.warn("[tmdbMovieService] Search proxy failed, falling back to direct API:", proxyErr);
+      } catch (edgeErr) {
+        console.warn("[tmdbMovieService] Supabase Edge Function search failed, trying local proxy fallback:", edgeErr);
       }
 
-      // 2. Direct TMDB fallback
+      // 2. Fallback: call local backend proxy
+      if (!rawData || !Array.isArray(rawData.results)) {
+        try {
+          const queryParams = new URLSearchParams({
+            query: trimmed,
+            page: String(page),
+            lang: normalizedLang,
+          });
+
+          const proxyRes = await fetch(`/api/movies/search?${queryParams.toString()}`);
+          if (proxyRes.ok) {
+            const contentType = proxyRes.headers.get("content-type");
+            if (contentType && contentType.includes("application/json")) {
+              rawData = await proxyRes.json();
+            }
+          }
+        } catch (proxyErr) {
+          console.warn("[tmdbMovieService] Search proxy failed, falling back to direct API:", proxyErr);
+        }
+      }
+
+      // 3. Fallback: Direct TMDB API
       if (!rawData || !Array.isArray(rawData.results)) {
         const token =
           (typeof import.meta !== "undefined" && import.meta.env?.VITE_TMDB_ACCESS_TOKEN) ||
@@ -615,13 +655,31 @@ export async function fetchMovieDetails(movieId: number): Promise<any | null> {
   try {
     let rawData: any = null;
 
+    // 1. Primary: invoke Supabase Edge Function
     try {
-      const proxyRes = await fetch(`/api/movies/${movieId}`);
-      if (proxyRes.ok) {
-        rawData = await proxyRes.json();
+      const { data, error } = await supabase.functions.invoke("maps", {
+        body: {
+          action: "movie-details",
+          movieId,
+        },
+      });
+      if (!error && data && (data.id || data.title)) {
+        rawData = data;
       }
     } catch {
       // Fallback
+    }
+
+    // 2. Fallback: call local backend proxy
+    if (!rawData) {
+      try {
+        const proxyRes = await fetch(`/api/movies/${movieId}`);
+        if (proxyRes.ok) {
+          rawData = await proxyRes.json();
+        }
+      } catch {
+        // Fallback
+      }
     }
 
     if (!rawData) {
