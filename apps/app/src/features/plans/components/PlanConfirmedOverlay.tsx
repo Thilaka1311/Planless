@@ -32,7 +32,10 @@ export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
   const hostAvatar = hostMember?.avatar || livePlan.creatorAvatar || "";
   const hostName = hostMember?.name || livePlan.creatorName || "Host";
   const hostUsername = hostMember?.username ? `@${hostMember.username.replace(/^@/, '')}` : hostName;
-  const location = livePlan.location || (livePlan as any).place_name || (livePlan as any).place_address || "";
+  const isMoviePlan = (livePlan.category || "").toLowerCase() === "movies";
+  const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
+  const rawLoc = livePlan.location || (livePlan as any).place_name || (livePlan as any).place_address || "";
+  const location = (isMoviePlan && isYearOnly(rawLoc)) ? "" : rawLoc;
 
   const waitlistPosition = React.useMemo(() => {
     if (!isWaitlist || !livePlan.members) return null;

@@ -410,7 +410,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   };
 
   const handleBadgeClick = () => {
-    if (isCompleted) {
+    if (isCompleted || isCancelled) {
       return;
     }
     if (!isPlanSettingsForParticipant) {
@@ -787,7 +787,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         isCancelled={isCancelled}
         isCompleted={isCompleted}
         showExclamation={showExclamation}
-        onClick={handleBadgeClick}
+        onClick={(isPlanSettingsForParticipant && (isCompleted || isCancelled)) ? undefined : handleBadgeClick}
       />
 
       {/* ── Participant Action Bottom Sheet for Host Cards in Plan Settings ── */}
@@ -1077,6 +1077,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       {/* Cancel Leave Request Bottom Sheet */}
       <CancelLeaveRequestBottomSheet
         isOpen={showCancelLeaveRequestSheet}
+        plan={plan}
         isSubmitting={isCancellingLeaveRequest}
         onConfirm={async () => {
           setIsCancellingLeaveRequest(true);

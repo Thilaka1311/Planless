@@ -16,11 +16,18 @@ describe("chatReads utils", () => {
       expect(formatChatListTimestamp("invalid-date")).toBe("");
     });
 
-    it("formats today's time with AM/PM", () => {
+    it("formats today's time in 24-hour format", () => {
       const now = new Date();
       now.setHours(14, 30, 0, 0);
       const result = formatChatListTimestamp(now.toISOString());
-      expect(result).toBe("2:30 PM");
+      expect(result).toBe("14:30");
+    });
+
+    it("formats morning time correctly in 24-hour format", () => {
+      const now = new Date();
+      now.setHours(8, 5, 0, 0);
+      const result = formatChatListTimestamp(now.toISOString());
+      expect(result).toBe("08:05");
     });
 
     it("formats yesterday's time as 'Yesterday'", () => {
@@ -30,11 +37,13 @@ describe("chatReads utils", () => {
       expect(result).toBe("Yesterday");
     });
 
-    it("formats older dates appropriately", () => {
-      const oldDate = new Date("2025-01-15T10:00:00Z");
+    it("formats older dates as dd-mm-yy", () => {
+      // Use a fixed date to test the dd-mm-yy format precisely
+      const oldDate = new Date(2025, 0, 15); // Jan 15, 2025 local
       const result = formatChatListTimestamp(oldDate.toISOString());
-      expect(result).toBeTruthy();
-      expect(typeof result).toBe("string");
+      // Should be 15-01-25 format
+      expect(result).toMatch(/^\d{2}-\d{2}-\d{2}$/);
+      expect(result).toBe("15-01-25");
     });
   });
 

@@ -12,17 +12,25 @@ import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { supabase } from "../../../../lib/supabaseClient";
 import { SearchBar } from "../../../shared/components/SearchBar";
 import { formatChatListTimestamp, subscribeToChatReadEvents } from "../utils/chatReads";
-import { appendMessageToCache, getCachedMessages, getCachedUnreadInfo, setCachedUnreadInfo, ChatMessage } from "../hooks/useChatCache";
+import {
+  appendMessageToCache,
+  getCachedMessages,
+  getCachedUnreadInfo,
+  setCachedUnreadInfo,
+  getCachedChatSummaries,
+  setCachedChatSummaries,
+  setCachedChatSummary,
+  ChatSummaryItem,
+  ChatMessage,
+} from "../hooks/useChatCache";
 
 interface ChatsScreenProps {
   onSelectChatPlan: (planId: string) => void;
-  onScroll?: (y: number) => void;
   setActiveTab?: (tab: string) => void;
 }
 
 export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
   onSelectChatPlan,
-  onScroll,
   setActiveTab,
 }) => {
   const { plans, dbPlanParticipants } = usePlansStore();
@@ -98,31 +106,29 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
 
   const { dbUsers } = useProfileStore();
 
-  // State to hold unread counts and latest message preview per plan_id (seeded immediately from local cache)
-  const [chatSummaries, setChatSummaries] = useState<Record<string, {
-    unreadCount: number;
-    senderName: string;
-    isCurrentUser: boolean;
-    content: string;
-    createdAt?: string | null;
-    messageType?: string;
-  }>>(() => {
-    const initialMap: Record<string, any> = {};
+  // State to hold unread counts and latest message preview per plan_id (seeded immediately from persistent cache)
+  const [chatSummaries, setChatSummaries] = useState<Record<string, ChatSummaryItem>>(() => {
+    // 1. Instantly populate from module/localStorage cache
+    const initialMap: Record<string, ChatSummaryItem> = { ...getCachedChatSummaries() };
+
+    // 2. Backfill any plan missing from summaries using in-memory messages & unread store
     for (const p of plans || []) {
       const pid = p.dbUuid || p.id;
-      const cached = getCachedMessages(pid);
-      const unread = getCachedUnreadInfo(pid);
-      if (cached.length > 0 || unread) {
-        const lastMsg = cached.length > 0 ? cached[cached.length - 1] : undefined;
-        const isMe = Boolean(userUuid && lastMsg && (lastMsg.sender_id === userUuid || allMyUserIds.has(lastMsg.sender_id)));
-        initialMap[pid] = {
-          unreadCount: unread?.count || 0,
-          senderName: isMe ? "You" : "User",
-          isCurrentUser: isMe,
-          content: lastMsg?.content || "",
-          createdAt: lastMsg?.created_at || null,
-          messageType: lastMsg?.message_type,
-        };
+      if (!initialMap[pid]) {
+        const cached = getCachedMessages(pid);
+        const unread = getCachedUnreadInfo(pid);
+        if (cached.length > 0 || unread) {
+          const lastMsg = cached.length > 0 ? cached[cached.length - 1] : undefined;
+          const isMe = Boolean(userUuid && lastMsg && (lastMsg.sender_id === userUuid || allMyUserIds.has(lastMsg.sender_id)));
+          initialMap[pid] = {
+            unreadCount: unread?.count || 0,
+            senderName: isMe ? "You" : "User",
+            isCurrentUser: isMe,
+            content: lastMsg?.content || "",
+            createdAt: lastMsg?.created_at || null,
+            messageType: lastMsg?.message_type,
+          };
+        }
       }
     }
     return initialMap;
@@ -268,7 +274,43 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
             }
           }
 
-          setChatSummaries(map);
+          // Background sync check: only update state if data actually changed
+          setChatSummaries((prev) => {
+            const prevKeys = Object.keys(prev);
+            const newKeys = Object.keys(map);
+
+            let hasChanged = prevKeys.length !== newKeys.length;
+            if (!hasChanged) {
+              for (const key of newKeys) {
+                const prevItem = prev[key];
+                const newItem = map[key];
+                if (!prevItem) {
+                  hasChanged = true;
+                  break;
+                }
+                if (
+                  prevItem.unreadCount !== newItem.unreadCount ||
+                  prevItem.content !== newItem.content ||
+                  prevItem.createdAt !== newItem.createdAt ||
+                  prevItem.senderName !== newItem.senderName ||
+                  prevItem.isCurrentUser !== newItem.isCurrentUser ||
+                  prevItem.messageType !== newItem.messageType
+                ) {
+                  hasChanged = true;
+                  break;
+                }
+              }
+            }
+
+            if (!hasChanged) {
+              // Nothing changed: preserve exact rendered list without re-rendering or animation
+              return prev;
+            }
+
+            // Sync to module & persistent storage and update state
+            setCachedChatSummaries(map);
+            return map;
+          });
         }
       } catch (err) {
         console.error("Exception fetching chat summaries:", err);
@@ -291,6 +333,10 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
           const newMsg = payload.new as any;
           if (!newMsg || !newMsg.plan_id) return;
           if (!["text", "cost", "poll", "system"].includes(newMsg.message_type)) return;
+
+          // Guard: Only process messages belonging to plans the current user is part of
+          const isUserPlan = plans && plans.some((p) => p.id === newMsg.plan_id || p.dbUuid === newMsg.plan_id);
+          if (plans && plans.length > 0 && !isUserPlan) return;
 
           // Keep in-memory chat cache and unread info warm in background
           appendMessageToCache(newMsg as ChatMessage, userUuid);
@@ -325,16 +371,20 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
             const shouldIncrement = newMsg.message_type === "system" || !isMe;
             const nextUnread = shouldIncrement ? currentUnread + 1 : currentUnread;
 
+            const updatedSummary: ChatSummaryItem = {
+              unreadCount: nextUnread,
+              senderName,
+              isCurrentUser: isMe,
+              content: previewContent,
+              createdAt: newMsg.created_at || new Date().toISOString(),
+              messageType: newMsg.message_type,
+            };
+
+            setCachedChatSummary(newMsg.plan_id, updatedSummary);
+
             return {
               ...prev,
-              [newMsg.plan_id]: {
-                unreadCount: nextUnread,
-                senderName,
-                isCurrentUser: isMe,
-                content: previewContent,
-                createdAt: newMsg.created_at || new Date().toISOString(),
-                messageType: newMsg.message_type,
-              },
+              [newMsg.plan_id]: updatedSummary,
             };
           });
         }
@@ -357,13 +407,15 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
           if (readRecord && readRecord.plan_id) {
             setChatSummaries((prev) => {
               const existing = prev[readRecord.plan_id];
-              if (!existing) return prev;
+              if (!existing || existing.unreadCount === 0) return prev;
+              const updated = {
+                ...existing,
+                unreadCount: 0,
+              };
+              setCachedChatSummary(readRecord.plan_id, updated);
               return {
                 ...prev,
-                [readRecord.plan_id]: {
-                  ...existing,
-                  unreadCount: 0,
-                },
+                [readRecord.plan_id]: updated,
               };
             });
           }
@@ -375,13 +427,15 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
     const unsubscribeLocalReads = subscribeToChatReadEvents((readPlanId) => {
       setChatSummaries((prev) => {
         const targetKey = prev[readPlanId] ? readPlanId : Object.keys(prev).find((k) => k === readPlanId);
-        if (!targetKey || !prev[targetKey]) return prev;
+        if (!targetKey || !prev[targetKey] || prev[targetKey].unreadCount === 0) return prev;
+        const updated = {
+          ...prev[targetKey],
+          unreadCount: 0,
+        };
+        setCachedChatSummary(targetKey, updated);
         return {
           ...prev,
-          [targetKey]: {
-            ...prev[targetKey],
-            unreadCount: 0,
-          },
+          [targetKey]: updated,
         };
       });
     });
@@ -456,7 +510,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
       <motion.div
         key={plan.id}
         layout
-        initial={{ opacity: 0, y: 4 }}
+        initial={false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         onClick={() => onSelectChatPlan(plan.id)}
@@ -552,7 +606,6 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
 
       {/* SCROLLABLE CHATS LIST (Begins below sticky search bar) */}
       <div
-        onScroll={(e) => onScroll?.(e.currentTarget.scrollTop)}
         className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-3 pt-0.5 pb-28"
       >
         {userPlanChats.length === 0 ? (

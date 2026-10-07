@@ -22,6 +22,7 @@ export interface PlanLifecycleDeps {
 
   // State setters
   setDbPlans?: Dispatch<SetStateAction<DbPlan[]>>;
+  setDbPlanParticipants?: Dispatch<SetStateAction<DbPlanParticipant[]>>;
   setDbPlanTeamAssignments: Dispatch<SetStateAction<DbPlanTeamAssignment[]>>;
 
   // Shared side-effect helpers
@@ -41,6 +42,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     dbUsers,
     userId,
     setDbPlans,
+    setDbPlanParticipants,
     setDbPlanTeamAssignments,
     refreshPlans,
     insertSystemMessage,
@@ -205,8 +207,13 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     options?: { totalCost?: number; autoPromote?: boolean }
   ) => {
     const planId = cleanPlanId(rawPlanId);
-    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId);
-    const planUuid = matchedPlan?.dbUuid || planId;
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId || (p as any).public_id === planId)
+      || dbPlans.find(p => p.id === planId || (p as any).dbUuid === planId || (p as any).public_id === planId);
+    const planUuid = (matchedPlan && isUuidUtil((matchedPlan as any).dbUuid))
+      ? (matchedPlan as any).dbUuid
+      : (matchedPlan && isUuidUtil(matchedPlan.id))
+      ? matchedPlan.id
+      : (isUuidUtil(planId) ? planId : (matchedPlan?.id || planId));
 
     const oldCapacity = matchedPlan?.plan_size || matchedPlan?.joinLimit || matchedPlan?.capacity || matchedPlan?.maxSpots || 0;
     const newCapacity = updates.plan_size !== undefined && updates.plan_size !== null ? Math.max(2, updates.plan_size) : null;
@@ -241,9 +248,10 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
       }
     }
 
+    const currentPlan = (plans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid)
+      || (dbPlans || []).find(p => p.id === planUuid);
+
     if (planUpdate.scheduled_at !== undefined) {
-      const currentPlan = (plans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid)
-        || (dbPlans || []).find(p => p.id === planUuid);
       const curStatus = (currentPlan?.status || "").toUpperCase();
       const newSchedTime = new Date(planUpdate.scheduled_at).getTime();
       if (!isNaN(newSchedTime)) {
@@ -257,10 +265,10 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
 
     if (planUpdate.plan_size !== undefined) {
       if (planUpdate.plan_size === null) {
-        const previousDbPlans = dbPlans;
+        planUpdate.participant_filtering = null;
         if (setDbPlans) {
           setDbPlans(prev => prev.map(p => {
-            if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+            if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId || (p as any).public_id === planId) {
               return {
                 ...p,
                 plan_size: null,
@@ -268,6 +276,8 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
                 capacity: null,
                 joinLimit: null,
                 maxSpots: null,
+                participant_filtering: null,
+                participantFiltering: null,
                 ...(planUpdate.total_cost !== undefined ? { total_cost: planUpdate.total_cost, totalCost: planUpdate.total_cost } : {}),
               };
             }
@@ -276,11 +286,16 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
         }
       } else {
         const boundedPlanSize = Math.max(2, planUpdate.plan_size);
+        planUpdate.plan_size = boundedPlanSize;
 
-        const previousDbPlans = dbPlans;
+        const currentFilter = (currentPlan as any)?.participant_filtering || (currentPlan as any)?.participantFiltering;
+        if (!currentFilter && planUpdate.participant_filtering === undefined) {
+          planUpdate.participant_filtering = 'AUTOMATIC';
+        }
+
         if (setDbPlans) {
           setDbPlans(prev => prev.map(p => {
-            if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+            if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId || (p as any).public_id === planId) {
               return {
                 ...p,
                 plan_size: boundedPlanSize,
@@ -288,6 +303,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
                 capacity: boundedPlanSize,
                 joinLimit: boundedPlanSize,
                 maxSpots: boundedPlanSize,
+                ...(planUpdate.participant_filtering ? { participant_filtering: planUpdate.participant_filtering, participantFiltering: planUpdate.participant_filtering } : {}),
                 ...(planUpdate.total_cost !== undefined ? { total_cost: planUpdate.total_cost, totalCost: planUpdate.total_cost } : {}),
               };
             }
@@ -298,7 +314,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
         try {
           await api.updatePlanCapacityRPC(planUuid, boundedPlanSize, options?.autoPromote);
         } catch (err: any) {
-          console.error("[usePlanLifecycle.updatePlanDetails] updatePlanCapacityRPC failed:", {
+          console.warn("[usePlanLifecycle.updatePlanDetails] updatePlanCapacityRPC failed, falling back to direct plans update:", {
             message: err?.message || String(err),
             code: err?.code,
             details: err?.details,
@@ -307,10 +323,7 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
             attemptedPlanSize: boundedPlanSize,
             rawError: err,
           });
-          if (setDbPlans) setDbPlans(previousDbPlans);
-          throw err;
         }
-        delete planUpdate.plan_size;
       }
     }
 
@@ -337,14 +350,22 @@ new = ${planUpdate.cover_image}`);
           .update(planUpdate)
           .eq("id", planUuid);
         if (planError) {
+          console.error("[usePlanLifecycle.updatePlanDetails] Failed to update plan in database:", planError);
           throw new Error("Failed to update plan details in database: " + planError.message);
         }
         if (setDbPlans) {
           setDbPlans(prev => prev.map(p => {
-            if (p.id === planUuid || (p as any).dbUuid === planUuid) {
+            if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId || (p as any).public_id === planId) {
               return {
                 ...p,
                 ...planUpdate,
+                ...(planUpdate.plan_size === null ? {
+                  planSize: null,
+                  capacity: null,
+                  joinLimit: null,
+                  maxSpots: null,
+                  participantFiltering: null,
+                } : {}),
               };
             }
             return p;
@@ -373,6 +394,17 @@ new = ${planUpdate.cover_image}`);
       .eq("plan_id", planUuid);
     const freshParticipants = freshParticipantsData || dbPlanParticipants;
 
+    if (setDbPlanParticipants && freshParticipantsData) {
+      setDbPlanParticipants(prev => {
+        const others = prev.filter(p => p.plan_id !== planUuid);
+        return [...others, ...freshParticipantsData];
+      });
+    }
+
+    if (planUpdate.participant_filtering !== undefined) {
+      await refreshPlans(["plans", "plan_participants"]);
+    }
+
     // REBALANCE PARTICIPANTS IF CAPACITY CHANGED (AUTOMATIC Mode Only)
     let rebalanceResult = { promotedCount: 0, demotedCount: 0 };
     const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
@@ -391,7 +423,7 @@ new = ${planUpdate.cover_image}`);
       console.error("[updatePlanDetails] recalculateWalletExpenses failed:", err)
     );
     return rebalanceResult;
-  }, [plans, dbPlans, dbPlanParticipants, userId, resolveUserUuid, cleanPlanId]);
+  }, [plans, dbPlans, dbPlanParticipants, userId, resolveUserUuid, cleanPlanId, setDbPlanParticipants, refreshPlans]);
 
   // ─── completePlan ────────────────────────────────────────────────────────────
 

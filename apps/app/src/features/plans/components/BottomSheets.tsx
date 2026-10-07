@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowLeft, ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2, Share } from "lucide-react";
+import { ArrowLeft, ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2, Share, Image as ImageIcon, Zap } from "lucide-react";
 import { useToast } from "../../../shared/contexts/ToastContext";
 import { buildInviteUrl, copyInviteUrlToClipboard } from "../services/planInviteService";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
@@ -41,6 +41,146 @@ export function getCurrentTimeString(d: Date = new Date()): string {
   const minutes = String(d.getMinutes()).padStart(2, '0');
   return `${hours}:${minutes}`;
 }
+
+// ----------------------------------------------------------------------
+// 0A. CREATE PLAN ACTIONS BOTTOM SHEET (EDIT IMAGE / ADD TO QUICK PLAN)
+// ----------------------------------------------------------------------
+export interface CreatePlanActionsBottomSheetProps {
+  isOpen: boolean;
+  onClose: () => void;
+  planTitle?: string;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  onEditImage: () => void;
+  onAddToQuickPlan: () => void;
+}
+
+export const CreatePlanActionsBottomSheet: React.FC<CreatePlanActionsBottomSheetProps> = ({
+  isOpen,
+  onClose,
+  planTitle = "Plan",
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  onEditImage,
+  onAddToQuickPlan,
+}) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
+          />
+          <motion.div
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 260 }}
+            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto text-left"
+            style={{
+              background: "#1C1C1E",
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-4">
+              <div className="w-9 h-1 rounded-full bg-white/20" />
+            </div>
+
+            {/* Plan Identity Header matching Plan Actions visual hierarchy */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={planCoverImage}
+                  category={planCategory}
+                  subcategory={planSubcategory}
+                  screen="Plan Actions Avatar"
+                  alt={planTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {planTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  Plan Actions
+                </p>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="px-4 pt-4 flex flex-col gap-2.5">
+              <button
+                id="create-plan-action-edit-image-btn"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onEditImage();
+                }}
+                style={{
+                  width: "100%",
+                  height: 48,
+                  padding: "0 16px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  background: "rgba(255, 255, 255, 0.06)",
+                  border: "none",
+                  borderRadius: 12,
+                  color: "#FFFFFF",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <ImageIcon className="w-4 h-4 text-zinc-300 shrink-0" />
+                <span>Edit plan image</span>
+              </button>
+
+              <button
+                id="create-plan-action-add-quick-plan-btn"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onAddToQuickPlan();
+                }}
+                style={{
+                  width: "100%",
+                  height: 48,
+                  padding: "0 16px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  background: "rgba(255, 255, 255, 0.06)",
+                  border: "none",
+                  borderRadius: 12,
+                  color: "#FFFFFF",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <Zap className="w-4 h-4 text-[#FF6B2C] shrink-0" />
+                <span>Add to quick plan</span>
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+};
 
 // ----------------------------------------------------------------------
 // 0. DISCARD / EXIT PLAN BOTTOM SHEET (PLAN ACTIONS)
@@ -752,7 +892,7 @@ export const MakeAnotherParticipantHostBottomSheet: React.FC<MakeAnotherParticip
                         onConfirm(selectedId);
                       }
                     }}
-                    className="w-full py-3.5 rounded-xl text-[15px] font-semibold text-white bg-[#FF6B2C] active:scale-[0.98] transition-transform disabled:opacity-40 disabled:cursor-not-allowed shadow-md flex items-center justify-center cursor-pointer"
+                    className="w-full py-3 rounded-full text-[15px] font-semibold text-white bg-[#FF6B2C] active:scale-[0.98] transition-transform disabled:opacity-40 disabled:cursor-not-allowed shadow-md flex items-center justify-center cursor-pointer"
                   >
                     {isSubmitting ? "Transferring & Leaving…" : "Confirm & Leave"}
                   </button>
@@ -854,7 +994,7 @@ export const JoinPlanConfirmationBottomSheet: React.FC<JoinPlanConfirmationBotto
                 </p>
               ) : formattedCost ? (
                 <p className="text-[13.5px] text-zinc-400 font-medium tracking-wide">
-                  Your share is <span className="text-[#FF6B2C] font-semibold">{formattedCost}</span>.
+                  Total plan cost is <span className="text-[#FF6B2C] font-semibold">{formattedCost}</span>.
                 </p>
               ) : (
                 <p className="text-[13px] text-zinc-400 font-medium tracking-wide">
@@ -1152,18 +1292,35 @@ export const PlanActionsBottomSheet = InvitedPlanActionsBottomSheet;
 // ----------------------------------------------------------------------
 interface CancelLeaveRequestBottomSheetProps {
   isOpen: boolean;
+  plan?: Plan | any | null;
   planTitle?: string;
-  isSubmitting: boolean;
+  planCoverImage?: string | null;
+  planCategory?: string;
+  planSubcategory?: string | null;
+  planId?: string;
+  isSubmitting?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }
 
 export const CancelLeaveRequestBottomSheet: React.FC<CancelLeaveRequestBottomSheetProps> = ({
   isOpen,
-  isSubmitting,
+  plan,
+  planTitle,
+  planCoverImage,
+  planCategory,
+  planSubcategory,
+  planId,
+  isSubmitting = false,
   onConfirm,
   onClose,
 }) => {
+  const resolvedTitle = plan?.title || planTitle || "Plan";
+  const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
+  const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
+  const resolvedCategory = plan?.category || planCategory;
+  const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -1188,36 +1345,87 @@ export const CancelLeaveRequestBottomSheet: React.FC<CancelLeaveRequestBottomShe
               paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
             }}
           >
+            {/* Drag handle */}
             <div className="flex justify-center pt-3 pb-4">
               <div className="w-9 h-1 rounded-full bg-white/20" />
             </div>
 
-            <div className="px-5 pb-2 text-left">
-              <h2 className="text-[18px] font-bold text-white mb-2">Cancel leave request?</h2>
-              <p className="text-[14px] text-white/55 leading-[1.55]">
+            {/* Plan Identity Header matching Plan Actions visual hierarchy */}
+            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
+              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
+                <DiscoveryImages
+                  src={resolvedCover}
+                  planId={resolvedPlanId}
+                  category={resolvedCategory}
+                  subcategory={resolvedSubcategory}
+                  screen="Cancel Leave Request Avatar"
+                  alt={resolvedTitle}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
+                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  {resolvedTitle}
+                </h3>
+                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
+                  Plan Actions
+                </p>
+              </div>
+            </div>
+
+            {/* Title & Short Explanation */}
+            <div className="px-5 pt-3 pb-1 text-left">
+              <h2 className="text-[17px] font-bold text-white mb-1">Cancel leave request?</h2>
+              <p className="text-[13.5px] text-white/55 leading-[1.55]">
                 You're still part of this plan. Would you like to stay?
               </p>
             </div>
 
-            <div className="px-4 pt-5 flex flex-col gap-2.5">
+            {/* Action Buttons */}
+            <div className="px-4 pt-3 flex flex-col gap-2.5">
               <button
                 id="cancel_leave_request_confirm_btn"
                 type="button"
                 disabled={isSubmitting}
                 onClick={onConfirm}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-black bg-white hover:bg-zinc-100 active:scale-[0.98] transition-transform disabled:opacity-50"
+                style={{
+                  width: '100%',
+                  height: 48,
+                  padding: '0 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#FFFFFF',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  opacity: isSubmitting ? 0.5 : 1,
+                }}
               >
                 {isSubmitting ? "Updating…" : "Stay in Plan"}
               </button>
 
+              {/* Text-only Cancel — no border, no background */}
               <button
-                id="cancel_leave_request_keep_btn"
+                id="cancel_leave_request_cancel_btn"
                 type="button"
                 onClick={onClose}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform"
-                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.45)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  textAlign: 'center',
+                }}
               >
-                Keep Request
+                Cancel
               </button>
             </div>
           </motion.div>
@@ -2049,10 +2257,12 @@ interface EditDateTimeBottomSheetProps {
   minDate?: string;
   isLiveEditing?: boolean;
   currentSavedRsvpDeadline?: string | null;
+  initialSection?: 'datetime' | 'rsvp';
   onTempDateChange: (val: string) => void;
   onTempTimeChange: (val: string) => void;
   onTempRSVPOptionChange: (val: string | null) => void;
   onClose: () => void;
+  onCancel?: () => void;
 }
 
 export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = ({
@@ -2063,33 +2273,48 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
   minDate,
   isLiveEditing = false,
   currentSavedRsvpDeadline,
+  initialSection = 'datetime',
   onTempDateChange,
   onTempTimeChange,
   onTempRSVPOptionChange,
   onClose,
+  onCancel,
 }) => {
-  const [isRSVPExpanded, setIsRSVPExpanded] = useState(false);
+  const [isRSVPExpanded, setIsRSVPExpanded] = useState(initialSection === 'rsvp');
   const [, setTick] = useState(0);
+
+  const initialValuesRef = useRef({ date: tempDate, time: tempTime, rsvpOption: tempRSVPOption });
+  const [hasUserEditedDateTime, setHasUserEditedDateTime] = useState(false);
+  const [hasUserEditedRsvp, setHasUserEditedRsvp] = useState(false);
 
   const effectiveMinDate = minDate ?? getTodayDateString();
 
-  const dateTimeError = getPlanDateTimeValidationError(tempDate, tempTime, isLiveEditing, effectiveMinDate);
-  const rsvpError = getRSVPValidationError(tempDate, tempTime, tempRSVPOption, isLiveEditing, currentSavedRsvpDeadline);
-  const isInvalid = Boolean(dateTimeError || rsvpError);
-
   useEffect(() => {
     if (isOpen) {
-      if (rsvpError) {
-        setIsRSVPExpanded(true);
-      } else {
-        setIsRSVPExpanded(false);
-      }
+      initialValuesRef.current = { date: tempDate, time: tempTime, rsvpOption: tempRSVPOption };
+      setHasUserEditedDateTime(false);
+      setHasUserEditedRsvp(false);
+      setIsRSVPExpanded(initialSection === 'rsvp');
       const interval = setInterval(() => {
         setTick((t) => t + 1);
       }, 10000);
       return () => clearInterval(interval);
     }
-  }, [isOpen]);
+  }, [isOpen, initialSection]);
+
+  const isDateTimeChanged = tempDate !== initialValuesRef.current.date || tempTime !== initialValuesRef.current.time;
+  const isRsvpChanged = tempRSVPOption !== initialValuesRef.current.rsvpOption;
+
+  const rawDateTimeError = getPlanDateTimeValidationError(tempDate, tempTime, isLiveEditing, effectiveMinDate);
+  const rawRsvpError = getRSVPValidationError(tempDate, tempTime, tempRSVPOption, isLiveEditing, currentSavedRsvpDeadline);
+
+  // Validation only triggers when a value is actively edited away from initial values
+  const dateTimeError = (hasUserEditedDateTime || isDateTimeChanged) && isDateTimeChanged ? rawDateTimeError : null;
+  const rsvpError =
+    ((hasUserEditedRsvp || isRsvpChanged) && isRsvpChanged) ||
+    ((hasUserEditedDateTime || isDateTimeChanged) && isDateTimeChanged && tempRSVPOption)
+      ? rawRsvpError
+      : null;
 
   useEffect(() => {
     if (rsvpError) {
@@ -2098,14 +2323,29 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
   }, [rsvpError]);
 
   const handleDateChange = (newDate: string) => {
-    if (effectiveMinDate && newDate && newDate < effectiveMinDate) {
-      return;
-    }
+    setHasUserEditedDateTime(true);
     onTempDateChange(newDate);
   };
 
   const handleTimeChange = (newTime: string) => {
+    setHasUserEditedDateTime(true);
     onTempTimeChange(newTime);
+  };
+
+  const handleRsvpOptionChange = (opt: string | null) => {
+    setHasUserEditedRsvp(true);
+    onTempRSVPOptionChange(opt);
+  };
+
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel();
+    } else {
+      onTempDateChange(initialValuesRef.current.date);
+      onTempTimeChange(initialValuesRef.current.time);
+      onTempRSVPOptionChange(initialValuesRef.current.rsvpOption);
+      onClose();
+    }
   };
 
   const handleClose = (e?: React.SyntheticEvent) => {
@@ -2113,16 +2353,8 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
       e.preventDefault();
       e.stopPropagation();
     }
-    const currentError = getDateTimeValidationError(
-      tempDate,
-      tempTime,
-      tempRSVPOption,
-      isLiveEditing,
-      currentSavedRsvpDeadline,
-      effectiveMinDate
-    );
-    if (currentError) {
-      // Block dismissal completely before sheet starts moving.
+    // Block closing only if active validation errors exist on user's newly edited values
+    if (dateTimeError || rsvpError) {
       return;
     }
     onClose();
@@ -2177,7 +2409,6 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                 <div style={{ position: "relative", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
                   <input
                     type="date"
-                    min={effectiveMinDate}
                     value={tempDate}
                     onChange={(e) => handleDateChange(e.target.value)}
                     style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer", zIndex: 10 }}
@@ -2305,7 +2536,7 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
                             key={opt}
                             type="button"
                             onClick={() => {
-                              onTempRSVPOptionChange(isSelected ? null : opt);
+                              handleRsvpOptionChange(isSelected ? null : opt);
                             }}
                             style={{
                               width: "100%",
@@ -2393,7 +2624,7 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
             <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
               <button
                 type="button"
-                onClick={handleClose}
+                onClick={handleCancel}
                 style={{
                   background: "none",
                   border: "none",
@@ -2439,15 +2670,15 @@ export const EditCostBottomSheet: React.FC<EditCostBottomSheetProps> = ({
   const isCostSet = costInput.trim() !== "" && !isNaN(parsedInput) && parsedInput > 0;
   const peopleLabel = capacity === 1 ? "1 person" : `${capacity} people`;
 
-  let secondaryText = `Free · ${peopleLabel}`;
+  let secondaryText = "Free";
   if (isCostSet) {
+    // Existing cost-splitting implementation preserved
     if (capacity > 0) {
       const perPersonVal = Math.round((parsedInput / capacity) * 100) / 100;
       const formattedVal = perPersonVal.toLocaleString("en-IN");
-      secondaryText = `₹${formattedVal} per person · ${peopleLabel}`;
-    } else {
-      secondaryText = `₹${parsedInput.toLocaleString("en-IN")} total`;
+      void formattedVal;
     }
+    secondaryText = `Total ₹${parsedInput.toLocaleString("en-IN")}`;
   }
 
   return (
@@ -3228,8 +3459,9 @@ export interface RemoveGoingParticipantBottomSheetProps {
   planSize?: number;
   title?: string;
   subtitle?: string;
-  onDecreaseCapacity: () => void;
+  onDecreaseCapacity?: () => void;
   onReplaceParticipant?: () => void;
+  onRemoveParticipant?: () => void;
   onCancelPlan?: () => void;
   onClose: () => void;
 }
@@ -3245,13 +3477,12 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
   subtitle,
   onDecreaseCapacity,
   onReplaceParticipant,
+  onRemoveParticipant,
   onCancelPlan,
   onClose,
 }) => {
   if (!isOpen || !participant) return null;
   const hasWaitlist = waitlistCount !== undefined ? waitlistCount > 0 : !!rawHasWaitlist;
-  const effectiveCapacity = planSize !== undefined ? planSize : goingCount;
-  const canDecreaseCapacity = effectiveCapacity === undefined || effectiveCapacity > 2;
 
   return (
     <div
@@ -3301,34 +3532,7 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
 
         {/* Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Action 1: Decrease Plan Size (Only shown when goingCount > 2) */}
-          {canDecreaseCapacity && (
-            <button
-              type="button"
-              onClick={onDecreaseCapacity}
-              style={{
-                width: '100%',
-                height: 48,
-                padding: '0 14px',
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: 'none',
-                borderRadius: 12,
-                color: '#FFFFFF',
-                textAlign: 'left',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-              }}
-            >
-              <div className="w-7 h-7 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 flex-shrink-0">
-                <UserMinus className="w-4 h-4" />
-              </div>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Decrease Plan Size</span>
-            </button>
-          )}
-
-          {/* Action 2: Replace Participant */}
+          {/* Action 1: Replace Participant */}
           {onReplaceParticipant && (
             <button
               type="button"
@@ -3355,8 +3559,35 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
             </button>
           )}
 
+          {/* Action 2: Remove Participant */}
+          {onRemoveParticipant && (
+            <button
+              type="button"
+              onClick={onRemoveParticipant}
+              style={{
+                width: '100%',
+                height: 48,
+                padding: '0 14px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: 'none',
+                borderRadius: 12,
+                color: '#FFFFFF',
+                textAlign: 'left',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <div className="w-7 h-7 rounded-lg bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 flex-shrink-0">
+                <UserMinus className="w-4 h-4" />
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#FFFFFF' }}>Remove Participant</span>
+            </button>
+          )}
+
           {/* Action: Cancel Plan (Only shown when no other actions are possible) */}
-          {!hasWaitlist && onCancelPlan && (
+          {!hasWaitlist && onCancelPlan && !onReplaceParticipant && !onRemoveParticipant && (
             <button
               type="button"
               onClick={onCancelPlan}
@@ -3554,8 +3785,8 @@ export const SwitchToAutomaticSelectionBottomSheet: React.FC<SwitchToAutomaticSe
           disabled={!isReady || isSubmitting}
           style={{
             width: '100%',
-            padding: '14px',
-            borderRadius: 14,
+            padding: '12px',
+            borderRadius: 9999,
             background: isReady ? '#FF6B2C' : 'rgba(255, 255, 255, 0.1)',
             color: isReady ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
             fontSize: 14,
@@ -3658,8 +3889,8 @@ export const SwitchToAutomaticWarningBottomSheet: React.FC<SwitchToAutomaticWarn
               }}
               style={{
                 width: '100%',
-                padding: '14px',
-                borderRadius: 14,
+                padding: '12px',
+                borderRadius: 9999,
                 background: '#FF6B2C',
                 color: '#FFFFFF',
                 fontSize: 14,
@@ -3901,7 +4132,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
           disabled={!isReady || isSubmitting}
           style={{
             width: '100%',
-            padding: '14px',
+            padding: '12px',
             borderRadius: 9999,
             background: isReady ? '#FF6B2C' : 'rgba(255, 255, 255, 0.1)',
             color: isReady ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
@@ -4073,9 +4304,9 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
                 onClick={handleShare}
                 style={{
                   width: "100%",
-                  height: 48,
+                  height: 44,
                   padding: "0 14px",
-                  borderRadius: 12,
+                  borderRadius: 9999,
                   background: !inviteUrl ? "rgba(255, 255, 255, 0.1)" : "#FF6B2C",
                   color: !inviteUrl ? "rgba(255, 255, 255, 0.3)" : "#FFFFFF",
                   fontSize: 15,

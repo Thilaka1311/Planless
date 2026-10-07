@@ -7,14 +7,23 @@ export const CATEGORY_OPTIONS = [
   { label: "Sports", value: "SPORTS" },
   { label: "Movies", value: "MOVIES" },
   { label: "Dining", value: "DINING" },
+  { label: "Activities", value: "ACTIVITIES" },
   { label: "Custom", value: "CUSTOM" },
 ];
 
 export const SUBCATEGORY_MAP: Record<string, { label: string; value: string }[]> = {
   SPORTS: [
-    { label: "Football", value: "FOOTBALL" },
     { label: "Badminton", value: "BADMINTON" },
+    { label: "Football", value: "FOOTBALL" },
     { label: "Pickleball", value: "PICKLEBALL" },
+    { label: "Tennis", value: "TENNIS" },
+    { label: "Cricket", value: "CRICKET" },
+    { label: "Basketball", value: "BASKETBALL" },
+    { label: "Table Tennis", value: "TABLE_TENNIS" },
+    { label: "Swimming", value: "SWIMMING" },
+    { label: "Squash", value: "SQUASH" },
+    { label: "Football | Pickleball", value: "Football | Pickleball" },
+    { label: "Badminton | Table Tennis", value: "Badminton | Table Tennis" },
   ],
   MOVIES: [
     { label: "English", value: "ENGLISH" },
@@ -26,6 +35,15 @@ export const SUBCATEGORY_MAP: Record<string, { label: string; value: string }[]>
     { label: "Pub", value: "PUB" },
     { label: "Fine Dine", value: "FINE_DINE" },
   ],
+  ACTIVITIES: [
+    { label: "Bowling", value: "BOWLING" },
+    { label: "Mystery Rooms", value: "MYSTERY_ROOMS" },
+    { label: "Mini Golf", value: "MINI_GOLF" },
+    { label: "Go-Karting", value: "GO_KARTING" },
+    { label: "Amusement Parks", value: "AMUSEMENT_PARKS" },
+    { label: "Arcades", value: "ARCADES" },
+    { label: "Adventure & Fun", value: "ADVENTURE_FUN" },
+  ],
   CUSTOM: [],
 };
 
@@ -36,7 +54,11 @@ export function validateSubcategory(category: string, subcategory: string | null
   }
   const allowed = SUBCATEGORY_MAP[cat];
   if (!allowed) return true; // Accept other categories by default
-  return subcategory !== null && allowed.some((opt) => opt.value === subcategory.toUpperCase());
+  return (
+    subcategory !== null &&
+    (allowed.some((opt) => opt.value.toUpperCase() === subcategory.toUpperCase() || opt.label.toUpperCase() === subcategory.toUpperCase()) ||
+      subcategory.includes("|"))
+  );
 }
 
 export interface FieldConfig {
@@ -52,7 +74,7 @@ export interface FieldConfig {
 export interface ContentConfig {
   type: string;
   title: string;
-  category: 'SPORTS' | 'MOVIES' | 'DINING' | 'DRINKS' | 'CUSTOM';
+  category: 'SPORTS' | 'MOVIES' | 'DINING' | 'DRINKS' | 'CUSTOM' | 'ACTIVITIES';
   section_id: string;
   fields: FieldConfig[];
 }
@@ -76,7 +98,7 @@ export const ADMIN_CONFIGS: Record<string, ContentConfig> = {
       },
       { name: 'description', label: 'Description', type: 'textarea', placeholder: 'e.g. Casual 5v5 friendly game on turf' },
       { name: 'location', label: 'Address / Venue Location', type: 'text', required: true, placeholder: 'e.g. Play Arena, Kasavanahalli' },
-      { name: 'cover_image_url', label: 'Cover Image', type: 'image', defaultValue: '/assets/plan-covers/football.png' },
+      { name: 'cover_image_url', label: 'Cover Image', type: 'image', defaultValue: '/assets/plan-covers/football.webp' },
       { name: 'display_order', label: 'Display Order', type: 'number', defaultValue: 1 },
     ]
   },
@@ -96,7 +118,7 @@ export const ADMIN_CONFIGS: Record<string, ContentConfig> = {
       },
       { name: 'description', label: 'Description / Synopsis', type: 'textarea', placeholder: 'e.g. Latest cinematic blockbuster release' },
       { name: 'location', label: 'Cinema Location', type: 'text', required: true, placeholder: 'e.g. Nexus IMAX Koramangala' },
-      { name: 'cover_image_url', label: 'Movie Poster / Image', type: 'image', defaultValue: '/assets/plan-covers/movie.png' },
+      { name: 'cover_image_url', label: 'Movie Poster / Image', type: 'image', defaultValue: '/assets/plan-covers/movie.webp' },
       { name: 'display_order', label: 'Display Order', type: 'number', defaultValue: 1 },
     ]
   },
@@ -116,7 +138,31 @@ export const ADMIN_CONFIGS: Record<string, ContentConfig> = {
       },
       { name: 'description', label: 'Description', type: 'textarea', placeholder: 'e.g. Best coffee and desserts in town' },
       { name: 'location', label: 'Location', type: 'text', required: true, placeholder: 'e.g. Indiranagar, Bangalore' },
-      { name: 'cover_image_url', label: 'Cover Image', type: 'image', defaultValue: '/assets/plan-covers/dining.png' },
+      { name: 'cover_image_url', label: 'Cover Image', type: 'image', defaultValue: '/assets/plan-covers/dining.webp' },
+      { name: 'display_order', label: 'Display Order', type: 'number', defaultValue: 1 },
+    ]
+  },
+  activities: {
+    type: 'activities',
+    title: 'Activities',
+    category: 'ACTIVITIES',
+    section_id: 'places_activities',
+    fields: [
+      { name: 'title', label: 'Venue Name', type: 'text', required: true, placeholder: 'e.g. Mystery Rooms Koramangala' },
+      {
+        name: 'subcategory', label: 'Activity Type', type: 'select', required: true, options: [
+          { label: 'Bowling', value: 'BOWLING' },
+          { label: 'Mystery Rooms', value: 'MYSTERY_ROOMS' },
+          { label: 'Mini Golf', value: 'MINI_GOLF' },
+          { label: 'Go-Karting', value: 'GO_KARTING' },
+          { label: 'Amusement Parks', value: 'AMUSEMENT_PARKS' },
+          { label: 'Arcades', value: 'ARCADES' },
+          { label: 'Adventure & Fun', value: 'ADVENTURE_FUN' },
+        ], defaultValue: 'BOWLING'
+      },
+      { name: 'description', label: 'Description', type: 'textarea', placeholder: 'e.g. Exciting real-life escape room adventure' },
+      { name: 'location', label: 'Location', type: 'text', required: true, placeholder: 'e.g. Indiranagar, Bangalore' },
+      { name: 'cover_image_url', label: 'Cover Image', type: 'image', defaultValue: '/assets/Activities.png' },
       { name: 'display_order', label: 'Display Order', type: 'number', defaultValue: 1 },
     ]
   }

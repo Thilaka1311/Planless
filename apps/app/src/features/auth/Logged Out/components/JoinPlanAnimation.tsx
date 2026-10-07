@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { CalendarDays, Hourglass } from "lucide-react";
 
-import customPlanCover from "../../../../assets/planimagedefault.png";
-import defaultAvatar from "../../../../assets/default_avatar.png";
+import customPlanCover from "../../../../assets/planimagedefault.webp";
+import defaultAvatar from "../../../../assets/default_avatar.webp";
 import { Plan, UserProfile } from "../../../../core/types";
 import { ParticipantToggleBar } from "../../../home/components/PlanDetailsCard";
 import { HoldToAcceptOverlay } from "../../../home/components/HoldToAccept";
@@ -288,7 +288,7 @@ export function JoinPlanAnimation({
               isHolding={isHolding}
               isFull={false}
               formattedDateAndTime="Today • 19:00"
-              costText="₹400 / person"
+              costText="₹400"
               contentScale={0.72}
             />
           )}

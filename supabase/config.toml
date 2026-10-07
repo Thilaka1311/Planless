@@ -3,6 +3,10 @@ project_id = "planless"
 [functions.maps]
 verify_jwt = false
 
+[edge_runtime]
+enabled = true
+policy = "per_worker"
+
 [analytics]
 enabled = false
 

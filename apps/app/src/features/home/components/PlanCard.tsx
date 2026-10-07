@@ -9,11 +9,12 @@ import { useLivePlan } from "../../plans/hooks/useLivePlan";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { ParticipantToggleBar } from "./PlanDetailsCard";
 import { formatPlanDate } from "../../../../lib/mappers";
-import defaultAvatar from "../../../assets/default_avatar.png";
+import defaultAvatar from "../../../assets/default_avatar.webp";
 import { normalizeStatus } from "../../../../lib/participantStatus";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
-import { UtensilsCrossed, Calendar, Hourglass, IndianRupee, User, Compass, Film, CalendarDays } from "lucide-react";
+import { Calendar, Hourglass, IndianRupee, User, Film, CalendarDays } from "lucide-react";
+import { CategoryIcon } from "../../../shared/components/CategoryIcon";
 import { useRSVPDeadline } from "../../plans/utils/rsvpFormatter";
 
 function calculateCountdown(deadlineStr: string | null | undefined): string {
@@ -39,18 +40,7 @@ function calculateCountdown(deadlineStr: string | null | undefined): string {
 }
 
 function PlanCategoryIcon({ plan }: { plan: any }) {
-  const category = (plan.category || '').toLowerCase();
-  if (category === 'movies' || category === 'cinema') {
-    return <Film className="w-4 h-4 text-violet-400" strokeWidth={2} />;
-  }
-  if (category === 'dining' || category === 'restaurants' || category === 'restaurant' || category === 'cafe') {
-    return <UtensilsCrossed className="w-4 h-4 text-rose-400" strokeWidth={2} />;
-  }
-  if (category === 'sports' || category === 'football' || category === 'badminton') {
-    return <Compass className="w-4 h-4 text-emerald-400" strokeWidth={2} />;
-  }
-  // Custom / fallback
-  return <CalendarDays className="w-4 h-4 text-zinc-400" strokeWidth={2} />;
+  return <CategoryIcon category={plan.category} className="w-4 h-4" strokeWidth={2} />;
 }
 
 

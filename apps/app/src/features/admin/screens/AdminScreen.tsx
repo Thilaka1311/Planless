@@ -48,7 +48,7 @@ export const ADMIN_CONFIGS: Record<string, ContentConfig> = {
       },
       { name: 'description', label: 'Description', type: 'textarea', placeholder: 'e.g. Casual 5v5 friendly game on turf' },
       { name: 'location', label: 'Address / Venue Location', type: 'text', required: true, placeholder: 'e.g. Play Arena, Kasavanahalli' },
-      { name: 'cover_image_url', label: 'Cover Image', type: 'image', defaultValue: '/assets/plan-covers/football.png' },
+      { name: 'cover_image_url', label: 'Cover Image', type: 'image', defaultValue: '/assets/plan-covers/football.webp' },
       { name: 'display_order', label: 'Display Order', type: 'number', defaultValue: 1 },
     ]
   },
@@ -71,7 +71,7 @@ export const ADMIN_CONFIGS: Record<string, ContentConfig> = {
       },
       { name: 'description', label: 'Description / Synopsis', type: 'textarea', placeholder: 'e.g. Latest cinematic blockbuster release' },
       { name: 'location', label: 'Cinema Location', type: 'text', required: true, placeholder: 'e.g. Nexus IMAX Koramangala' },
-      { name: 'cover_image_url', label: 'Movie Poster / Image', type: 'image', defaultValue: '/assets/plan-covers/movie.png' },
+      { name: 'cover_image_url', label: 'Movie Poster / Image', type: 'image', defaultValue: '/assets/plan-covers/movie.webp' },
       { name: 'display_order', label: 'Display Order', type: 'number', defaultValue: 1 },
     ]
   }

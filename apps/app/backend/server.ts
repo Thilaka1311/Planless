@@ -21,6 +21,7 @@ import dbRouter from "./routes/db";
 import aiRouter from "./routes/ai";
 import paymentsRouter from "./routes/payments";
 import adminRouter from "./routes/admin";
+import moviesRouter from "./routes/movies";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import fs from "fs";
 import { spawn, type ChildProcess } from "child_process";
@@ -147,6 +148,7 @@ async function startServer() {
   app.use("/api/ai", aiRouter);
   app.use("/api/payments", paymentsRouter);
   app.use("/api/admin", adminRouter);
+  app.use("/api/movies", moviesRouter);
 
 
   // Deep linking endpoints for iOS Universal Links and Android App Links
@@ -316,31 +318,51 @@ async function startServer() {
 let ngrokProcess: ChildProcess | null = null;
 
 async function getNgrokTunnelUrl(): Promise<string | null> {
-  try {
-    const res = await fetch("http://127.0.0.1:4040/api/tunnels");
-    if (res.ok) {
-      const data: any = await res.json();
-      const tunnel = data.tunnels?.find((t: any) => t.proto === "https") || data.tunnels?.[0];
-      return tunnel?.public_url || null;
-    }
-  } catch {}
+  for (const p of [4040, 4041]) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${p}/api/tunnels`);
+      if (res.ok) {
+        const data: any = await res.json();
+        const tunnel = data.tunnels?.find((t: any) => t.proto === "https") || data.tunnels?.[0];
+        if (tunnel?.public_url) return tunnel.public_url;
+      }
+    } catch {}
+  }
   return null;
 }
 
 async function ensureNgrokTunnel(port: number) {
   if (process.env.DISABLE_NGROK === "true") return;
 
-  // 1. Check if ngrok is already running on 4040
+  // 1. Check if ngrok is already running on 4040/4041
   let url = await getNgrokTunnelUrl();
   if (url) {
     console.log(`\n🚀 [ngrok] Public tunnel active: ${url}\n`);
     return;
   }
 
-  // 2. Spawn ngrok process
+  // 2. Spawn ngrok process with explicit authtoken if provided
   try {
-    ngrokProcess = spawn("ngrok", ["http", String(port)], {
+    const authtoken = process.env.NGROK_AUTHTOKEN;
+    const ngrokArgs = ["http", String(port)];
+    if (authtoken) {
+      ngrokArgs.push("--authtoken", authtoken);
+    }
+
+    const ngrokBin = process.env.NGROK_BIN || "ngrok";
+    ngrokProcess = spawn(ngrokBin, ngrokArgs, {
       stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        PATH: `${process.env.PATH || ""}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`,
+      },
+    });
+
+    ngrokProcess.stderr?.on("data", (chunk: Buffer) => {
+      const msg = chunk.toString();
+      if (msg.includes("ERR_") || msg.toLowerCase().includes("authentication failed")) {
+        console.warn(`[ngrok] ${msg.trim()}`);
+      }
     });
 
     ngrokProcess.on("error", (err) => {

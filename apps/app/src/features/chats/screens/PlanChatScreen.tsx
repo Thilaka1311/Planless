@@ -15,11 +15,9 @@ import { uploadPlanImage } from "../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../plans/utils/planUtils";
 import { findPlanBySlugOrId } from "../../plans/utils/planSlugUtils";
 import { PlanParticipantManagementWrapper } from "../../plans/screens/PlansScreen/PlansPreview/PlanParticipantManagementWrapper";
-import { PlanDetailsScreen } from "../../wallet/screens/PlanBalances";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { useHorizontalPager } from "../hooks/useHorizontalPager";
 import { useChatCache, ChatMessage, getCachedUnreadInfo, setCachedUnreadInfo } from "../hooks/useChatCache";
-import { AddCost } from "../../wallet/screens/AddCost";
 import { markPlanChatAsRead } from "../utils/chatReads";
 
 interface PlanChatScreenProps {
@@ -78,6 +76,10 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const {
     messages,
     loading,
+    loadingOlder,
+    hasMoreOlder,
+    loadOlderMessages,
+    fetchUnreadRange,
     appendOptimisticMessage,
     removeOptimisticMessage,
     replaceOptimisticMessage,
@@ -86,7 +88,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [showSettingsScreen, setShowSettingsScreen] = useState(false);
-  const [showBalancesScreen, setShowBalancesScreen] = useState(false);
   const [replaceTargetUserId, setReplaceTargetUserId] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = textareaRef;
@@ -167,9 +168,8 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
 
   const [isEditingPlanSize, setIsEditingPlanSize] = useState(false);
   const [isBottomSheetOpen, setIsBottomSheetOpen] = useState(false);
-  const [showAddCostSheet, setShowAddCostSheet] = useState(false);
 
-  const isAnySheetOpen = isBottomSheetOpen || showAddCostSheet;
+  const isAnySheetOpen = isBottomSheetOpen;
 
   // ── Horizontal Motion Pager Hook ──
   const {
@@ -271,6 +271,13 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           });
 
           if (count > 0) {
+            // If the first unread message is older than the initial bounded page, fetch the unread gap
+            if (firstId && !messages.some((m) => m.id === firstId)) {
+              await fetchUnreadRange(firstId, info.last_read_at || null);
+            }
+
+            if (!isMounted) return;
+
             setUnreadDivider((prev) => {
               if (prev.isVisible && prev.firstUnreadId === firstId && prev.count === count) {
                 return prev;
@@ -687,6 +694,19 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     }
   };
 
+  // Scroll preservation refs when prepending older messages
+  const prevScrollHeightRef = useRef<number>(0);
+  const prevScrollTopRef = useRef<number>(0);
+  const isPrependingOlderRef = useRef<boolean>(false);
+
+  const triggerLoadOlder = useCallback(() => {
+    if (!chatMessagesRef.current || loadingOlder || !hasMoreOlder) return;
+    prevScrollHeightRef.current = chatMessagesRef.current.scrollHeight;
+    prevScrollTopRef.current = chatMessagesRef.current.scrollTop;
+    isPrependingOlderRef.current = true;
+    loadOlderMessages();
+  }, [loadingOlder, hasMoreOlder, loadOlderMessages]);
+
   const handleChatScroll = () => {
     if (!chatMessagesRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = chatMessagesRef.current;
@@ -697,7 +717,24 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     if (!scrolledAway) {
       setHasNewUnreadMessages(false);
     }
+
+    // Trigger older message loading when scrolled near the top (< 80px)
+    if (scrollTop < 80 && hasMoreOlder && !loadingOlder) {
+      triggerLoadOlder();
+    }
   };
+
+  // Preserve scroll position when older messages are prepended to the top
+  useLayoutEffect(() => {
+    if (isPrependingOlderRef.current && chatMessagesRef.current) {
+      const newScrollHeight = chatMessagesRef.current.scrollHeight;
+      const diff = newScrollHeight - prevScrollHeightRef.current;
+      if (diff > 0) {
+        chatMessagesRef.current.scrollTop = prevScrollTopRef.current + diff;
+      }
+      isPrependingOlderRef.current = false;
+    }
+  }, [timelineItems]);
 
   // Find indices of first and latest unread messages in timelineItems
   const { firstUnreadIndex, latestUnreadIndex } = useMemo(() => {
@@ -937,7 +974,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             currentPage={currentPage}
             onSelectPage={(pageIdx) => { if (!isAnySheetOpen) goToPage(pageIdx); }}
             onOpenParticipants={() => { if (!isAnySheetOpen) goToPage(0); }}
-            onOpenExpenses={() => { if (!isAnySheetOpen) setShowBalancesScreen(true); }}
             onEditTitle={!isCancelled && !isAnySheetOpen ? async (newTitle) => {
               try {
                 await updatePlanDetails(plan.id, { title: newTitle });
@@ -984,11 +1020,17 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                     pId,
                     {
                       plan_size: capacity,
+                      ...(capacity === null ? { participant_filtering: null } : {}),
                       ...(opts?.totalCost !== undefined ? { total_cost: opts.totalCost } : {}),
                     },
                     opts
                   )
                 }
+                onWaitlistModeChange={async (mode) => {
+                  await updatePlanDetails(plan.id, {
+                    participant_filtering: mode === 'assigned' ? 'ASSIGNED' : 'AUTOMATIC',
+                  });
+                }}
                 onCancelPlan={(pId) => cancelPlan(pId)}
                 onAddParticipants={(pId, userIds, assignedGroup) =>
                   addParticipantsToPlan({
@@ -1040,7 +1082,15 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                   />
                 </div>
               ) : (
-                timelineItems.map((item, index) => {
+                <>
+                  {loadingOlder && (
+                    <div className="w-full flex items-center justify-center py-2 select-none">
+                      <span className="text-[11px] font-medium text-zinc-500">
+                        Loading earlier messages...
+                      </span>
+                    </div>
+                  )}
+                  {timelineItems.map((item, index) => {
                   const isUnreadFirst = index === firstUnreadIndex;
                   const isLatestUnread = index === latestUnreadIndex;
 
@@ -1363,7 +1413,8 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                       </div>
                     </React.Fragment>
                   );
-                })
+                })}
+                </>
               )}
             </div>
 
@@ -1438,19 +1489,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         </motion.div>
       </div>
 
-      {/* EXISTING WALLET ADD COST FLOW COMPONENT */}
-      <AddCost
-        isOpen={showAddCostSheet}
-        onClose={() => setShowAddCostSheet(false)}
-        onRefreshBalances={() => {}}
-        activeUserId={currentUserId}
-        entryPoint="plan"
-        initialPlanId={targetPlanUuid}
-        relevantPlans={plan ? [{ id: targetPlanUuid, title: plan.title, cover_image: (plan.coverImage || (plan as any).customCoverUrl) }] : []}
-        dbPlanParticipants={dbPlanParticipants}
-        dbUsers={dbUsers}
-        dbProfiles={dbUsers}
-      />
 
       {/* PLAN SETTINGS SCREEN OVERLAY */}
       {showSettingsScreen && plan && (
@@ -1532,19 +1570,6 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
             }
           }}
         />
-      )}
-
-      {/* PLAN BALANCES SCREEN OVERLAY */}
-      {showBalancesScreen && (
-        <div className="fixed inset-0 z-[60] bg-[#050505] flex flex-col w-full h-[100dvh] overflow-hidden">
-          <PlanDetailsScreen
-            planId={targetPlanUuid}
-            onBack={() => setShowBalancesScreen(false)}
-            onRefreshBalances={() => {}}
-            activeUserId={activeUserId || currentUserId}
-            onSelectPlan={() => {}}
-          />
-        </div>
       )}
     </motion.div>
   );

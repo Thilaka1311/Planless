@@ -17,6 +17,11 @@ export interface Friend {
 
 export type ParticipantTab = 'going' | 'waitlist' | 'invited' | 'skipped';
 
+export {
+  resolveParticipantVisibleTabs,
+  type ResolveParticipantVisibleTabsParams,
+} from '../../../../lib/participantStatus';
+
 export interface PendingLeaveParticipant {
   id: string;
   dbUuid: string;
@@ -31,7 +36,7 @@ export interface SharedParticipantScreenProps {
   category?: string;
   eventDate?: string;
   eventTime?: string;
-  capacity?: number;
+  capacity?: number | null;
   isCapacityConfigured?: boolean;
   maxCapacity?: number;
   userProfile?: any;

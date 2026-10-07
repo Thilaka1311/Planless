@@ -1,54 +1,127 @@
-import React, { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { ChevronLeft, MapPin, Clock, Users, Check, Link, CheckCircle } from 'lucide-react';
+import React, { useEffect, useState } from "react";
 import { usePlansStore } from "../../plans/state/PlansContext";
-import { Plan, NotificationItem } from "../../../core/types";
 import { buildInviteUrl, copyInviteUrlToClipboard } from "../../plans/services/planInviteService";
 
 // Hooks & utils
 import { useCreatePlanForm } from "../hooks/useCreatePlanForm";
+import { useFriendshipStore } from "../../friendships/state/FriendshipContext";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { formatDateTimeStandard } from "../../../shared/components/NativeDateTimeField";
 
 // Sub-components
-import { BrowseExperiencesStep } from "../../discovery/screens/Discovery";
+import { BrowseExperiencesStep, DiscoverySubScreen } from "../../discovery/screens/Discovery";
+import { CreateCategoryScreen } from "./CreateCategoryScreen";
 import { CreatePlanReview } from "./CreatePlanReview";
 import { WhenIsPlanScreen } from "./WhenIsPlanScreen";
 import { WhoIsComingScreen } from "./WhoIsComingScreen";
 import { WhoIsActuallyComing } from "./WhoIsActuallyComing";
 import { DiscardPlanBottomSheet } from "../../plans/components/BottomSheets";
+import { CreatePlanConfirmation } from "../components/CreatePlanConfirmation";
 import { FriendshipsScreen } from "../../friendships/screens/FriendshipsScreen";
+import { QuickPlan } from "../../../core/types";
+import { createQuickPlan } from "../services/quickPlanService";
 
-import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
-import { supabase } from "../../../../lib/supabaseClient";
-import defaultPlanCover from "../../../assets/planimagedefault.png";
+import defaultPlanCover from "../../../assets/planimagedefault.webp";
 import { uploadPlanImage, uploadPlanCardImage } from "../../../shared/utils/imageUtils";
 import { clearDraftParticipants, clearCreatePlanDraft } from "../utils/draftParticipantStorage";
-
+import {
+  parseCurrentRoute,
+  navigateToRoute,
+  listenToNavigation,
+  CreatePhase,
+} from "../../navigation/appRouter";
 
 interface CreatePlanScreenProps {
-  setActiveTab: (tab: "home" | "plans" | "create" | "wallet" | "profile") => void;
+  setActiveTab: (tab: any) => void;
   onToggleBottomNav?: (hidden: boolean) => void;
   setPlansFilter?: (filter: 'JOINED' | 'WAITLISTED' | 'SKIPPED') => void;
+  setSelectedPlanId?: (id: string | null) => void;
+  initialDiscoveryCategory?: DiscoverySubScreen;
 }
 
 export const CreatePlanScreen = ({
   setActiveTab,
   onToggleBottomNav,
   setPlansFilter,
+  setSelectedPlanId,
+  initialDiscoveryCategory,
 }: CreatePlanScreenProps) => {
   const { createPlan } = usePlansStore();
+  const { friends, loading: friendshipLoading } = useFriendshipStore();
+
+  const initialRoute = React.useMemo(() => parseCurrentRoute(), []);
 
   // Flow states
-  const [createPhase, setCreatePhase] = useState<'category' | 'when' | 'who' | 'who-actually' | 'sports_select' | 'customizer' | 'review' | 'confirmation' | 'discover-friends'>('category');
-  const [lastSubScreen, setLastSubScreen] = useState<"sports" | "movies" | "dining" | null>(null);
+  const [createPhase, setCreatePhase] = useState<CreatePhase | 'discover-friends'>(() => {
+    if (initialRoute.tab === "create" && initialRoute.createPhase) {
+      return initialRoute.createPhase;
+    }
+    return 'category';
+  });
+  const [lastSubScreen, setLastSubScreen] = useState<DiscoverySubScreen>(() => {
+    if (initialDiscoveryCategory) return initialDiscoveryCategory;
+    if (
+      initialRoute.tab === "sports" ||
+      initialRoute.tab === "dining" ||
+      initialRoute.tab === "movies" ||
+      initialRoute.tab === "activities"
+    ) {
+      return initialRoute.tab;
+    }
+    return null;
+  });
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [postedPlanUuid, setPostedPlanUuid] = useState<string | null>(null);
   const [isCopying, setIsCopying] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [isWhenStepValid, setIsWhenStepValid] = useState(true);
+  const [cameFromReview, setCameFromReview] = useState(false);
   const [returnToWhoActually, setReturnToWhoActually] = useState(false);
   const [returnToPlanSizeSheet, setReturnToPlanSizeSheet] = useState(false);
+  const [isQuickPlanFlow, setIsQuickPlanFlow] = useState(false);
+  const [isQuickPlanCategorySelect, setIsQuickPlanCategorySelect] = useState(false);
+  const [targetQuickPlanListId, setTargetQuickPlanListId] = useState<string | null>(null);
+
+  const [selectedCategory, setSelectedCategory] = useState<'sports' | 'movies' | 'dining' | 'activities' | 'custom'>('sports');
+  const [selectedSubcategory, setSelectedSubcategory] = useState<'football' | 'badminton' | null>(null);
+
+  // Form hook
+  const form = useCreatePlanForm();
+
+  const transitionToPhase = (phase: CreatePhase | 'discover-friends') => {
+    setCreatePhase(phase);
+    if (phase !== 'discover-friends') {
+      navigateToRoute({ tab: "create", createPhase: phase });
+    }
+  };
+
+  useEffect(() => {
+    if (initialDiscoveryCategory && initialDiscoveryCategory !== lastSubScreen) {
+      setLastSubScreen(initialDiscoveryCategory);
+      setCreatePhase('category');
+    }
+  }, [initialDiscoveryCategory]);
+
+  useEffect(() => {
+    const removeListener = listenToNavigation((route) => {
+      if (route.tab === "create") {
+        if (route.createPhase && route.createPhase !== createPhase) {
+          setCreatePhase(route.createPhase);
+        } else if (!route.createPhase || route.createPhase === 'category') {
+          setCreatePhase('category');
+          setLastSubScreen(null);
+        }
+      } else if (
+        route.tab === "sports" ||
+        route.tab === "dining" ||
+        route.tab === "movies" ||
+        route.tab === "activities"
+      ) {
+        setCreatePhase('category');
+        setLastSubScreen(route.tab);
+      }
+    });
+    return removeListener;
+  }, [createPhase]);
 
   const handleCopyInviteLink = async () => {
     if (!postedPlanUuid || isCopying) return;
@@ -70,154 +143,126 @@ export const CreatePlanScreen = ({
   const handleResetAll = () => {
     setSelectedSubcategory(null);
     form.resetForm();
-    setCustomizerStep(0);
     setCameFromReview(false);
     setPostedPlanUuid(null);
     setReturnToPlanSizeSheet(false);
+    setIsQuickPlanFlow(false);
+    setIsQuickPlanCategorySelect(false);
+    setTargetQuickPlanListId(null);
     setCreatePhase('category');
+    setLastSubScreen(null);
+    navigateToRoute({ tab: 'create' });
+  };
+
+  const handleStartAddQuickPlan = (listId?: string) => {
+    form.resetForm();
+    setTargetQuickPlanListId(listId || null);
+    setIsQuickPlanFlow(true);
+    setIsQuickPlanCategorySelect(true);
+  };
+
+  const handleSelectExistingQuickPlan = (quickPlan: QuickPlan) => {
+    form.resetForm();
+    setIsQuickPlanFlow(false);
+    setIsQuickPlanCategorySelect(false);
+
+    const cat = (quickPlan.category || "custom").toLowerCase() as any;
+    setSelectedCategory(cat);
+    setSelectedSubcategory(quickPlan.subcategory ? (quickPlan.subcategory.toLowerCase() as any) : null);
+
+    form.setLocalTitle(quickPlan.name);
+    form.setLocalLocation(quickPlan.place_name || quickPlan.place_address || "");
+    if (form.setPlaceId) form.setPlaceId(quickPlan.place_id || null);
+    if (form.setPlaceAddress) form.setPlaceAddress(quickPlan.place_address || quickPlan.place_name || null);
+    if (form.setLatitude) form.setLatitude(quickPlan.latitude || null);
+    if (form.setLongitude) form.setLongitude(quickPlan.longitude || null);
+    form.setCustomCoverImage(quickPlan.cover_image || null);
+    form.setCostAmount(quickPlan.default_cost || 0);
+    form.setIsCostManuallySet(Boolean(quickPlan.default_cost && quickPlan.default_cost > 0));
+    form.setTotalCapacity(quickPlan.plan_size !== undefined && quickPlan.plan_size !== null ? quickPlan.plan_size : undefined);
+
+    const restoredFriends = (quickPlan.participants || []).map((p) => {
+      const u = p.user_profile;
+      return {
+        id: p.user_id,
+        dbUuid: p.user_id,
+        name: u?.full_name || "Friend",
+        avatar: u?.profile_photo_path || "",
+        profilePhoto: u?.profile_photo_path || "",
+      };
+    });
+    form.setSelectedFriends(restoredFriends);
+
+    setCameFromReview(false);
+    transitionToPhase('review');
+  };
+
+  const handleCreateQuickPlanSubmit = async () => {
+    if (form.isSubmitting) return;
+    form.setIsSubmitting(true);
+
+    const hostUuid = form.userProfile?.dbUuid || form.userProfile?.user_id || form.activeUserId;
+    if (!hostUuid) {
+      form.setIsSubmitting(false);
+      return;
+    }
+
+    const titleToUse = form.localTitle ? form.localTitle.trim() : "";
+    if (!titleToUse || titleToUse === "Set a title" || titleToUse === "Enter Title") {
+      form.setIsSubmitting(false);
+      return;
+    }
+
+    const locationToUse = form.localLocation ? form.localLocation.trim() : "";
+    const placeAddressToUse = form.placeAddress ? form.placeAddress.trim() : (locationToUse || "");
+    const costToUse = Math.max(0, Number(form.costAmount) || 0);
+    const coverUrl = form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory);
+
+    const participantIds: string[] = (form.selectedFriends || []).map((f: any) => f.id || f.dbUuid).filter(Boolean);
+
+    try {
+      await createQuickPlan(
+        {
+          creator_id: hostUuid,
+          quick_plan_list_id: targetQuickPlanListId,
+          name: titleToUse,
+          description: form.quickNote || null,
+          category: selectedCategory.toUpperCase(),
+          subcategory: selectedSubcategory ? selectedSubcategory.toUpperCase() : "OTHER",
+          place_id: form.placeId || null,
+          place_name: locationToUse,
+          place_address: placeAddressToUse,
+          latitude: form.latitude || null,
+          longitude: form.longitude || null,
+          cover_image: coverUrl,
+          default_cost: costToUse,
+          plan_size: form.totalCapacity !== undefined && form.totalCapacity !== null ? Number(form.totalCapacity) : null,
+        },
+        participantIds
+      );
+
+      handleResetAll();
+    } catch (err) {
+      console.error("[CreatePlanScreen] Failed saving quick plan:", err);
+    } finally {
+      form.setIsSubmitting(false);
+    }
   };
 
   useEffect(() => {
-    const isFlow = createPhase !== 'category';
+    const isFlow =
+      createPhase !== 'category' ||
+      lastSubScreen === 'quick-plans' ||
+      lastSubScreen === 'sports' ||
+      lastSubScreen === 'dining' ||
+      lastSubScreen === 'movies' ||
+      lastSubScreen === 'activities' ||
+      lastSubScreen === 'master-search';
     onToggleBottomNav?.(isFlow);
     return () => {
       onToggleBottomNav?.(false);
     };
-  }, [createPhase, onToggleBottomNav]);
-
-  const [customizerStep, setCustomizerStep] = useState(0);
-  const [cameFromReview, setCameFromReview] = useState(false);
-  const cardRef = React.useRef<HTMLDivElement>(null);
-  const [startHeight, setStartHeight] = useState(235);
-  const [isExpanding, setIsExpanding] = useState(false);
-  const [animationStage, setAnimationStage] = useState<'none' | 'lift' | 'expand'>('none');
-
-  const triggerExpansion = () => {
-    if (cardRef.current) {
-      setStartHeight(cardRef.current.offsetHeight);
-    }
-    setIsExpanding(true);
-    setAnimationStage('lift');
-
-    setTimeout(() => {
-      setAnimationStage('expand');
-
-      setTimeout(() => {
-        setCreatePhase('review');
-        setIsExpanding(false);
-        setAnimationStage('none');
-      }, 300);
-    }, 150);
-  };
-  const renderExpandingCard = () => {
-    const cardClass = animationStage === 'lift' ? 'animate-lift' : 'animate-expand';
-    return (
-      <div
-        className={`mx-5 bg-[#0E0E12] rounded-[28px] overflow-hidden z-25 relative mb-5 select-none border border-white/5 shadow-2xl flex flex-col group ${cardClass}`}
-        style={{
-          '--start-height': `${startHeight}px`,
-          '--end-height': '580px',
-          height: animationStage === 'lift' ? `${startHeight}px` : '580px',
-        } as React.CSSProperties}
-      >
-        <DiscoveryImages
-          src={getPlanCover(selectedCategory, selectedSubcategory)}
-          category={selectedCategory}
-          alt="Activity Cover"
-          className="absolute inset-0 w-full h-full object-cover brightness-[0.7] contrast-110 select-none"
-        />
-        <div
-          className="absolute inset-0 z-0"
-          style={{
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.45) 45%, rgba(0,0,0,0.88) 100%)'
-          }}
-        />
-        <div className="relative z-10 w-full p-5 flex flex-col justify-end text-left space-y-4 h-full">
-          <div className="mb-1">
-            <h1 className="text-[24px] sm:text-[25px] font-[850] text-white leading-none tracking-tight flex items-center drop-shadow-md select-none">
-              {selectedCategory === 'sports'
-                ? (selectedSubcategory === 'football' ? '⚽ Football' : '🏸 Badminton')
-                : selectedCategory === 'movies' ? '🎬 Movies'
-                  : selectedCategory === 'dining' ? '🍝 Dining'
-                    : '✨ Custom Plan'}
-            </h1>
-            <div className="w-8 h-[2.5px] bg-[#FF6B2C] rounded-full mt-2.5 opacity-90" />
-          </div>
-
-          <div className="space-y-3.5 pt-3 border-t border-white/10 w-full">
-            <div className="flex items-start gap-2.5 text-left w-full min-w-0">
-              <MapPin className="w-[15px] h-[15px] text-[#FF6B2C] shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <span className="text-[9px] text-white/50 uppercase font-bold tracking-wider leading-none block mb-1">Location</span>
-                <span className="text-[13px] font-semibold text-white leading-snug block whitespace-pre-wrap break-words">
-                  {form.localLocation || 'Add venue'}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-start gap-2.5 text-left w-full min-w-0">
-              <Clock className="w-[15px] h-[15px] text-[#FF6B2C] shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <span className="text-[9px] text-white/50 uppercase font-bold tracking-wider leading-none block mb-1">Time</span>
-                <span className="text-[13px] font-semibold text-white leading-snug block">
-                  {form.eventDateTime ? formatDateTimeStandard(form.eventDateTime) : 'Pick date & time'}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-start gap-2.5 text-left w-full min-w-0">
-              <Users className="w-[15px] h-[15px] text-[#FF6B2C] shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <span className="text-[9px] text-white/50 uppercase font-bold tracking-wider leading-none block mb-1">Guests</span>
-                <div className="flex flex-col gap-1 mt-0.5">
-                  <span className="text-[13px] font-semibold text-white leading-none">
-                    {/* totalCapacity = invited + 1 host slot */}
-                    👥 {form.waitlistEnabled ? `${form.waitlistCapacity + 1} Spots` : `${form.totalCapacity} Spots`}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const handleNavigateStep = (targetStep: number) => {
-    setCustomizerStep(targetStep);
-  };
-
-  const [selectedCategory, setSelectedCategory] = useState<'sports' | 'movies' | 'dining' | 'custom'>('sports');
-  const [selectedSubcategory, setSelectedSubcategory] = useState<'football' | 'badminton' | null>(null);
-
-  // Form hook
-  const form = useCreatePlanForm();
-
-  // Auto-prefill custom deadline based on eventDateTime when customizerStep is reached
-  useEffect(() => {
-    if (customizerStep === 1) {
-      form.setCustomDeadline(new Date());
-    }
-  }, [customizerStep]);
-
-  const handleSelectSubcategory = (sub: 'football' | 'badminton') => {
-    setSelectedSubcategory(sub);
-    form.resetForm();
-    setCustomizerStep(0);
-    setCameFromReview(false);
-    setCreatePhase('customizer');
-  };
-
-  const handleSelectCategory = (cat: 'sports' | 'movies' | 'dining' | 'custom') => {
-    setSelectedCategory(cat);
-    if (cat === 'sports') {
-      setCreatePhase('sports_select');
-    } else {
-      setSelectedSubcategory(null);
-      form.resetForm();
-      setCustomizerStep(0);
-      setCameFromReview(false);
-      setCreatePhase('customizer');
-    }
-  };
+  }, [createPhase, lastSubScreen, onToggleBottomNav]);
 
   const handleHostPlanSubmit = async () => {
     if (form.isSubmitting) return;
@@ -243,7 +288,6 @@ export const CreatePlanScreen = ({
       rawLocation !== "Add venue" &&
       rawLocation !== "Search for a place…"
     );
-    const isCostSet = Boolean(form.isCostManuallySet && form.costAmount !== undefined && form.costAmount !== null);
 
     if (!isDateSet || !isLocationSet) {
       form.setIsSubmitting(false);
@@ -256,8 +300,6 @@ export const CreatePlanScreen = ({
       planEventDate = new Date(Date.now() + 2 * 60 * 60 * 1000);
     }
 
-    // Formatting Standard: Saturday, Jun 27 • 7:30 PM
-    const timeToUse = formatDateTimeStandard(planEventDate);
     const planId = `p_${Date.now()}`;
     const isLocalCustomImage = Boolean(
       form.customOriginalImage &&
@@ -313,13 +355,6 @@ export const CreatePlanScreen = ({
     const responseDeadlineAt = deadlineDate.toISOString();
     const parsedIsoDateTime = planEventDate.toISOString();
 
-    const locationToUse = form.localLocation ? form.localLocation.trim() : "";
-    const placeAddressToUse = form.placeAddress ? form.placeAddress.trim() : (locationToUse || "");
-
-    const divisor = form.totalCapacity || (form.selectedFriends.length + (form.isHostSelected ? 1 : 0));
-    const costToUse = Math.max(0, Number(form.costAmount) || 0);
-    const perPerson = costToUse > 0 && divisor > 0 ? Math.ceil(costToUse / divisor) : 0;
-
     let dbCategory: string = "CUSTOM";
     let dbSubcategory: string = "OTHER";
 
@@ -328,15 +363,27 @@ export const CreatePlanScreen = ({
       dbSubcategory = selectedSubcategory ? selectedSubcategory.toUpperCase() : (selectedCategory === "sports" ? "FOOTBALL" : "OTHER");
     }
 
+    const isMovie = selectedCategory === "movies" || dbCategory === "MOVIES";
+    const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
+
+    let locationToUse = form.localLocation ? form.localLocation.trim() : "";
+    if (isMovie && isYearOnly(locationToUse)) {
+      locationToUse = "";
+    }
+
+    let placeAddressToUse = form.placeAddress ? form.placeAddress.trim() : (locationToUse || "");
+    if (isMovie && isYearOnly(placeAddressToUse)) {
+      placeAddressToUse = "";
+    }
+
+    const costToUse = Math.max(0, Number(form.costAmount) || 0);
+
     const isAssigned = form.waitlistMode === "assigned";
     const planSizeToUse = form.totalCapacity !== undefined && form.totalCapacity !== null ? Number(form.totalCapacity) : null;
-    const totalInvited = (form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0);
 
     const newDbPlan = {
       public_id: planId,
-      discovery_item_id: form.discoveryItemId || null,
       category: dbCategory,
-      subcategory: dbSubcategory,
       title: titleToUse,
       place_id: form.placeId || null,
       place_name: locationToUse,
@@ -349,7 +396,7 @@ export const CreatePlanScreen = ({
       total_cost: costToUse,
       cover_image: coverUrl,
       status: "LIVE" as const,
-      participant_filtering: (isAssigned ? "ASSIGNED" : "AUTOMATIC") as 'AUTOMATIC' | 'ASSIGNED',
+      participant_filtering: planSizeToUse === null ? null : ((isAssigned ? "ASSIGNED" : "AUTOMATIC") as 'AUTOMATIC' | 'ASSIGNED'),
       waitlist_order_mode: (isAssigned ? "CUSTOM" : "AUTO") as 'AUTO' | 'CUSTOM',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -391,7 +438,7 @@ export const CreatePlanScreen = ({
       }
 
       setPostedPlanUuid(dbPlanRow?.id || null);
-      setCreatePhase("confirmation");
+      transitionToPhase("confirmation");
       clearDraftParticipants();
       clearCreatePlanDraft();
       form.setIsSubmitting(false);
@@ -400,11 +447,6 @@ export const CreatePlanScreen = ({
       form.setIsSubmitting(false);
     }
   };
-
-  // CUSTOMIZER PHASE (DEPRECATED - redirect to 'when' phase directly)
-  if (createPhase === 'customizer') {
-    return null;
-  }
 
   // WHEN PHASE
   if (createPhase === 'when') {
@@ -415,21 +457,49 @@ export const CreatePlanScreen = ({
         title={form.localTitle || "New Activity"}
         onBack={() => {
           if (cameFromReview) {
-            setCreatePhase('review');
+            transitionToPhase('review');
           } else {
-            setCreatePhase('category');
+            handleResetAll();
           }
         }}
         onContinue={() => {
           if (cameFromReview) {
             setCameFromReview(false);
-            setCreatePhase('review');
+            transitionToPhase('review');
           } else {
-            setCreatePhase('who');
+            transitionToPhase('who');
           }
         }}
         selectedCategory={selectedCategory}
         selectedSubcategory={selectedSubcategory}
+      />
+    );
+  }
+
+  // QUICK PLAN CATEGORY SELECTION (STEP 1)
+  if (isQuickPlanCategorySelect) {
+    return (
+      <CreateCategoryScreen
+        userProfile={form.userProfile}
+        setActiveTab={setActiveTab}
+        onSelectCategory={(category) => {
+          setSelectedCategory(category);
+          setIsQuickPlanCategorySelect(false);
+          if (category === "custom") {
+            form.resetForm();
+            form.setLocalTitle("");
+            form.setLocalLocation("");
+            form.setCustomCoverImage(null, null);
+            form.setCostAmount(0);
+            form.setIsCostManuallySet(false);
+            form.setIsDateManuallySet(false);
+            form.setTotalCapacity(undefined);
+            transitionToPhase('who');
+          } else {
+            setLastSubScreen(category as any);
+            setCreatePhase('category');
+          }
+        }}
       />
     );
   }
@@ -442,20 +512,22 @@ export const CreatePlanScreen = ({
         onBack={() => {
           if (returnToWhoActually) {
             setReturnToWhoActually(false);
-            setCreatePhase('who-actually');
+            transitionToPhase('who-actually');
           } else if (cameFromReview) {
             setCameFromReview(false);
-            setCreatePhase('review');
+            transitionToPhase('review');
+          } else if (isQuickPlanFlow) {
+            setIsQuickPlanCategorySelect(true);
           } else {
-            setCreatePhase('category');
+            handleResetAll();
           }
         }}
         onContinue={() => {
           setReturnToWhoActually(false);
           setCameFromReview(false);
-          setCreatePhase('review');
+          transitionToPhase('review');
         }}
-        onNavigateToDiscoverFriends={() => setCreatePhase('discover-friends')}
+        onNavigateToDiscoverFriends={() => transitionToPhase('discover-friends')}
         selectedCategory={selectedCategory}
         selectedSubcategory={selectedSubcategory}
       />
@@ -466,7 +538,7 @@ export const CreatePlanScreen = ({
   if (createPhase === 'discover-friends') {
     return (
       <FriendshipsScreen
-        onBack={() => setCreatePhase('who')}
+        onBack={() => transitionToPhase('who')}
         initialScreen="discover"
       />
     );
@@ -474,22 +546,28 @@ export const CreatePlanScreen = ({
 
   // WHO ACTUALLY PHASE
   if (createPhase === 'who-actually') {
+    if (friendshipLoading) {
+      return <div className="flex-1 bg-[#050505]" />;
+    }
+    if (friends.length === 0) {
+      return null;
+    }
     return (
       <WhoIsActuallyComing
         form={form}
         selectedCategory={selectedCategory}
         onBack={() => {
           setCameFromReview(false);
-          setCreatePhase('review');
+          transitionToPhase('review');
         }}
         onContinue={() => {
           setCameFromReview(false);
-          setCreatePhase('review');
+          transitionToPhase('review');
         }}
         onAddFriends={() => {
           setReturnToWhoActually(true);
           setReturnToPlanSizeSheet(true);
-          setCreatePhase('who');
+          transitionToPhase('who');
         }}
         initialOpenPlanSizeSheet={returnToPlanSizeSheet}
         onPlanSizeSheetDismissed={() => setReturnToPlanSizeSheet(false)}
@@ -505,22 +583,27 @@ export const CreatePlanScreen = ({
           form={form}
           selectedCategory={selectedCategory}
           selectedSubcategory={selectedSubcategory}
+          isQuickPlanMode={isQuickPlanFlow}
           onExit={() => setShowCancelConfirm(true)}
           onBack={() => setShowCancelConfirm(true)}
           onEditDate={() => {
             setCameFromReview(true);
-            setCreatePhase('when');
+            transitionToPhase('when');
           }}
           onEditParticipants={() => {
             setCameFromReview(true);
-            setCreatePhase('who-actually');
+            if (friends.length === 0) {
+              transitionToPhase('who');
+            } else {
+              transitionToPhase('who-actually');
+            }
           }}
           onAddParticipants={() => {
-            setReturnToWhoActually(true);
-            setReturnToPlanSizeSheet(true);
-            setCreatePhase('who');
+            setReturnToWhoActually(friends.length > 0);
+            setReturnToPlanSizeSheet(friends.length > 0);
+            transitionToPhase('who');
           }}
-          onSubmit={handleHostPlanSubmit}
+          onSubmit={isQuickPlanFlow ? handleCreateQuickPlanSubmit : handleHostPlanSubmit}
           isSubmitting={form.isSubmitting}
         />
 
@@ -533,11 +616,7 @@ export const CreatePlanScreen = ({
           planSubcategory={selectedSubcategory}
           onDiscard={() => {
             setShowCancelConfirm(false);
-            setSelectedSubcategory(null);
-            form.resetForm();
-            setCustomizerStep(0);
-            setCameFromReview(false);
-            setCreatePhase('category');
+            handleResetAll();
           }}
           onClose={() => setShowCancelConfirm(false)}
         />
@@ -547,154 +626,25 @@ export const CreatePlanScreen = ({
 
   // CONFIRMATION PHASE
   if (createPhase === 'confirmation') {
-    // Particle positions: small orange dots that burst outward
-    const PARTICLES = [
-      { angle: 0, dist: 72 },
-      { angle: 45, dist: 80 },
-      { angle: 90, dist: 72 },
-      { angle: 135, dist: 80 },
-      { angle: 180, dist: 72 },
-      { angle: 225, dist: 80 },
-      { angle: 270, dist: 72 },
-      { angle: 315, dist: 80 },
-    ] as const;
-
-    const prefersReducedMotion = typeof window !== 'undefined'
-      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      : false;
-
-    const springTransition = { type: 'spring', stiffness: 420, damping: 28 } as const;
-
     return (
-      <motion.div
-        className="flex-1 flex flex-col justify-between relative h-full bg-[#050505] overflow-hidden text-left"
-        initial={prefersReducedMotion ? {} : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.35 }}
-      >
-        {/* ─── Upper: Hero animation + text ─── */}
-        <div className="flex-1 flex flex-col items-center justify-center px-8 gap-10">
-
-          {/* Success orb + ring + particles */}
-          <div className="relative flex items-center justify-center">
-
-            {/* Expanding glow ring */}
-            <motion.div
-              className="absolute rounded-full border border-[#FF6B2C]/40"
-              initial={prefersReducedMotion ? {} : { width: 80, height: 80, opacity: 0.6 }}
-              animate={{ width: 160, height: 160, opacity: 0 }}
-              transition={{ duration: 1.1, ease: 'easeOut', delay: 0.15 }}
-            />
-
-            {/* Second subtler ring */}
-            <motion.div
-              className="absolute rounded-full border border-[#FF6B2C]/20"
-              initial={prefersReducedMotion ? {} : { width: 80, height: 80, opacity: 0.4 }}
-              animate={{ width: 200, height: 200, opacity: 0 }}
-              transition={{ duration: 1.4, ease: 'easeOut', delay: 0.2 }}
-            />
-
-            {/* Particles */}
-            {!prefersReducedMotion && PARTICLES.map((p, i) => {
-              const rad = (p.angle * Math.PI) / 180;
-              const tx = Math.cos(rad) * p.dist;
-              const ty = Math.sin(rad) * p.dist;
-              return (
-                <motion.div
-                  key={i}
-                  className="absolute w-1.5 h-1.5 rounded-full bg-[#FF6B2C]"
-                  initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
-                  animate={{ x: tx, y: ty, opacity: 0, scale: 0.4 }}
-                  transition={{ duration: 0.65, ease: 'easeOut', delay: 0.12 + i * 0.018 }}
-                />
-              );
-            })}
-
-            {/* Main orb */}
-            <motion.div
-              className="relative w-24 h-24 bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 rounded-full flex items-center justify-center"
-              style={{ boxShadow: '0 0 32px 0 rgba(255,107,44,0.18)' }}
-              initial={prefersReducedMotion ? {} : { scale: 0.6, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ ...springTransition, delay: 0.05 }}
-            >
-              {/* Check icon draws in */}
-              <motion.div
-                initial={prefersReducedMotion ? {} : { scale: 0, rotate: -30 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ ...springTransition, delay: 0.2 }}
-              >
-                <Check className="w-11 h-11 text-[#FF6B2C] stroke-[2.5]" />
-              </motion.div>
-            </motion.div>
-          </div>
-
-          {/* Text block */}
-          <div className="text-center space-y-3">
-            <motion.h2
-              className="text-3xl font-black text-white tracking-tight leading-none"
-              initial={prefersReducedMotion ? {} : { opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1], delay: 0.28 }}
-            >
-              Plan Created!
-            </motion.h2>
-            <motion.p
-              className="text-[13px] text-zinc-500 font-medium max-w-[240px] mx-auto leading-relaxed"
-              initial={prefersReducedMotion ? {} : { opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1], delay: 0.38 }}
-            >
-              Your plan is live. Share it with the people you want there.
-            </motion.p>
-          </div>
-        </div>
-
-        {/* ─── Actions Footer ─── */}
-        <motion.div
-          className="px-5 pb-10 pt-4 space-y-3 w-full"
-          initial={prefersReducedMotion ? {} : { opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1], delay: 0.48 }}
-        >
-          {/* Send Link — primary */}
-          <motion.button
-            type="button"
-            onClick={handleCopyInviteLink}
-            disabled={isCopying}
-            className="w-full bg-[#FF6B2C] text-[#050505] py-4 rounded-2xl font-black text-[11px] tracking-widest uppercase flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer select-none"
-            style={{ boxShadow: '0 8px 28px rgba(255,107,44,0.28)' }}
-            whileTap={prefersReducedMotion ? {} : { scale: 0.97 }}
-            transition={springTransition}
-          >
-            {isCopied ? (
-              <>
-                <CheckCircle className="w-4 h-4 shrink-0" />
-                <span>Link Copied!</span>
-              </>
-            ) : (
-              <>
-                <Link className="w-4 h-4 shrink-0" />
-                <span>{isCopying ? 'Generating...' : 'Send Link'}</span>
-              </>
-            )}
-          </motion.button>
-
-          {/* Go to Plans — secondary */}
-          <motion.button
-            type="button"
-            onClick={() => {
-              handleResetAll();
-              setActiveTab('plans');
-            }}
-            className="w-full bg-transparent border border-white/10 text-zinc-400 hover:text-white hover:border-white/20 py-4 rounded-2xl font-bold text-[11px] tracking-widest uppercase flex items-center justify-center transition-colors cursor-pointer select-none"
-            whileTap={prefersReducedMotion ? {} : { scale: 0.97 }}
-            transition={springTransition}
-          >
-            Go to Plans
-          </motion.button>
-        </motion.div>
-      </motion.div>
+      <CreatePlanConfirmation
+        planTitle={form.localTitle || "New Activity"}
+        planCoverImage={form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory)}
+        planId={postedPlanUuid}
+        onCopyInviteLink={handleCopyInviteLink}
+        isCopying={isCopying}
+        isCopied={isCopied}
+        onGoToPlans={() => {
+          const targetPlanId = postedPlanUuid;
+          handleResetAll();
+          if (setPlansFilter) setPlansFilter("JOINED");
+          if (targetPlanId && setSelectedPlanId) {
+            setSelectedPlanId(targetPlanId);
+          }
+          navigateToRoute({ tab: "plans", selectedPlanId: targetPlanId || undefined });
+          setActiveTab("plans");
+        }}
+      />
     );
   }
 
@@ -703,7 +653,14 @@ export const CreatePlanScreen = ({
       userProfile={form.userProfile}
       setActiveTab={setActiveTab}
       initialSubScreen={lastSubScreen}
-      onSubScreenChange={setLastSubScreen}
+      onSubScreenChange={(screen) => {
+        setLastSubScreen(screen);
+        if (screen === null && (lastSubScreen === "sports" || lastSubScreen === "dining" || lastSubScreen === "movies" || lastSubScreen === "activities")) {
+          setActiveTab("create");
+        }
+      }}
+      onAddQuickPlan={handleStartAddQuickPlan}
+      onSelectQuickPlan={handleSelectExistingQuickPlan}
 
       onSelectDiscoveryItem={(item) => {
         // 1. Reset any previous form inputs
@@ -719,14 +676,15 @@ export const CreatePlanScreen = ({
 
         // 3. Pre-fill essential metadata only
         form.setLocalTitle(item.title);
-        form.setLocalLocation(item.location || "");
+        const isMovieItem = lowerCategory === "movies" || (item.category && item.category.toUpperCase() === "MOVIES");
+        form.setLocalLocation(isMovieItem ? "" : (item.location || ""));
         form.setCustomCoverImage(item.cover_image_url || defaultPlanCover);
 
         // Pre-populate coordinate mapping metadata from discovery selection
-        if (form.setPlaceId) form.setPlaceId((item as any).place_id || null);
-        if (form.setPlaceAddress) form.setPlaceAddress((item as any).place_address || item.location || null);
-        if (form.setLatitude) form.setLatitude((item as any).latitude || null);
-        if (form.setLongitude) form.setLongitude((item as any).longitude || null);
+        if (form.setPlaceId) form.setPlaceId(isMovieItem ? null : ((item as any).place_id || null));
+        if (form.setPlaceAddress) form.setPlaceAddress(isMovieItem ? null : ((item as any).place_address || item.location || null));
+        if (form.setLatitude) form.setLatitude(isMovieItem ? null : ((item as any).latitude || null));
+        if (form.setLongitude) form.setLongitude(isMovieItem ? null : ((item as any).longitude || null));
 
         // Notes, Cost, RSVP Deadline, and Participants are intentionally left empty/default
         form.setCostAmount(0);
@@ -736,7 +694,7 @@ export const CreatePlanScreen = ({
         form.setQuickNote("");
 
         // 4. Entry into WhoIsComingScreen first
-        setCreatePhase('who');
+        transitionToPhase('who');
       }}
       onSelectCustomPlan={() => {
         // Reset and launch manual create wizard for custom plans
@@ -750,8 +708,7 @@ export const CreatePlanScreen = ({
         form.setIsCostManuallySet(false);
         form.setIsDateManuallySet(false);
         form.setTotalCapacity(undefined);
-        setCreatePhase('who');
-        setCustomizerStep(0);
+        transitionToPhase('who');
       }}
     />
   );

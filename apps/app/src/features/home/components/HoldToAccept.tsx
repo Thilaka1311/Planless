@@ -154,14 +154,20 @@ export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
           </motion.span>
           
           {/* 2. Venue details (Medium emphasis, immediately scannable location cue) */}
-          {plan.location && (
-            <div className="flex items-center justify-center gap-1.5 mt-2.5">
-              <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />
-              <span className="text-[14.5px] font-sans font-extrabold text-white tracking-tight">
-                {plan.location}
-              </span>
-            </div>
-          )}
+          {(() => {
+            const isMovie = (plan.category || "").toLowerCase() === "movies";
+            const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
+            const displayLoc = (isMovie && isYearOnly(plan.location)) ? "" : (plan.location || "");
+            if (!displayLoc) return null;
+            return (
+              <div className="flex items-center justify-center gap-1.5 mt-2.5">
+                <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />
+                <span className="text-[14.5px] font-sans font-extrabold text-white tracking-tight">
+                  {displayLoc}
+                </span>
+              </div>
+            );
+          })()}
           
           {/* 3. Host details (Subtle metadata with host avatar) */}
           <div className="flex flex-col items-center mt-3">

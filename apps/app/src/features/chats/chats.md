@@ -5,7 +5,7 @@
 The **Chats** feature is the real-time group communication and coordination hub for active plans in Planless. It provides an event-centered conversation space where attendees and hosts discuss plans, receive automated system notices, and view shared expense splits.
 
 * **Core Function**: A two-tiered experience comprising a global plan chat directory (`ChatsScreen`) and an immersive full-screen chatroom (`PlanChatScreen`). Includes real-time message delivery, optimistic UI updates, WhatsApp-style dynamic speech bubbles, emoji scaling, and integrated participant management via a horizontal pager.
-* **Product Role**: Occupies Tab 4 in primary navigation (`activeTab === "chats"`). When an involved user selects a plan conversation, `MainApp.tsx` mounts `<PlanChatScreen />` overlaying the navigation bar.
+* **Product Role**: Occupies Tab 4 in primary navigation (`activeTab === "chats"`). When an involved user selects a plan conversation, `MainApp.tsx` code-splits and lazy-loads `<PlanChatScreen />` on demand overlaying the navigation bar.
 * **Scope & Boundaries**: Manages plan-scoped conversations only. Does not support 1-on-1 direct messaging outside of plans. Does not alter plan metadata directly, but embeds `<PlanParticipantManagementWrapper />` (Page 0) and links to `<PlanSettingsScreen />` and `<PlanBalances />`.
 
 ---
@@ -32,13 +32,17 @@ The **Chats** feature is the real-time group communication and coordination hub 
 * The user taps a plan card from the directory.
 * `ChatsScreen` calls `onSelectChatPlan(planId)`.
 * `MainApp.tsx` sets `selectedChatPlanId = planId` and pushes the route state (`tab: "chats", selectedChatPlanId: planId`). Route synchronization in `MainApp.tsx` strictly preserves `selectedChatPlanId` across all store updates (`plans`, `dbPlanParticipants`), ensuring in-plan actions (such as waitlist reordering) do not dismiss `PlanChatScreen` or navigate back to `ChatsScreen`.
-* `<PlanChatScreen />` mounts full screen, defaulting to Page 1 ("Chat") of its horizontal motion pager.
+* `<PlanChatScreen />` is dynamically loaded and mounts full screen with a branded `#050505` loading boundary fallback, defaulting to Page 1 ("Chat") of its horizontal motion pager.
 
 ### 4. Reading and Streaming Messages
 * `PlanChatScreen` calls `useChatCache(targetPlanUuid)`:
-  * Reads existing messages from the in-memory cache or fetches them via Supabase REST (`plan_messages` ordered by `created_at ASC`).
+  * **Cache-First Immediate Render**: Reads existing messages synchronously from the in-memory cache without loading flashes.
+  * **Bounded Initial Window**: On cold open, fetches a bounded recent window of messages (`CHAT_MESSAGES_PAGE_SIZE = 50`) ordered by `created_at DESC` with `.limit(50)` and reverses them to chronological ASC.
+  * **Background Delta Sync**: For warm/cached conversations, checks for newer messages using `.gt("created_at", latestCachedMessage.created_at)` rather than refetching the entire chat history.
+  * **Cursor-Based Older Message Pagination**: When scrolling toward the top (`scrollTop < 80`), fetches the next older page via `.lt("created_at", oldestLoadedMessage.created_at).limit(50)`, prepends it without duplicates, and preserves vertical scroll position without visual jumps.
+  * **Unread Boundary Range Fetch**: If `first_unread_message_id` is older than the bounded recent window, fetches the exact gap between `last_read_at` and the oldest loaded message to correctly position the unread divider without fetching the full chat history.
   * Subscribes to the Supabase Realtime channel `plan_messages_room:<planId>` for live inserts, updates, and deletes.
-* The message list automatically scrolls to the newest message at the bottom (`scrollToBottom(false)`).
+* The message list automatically scrolls to the newest message at the bottom (`scrollToBottom(false)`), or centers the unread divider if unread messages exist.
 * Messages are rendered with WhatsApp-style visual grouping:
   * Consecutive messages from the same sender are clustered with a 2px gap; transitions between different senders use a 10px gap.
   * The first/single message in a cluster displays an angular speech bubble tail; subsequent messages have rounded symmetrical corners.
@@ -89,8 +93,10 @@ The **Chats** feature is the real-time group communication and coordination hub 
     * Dimensions & interaction: Fixed height `h-[70px] w-full px-2 py-2 rounded-xl flex items-center hover:bg-white/[0.03] active:bg-white/[0.05] active:scale-[0.99] cursor-pointer transition-all duration-150 select-none`.
     * Leading thumbnail: 50x50px circular frame containing `<DiscoveryImages />` plan cover image.
     * Metadata column: Plan title in bold white; subtitle preview showing sender attribution snippet or fallback creator attribution.
-    * **Unread Badge**: When `unreadCount > 0`, an orange pill (`bg-[#FF6B2C] text-white text-[11px] font-bold rounded-full min-w-[20px] h-[20px] px-1.5 flex items-center justify-center`) shows the count (capped at "99+"). The subtitle text color shifts to `text-zinc-200 font-medium` when unread, vs. `text-zinc-400` when read.
-    * Motion transition: Animated entrance with Framer Motion (`layout`, `initial={{ opacity: 0, y: 4 }}`, `animate={{ opacity: 1, y: 0 }}`, duration 0.25s).
+    * **Unread Badge**: When `unreadCount > 0`, an emerald pill (`bg-[#10B981] text-zinc-950 text-[11px] font-bold rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center`) shows the count. The subtitle text color shifts to `text-zinc-200 font-medium` when unread, vs. `text-zinc-400` when read.
+    * **Cache-First Immediate Rendering**: Seeded synchronously from module-level and localStorage persistent cache (`getCachedChatSummaries()`). When opening Chats, cached chats render instantly with zero network delay and zero loading animation.
+    * **Motion Transition**: Framer Motion uses `layout` and `initial={false}`, ensuring no jarring entrance animation or opacity flash on screen open, while providing smooth and subtle reordering transitions when new messages arrive.
+    * **Background Sync Equality Guard**: Asynchronous fetch (`supabase.rpc("get_user_chat_summaries")`) performs a deep field equality check against the existing state; if data has not changed, the state is untouched, preventing unnecessary re-renders or list rebuilds.
 * **Empty States**:
   * Zero involved plans: Centered `<EmptyState />` (`py-16`) with `<MessageSquare className="w-8 h-8 text-zinc-500 stroke-[1.5]" />`, title "No chats yet", and subtitle "Create or join a plan to start chatting with your group."
   * Zero search matches: Centered `<EmptyState />` (`py-16`) with `<Inbox className="w-8 h-8 text-zinc-600 stroke-[1.5]" />`, title "No chats found", and subtitle "Try searching with a different plan name."
@@ -152,9 +158,9 @@ The **Chats** feature is the real-time group communication and coordination hub 
 | Component | File Path | Responsibilities | Key Relationships |
 |---|---|---|---|
 | `ChatsScreen` | `src/features/chats/screens/ChatsScreen.tsx` | Root directory screen for the Chats tab. Filters active user plans, displays search bar with unread badge per card, fetches latest message previews and unread counts via `get_plan_unread_info` RPC, and subscribes to preview-level and unread-level Realtime changes. | Rendered by `MainApp.tsx` when `activeTab === "chats"`. Passes selected plan ID to `onSelectChatPlan`. |
-| `PlanChatScreen` | `src/features/chats/screens/PlanChatScreen.tsx` | Full-screen conversation and coordination view. Owns hero header, horizontal pager container, chat timeline, message input, and modal triggers. Calls `markPlanChatAsRead` on mount/scroll. | Mounted by `MainApp.tsx` when `selectedChatPlanId` is set. Embeds `HeroHeader`, `PlanParticipantManagementWrapper`, and uses `useChatCache`. |
+| `PlanChatScreen` | `src/features/chats/screens/PlanChatScreen.tsx` | Full-screen conversation and coordination view. Owns hero header, horizontal pager container, chat timeline, message input, and modal triggers. Calls `markPlanChatAsRead` on mount/scroll. | Code-split and lazy-loaded in `MainApp.tsx` and preview modals on demand when `selectedChatPlanId` is set. Embeds `HeroHeader`, `PlanParticipantManagementWrapper`, and uses `useChatCache`. |
 | `ActivityTimelineScreen` | `src/features/chats/screens/ActivityTimelineScreen.tsx` | Detailed event log screen (plan created, date changed, member joined/left). Currently unmounted / dormant. | Standalone; uses `useTimestampReveal` and `useActivityCache`. |
-| `useChatCache` | `src/features/chats/hooks/useChatCache.ts` | Central in-memory store and subscription hook for plan messages. Provides optimistic inserts, rollbacks, real-time cache updates, and manual invalidation. Exports `markPlanChatReadInCache`. | Consumed by `PlanChatScreen`. Subscribes to Supabase Realtime channel `plan_messages_room:<planUuid>`. |
+| `useChatCache` | `src/features/chats/hooks/useChatCache.ts` | Central in-memory store and subscription hook for plan messages. Provides bounded recent loading (`CHAT_MESSAGES_PAGE_SIZE = 50`), cursor-based older message pagination, background delta syncing, targeted unread range fetching, optimistic inserts, rollbacks, and real-time updates. Exports `markPlanChatReadInCache`. | Consumed by `PlanChatScreen`. Subscribes to Supabase Realtime channel `plan_messages_room:<planUuid>`. |
 | `useUnreadChatsCount` | `src/features/chats/hooks/useUnreadChatsCount.ts` | Calculates the total number of plan chats with unread messages (used for the navigation tab badge). Pure helper functions `calculateUnreadChatsCount` and `handleIncomingMessageToUnreadMap` are exported for testing. | Consumed by `MainApp.tsx` or navigation layer for tab badge. |
 | `chatReads.ts` | `src/features/chats/utils/chatReads.ts` | Utility for marking a plan chat as read: calls `mark_plan_chat_read` Supabase RPC, updates in-memory cache, and emits a local `planless:chat_read` event so `ChatsScreen` clears badges immediately without a network round-trip. | Consumed by `PlanChatScreen` on open. Exported: `markPlanChatAsRead`, `emitChatReadEvent`, `subscribeToChatReadEvents`. |
 | `useHorizontalPager` | `src/features/chats/hooks/useHorizontalPager.ts` | Custom touch gesture hook managing spring-physics horizontal swiping between Page 0 (Participants) and Page 1 (Chat). Includes keyboard detection lock and screen resize recalculations. | Consumed by `PlanChatScreen`. Controls `pageX` motion value. |
@@ -341,3 +347,4 @@ The **Chats** feature is the real-time group communication and coordination hub 
 3. **Expense Message Card Verification**:
    - Add a shared cost via `AddCost.tsx`.
    - Verify the message appears in chat with styled "Added Expense" card showing currency formatted in INR and correct split calculation.
+

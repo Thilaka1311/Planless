@@ -7,7 +7,7 @@ interface WaitlistModeSelectorProps {
   onWaitlistModeChange?: (mode: 'automatic' | 'assigned') => void;
   isHost?: boolean;
   variant?: 'card' | 'plain';
-  capacity?: number;
+  capacity?: number | null;
   isCapacityConfigured?: boolean;
   invitedCount?: number;
 }
@@ -38,6 +38,8 @@ export const WaitlistModeSelector: React.FC<WaitlistModeSelectorProps> = ({
   }, [isOpen]);
 
   if (!isHost) return null;
+  // If plan size is "No Limit" (null or undefined), hide the waitlist selector and helper text completely
+  if (capacity === null || capacity === undefined) return null;
 
   const currentMode = waitlistMode || 'automatic';
 

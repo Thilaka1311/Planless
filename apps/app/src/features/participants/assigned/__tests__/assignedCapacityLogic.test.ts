@@ -417,5 +417,160 @@ describe('assignedCapacityLogic', () => {
       expect(currentGoing[0].id).toBe('host');
       expect(currentGoing[0].isHost).toBe(true);
     });
+
+    it('8. savedDraft with 6 joined and 2 waitlist -> capacity 8 resolves to 8 joined and 0 waitlist', () => {
+      const sevenFriends: Friend[] = [
+        ...sixFriends,
+        { id: 'f7', dbUuid: 'u7', name: 'Zack', avatar: '', rsvpStatus: 'INVITED' },
+      ];
+      const savedDraft = {
+        joinedIds: ['host', 'f1', 'f2', 'f3', 'f4', 'f5'],
+        waitlistIds: ['f6', 'f7'],
+        joinedFriends: [sixFriends[0], sixFriends[1], sixFriends[2], sixFriends[3], sixFriends[4]],
+        waitlistFriends: [sixFriends[5], sevenFriends[6]],
+      };
+
+      const resolved = resolveAssignedParticipants({
+        userProfile: { dbUuid: 'host_uuid', name: 'You' },
+        isHostSelected: true,
+        selectedFriends: sevenFriends,
+        capacity: 8,
+        savedDraft,
+      });
+
+      expect(resolved.going.length).toBe(8);
+      expect(resolved.waitlist.length).toBe(0);
+      expect(resolved.going[0].id).toBe('host');
+      expect(resolved.going.map((f) => f.id)).toContain('f6');
+      expect(resolved.going.map((f) => f.id)).toContain('f7');
+    });
+
+    it('9. priorityGuestIds with 5 guests -> capacity 8 resolves to 8 joined and 0 waitlist', () => {
+      const sevenFriends: Friend[] = [
+        ...sixFriends,
+        { id: 'f7', dbUuid: 'u7', name: 'Zack', avatar: '', rsvpStatus: 'INVITED' },
+      ];
+
+      const resolved = resolveAssignedParticipants({
+        userProfile: { dbUuid: 'host_uuid', name: 'You' },
+        isHostSelected: true,
+        selectedFriends: sevenFriends,
+        capacity: 8,
+        priorityGuestIds: ['f1', 'f2', 'f3', 'f4', 'f5'],
+        savedDraft: null,
+      });
+
+      expect(resolved.going.length).toBe(8);
+      expect(resolved.waitlist.length).toBe(0);
+      expect(resolved.going[0].id).toBe('host');
+    });
+
+    it('10. capacity = 15 with 9 total participants (host + 8 friends) in Assigned mode caps maxGoing to 9', () => {
+      const eightFriends: Friend[] = [
+        ...sixFriends,
+        { id: 'f7', dbUuid: 'u7', name: 'Zack', avatar: '', rsvpStatus: 'INVITED' },
+        { id: 'f8', dbUuid: 'u8', name: 'Yara', avatar: '', rsvpStatus: 'INVITED' },
+      ];
+
+      const resolved = resolveAssignedParticipants({
+        userProfile: { dbUuid: 'host_uuid', name: 'You' },
+        isHostSelected: true,
+        selectedFriends: eightFriends,
+        capacity: 15,
+        savedDraft: null,
+      });
+
+      // Total active participants = 1 host + 8 friends = 9
+      // maxGoing must be capped at 9, not 15
+      expect(resolved.going.length).toBe(9);
+      expect(resolved.waitlist.length).toBe(0);
+      expect(resolved.going[0].id).toBe('host');
+    });
+
+    it('11. switching waitlist mode from Automatic to Assigned clamps capacity from 15 to 9', () => {
+      const totalInvitedCount = 9;
+      let totalCapacity: number | undefined = 15;
+      let waitlistMode: 'automatic' | 'assigned' = 'automatic';
+
+      const handleWaitlistModeChange = (newMode: 'automatic' | 'assigned') => {
+        waitlistMode = newMode;
+        if (newMode === 'assigned') {
+          if (totalCapacity !== undefined && totalCapacity !== null) {
+            if (totalCapacity > totalInvitedCount) {
+              totalCapacity = Math.max(2, totalInvitedCount);
+            }
+          }
+        }
+      };
+
+      handleWaitlistModeChange('assigned');
+      expect(waitlistMode).toBe('assigned');
+      expect(totalCapacity).toBe(9);
+    });
+
+    it('12. switching waitlist mode from Automatic to Assigned when capacity is 5 and invited is 9 keeps capacity at 5', () => {
+      const totalInvitedCount = 9;
+      let totalCapacity: number | undefined = 5;
+      let waitlistMode: 'automatic' | 'assigned' = 'automatic';
+
+      const handleWaitlistModeChange = (newMode: 'automatic' | 'assigned') => {
+        waitlistMode = newMode;
+        if (newMode === 'assigned') {
+          if (totalCapacity !== undefined && totalCapacity !== null) {
+            if (totalCapacity > totalInvitedCount) {
+              totalCapacity = Math.max(2, totalInvitedCount);
+            }
+          }
+        }
+      };
+
+      handleWaitlistModeChange('assigned');
+      expect(waitlistMode).toBe('assigned');
+      expect(totalCapacity).toBe(5);
+    });
+
+    it('13. switching waitlist mode from Automatic to Assigned when capacity is No Limit (undefined) keeps No Limit', () => {
+      const totalInvitedCount = 9;
+      let totalCapacity: number | undefined = undefined;
+      let waitlistMode: 'automatic' | 'assigned' = 'automatic';
+
+      const handleWaitlistModeChange = (newMode: 'automatic' | 'assigned') => {
+        waitlistMode = newMode;
+        if (newMode === 'assigned') {
+          if (totalCapacity !== undefined && totalCapacity !== null) {
+            if (totalCapacity > totalInvitedCount) {
+              totalCapacity = Math.max(2, totalInvitedCount);
+            }
+          }
+        }
+      };
+
+      handleWaitlistModeChange('assigned');
+      expect(waitlistMode).toBe('assigned');
+      expect(totalCapacity).toBeUndefined();
+    });
+
+    it('14. switching waitlist mode from Assigned to Automatic does not clamp capacity', () => {
+      const totalInvitedCount = 9;
+      let totalCapacity: number | undefined = 15;
+      let waitlistMode: 'automatic' | 'assigned' = 'assigned';
+
+      const handleWaitlistModeChange = (newMode: 'automatic' | 'assigned') => {
+        waitlistMode = newMode;
+        if (newMode === 'assigned') {
+          if (totalCapacity !== undefined && totalCapacity !== null) {
+            if (totalCapacity > totalInvitedCount) {
+              totalCapacity = Math.max(2, totalInvitedCount);
+            }
+          }
+        }
+      };
+
+      handleWaitlistModeChange('automatic');
+      expect(waitlistMode).toBe('automatic');
+      expect(totalCapacity).toBe(15);
+    });
   });
 });
+
+

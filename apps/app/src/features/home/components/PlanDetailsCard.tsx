@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Plan, UserProfile } from "../../../core/types";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { Calendar } from "lucide-react";
-import defaultAvatar from "../../../assets/default_avatar.png";
+import defaultAvatar from "../../../assets/default_avatar.webp";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { supabase } from "../../../../lib/supabaseClient";
 
@@ -14,6 +14,7 @@ function isValidProfilePhoto(photo: string | null | undefined): boolean {
     !trimmed ||
     trimmed === "default" ||
     trimmed === "planimagedefault.png" ||
+    trimmed === "planimagedefault.webp" ||
     trimmed.includes("planimagedefault") ||
     trimmed.includes("default_avatar") ||
     trimmed === defaultAvatar
@@ -73,7 +74,14 @@ const ParticipantToggleBarComponent: React.FC<ParticipantToggleBarProps> = ({
       if (u.user_id) existingIds.add(u.user_id);
     });
 
-    const missingIds = memberIds.filter(id => !existingIds.has(id));
+    const missingIds = memberIds.filter(id => {
+      if (existingIds.has(id)) return false;
+      const mem = (plan.members || []).find(m => (m.userUuid || m.userId) === id);
+      if (mem && mem.name && mem.name !== "Loading..." && mem.name !== "Participant" && mem.avatar) {
+        return false;
+      }
+      return true;
+    });
     if (missingIds.length === 0) return;
 
     let isMounted = true;

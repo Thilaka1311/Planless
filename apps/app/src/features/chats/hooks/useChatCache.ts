@@ -21,14 +21,24 @@ export interface PlanUnreadInfo {
   lastReadMessageId: string | null;
 }
 
+export const CHAT_MESSAGES_PAGE_SIZE = 50;
+
 interface PlanCacheItem<T> {
   data: T;
   loading: boolean;
   lastSynced: number;
 }
 
+export interface PlanMessagesCacheItem {
+  data: ChatMessage[];
+  loading: boolean;
+  loadingOlder: boolean;
+  hasMoreOlder: boolean;
+  lastSynced: number;
+}
+
 interface PlanCacheStore {
-  messages: Map<string, PlanCacheItem<ChatMessage[]>>;
+  messages: Map<string, PlanMessagesCacheItem>;
   participants: Map<string, PlanCacheItem<DbPlanParticipant[]>>;
   activities: Map<string, PlanCacheItem<DbPlanActivity[]>>;
   unreadInfo: Map<string, PlanUnreadInfo>;
@@ -54,6 +64,97 @@ const notifyListeners = (category: keyof PlanCacheStore, planUuid: string) => {
   const categoryListeners = listeners[category]?.get(planUuid);
   if (categoryListeners) {
     categoryListeners.forEach((fn) => fn());
+  }
+};
+
+export interface ChatSummaryItem {
+  unreadCount: number;
+  senderName: string;
+  isCurrentUser: boolean;
+  content: string;
+  createdAt?: string | null;
+  messageType?: string;
+}
+
+const CHAT_SUMMARIES_STORAGE_KEY = "planless_cached_chat_summaries";
+
+// Module-level in-memory cache for chat summaries, seeded from localStorage where available
+const chatSummariesCache: Map<string, ChatSummaryItem> = (() => {
+  const map = new Map<string, ChatSummaryItem>();
+  if (typeof window !== "undefined") {
+    try {
+      const stored = localStorage.getItem(CHAT_SUMMARIES_STORAGE_KEY) || sessionStorage.getItem(CHAT_SUMMARIES_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === "object") {
+          Object.entries(parsed).forEach(([k, v]) => {
+            if (k && v && typeof v === "object") {
+              map.set(k, v as ChatSummaryItem);
+            }
+          });
+        }
+      }
+    } catch {}
+  }
+  return map;
+})();
+
+/**
+ * Access cached chat summaries synchronously without triggering network fetch
+ */
+export const getCachedChatSummaries = (): Record<string, ChatSummaryItem> => {
+  const result: Record<string, ChatSummaryItem> = {};
+  chatSummariesCache.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+};
+
+/**
+ * Access cached chat summary for a specific plan
+ */
+export const getCachedChatSummary = (planId: string): ChatSummaryItem | undefined => {
+  if (!planId) return undefined;
+  return chatSummariesCache.get(planId);
+};
+
+/**
+ * Update cached chat summaries map and persist to storage
+ */
+export const setCachedChatSummaries = (summaries: Record<string, ChatSummaryItem>) => {
+  if (!summaries || typeof summaries !== "object") return;
+  Object.entries(summaries).forEach(([k, v]) => {
+    if (k && v) {
+      chatSummariesCache.set(k, v);
+    }
+  });
+
+  if (typeof window !== "undefined") {
+    try {
+      const obj: Record<string, ChatSummaryItem> = {};
+      chatSummariesCache.forEach((v, k) => {
+        obj[k] = v;
+      });
+      localStorage.setItem(CHAT_SUMMARIES_STORAGE_KEY, JSON.stringify(obj));
+    } catch {}
+  }
+};
+
+/**
+ * Update a single cached chat summary and persist
+ */
+export const setCachedChatSummary = (planId: string, item: ChatSummaryItem) => {
+  if (!planId || !item) return;
+  chatSummariesCache.set(planId, item);
+
+  if (typeof window !== "undefined") {
+    try {
+      const obj: Record<string, ChatSummaryItem> = {};
+      chatSummariesCache.forEach((v, k) => {
+        obj[k] = v;
+      });
+      localStorage.setItem(CHAT_SUMMARIES_STORAGE_KEY, JSON.stringify(obj));
+    } catch {}
   }
 };
 
@@ -96,6 +197,15 @@ export const markPlanChatReadInCache = (planUuid: string, latestMessageId?: stri
     lastReadMessageId: latestMessageId || existing?.lastReadMessageId || null,
   });
   notifyListeners("unreadInfo", planUuid);
+
+  // Keep chatSummariesCache unreadCount in sync
+  const existingSummary = getCachedChatSummary(planUuid);
+  if (existingSummary && existingSummary.unreadCount > 0) {
+    setCachedChatSummary(planUuid, {
+      ...existingSummary,
+      unreadCount: 0,
+    });
+  }
 };
 
 /**
@@ -111,6 +221,8 @@ export const appendMessageToCache = (newMsg: ChatMessage, currentUserId?: string
     currentCache = {
       data: [newMsg],
       loading: false,
+      loadingOlder: false,
+      hasMoreOlder: true,
       lastSynced: Date.now(),
     };
     planCache.messages.set(planUuid, currentCache);
@@ -141,10 +253,11 @@ export const appendMessageToCache = (newMsg: ChatMessage, currentUserId?: string
 
   if (isEligible) {
     const unread = planCache.unreadInfo.get(planUuid);
+    const newCount = unread ? unread.count + 1 : 1;
     if (unread) {
       planCache.unreadInfo.set(planUuid, {
         ...unread,
-        count: unread.count + 1,
+        count: newCount,
         firstUnreadId: unread.count === 0 ? newMsg.id : unread.firstUnreadId,
         latestUnreadId: newMsg.id,
       });
@@ -158,6 +271,45 @@ export const appendMessageToCache = (newMsg: ChatMessage, currentUserId?: string
       });
     }
     notifyListeners("unreadInfo", planUuid);
+
+    // Keep chatSummariesCache warm for instant list rendering
+    const existingSummary = getCachedChatSummary(planUuid);
+    const isMe = Boolean(currentUserId && newMsg.sender_id === currentUserId);
+    const senderName = isMe ? "You" : (existingSummary?.senderName && existingSummary.senderName !== "You" ? existingSummary.senderName : "User");
+    let preview = newMsg.content || "";
+    if (newMsg.message_type === "cost") {
+      preview = isMe ? "You added an expense" : `${senderName} added an expense`;
+    } else if (newMsg.message_type === "poll") {
+      preview = isMe ? "You created a poll" : `${senderName} created a poll`;
+    }
+
+    setCachedChatSummary(planUuid, {
+      unreadCount: newCount,
+      senderName,
+      isCurrentUser: isMe,
+      content: preview,
+      createdAt: newMsg.created_at || new Date().toISOString(),
+      messageType: newMsg.message_type,
+    });
+  } else {
+    // Current user's own message
+    const existingSummary = getCachedChatSummary(planUuid);
+    const isMe = Boolean(currentUserId && newMsg.sender_id === currentUserId);
+    let preview = newMsg.content || "";
+    if (newMsg.message_type === "cost") {
+      preview = isMe ? "You added an expense" : "User added an expense";
+    } else if (newMsg.message_type === "poll") {
+      preview = isMe ? "You created a poll" : "User created a poll";
+    }
+
+    setCachedChatSummary(planUuid, {
+      unreadCount: existingSummary?.unreadCount || 0,
+      senderName: isMe ? "You" : existingSummary?.senderName || "User",
+      isCurrentUser: isMe,
+      content: preview,
+      createdAt: newMsg.created_at || new Date().toISOString(),
+      messageType: newMsg.message_type,
+    });
   }
 };
 
@@ -174,6 +326,7 @@ export const invalidatePlanCache = (planUuid?: string, category?: keyof PlanCach
       planCache.participants.delete(planUuid);
       planCache.activities.delete(planUuid);
       planCache.unreadInfo.delete(planUuid);
+      chatSummariesCache.delete(planUuid);
       notifyListeners("messages", planUuid);
       notifyListeners("participants", planUuid);
       notifyListeners("activities", planUuid);
@@ -184,6 +337,12 @@ export const invalidatePlanCache = (planUuid?: string, category?: keyof PlanCach
     planCache.participants.clear();
     planCache.activities.clear();
     planCache.unreadInfo.clear();
+    chatSummariesCache.clear();
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(CHAT_SUMMARIES_STORAGE_KEY);
+      } catch {}
+    }
     listeners.messages.forEach((set) => set.forEach((fn) => fn()));
     listeners.participants.forEach((set) => set.forEach((fn) => fn()));
     listeners.activities.forEach((set) => set.forEach((fn) => fn()));
@@ -197,10 +356,12 @@ export const invalidateChatCache = (planUuid?: string) => invalidatePlanCache(pl
 /**
  * Custom React Hook: useChatCache
  * Single source of truth for persistent in-memory chat messages and Realtime sync.
+ * Supports bounded recent loading, delta syncing, and cursor-based older message pagination.
  */
 export function useChatCache(targetPlanUuid: string) {
   const [, setTick] = useState(0);
   const isFetchingRef = useRef(false);
+  const isFetchingOlderRef = useRef(false);
 
   useEffect(() => {
     if (!targetPlanUuid) return;
@@ -227,6 +388,8 @@ export function useChatCache(targetPlanUuid: string) {
   const messages = cachedState?.data || [];
   // If cache already has data, don't show loading screen - render cache-first immediately!
   const loading = cachedState ? (cachedState.loading && cachedState.data.length === 0) : true;
+  const loadingOlder = cachedState?.loadingOlder || false;
+  const hasMoreOlder = cachedState ? cachedState.hasMoreOlder : true;
 
   const fetchMessages = useCallback(
     async (force = false) => {
@@ -246,38 +409,78 @@ export function useChatCache(targetPlanUuid: string) {
         planCache.messages.set(targetPlanUuid, {
           data: [],
           loading: true,
+          loadingOlder: false,
+          hasMoreOlder: true,
           lastSynced: 0,
         });
         notifyListeners("messages", targetPlanUuid);
       }
 
       try {
-        const { data, error } = await supabase
-          .from("plan_messages")
-          .select("id, plan_id, sender_id, message_type, content, created_at, updated_at, system_message_type")
-          .eq("plan_id", targetPlanUuid)
-          .order("created_at", { ascending: true });
+        const current = planCache.messages.get(targetPlanUuid);
+        const currentData = current?.data || [];
+        const nonOptimistic = currentData.filter((m) => !m.id.startsWith("temp-"));
+        const latestMsg = nonOptimistic.length > 0 ? nonOptimistic[nonOptimistic.length - 1] : null;
 
-        if (error) {
-          console.error("[useChatCache] Error fetching plan_messages:", error);
-        } else if (data) {
-          const current = planCache.messages.get(targetPlanUuid);
-          const currentData = current?.data || [];
-          const optimisticMsgs = currentData.filter((m) => m.id.startsWith("temp-"));
-          const serverMsgs = data as ChatMessage[];
-          const merged = [...serverMsgs, ...optimisticMsgs];
+        // Cache-First: If messages are already loaded, perform background delta sync for NEWER messages only
+        if (latestMsg && latestMsg.created_at) {
+          const { data, error } = await supabase
+            .from("plan_messages")
+            .select("id, plan_id, sender_id, message_type, content, created_at, updated_at, system_message_type")
+            .eq("plan_id", targetPlanUuid)
+            .gt("created_at", latestMsg.created_at)
+            .order("created_at", { ascending: true });
 
-          const isDifferent =
-            currentData.length !== merged.length ||
-            (currentData.length > 0 && merged.length > 0 && currentData[currentData.length - 1].id !== merged[merged.length - 1].id);
+          if (error) {
+            console.error("[useChatCache] Error delta-syncing plan_messages:", error);
+          } else if (data && data.length > 0) {
+            const newServerMsgs = data as ChatMessage[];
+            const existingIds = new Set(currentData.map((m) => m.id));
+            const toAdd = newServerMsgs.filter((m) => !existingIds.has(m.id));
 
-          planCache.messages.set(targetPlanUuid, {
-            data: merged,
-            loading: false,
-            lastSynced: Date.now(),
-          });
+            if (toAdd.length > 0) {
+              const optimisticMsgs = currentData.filter((m) => m.id.startsWith("temp-"));
+              const confirmedMsgs = currentData.filter((m) => !m.id.startsWith("temp-"));
+              const merged = [...confirmedMsgs, ...toAdd, ...optimisticMsgs];
 
-          if (isDifferent || !current || current.loading) {
+              planCache.messages.set(targetPlanUuid, {
+                data: merged,
+                loading: false,
+                loadingOlder: current?.loadingOlder || false,
+                hasMoreOlder: current?.hasMoreOlder ?? true,
+                lastSynced: Date.now(),
+              });
+              notifyListeners("messages", targetPlanUuid);
+            }
+          } else if (current) {
+            current.lastSynced = Date.now();
+            current.loading = false;
+          }
+        } else {
+          // Cold initial fetch: Bounded recent window (latest CHAT_MESSAGES_PAGE_SIZE messages)
+          const { data, error } = await supabase
+            .from("plan_messages")
+            .select("id, plan_id, sender_id, message_type, content, created_at, updated_at, system_message_type")
+            .eq("plan_id", targetPlanUuid)
+            .order("created_at", { ascending: false })
+            .limit(CHAT_MESSAGES_PAGE_SIZE);
+
+          if (error) {
+            console.error("[useChatCache] Error fetching initial plan_messages:", error);
+          } else if (data) {
+            // Reverse DESC to chronological ASC
+            const serverMsgs = (data as ChatMessage[]).reverse();
+            const optimisticMsgs = (current?.data || []).filter((m) => m.id.startsWith("temp-"));
+            const merged = [...serverMsgs, ...optimisticMsgs];
+            const hasMore = (data as ChatMessage[]).length === CHAT_MESSAGES_PAGE_SIZE;
+
+            planCache.messages.set(targetPlanUuid, {
+              data: merged,
+              loading: false,
+              loadingOlder: false,
+              hasMoreOlder: hasMore,
+              lastSynced: Date.now(),
+            });
             notifyListeners("messages", targetPlanUuid);
           }
         }
@@ -290,6 +493,107 @@ export function useChatCache(targetPlanUuid: string) {
           state.loading = false;
           notifyListeners("messages", targetPlanUuid);
         }
+      }
+    },
+    [targetPlanUuid]
+  );
+
+  /**
+   * Load older messages page using cursor-based pagination
+   */
+  const loadOlderMessages = useCallback(async () => {
+    if (!targetPlanUuid || isFetchingOlderRef.current) return;
+
+    const current = planCache.messages.get(targetPlanUuid);
+    if (!current || !current.hasMoreOlder || current.loadingOlder) return;
+
+    const nonOptimistic = current.data.filter((m) => !m.id.startsWith("temp-"));
+    if (nonOptimistic.length === 0) return;
+
+    const oldestMsg = nonOptimistic[0];
+    if (!oldestMsg.created_at) return;
+
+    isFetchingOlderRef.current = true;
+    current.loadingOlder = true;
+    notifyListeners("messages", targetPlanUuid);
+
+    try {
+      const { data, error } = await supabase
+        .from("plan_messages")
+        .select("id, plan_id, sender_id, message_type, content, created_at, updated_at, system_message_type")
+        .eq("plan_id", targetPlanUuid)
+        .lt("created_at", oldestMsg.created_at)
+        .order("created_at", { ascending: false })
+        .limit(CHAT_MESSAGES_PAGE_SIZE);
+
+      if (error) {
+        console.error("[useChatCache] Error loading older plan_messages:", error);
+      } else if (data) {
+        const olderMsgs = (data as ChatMessage[]).reverse();
+        const hasMore = (data as ChatMessage[]).length === CHAT_MESSAGES_PAGE_SIZE;
+
+        const existingIds = new Set(current.data.map((m) => m.id));
+        const uniqueOlderMsgs = olderMsgs.filter((m) => !existingIds.has(m.id));
+
+        current.data = [...uniqueOlderMsgs, ...current.data];
+        current.hasMoreOlder = hasMore;
+        current.loadingOlder = false;
+        notifyListeners("messages", targetPlanUuid);
+      }
+    } catch (err) {
+      console.error("[useChatCache] Exception loading older plan_messages:", err);
+    } finally {
+      isFetchingOlderRef.current = false;
+      const state = planCache.messages.get(targetPlanUuid);
+      if (state && state.loadingOlder) {
+        state.loadingOlder = false;
+        notifyListeners("messages", targetPlanUuid);
+      }
+    }
+  }, [targetPlanUuid]);
+
+  /**
+   * Fetches unread gap messages up to firstUnreadId if older than the current bounded page
+   */
+  const fetchUnreadRange = useCallback(
+    async (firstUnreadId: string, lastReadAt?: string | null) => {
+      if (!targetPlanUuid) return;
+      const current = planCache.messages.get(targetPlanUuid);
+      if (!current || current.data.length === 0) return;
+
+      if (current.data.some((m) => m.id === firstUnreadId)) return;
+
+      const oldestMsg = current.data.find((m) => !m.id.startsWith("temp-"));
+      if (!oldestMsg || !oldestMsg.created_at) return;
+
+      try {
+        let query = supabase
+          .from("plan_messages")
+          .select("id, plan_id, sender_id, message_type, content, created_at, updated_at, system_message_type")
+          .eq("plan_id", targetPlanUuid)
+          .lt("created_at", oldestMsg.created_at);
+
+        if (lastReadAt) {
+          query = query.gte("created_at", lastReadAt);
+        }
+
+        const { data, error } = await query
+          .order("created_at", { ascending: true })
+          .limit(200);
+
+        if (error) {
+          console.error("[useChatCache] Error fetching unread range:", error);
+        } else if (data && data.length > 0) {
+          const existingIds = new Set(current.data.map((m) => m.id));
+          const missingMsgs = (data as ChatMessage[]).filter((m) => !existingIds.has(m.id));
+
+          if (missingMsgs.length > 0) {
+            current.data = [...missingMsgs, ...current.data];
+            notifyListeners("messages", targetPlanUuid);
+          }
+        }
+      } catch (err) {
+        console.error("[useChatCache] Exception fetching unread range:", err);
       }
     },
     [targetPlanUuid]
@@ -361,7 +665,7 @@ export function useChatCache(targetPlanUuid: string) {
         if (status === "CHANNEL_ERROR") {
           const errMsg = err?.message || String(err || "");
           if (!errMsg.includes("socket closed") && !errMsg.includes("1006")) {
-            console.warn("[useChatCache] Realtime channel subscription issue, refetching...", errMsg);
+            console.warn("[useChatCache] Realtime channel subscription issue, delta syncing...", errMsg);
           }
           fetchMessages(true);
         }
@@ -411,6 +715,10 @@ export function useChatCache(targetPlanUuid: string) {
   return {
     messages,
     loading,
+    loadingOlder,
+    hasMoreOlder,
+    loadOlderMessages,
+    fetchUnreadRange,
     refetch: () => fetchMessages(true),
     appendOptimisticMessage,
     removeOptimisticMessage,

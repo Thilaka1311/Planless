@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { X, ArrowRight, Compass, Film, UtensilsCrossed, CalendarDays, ArrowLeft } from "lucide-react";
+import { X, ArrowRight, ArrowLeft } from "lucide-react";
+import { CategoryIcon, getCategoryTheme } from "../../../shared/components/CategoryIcon";
 import { StepWho } from "../components/FriendsSelector";
 
 interface WhoIsComingScreenProps {
@@ -102,37 +103,16 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
 
           {/* DYNAMIC CATEGORY ICON INSIDE PILL ON FAR RIGHT */}
           {(() => {
-            const getCategoryConfig = (category?: string) => {
-              const cat = (category || 'custom').toUpperCase();
-              if (cat === 'SPORTS' || cat === 'SPORT' || cat === 'FOOTBALL' || cat === 'BADMINTON') {
-                return {
-                  color: '#10B981',
-                  icon: <Compass className="w-4.5 h-4.5 text-[#10B981]" style={{ filter: 'drop-shadow(0 0 1px rgba(16, 185, 129, 0.4))' }} />
-                };
-              }
-              if (cat === 'MOVIES' || cat === 'CINEMA') {
-                return {
-                  color: '#A78BFA',
-                  icon: <Film className="w-4.5 h-4.5 text-[#A78BFA]" style={{ filter: 'drop-shadow(0 0 1px rgba(139, 92, 246, 0.4))' }} />
-                };
-              }
-              if (cat === 'DINING' || cat === 'RESTAURANTS' || cat === 'RESTAURANT' || cat === 'CAFE' || cat === 'FOOD') {
-                return {
-                  color: '#FB7185',
-                  icon: <UtensilsCrossed className="w-4.5 h-4.5 text-[#FB7185]" style={{ filter: 'drop-shadow(0 0 1px rgba(244, 63, 94, 0.4))' }} />
-                };
-              }
-              return {
-                color: '#A1A1AA',
-                icon: <CalendarDays className="w-4.5 h-4.5 text-[#A1A1AA]" style={{ filter: 'drop-shadow(0 0 1px rgba(255, 255, 255, 0.4))' }} />
-              };
-            };
-            const style = getCategoryConfig(selectedCategory);
+            const theme = getCategoryTheme(selectedCategory);
             return (
               <div
                 className="shrink-0 flex items-center justify-center p-1 pointer-events-none"
               >
-                {style.icon}
+                <CategoryIcon
+                  category={selectedCategory}
+                  className="w-4.5 h-4.5"
+                  style={{ filter: `drop-shadow(0 0 1px ${theme.glowColor})` }}
+                />
               </div>
             );
           })()}

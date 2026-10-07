@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { X, Compass, Film, UtensilsCrossed, CalendarDays, Users, Plus, Minus, ChevronRight, Clock, UserCheck } from "lucide-react";
+import { X, Film, CalendarDays, Users, Plus, Minus, ChevronRight, Clock, UserCheck } from "lucide-react";
+import { CategoryIcon } from "../../../shared/components/CategoryIcon";
 import { WheelPicker } from "../components/WheelPicker";
 import { RSVP } from "../components/RSVP";
 import { ExitEditingDialog } from "../components/ExitEditingDialog";
@@ -393,13 +394,13 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
                     bg: "rgba(16, 185, 129, 0.22)",
                     border: "#10B981",
                     glow: "rgba(16, 185, 129, 0.25)",
-                    icon: <Compass className="w-4 h-4 text-[#10B981]" style={{ filter: 'drop-shadow(0 0 2px rgba(16, 185, 129, 0.4))' }} />
+                    icon: <CategoryIcon category="sports" className="w-4 h-4" style={{ filter: 'drop-shadow(0 0 2px rgba(16, 185, 129, 0.4))' }} />
                   };
                 }
                 if (cat === "MOVIES") {
                   return {
                     label: "Movies",
-                    color: "#8B5CF6", // Violet-500 (#8B5CF6 to match text-violet-500 or #A78BFA)
+                    color: "#8B5CF6", // Violet-500
                     bg: "rgba(139, 92, 246, 0.22)",
                     border: "#8B5CF6",
                     glow: "rgba(139, 92, 246, 0.25)",
@@ -409,17 +410,17 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
                 if (cat === "DINING") {
                   return {
                     label: "Dining",
-                    color: "#F43F5E", // Rose-500 (#F43F5E to match text-rose-500 or #FB7185)
-                    bg: "rgba(244, 63, 94, 0.22)",
-                    border: "#F43F5E",
-                    glow: "rgba(244, 63, 94, 0.25)",
-                    icon: <UtensilsCrossed className="w-4 h-4 text-[#F43F5E]" style={{ filter: 'drop-shadow(0 0 2px rgba(244, 63, 94, 0.4))' }} />
+                    color: "#EF4444", // Red-500
+                    bg: "rgba(239, 68, 68, 0.22)",
+                    border: "#EF4444",
+                    glow: "rgba(239, 68, 68, 0.25)",
+                    icon: <CategoryIcon category="dining" className="w-4 h-4" style={{ filter: 'drop-shadow(0 0 2px rgba(239, 68, 68, 0.4))' }} />
                   };
                 }
                 // Custom
                 return {
                   label: "Custom",
-                  color: "#A1A1AA", // Zinc-400 (#A1A1AA to match text-zinc-400 or #FFFFFF)
+                  color: "#A1A1AA", // Zinc-400
                   bg: "rgba(161, 161, 170, 0.22)",
                   border: "rgba(255, 255, 255, 0.15)",
                   glow: "rgba(161, 161, 170, 0.1)",

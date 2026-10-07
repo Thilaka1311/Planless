@@ -2,7 +2,15 @@ import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Crown, Users } from 'lucide-react';
 import { Plan } from '../../../core/types';
-import { normalizeStatus, sortGoingParticipants, formatSkipReason, partitionAutomaticParticipants } from '../../../../lib/participantStatus';
+import {
+  isJoinedRsvpParticipant,
+  normalizeStatus,
+  sortGoingParticipants,
+  formatSkipReason,
+  partitionAutomaticParticipants,
+  resolveParticipantVisibleTabs,
+  calculateNoLimitDenominator,
+} from '../../../../lib/participantStatus';
 import { formatAssignedGoingList, formatAssignedWaitlist } from '../../participants/assigned/assignedCapacityLogic';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { usePlansStore } from '../state/PlansContext';
@@ -73,11 +81,9 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     plan.capacity ??
     plan.maxSpots ??
     plan.joinLimit;
-  const maxCapacity = Number(
-    rawCap !== undefined && rawCap !== null
-      ? rawCap
-      : (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8)
-  );
+  // isNoLimit is true when rawCap is explicitly null or undefined — NO fallback to 8/10/14
+  const isNoLimit = rawCap === null || rawCap === undefined;
+  const maxCapacity = isNoLimit ? 0 : Number(rawCap);
 
   // Helper to extract normalized final state for completed plans
   const getMemberFinalState = (m: any): string | null => {
@@ -106,9 +112,12 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
       const fs = getMemberFinalState(currentMember) || normalizeStatus(currentMember.joinState || (currentMember as any).rsvp_status);
       if (fs === 'JOINED') return 'going';
       if (fs === 'WAITLISTED') return 'waitlist';
-      if (fs === 'INVITED') return 'invited';
+      if (fs === 'INVITED') return 'going'; // No Limit completed plans → 'going'
       return 'skipped';
     }
+
+    // No Limit editor mode: always show 'going' (Joined) tab, not 'invited'
+    if (isNoLimit) return 'going';
 
     if (isAssignedMode) {
       const groupRaw = (currentMember as any).assignedGroup || (currentMember as any).assigned_group;
@@ -117,9 +126,9 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     }
     const status = normalizeStatus(currentMember.joinState || (currentMember as any).rsvp_status);
     if (status === 'WAITLISTED') return 'waitlist';
-    if (status === 'INVITED') return 'invited';
+    if (status === 'INVITED') return 'going';
     return 'going';
-  }, [members, activeUserId, isAssignedMode, plan.status]);
+  }, [members, activeUserId, isAssignedMode, isNoLimit, plan.status]);
 
   const [activeTab, setActiveTab] = React.useState<InlineTab>(initialTab);
 
@@ -285,11 +294,11 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         }
       }
 
-      // 6. Enforce capacity split for Assigned mode if capacity is finite
+      // 6. Enforce capacity split for Assigned mode only if capacity is finite (not No Limit)
       let effectiveGoing = going;
       let effectiveWaitlist = waitlist;
 
-      if (!isCompletedPlan && maxCapacity > 0 && going.length > maxCapacity) {
+      if (!isCompletedPlan && !isNoLimit && maxCapacity > 0 && going.length > maxCapacity) {
         const hostPart = going.filter((e) => e.isHost);
         const nonHost = going.filter((e) => !e.isHost);
         const sortedNonHost = [...nonHost].sort((a, b) =>
@@ -327,7 +336,12 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         return posA - posB;
       }).map((e, idx) => ({ ...e, waitlistPosition: idx + 1 }));
 
+      const goingJoinedCount = isCompletedPlan
+        ? effectiveGoing.length
+        : effectiveGoing.filter(isJoinedRsvpParticipant).length;
+
       return {
+        goingJoinedCount,
         going: formatAssignedGoingList(effectiveGoing, activeUserId),
         invited: [], // No invited section in assigned mode
         waitlist: isCompletedPlan ? [] : formatAssignedWaitlist(waitlistSorted, activeUserId),
@@ -401,37 +415,50 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
   }, [members, planDbParticipants, liveAssignedParticipants, activeUserId, isAssignedMode, waitlistOrderMode, plan.id, (plan as any).dbUuid, isCompletedPlan, maxCapacity]);
 
   const tabs = useMemo(() => {
-    const t: { key: InlineTab; label: string; count: number }[] = [];
+    // The number next to "Joined" uses the exact same participant count / source of truth
+    // used to calculate the "Joined" count in the Manage Participants screen (goingJoinedCount from partitionAutomaticParticipants).
+    const effectiveJoinedCount = isCompletedPlan
+      ? groups.going.length
+      : (groups.goingJoinedCount ?? groups.going.length);
 
-    if (isCompletedPlan) {
-      t.push({ key: 'going', label: 'Attended', count: groups.going.length });
-      if (groups.skipped.length > 0) {
-        t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
-      }
-    } else if (isAssignedMode) {
-      t.push({ key: 'going', label: 'Joined', count: groups.going.length });
-      if (groups.waitlist.length > 0) {
-        t.push({ key: 'waitlist', label: 'Waitlisted', count: groups.waitlist.length });
-      }
-      if (groups.skipped.length > 0) {
-        t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
-      }
-    } else {
-      const hasWaitlist = groups.waitlist.length > 0;
+    // Use resolveParticipantVisibleTabs as the SINGLE source of truth.
+    // No Limit plans in editor mode now return 'going' (green Joined), not 'invited'.
+    const visibleKeys = resolveParticipantVisibleTabs({
+      mode: 'editor',
+      waitlistMode: normalizedWaitlistMode,
+      capacity: isNoLimit ? null : maxCapacity,
+      goingCount: groups.going.length,
+      waitlistCount: groups.waitlist.length,
+      skippedCount: groups.skipped.length,
+      isCompletedPlan,
+    });
 
-      if (!hasWaitlist) {
-        t.push({ key: 'invited', label: 'Invited', count: groups.going.length });
+    return visibleKeys.map((key) => {
+      let label = '';
+      let count = 0;
+      let countLabel = '';
+      if (isCompletedPlan) {
+        if (key === 'going') { label = 'Attended'; count = groups.going.length; countLabel = `${groups.going.length}`; }
+        if (key === 'skipped') { label = 'Skipped'; count = groups.skipped.length; countLabel = `${groups.skipped.length}`; }
       } else {
-        t.push({ key: 'going', label: 'Joined', count: groups.going.length });
-        t.push({ key: 'waitlist', label: 'Waitlist', count: groups.waitlist.length });
+        if (key === 'invited') { label = `Invited`; count = groups.going.length; countLabel = `${groups.going.length}`; }
+        if (key === 'going') {
+          label = `Joined`;
+          count = effectiveJoinedCount;
+          const noLimitDenominator = calculateNoLimitDenominator([
+            ...groups.going,
+            ...groups.waitlist,
+            ...groups.skipped,
+          ]);
+          const denominator = isNoLimit ? noLimitDenominator : maxCapacity;
+          countLabel = (denominator !== undefined && denominator !== null) ? `${effectiveJoinedCount} / ${denominator}` : `${effectiveJoinedCount}`;
+        }
+        if (key === 'waitlist') { label = `Waitlist`; count = groups.waitlist.length; countLabel = `${groups.waitlist.length}`; }
+        if (key === 'skipped') { label = `Skipped`; count = groups.skipped.length; countLabel = `${groups.skipped.length}`; }
       }
-
-      if (groups.skipped.length > 0) {
-        t.push({ key: 'skipped', label: 'Skipped', count: groups.skipped.length });
-      }
-    }
-    return t;
-  }, [groups, isAssignedMode, isCompletedPlan, maxCapacity]);
+      return { key: key as InlineTab, label, count, countLabel };
+    });
+  }, [groups, isAssignedMode, isNoLimit, isCompletedPlan, maxCapacity, normalizedWaitlistMode]);
 
   React.useEffect(() => {
     if (tabs.length > 0 && !tabs.find(t => t.key === activeTab)) {
@@ -439,7 +466,8 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
     }
   }, [tabs, activeTab]);
 
-  const activeList = groups[activeTab] || [];
+  // When activeTab is 'invited', render groups.going (they are shown as Invited in No Limit mode)
+  const activeList = (activeTab === 'invited' ? groups.going : groups[activeTab]) || [];
   const getParticipantQueueNumberDisplay = (person: InlineMemberEntry, idx: number): string | null => {
     if (isAssignedMode) {
       if (activeTab === 'waitlist') return `#${idx + 1}`;
@@ -478,7 +506,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
   const statusTabs: StatusTabItem<InlineTab>[] = useMemo(() => {
     return tabs.map((tab) => ({
       id: tab.key,
-      label: `${tab.label} (${tab.count})`,
+      label: tab.countLabel ? `${tab.label} (${tab.countLabel})` : `${tab.label} (${tab.count})`,
       statusType: tab.key,
     }));
   }, [tabs]);

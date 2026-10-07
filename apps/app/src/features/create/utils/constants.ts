@@ -1,4 +1,4 @@
-import defaultPlanCover from "../../../assets/planimagedefault.png";
+import defaultPlanCover from "../../../assets/planimagedefault.webp";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 
 export const CATEGORY_EMOJI: Record<string, string> = {

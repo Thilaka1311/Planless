@@ -6,20 +6,20 @@
  * pre-warmed in the browser image cache for instant, zero-latency screen transitions.
  */
 
-import sportsImage from "../../assets/sports.png";
-import moviesImage from "../../assets/Movies.png";
-import diningImage from "../../assets/dining.png";
-import customCoverImage from "../../assets/planimagedefault.png";
-import defaultAvatarImage from "../../assets/default_avatar.png";
-import planlessLogoImage from "../../assets/planless_logo.png";
-import onboardingCupsImage from "../../assets/Onboarding_cups.png";
+import sportsCategoryIcon from "../../assets/categories/sports.png";
+import moviesCategoryIcon from "../../assets/categories/movies.png";
+import diningCategoryIcon from "../../assets/categories/dining.png";
+import customCoverImage from "../../assets/planimagedefault.webp";
+import defaultAvatarImage from "../../assets/default_avatar.webp";
+import planlessLogoImage from "../../assets/planless_logo.webp";
+import onboardingCupsImage from "../../assets/Onboarding_cups.webp";
 
 import { preloadImage } from "../imaging/preloadImage";
 
 export const CORE_STATIC_IMAGES = [
-  sportsImage,
-  moviesImage,
-  diningImage,
+  sportsCategoryIcon,
+  moviesCategoryIcon,
+  diningCategoryIcon,
   customCoverImage,
   defaultAvatarImage,
   planlessLogoImage,

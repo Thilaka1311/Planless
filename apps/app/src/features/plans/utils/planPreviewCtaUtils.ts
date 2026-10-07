@@ -9,28 +9,43 @@ export interface PlanPreviewCtaParams {
   isAssignedMode: boolean;
   assignedGroup?: string | null;
   joinedCount: number;
-  planSize: number;
+  planSize?: number | null;
   alreadySkipped?: boolean;
 }
 
+export type PlanPreviewCtaText =
+  | "Join Plan"
+  | "Join Waitlist"
+  | "Rejoin Plan"
+  | "Rejoin Waitlist"
+  | "Plan size reached";
+
 export interface PlanPreviewCtaResult {
   isWaitlistTarget: boolean;
-  ctaText: "Join Plan" | "Join Waitlist" | "Rejoin Plan" | "Rejoin Waitlist";
+  isCapacityReached: boolean;
+  ctaText: PlanPreviewCtaText;
 }
 
 /**
  * Computes the CTA button target state and user-facing text for previewing a plan.
  *
- * - Assigned plans:
- *   Uses the participant's assigned_group as the strict source of truth:
- *   - assigned_group = GOING -> Join Plan
- *   - assigned_group = WAITLIST -> Join Waitlist
- *   Does NOT use general plan capacity to override for Assigned plans.
+ * - Hard platform ceiling (50 joined):
+ *   When joined_count >= 50, the plan reaches absolute capacity.
+ *   Returns ctaText = "Plan size reached", isCapacityReached = true, isWaitlistTarget = false.
  *
- * - Automatic plans:
- *   Determines CTA from current capacity:
- *   - joined_count < plan_size -> Join Plan
- *   - joined_count >= plan_size -> Join Waitlist
+ * - No Limit plans (planSize === null | undefined):
+ *   No host-defined limit and strictly NO waitlist.
+ *   - joined_count < 50 -> Join Plan / Rejoin Plan
+ *   - joined_count >= 50 -> Plan size reached
+ *
+ * - Limited plans:
+ *   - Assigned:
+ *     Uses the participant's assigned_group:
+ *     - assigned_group = GOING -> Join Plan
+ *     - assigned_group = WAITLIST -> Join Waitlist
+ *   - Automatic:
+ *     - joined_count < plan_size -> Join Plan
+ *     - joined_count >= plan_size -> Join Waitlist
  */
 export function getPlanPreviewCtaState({
   isAssignedMode,
@@ -40,10 +55,31 @@ export function getPlanPreviewCtaState({
   alreadySkipped = false,
 }: PlanPreviewCtaParams): PlanPreviewCtaResult {
   const normalizedGroup = String(assignedGroup || '').trim().toUpperCase();
+  const isNoLimit = planSize === null || planSize === undefined;
 
+  // 1. Platform hard ceiling: 50 joined participants
+  if (joinedCount >= 50) {
+    return {
+      isWaitlistTarget: false,
+      isCapacityReached: true,
+      ctaText: "Plan size reached",
+    };
+  }
+
+  // 2. No Limit plans: no waitlist, dynamically joinable when joinedCount < 50
+  if (isNoLimit) {
+    return {
+      isWaitlistTarget: false,
+      isCapacityReached: false,
+      ctaText: alreadySkipped ? "Rejoin Plan" : "Join Plan",
+    };
+  }
+
+  // 3. Limited plans: respect host-defined plan_size
+  const numericLimit = Number(planSize);
   const isWaitlistTarget = isAssignedMode
     ? normalizedGroup === "WAITLIST" || normalizedGroup === "WAITLISTED"
-    : joinedCount >= planSize;
+    : joinedCount >= numericLimit;
 
   const ctaText = isWaitlistTarget
     ? (alreadySkipped ? "Rejoin Waitlist" : "Join Waitlist")
@@ -51,6 +87,7 @@ export function getPlanPreviewCtaState({
 
   return {
     isWaitlistTarget,
+    isCapacityReached: false,
     ctaText,
   };
 }

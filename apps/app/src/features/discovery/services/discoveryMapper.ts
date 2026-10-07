@@ -27,6 +27,8 @@ export function mapDbItemToFrontend(dbItem: any): DiscoveryItem {
       place_address: dbItem.place_address || null,
       latitude: dbItem.latitude != null ? Number(dbItem.latitude) : null,
       longitude: dbItem.longitude != null ? Number(dbItem.longitude) : null,
+      rating: dbItem.rating != null ? Number(dbItem.rating) : null,
+      user_ratings_total: dbItem.user_ratings_total != null ? Number(dbItem.user_ratings_total) : null,
     } as any)
   };
 }

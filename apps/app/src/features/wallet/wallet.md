@@ -120,7 +120,7 @@ The **Wallet** feature is Planless's financial settlement, group expense sharing
 | `SettleUpScreen` | `src/features/wallet/screens/SettleUpScreen.tsx` | Debt settlement interface recording payments between two participants. | Dispatches `recordSettlement`. |
 | `WalletRelationshipCard` | `src/features/wallet/components/WalletRelationshipCard.tsx` | Reusable card rendering friend avatar, name, mutual plan count, and net balance. | Used in People list. |
 | `WalletPlanCard` | `src/features/wallet/components/WalletPlanCard.tsx` | Reusable card rendering plan thumbnail, title, total cost, and individual user share. | Used in Plans list. |
-| `WalletContext` | `src/features/wallet/state/WalletContext.tsx` | State store managing transactions, settlements, and optimistic store updates. | Context provider consumed across wallet screens. |
+| `WalletContext` | `src/features/wallet/state/WalletContext.tsx` | State store managing transactions, settlements, and optimistic store updates. Uses lazy on-demand loading (`ensureLoaded()`) to eliminate startup network queries and background wakeups until the Wallet tab is visited. | Context provider consumed across wallet screens. |
 | `walletService` | `src/features/wallet/services/walletService.ts` | Pure computation functions calculating bilateral net balances, debts, and settled lists. | Consumed by `WalletScreen` and `PeopleBalances`. |
 | `walletSyncService` | `src/features/wallet/services/walletSyncService.ts` | Service synchronizing roster participant changes with wallet expense allocations. | Bridges `PlansContext` with `WalletContext`. |
 
@@ -248,6 +248,7 @@ The **Wallet** feature is Planless's financial settlement, group expense sharing
 ### Upstream Dependencies
 * **`PlansContext` (`usePlansStore`)**: Supplies active plan entities and participant rosters for populating split options.
 * **`ProfileContext` (`useProfileStore`)**: Supplies `activeUserUuid` and cached profile details (`dbUsers`) for resolving debtor/creditor names.
+* **User-Scoped Query Architecture (`WalletContext.tsx`)**: Queries for `plan_participants`, `wallet_expenses`, and `wallet_settlements` are strictly scoped to the active user's UUID, their joined/candidate plans, and bilateral settlements, eliminating platform-wide table scans and avoiding global fallback queries on empty states.
 
 ### Downstream Impact of Changes
 * **Plan Chatroom (`PlanChatScreen.tsx`)**: Creating an expense inserts a `message_type: 'cost'` row into `public.plan_messages`. Modifying cost payload structures requires matching updates in `renderCostCard()`.

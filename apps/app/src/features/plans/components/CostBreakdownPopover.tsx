@@ -73,6 +73,7 @@ export const CostBreakdownPopover: React.FC<CostBreakdownPopoverProps> = ({
     totalCostNum > 0 && divisor > 0
       ? `₹${Math.round((totalCostNum / divisor) * 100) / 100}`
       : "Free";
+  void formattedPerPerson;
 
   const positionClasses =
     position === "above" ? "bottom-full mb-2" : "top-full mt-2";
@@ -116,15 +117,6 @@ export const CostBreakdownPopover: React.FC<CostBreakdownPopoverProps> = ({
           </span>
           <span className="text-[13px] text-white font-bold font-sans">
             {formattedTotalCost}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-[12px] text-zinc-400 font-medium">
-            Per Person
-          </span>
-          <span className="text-[13px] text-emerald-400 font-bold font-sans">
-            {formattedPerPerson}
           </span>
         </div>
       </div>

@@ -75,7 +75,7 @@ The **Participants** feature is Planless's core attendee orchestration and roste
 * **PlanSizeCard**:
   * Collapsed state: Row displaying "Plan Size" label, current limit count (e.g. "8 spots"), and an inline "Edit" button.
   * Expanded inline editor: Embeds `PlanSizeSlider` with smooth drag slider, min/max limit notches, and immediate click-outside save listeners.
-* **EditCapacityBottomSheet (`PlanSizeBottomsheet`)**: Modal bottom sheet invoked from the header Plan Size adjuster (`#header_plan_size_btn`) in both creation wizard and active plan editor modes. Enters edit mode immediately upon opening. Features stepper controls (`-` and `+`) with live numerical readout, and an `Add Participants` shortcut when capacity reaches the active invite limit. In Automatic mode (`isAutomatic={true}`), the summary line dynamically calculates projected attendance directly from the selected plan capacity and total invited participants (`going = plan_size`, `waitlisted = invited_count - plan_size`, formatted as `X going • Y waitlisted`), rather than actual live RSVP states. The `Done` button has been removed: hosts make adjustments freely, and closing the sheet (via backdrop tap, swipe-down gesture, or drag handle tap) automatically commits the changes if the capacity was altered. If capacity increases when waitlisted candidates exist, closing the sheet triggers `GuidedCapacityAdjustmentBottomSheet` for host-guided selection of candidates moving from Waitlist to Joined (featuring a clean, left-aligned title header, dynamic CTA showing the count of participants still needed e.g. `Select 2 participants` / `Select 1 participant` transitioning to `Move to Join` or `Move to Waitlist` when complete, candidate list styling and checkmark indicators aligned with `FriendsSelector`, where tapping beyond the limit automatically replaces the most recently selected participant with the newly tapped candidate). The plan size is strictly capped and cannot exceed the count of active invited participants (`Going + Waitlist + Invited`, excluding skipped).
+* **EditCapacityBottomSheet (`PlanSizeBottomsheet`)**: Modal bottom sheet invoked from the header Plan Size adjuster (`#header_plan_size_btn`) in both creation wizard and active plan editor modes. Enters edit mode immediately upon opening. Features stepper controls (`-` and `+`) with live numerical readout, and an `Add Participants` shortcut when capacity reaches the active invite limit. In Automatic mode (`isAutomatic={true}`), the summary line dynamically calculates projected attendance directly from the selected plan capacity and total invited participants (`going = plan_size`, `waitlisted = invited_count - plan_size`, formatted as `X going • Y waitlisted`), rather than actual live RSVP states, and allows the host to increase capacity up to 50 for prospective joiners. The `Done` button has been removed: hosts make adjustments freely, and closing the sheet (via backdrop tap, swipe-down gesture, or drag handle tap) automatically commits the changes if the capacity was altered. If capacity increases when waitlisted candidates exist, closing the sheet triggers `GuidedCapacityAdjustmentBottomSheet` for host-guided selection of candidates moving from Waitlist to Joined (featuring a clean, left-aligned title header, dynamic CTA showing the count of participants still needed e.g. `Select 2 participants` / `Select 1 participant` transitioning to `Move to Join` or `Move to Waitlist` when complete, candidate list styling and checkmark indicators aligned with `FriendsSelector`, where tapping beyond the limit automatically replaces the most recently selected participant with the newly tapped candidate). In Assigned mode, the plan size is strictly capped and cannot exceed the count of active invited participants (`Going + Waitlist + Invited`, excluding skipped).
 
 ### Segmented Participant Tabs (`AutomaticParticipantTabs` / `AssignedParticipantTabs`)
 * **Pill Navigation Bar**: Horizontal segmented container (`px-5 py-2 flex items-center gap-2 border-b border-white/[0.06]`).
@@ -109,11 +109,9 @@ The **Participants** feature is Planless's core attendee orchestration and roste
   * View Profile (opens `FriendProfileViewerBottomSheet`).
   * Remove from Plan (destructive red styling `text-red-400 hover:bg-red-500/10`).
 
-### Cost-Splitting / Plan Fee Modal (`showUpdatePlanFeeModal`)
-* **Visual Hierarchy**: Matches the `CancelPlanBottomSheet` ("Manage this plan") bottom-sheet layout:
-  * Top centered drag handle (`w-9 h-1 rounded-full bg-white/20`).
-  * Plan Identity Header: 44x44px circular plan avatar (`DiscoveryImages`), plan title (`text-[15px] font-semibold text-white`), and subtitle `"Update the cost"` (`text-[12px] text-zinc-400`).
-  * Action options: "Split the total" and "Keep cost per person", followed by "Cancel".
+### Cost Modification Disabled on Participant Screen
+* Cost modification functionality and the "Update the cost" bottom sheet have been completely removed from the Participant screen.
+* The main plan cost set during plan creation is fixed and cannot be modified when managing participants (adding, removing, rejoining, promoting, demoting, or adjusting capacity).
 
 ### Floating Invite Button
 * Absolute floating action button anchored in bottom-right corner (`absolute z-40 w-12 h-12 rounded-full bg-[#FF6B2C] text-white flex items-center justify-center shadow-lg shadow-black/50 border border-white/20 active:scale-95 transition-all`).
@@ -200,6 +198,10 @@ The **Participants** feature is Planless's core attendee orchestration and roste
   * `leave_requested_at` (`timestamptz`, nullable): Timestamp of leave submission.
   * `skip_reason` (`skip_reason`, nullable): `'LEFT'`, `'REMOVED'`, `'REPLACED'`, `'PAYMENT_KEPT'`, `'SKIPPED'`.
   * `cost_per_participant` (`numeric`, default 0): Member's calculated share of plan costs.
+* **Indexes**:
+  * `plan_participants_pkey`: Composite primary key on `(plan_id, user_id)`.
+  * `idx_plan_participants_user_id`: B-tree index on `(user_id)` to accelerate user-filtered queries across plans loading, chat prewarming, and wallet lookups.
+  * `idx_uniq_plan_waitlist_position`: Unique partial B-tree index on `(plan_id, waitlist_position)` where `assigned_group = 'WAITLIST'`.
 
 ### 2. Table: `public.plans` (Participant-Related Columns)
 * `plan_size` (`integer`, not null): Maximum confirmed joined capacity (including hosts).
@@ -223,10 +225,41 @@ The **Participants** feature is Planless's core attendee orchestration and roste
 * `trg_maintain_joined_queue_at_trigger`: Sets `joined_queue_at = now()` when a user enters `JOINED` or `WAITLISTED` in Automatic mode; resets to `NULL` in Assigned mode.
 * `trg_auto_promote_on_vacancy_trigger`: Automatically promotes the earliest waitlisted participant when a spot opens up in Automatic mode.
 * `trg_enforce_waitlist_position_invariant_trigger`: Validates that `waitlist_position` is non-null only for `WAITLISTED` participants.
+* `trg_handle_switch_waitlist_mode`: Fires on `plans.participant_filtering` updates. Rebalances `assigned_group` and `waitlist_position` without ever mutating `rsvp_status`.
+* `trg_enforce_invited_rsvp_immutable`: Guards `public.plan_participants.rsvp_status`. When a participant's status is `INVITED`, neither host actions, mode switching, capacity changes, nor foreign triggers can mutate their status to `JOINED` or `WAITLISTED`. Only the participant themselves via their own authenticated RSVP flow can change it.
 
 ---
 
 ## 7. States & Rules
+
+### Core Rule: RSVP Status Is Immutable Once An Invite Exists
+* **Fundamental Invariant**: Once an invite exists for a user (`rsvp_status === 'INVITED'`), their RSVP status is strictly immutable to all external actors.
+* **Actor Boundary**: The ONLY actor who can change a participant's RSVP status from `INVITED` to `JOINED` or `WAITLISTED` is the participant themselves through the normal RSVP flow (`join_plan`, `claim_plan_invite`, accept/decline action).
+* **Host & System Restrictions**:
+  * The host or any other participant must **NEVER** change an invitee's RSVP status to `JOINED` or `WAITLISTED`.
+  * Switching Waitlist Mode (`AUTOMATIC` ↔ `ASSIGNED`) must **NEVER** change any participant's RSVP status.
+  * Changing Plan Size (`plan_size`) must **NEVER** change any participant's RSVP status.
+  * Moving someone between Joined and Waitlist only changes their **PARTICIPANT GROUP/ASSIGNMENT** (`assigned_group = 'GOING'` or `'WAITLIST'`), never their RSVP status.
+  * `INVITED` must remain `INVITED` regardless of whether that participant is currently in the Joined group or Waitlist group.
+* **Separation of Concerns**:
+  * `rsvp_status`: User's personal RSVP choice (`INVITED`, `JOINED`, `WAITLISTED`, `SKIPPED`, `REJOINED`).
+  * `assigned_group`: Plan slot allocation (`'GOING'`, `'WAITLIST'`).
+  * *Example 1*: `rsvp_status = INVITED` + `assigned_group = GOING` $\rightarrow$ The participant is allocated a Join slot by the host, but has not yet accepted. When switching modes or editing capacity, `rsvp_status` stays `INVITED`; only the group/assignment may change.
+  * *Example 2*: `rsvp_status = INVITED` + `assigned_group = WAITLIST` $\rightarrow$ The participant is allocated to Waitlist. When moving to Joined or switching modes, `rsvp_status` stays `INVITED`.
+* **Other Statuses**: Statuses such as `SKIPPED` continue to behave normally according to existing rules (host removal, participant declining, or leaving).
+
+### Plan Size and Join Slots Invariant
+* **PLAN SIZE = NUMBER OF JOINED PARTICIPANTS** whenever enough eligible participants exist.
+* The priority logic only determines **WHICH** participants occupy those Join slots (`assigned_group = 'GOING'`). It must **NOT** reduce the number of Join slots.
+* When switching `AUTOMATIC` $\rightarrow$ `ASSIGNED`:
+  1. Keep the current `plan_size` unchanged.
+  2. Fill all available Join slots up to `plan_size` (`assigned_group = 'GOING'`).
+  3. Prioritize participants who were already `JOINED` / accepted.
+  4. If remaining Join slots exist, fill them using participants who are `WAITLISTED` (in queue order).
+  5. If remaining Join slots still exist, fill them using eligible `INVITED` participants in priority order (joined queue time, then creation time).
+  6. Place everyone else into Waitlist (`assigned_group = 'WAITLIST'`) with contiguous positions 1..N.
+  7. Do not leave Join slots empty when eligible participants are available.
+  8. Strictly preserve each participant's existing `rsvp_status` (`INVITED` remains `INVITED`).
 
 ### Waitlist Mode Invariants
 * **Automatic Mode (`participant_filtering === 'AUTOMATIC'`)**:
@@ -241,9 +274,9 @@ The **Participants** feature is Planless's core attendee orchestration and roste
   * Host can drag-and-drop waitlist candidates to reorder priority.
 
 ### RSVP Status Lifecycle
-* **`INVITED`**: User has received an invite but not acted on it. Does not occupy a spot in `plan_size`.
-* **`JOINED`**: User has confirmed attendance and occupies 1 spot in `plan_size`.
-* **`WAITLISTED`**: User accepted but capacity is full (Automatic) or host assigned them to waitlist (Assigned).
+* **`INVITED`**: User has received an invite but not acted on it. Does not occupy a confirmed attendance spot until accepted, but may be allocated to a `GOING` or `WAITLIST` slot in Assigned mode.
+* **`JOINED`**: User has confirmed attendance.
+* **`WAITLISTED`**: User accepted but capacity is full (Automatic).
 * **`SKIPPED`**: User declined, was removed, left, or was replaced. Requires valid `skip_reason`.
 * **`REJOINED`**: Skipped user requested to return; frozen until host approves or rejects.
 

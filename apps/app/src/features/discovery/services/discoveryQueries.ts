@@ -76,3 +76,51 @@ export async function deleteItem(id: string) {
   if (error) throw error;
   return data;
 }
+
+export interface SearchDbItemsParams {
+  query: string;
+  category?: string;
+}
+
+/**
+ * Searches the entire discovery_items database table for matching places.
+ * Queries across searchable fields: title, place_name, place_address, location, description, subcategory.
+ * Respects category filtering (DINING, MOVIES, SPORTS, ACTIVITIES) without any geographic or local area restriction.
+ */
+export async function searchDiscoveryItems(params: SearchDbItemsParams) {
+  const { query, category = "ALL" } = params;
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  let queryBuilder = (supabase as any)
+    .from("discovery_items")
+    .select("*")
+    .eq("status", "ACTIVE");
+
+  if (category && category.toUpperCase() !== "ALL") {
+    const cat = category.toUpperCase();
+    if (cat === "ACTIVITIES") {
+      queryBuilder = queryBuilder.or("category.eq.ACTIVITIES,category.eq.CUSTOM");
+    } else {
+      queryBuilder = queryBuilder.eq("category", cat);
+    }
+  }
+
+  // Multi-term search across title, place_name, place_address, location, description, subcategory
+  const terms = trimmed.split(/\s+/).filter(Boolean);
+  for (const term of terms) {
+    const clean = term.replace(/[%_,()]/g, "");
+    if (!clean) continue;
+    queryBuilder = queryBuilder.or(
+      `title.ilike.%${clean}%,place_name.ilike.%${clean}%,place_address.ilike.%${clean}%,location.ilike.%${clean}%,description.ilike.%${clean}%,subcategory.ilike.%${clean}%`
+    );
+  }
+
+  const { data, error } = await queryBuilder.order("display_order", { ascending: true });
+  if (error) {
+    console.error("[discoveryQueries] searchDiscoveryItems error:", error);
+    throw error;
+  }
+  return data || [];
+}
+

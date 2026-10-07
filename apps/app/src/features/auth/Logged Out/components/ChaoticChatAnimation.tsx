@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
-import defaultAvatar from "../../../../assets/default_avatar.png";
+import defaultAvatar from "../../../../assets/default_avatar.webp";
 
 interface ChatPerson {
   name: string;

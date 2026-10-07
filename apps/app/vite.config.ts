@@ -54,7 +54,7 @@ export default defineConfig(() => {
           clientsClaim: true,
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           // Precache static assets like CSS, JS, HTML, fonts, and core images
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,otf,ttf}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2,otf,ttf}'],
           // Exclude unused or non-core static files from precache
           globIgnores: ['**/navkis_matchday.png'],
           // Exclude Supabase to ensure Realtime, Auth, and DB endpoints remain network-live

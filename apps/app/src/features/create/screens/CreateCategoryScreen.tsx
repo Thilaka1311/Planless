@@ -2,44 +2,49 @@ import React from "react";
 import { motion } from "motion/react";
 import { HomeHeader } from "../../../components/HomeHeader";
 import { UserProfile } from "../../../core/types";
-import sportsImage from "../../../assets/sports.png";
-import moviesImage from "../../../assets/Movies.png";
-import diningImage from "../../../assets/dining.png";
-import defaultPlanCover from "../../../assets/planimagedefault.png";
+import moviesCategoryIcon from "../../../assets/categories/movies.png";
+import activitiesCategoryIcon from "../../../assets/categories/activity.png";
+import diningCategoryIcon from "../../../assets/categories/dining.png";
+import sportsCategoryIcon from "../../../assets/categories/sports.png";
 
 export interface CreateCategoryOption {
-  id: "sports" | "movies" | "dining" | "custom";
+  id: "dining" | "movies" | "sports" | "activities";
   title: string;
-  image: string;
+  image?: string;
+  glow?: string;
 }
 
 export const CREATE_CATEGORIES: CreateCategoryOption[] = [
   {
-    id: "sports",
-    title: "Sports",
-    image: sportsImage,
+    id: "dining",
+    title: "Dining",
+    image: diningCategoryIcon,
+    glow: "hover:border-red-500/30 hover:shadow-[0_0_24px_rgba(239,68,68,0.18)]",
   },
   {
     id: "movies",
     title: "Movies",
-    image: moviesImage,
+    image: moviesCategoryIcon,
+    glow: "hover:border-purple-500/30 hover:shadow-[0_0_24px_rgba(168,85,247,0.18)]",
   },
   {
-    id: "dining",
-    title: "Dining",
-    image: diningImage,
+    id: "sports",
+    title: "Sports",
+    image: sportsCategoryIcon,
+    glow: "hover:border-emerald-500/30 hover:shadow-[0_0_24px_rgba(16,185,129,0.18)]",
   },
   {
-    id: "custom",
-    title: "Custom",
-    image: defaultPlanCover,
+    id: "activities",
+    title: "Activities",
+    image: activitiesCategoryIcon,
+    glow: "hover:border-pink-500/30 hover:shadow-[0_0_24px_rgba(236,72,153,0.18)]",
   },
 ];
 
 interface CreateCategoryScreenProps {
   userProfile?: UserProfile | null;
   setActiveTab: (tab: any) => void;
-  onSelectCategory: (category: "sports" | "movies" | "dining" | "custom") => void;
+  onSelectCategory: (category: "sports" | "movies" | "dining" | "activities" | "custom") => void;
 }
 
 export const CreateCategoryScreen: React.FC<CreateCategoryScreenProps> = ({
@@ -61,15 +66,15 @@ export const CreateCategoryScreen: React.FC<CreateCategoryScreenProps> = ({
       )}
 
       {/* ── Section Instruction ── */}
-      <div className="shrink-0 px-4 pt-2 pb-2 text-left">
-        <p className="text-[18px] text-zinc-400 font-medium font-sans leading-snug tracking-tight text-left">
+      <div className="shrink-0 px-5 pt-3 pb-2 text-left">
+        <p className="text-[17px] text-zinc-400 font-medium font-sans leading-snug tracking-tight text-left">
           Choose a category.
         </p>
       </div>
 
-      {/* ── Dynamic Category Cards Grid (Fills available space above bottom nav) ── */}
-      <div className="flex-1 min-h-0 px-4 pt-1 pb-[calc(80px+env(safe-area-inset-bottom,12px)+8px)] flex flex-col">
-        <div className="grid grid-cols-2 grid-rows-2 gap-3.5 flex-1 min-h-0 w-full h-full">
+      {/* ── Category Cards Grid matching reference styling ── */}
+      <div className="px-5 pt-2 pb-6 flex flex-col gap-3">
+        <div className="grid grid-cols-4 gap-2">
           {CREATE_CATEGORIES.map((category, index) => (
             <motion.button
               key={category.id}
@@ -78,24 +83,21 @@ export const CreateCategoryScreen: React.FC<CreateCategoryScreenProps> = ({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, delay: index * 0.04 }}
-              className="relative w-full h-full min-h-0 rounded-[22px] overflow-hidden border border-white/[0.08] bg-[#121216] cursor-pointer group active:scale-[0.98] transition-all text-left shadow-lg"
+              className={`relative h-[96px] rounded-2xl border border-white/[0.08] bg-[#121216]/90 hover:bg-[#18181f] active:scale-[0.97] transition-all duration-200 cursor-pointer flex flex-col items-center justify-center p-2.5 group shadow-md ${category.glow || ""}`}
             >
-              {/* Category Background Image */}
-              <img
-                src={category.image}
-                alt={category.title}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 select-none"
-              />
-
-              {/* Gradient Overlay for Contrast */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/5 transition-opacity" />
-
-              {/* Category Title */}
-              <div className="absolute inset-0 p-4 flex flex-col justify-end z-10">
-                <h3 className="text-[17px] font-bold text-white font-sans tracking-tight leading-tight drop-shadow-md">
-                  {category.title}
-                </h3>
+              {/* Category Icon / Illustration */}
+              <div className="w-13 h-13 flex items-center justify-center shrink-0">
+                <img
+                  src={category.image}
+                  alt={category.title}
+                  className="w-full h-full object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
+                />
               </div>
+
+              {/* Category Name Underneath */}
+              <span className="text-[13px] font-semibold text-white/90 group-hover:text-white tracking-tight leading-tight mt-1.5 font-sans">
+                {category.title}
+              </span>
             </motion.button>
           ))}
         </div>

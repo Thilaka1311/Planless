@@ -12,6 +12,8 @@ interface CreatePlanConfirmationProps {
   isCopied?: boolean;
   onGoToPlans?: () => void;
   className?: string;
+  hideActions?: boolean;
+  initialStage?: "tick" | "avatar" | "content";
 }
 
 export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
@@ -23,6 +25,8 @@ export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
   isCopied = false,
   onGoToPlans,
   className = "",
+  hideActions = false,
+  initialStage,
 }) => {
   const PARTICLES = [
     { angle: 0, dist: 80 },
@@ -47,11 +51,11 @@ export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
   // Step 2: "avatar" (same circle transforms into plan avatar)
   // Step 3: "content" (reveal remaining content: plan name, Plan Created!, Share, Go to Plans)
   const [stage, setStage] = useState<"tick" | "avatar" | "content">(
-    prefersReducedMotion ? "content" : "tick"
+    initialStage ?? (prefersReducedMotion ? "content" : "tick")
   );
 
   useEffect(() => {
-    if (prefersReducedMotion) return;
+    if (initialStage || prefersReducedMotion) return;
     const t1 = setTimeout(() => {
       setStage("avatar");
     }, 850);
@@ -62,11 +66,11 @@ export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [prefersReducedMotion]);
+  }, [initialStage, prefersReducedMotion]);
 
   return (
     <motion.div
-      className={`flex-1 flex flex-col justify-between relative h-full bg-[#050505] overflow-hidden text-left ${className}`}
+      className={`flex-1 flex flex-col ${hideActions ? "justify-center items-center" : "justify-between"} relative h-full bg-[#050505] overflow-hidden text-left ${className}`}
       initial={prefersReducedMotion ? {} : { opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.35 }}
@@ -75,7 +79,7 @@ export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
       <div className="flex-1 flex flex-col items-center justify-center px-6 my-auto">
         <motion.div
           className="flex flex-col items-center"
-          animate={stage === "content" ? { y: -14 } : { y: 0 }}
+          animate={stage === "content" ? (hideActions ? { y: 0 } : { y: -14 }) : { y: 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 25 }}
         >
           {/* Success orb + ring + particles + transform into avatar */}
@@ -170,7 +174,7 @@ export const CreatePlanConfirmation: React.FC<CreatePlanConfirmationProps> = ({
       </div>
 
       {/* ─── Actions Footer: only revealed in Step 3 after avatar transformation ─── */}
-      {stage === "content" && (
+      {!hideActions && stage === "content" && (
         <motion.div
           className="w-full px-5 pb-8 pt-4 flex flex-col items-center gap-3.5"
           initial={prefersReducedMotion ? {} : { opacity: 0, y: 16 }}

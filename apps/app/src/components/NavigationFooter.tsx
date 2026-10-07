@@ -27,8 +27,93 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
 
   const profilePhotoSrc = userProfile?.avatar || (userProfile as any)?.profile_photo || currentUser?.profile_photo || null;
 
+  // Keyboard awareness: prevent bottom navigation bar from popping up above the virtual keyboard when typing/searching
+  const [isKeyboardOpen, setIsKeyboardOpen] = React.useState(false);
+  const initialHeightRef = React.useRef(typeof window !== "undefined" ? window.innerHeight : 0);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const checkKeyboard = () => {
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement;
+
+      if (!isInput) {
+        initialHeightRef.current = Math.max(initialHeightRef.current, window.innerHeight);
+      }
+
+      const vv = window.visualViewport;
+      let open = false;
+
+      if (vv) {
+        const fullHeight = initialHeightRef.current;
+        const diffFromFull = fullHeight - vv.height;
+        const diffFromInner = window.innerHeight - (vv.height + (vv.offsetTop || 0));
+        const detectedKb = Math.max(diffFromFull, diffFromInner);
+
+        if (detectedKb > 120 && isInput) {
+          open = true;
+        }
+      } else if (isInput) {
+        const diff = initialHeightRef.current - window.innerHeight;
+        if (diff > 120) {
+          open = true;
+        }
+      }
+
+      setIsKeyboardOpen(open);
+    };
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+        const isTouch =
+          "ontouchstart" in window ||
+          navigator.maxTouchPoints > 0 ||
+          window.innerWidth <= 768;
+        if (isTouch) {
+          setIsKeyboardOpen(true);
+        }
+        checkKeyboard();
+      }
+    };
+
+    const handleFocusOut = () => {
+      setTimeout(() => {
+        checkKeyboard();
+        const activeEl = document.activeElement;
+        const stillInput =
+          activeEl instanceof HTMLInputElement ||
+          activeEl instanceof HTMLTextAreaElement;
+        if (!stillInput) {
+          setIsKeyboardOpen(false);
+        }
+      }, 150);
+    };
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", checkKeyboard);
+      window.visualViewport.addEventListener("scroll", checkKeyboard);
+    }
+    window.addEventListener("resize", checkKeyboard);
+    window.addEventListener("focusin", handleFocusIn);
+    window.addEventListener("focusout", handleFocusOut);
+
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", checkKeyboard);
+        window.visualViewport.removeEventListener("scroll", checkKeyboard);
+      }
+      window.removeEventListener("resize", checkKeyboard);
+      window.removeEventListener("focusin", handleFocusIn);
+      window.removeEventListener("focusout", handleFocusOut);
+    };
+  }, []);
+
   return (
-    <footer id="main_app_footer_nav" className="fixed bottom-0 left-0 right-0 h-20 border-t border-zinc-950/20 bg-[#09090b]/95 backdrop-blur-xl flex justify-around items-center px-4 z-40 pb-[env(safe-area-inset-bottom,8px)] shadow-2xl select-none">
+    <footer id="main_app_footer_nav" className={`fixed bottom-0 left-0 right-0 h-20 border-t border-zinc-950/20 bg-[#09090b]/95 backdrop-blur-xl flex justify-around items-center px-4 z-40 pb-[env(safe-area-inset-bottom,8px)] shadow-2xl select-none transition-opacity duration-150 ${isKeyboardOpen ? "!hidden pointer-events-none opacity-0" : ""}`}>
       <button
         id="nav_item_home"
         onClick={() => { setActiveTab("home"); }}
@@ -61,7 +146,7 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
         }}
         className="flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer"
       >
-        <div className={`w-[34px] h-[34px] rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center ${activeTab === "create" ? "border-[#ff8b66]" : ""}`}>
+        <div className={`w-[34px] h-[34px] rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center ${(activeTab === "create" || activeTab === "sports" || activeTab === "dining" || activeTab === "movies" || activeTab === "activities") ? "border-[#ff8b66]" : ""}`}>
           <Plus className="w-5 h-5 text-[#ff8b66]" />
         </div>
         <span className="text-[10.5px] font-sans tracking-wide mt-0.5 font-medium">Create</span>

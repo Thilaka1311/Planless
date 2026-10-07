@@ -59,11 +59,74 @@ export const ProfileProvider = ({
     if (initialProfile) {
       setUserProfileState(prev => {
         if (!prev) return initialProfile;
-        // Avoid overwriting with stale initialProfile if user already modified state
-        return prev;
+        return {
+          ...prev,
+          ...initialProfile,
+          role: initialProfile.role || prev.role || "user",
+        };
       });
     }
   }, [initialProfile]);
+
+  // Proactively rehydrate user's actual database role from Supabase on mount
+  useEffect(() => {
+    let isCancelled = false;
+    async function rehydrateRole() {
+      try {
+        let lookupUuid = userProfile?.dbUuid || (userProfile as any)?.id;
+        let lookupShort = userProfile?.user_id;
+
+        if (!lookupUuid) {
+          const { data: authData } = await supabase.auth.getUser();
+          if (authData?.user?.id) {
+            lookupUuid = authData.user.id;
+          }
+        }
+
+        if (!lookupUuid && !lookupShort) return;
+
+        let dbUser = null;
+        const isUuid = typeof lookupUuid === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lookupUuid);
+        if (lookupUuid && isUuid) {
+          const { data } = await supabase.from("users").select("id, public_id, role, full_name, profile_photo_path, bio").eq("id", lookupUuid).maybeSingle();
+          if (data) dbUser = data;
+        }
+        if (!dbUser && lookupShort) {
+          const { data } = await supabase.from("users").select("id, public_id, role, full_name, profile_photo_path, bio").eq("public_id", lookupShort).maybeSingle();
+          if (data) dbUser = data;
+        }
+        if (!dbUser && userProfile?.name) {
+          const { data } = await supabase.from("users").select("id, public_id, role, full_name, profile_photo_path, bio").ilike("full_name", `%${userProfile.name}%`).maybeSingle();
+          if (data) dbUser = data;
+        }
+
+        if (!dbUser || isCancelled) return;
+
+        setUserProfileState(prev => {
+          if (!prev) return prev;
+          if (prev.role !== dbUser.role || (!prev.dbUuid && dbUser.id)) {
+            const nextProfile: UserProfile = {
+              ...prev,
+              dbUuid: prev.dbUuid || dbUser.id,
+              role: dbUser.role || prev.role || "user",
+            };
+            if (onProfileChangeRef.current) {
+              onProfileChangeRef.current(nextProfile);
+            }
+            return nextProfile;
+          }
+          return prev;
+        });
+      } catch (err) {
+        console.warn("[ProfileContext] Could not rehydrate user role:", err);
+      }
+    }
+
+    rehydrateRole();
+    return () => {
+      isCancelled = true;
+    };
+  }, [userProfile?.dbUuid, userProfile?.user_id]);
 
   const setUserProfile = useCallback((newProfile: UserProfile | null | ((prev: UserProfile | null) => UserProfile | null)) => {
     setUserProfileState(prev => {
@@ -289,6 +352,7 @@ export const ProfileProvider = ({
             const updatedName = newRow.full_name;
             const updatedBio = newRow.bio;
             const updatedPhoto = newRow.profile_photo_path;
+            const updatedRole = newRow.role;
 
             // When photo is updated, always evict image cache so any client viewing this canonical path re-renders with ?v=...
             if (updatedPhoto) {
@@ -300,9 +364,10 @@ export const ProfileProvider = ({
               const nameChanged = updatedName !== undefined && updatedName !== prev.name;
               const bioChanged = updatedBio !== undefined && updatedBio !== prev.bio;
               const avatarChanged = updatedPhoto !== undefined && updatedPhoto !== prev.avatar;
+              const roleChanged = updatedRole !== undefined && updatedRole !== prev.role;
 
               // Deduplicate: If state already reflects incoming data (optimistic update), bail out to prevent flicker
-              if (!nameChanged && !bioChanged && !avatarChanged) {
+              if (!nameChanged && !bioChanged && !avatarChanged && !roleChanged) {
                 return prev;
               }
 
@@ -310,7 +375,8 @@ export const ProfileProvider = ({
                 ...prev,
                 name: updatedName !== undefined ? updatedName : prev.name,
                 bio: updatedBio !== undefined ? updatedBio : prev.bio,
-                avatar: updatedPhoto !== undefined ? updatedPhoto : prev.avatar
+                avatar: updatedPhoto !== undefined ? updatedPhoto : prev.avatar,
+                role: updatedRole !== undefined ? updatedRole : (prev.role || "user")
               };
 
               if (onProfileChangeRef.current) {
@@ -330,6 +396,11 @@ export const ProfileProvider = ({
             }
 
             if (index === -1) {
+              // Do NOT append unrelated platform users to dbUsers
+              if (rowId !== activeUserUuid) {
+                return prev;
+              }
+
               const newUser: User = {
                 id: newRow.id,
                 user_id: newRow.public_id || newRow.user_id || "U001",

@@ -4,6 +4,10 @@ import { getPlanCover } from "../../plans/config/planCoverImages";
 import { PlansDetailsScreen } from "../../plans/screens/PlansScreen/PlansPreview/PlansPreviewScreen";
 import { pickImageFromGallery } from "../../../shared/utils/imageUtils";
 import { PlanImageEditorModal } from "../components/PlanImageEditorModal";
+import { CreatePlanActionsBottomSheet } from "../../plans/components/BottomSheets";
+import { SelectQuickPlanListBottomSheet } from "../components/SelectQuickPlanListBottomSheet";
+import { useQuickPlans } from "../hooks/useQuickPlans";
+import { useToast } from "../../../shared/contexts/ToastContext";
 import {
   resolveAssignedParticipants,
   incrementAssignedPlanSize,
@@ -22,6 +26,7 @@ interface CreatePlanReviewProps {
   onAddParticipants?: () => void;
   onSubmit: () => void;
   isSubmitting: boolean;
+  isQuickPlanMode?: boolean;
 }
 
 export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
@@ -35,9 +40,17 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
   onAddParticipants,
   onSubmit,
   isSubmitting,
+  isQuickPlanMode = false,
 }) => {
   const [editorImageFile, setEditorImageFile] = useState<File | Blob | string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSelectListOpen, setIsSelectListOpen] = useState(false);
+  const [isSavingQuickPlan, setIsSavingQuickPlan] = useState(false);
+
+  const { showToast } = useToast();
+  const hostId = form.userProfile?.dbUuid || form.userProfile?.user_id || form.activeUserId;
+  const { quickPlanLists, quickPlans, createQuickPlan, createList } = useQuickPlans(hostId);
 
   const handlePickCoverImage = async () => {
     try {
@@ -50,8 +63,75 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
     }
   };
 
+  const handleSaveToQuickPlan = async (listId: string | null = null) => {
+    if (isSavingQuickPlan) return;
+    setIsSavingQuickPlan(true);
+
+    const creatorId = form.userProfile?.dbUuid || form.userProfile?.user_id || form.activeUserId;
+    if (!creatorId) {
+      setIsSavingQuickPlan(false);
+      showToast("Cannot save: host information missing", "error");
+      return;
+    }
+
+    const titleToUse = (form.localTitle || "").trim() || "Untitled Plan";
+    const isMovieCategory = (selectedCategory || "").toLowerCase() === "movies";
+    const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
+
+    let locationToUse = (form.localLocation || "").trim();
+    if (isMovieCategory && isYearOnly(locationToUse)) locationToUse = "";
+
+    let placeAddressToUse = (form.placeAddress || "").trim() || locationToUse;
+    if (isMovieCategory && isYearOnly(placeAddressToUse)) placeAddressToUse = "";
+    const costToUse = Math.max(0, Number(form.costAmount) || 0);
+    const coverUrl = form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory || undefined);
+    const participantIds: string[] = (form.selectedFriends || []).map((f: any) => f.id || f.dbUuid).filter(Boolean);
+
+    try {
+      await createQuickPlan(
+        {
+          creator_id: creatorId,
+          quick_plan_list_id: listId,
+          name: titleToUse,
+          description: form.quickNote || null,
+          category: selectedCategory.toUpperCase(),
+          subcategory: selectedSubcategory ? selectedSubcategory.toUpperCase() : "OTHER",
+          place_id: form.placeId || null,
+          place_name: locationToUse || null,
+          place_address: placeAddressToUse || null,
+          latitude: form.latitude || null,
+          longitude: form.longitude || null,
+          cover_image: coverUrl,
+          default_cost: costToUse,
+          plan_size: form.totalCapacity !== undefined && form.totalCapacity !== null ? Number(form.totalCapacity) : null,
+        },
+        participantIds
+      );
+
+      setIsSelectListOpen(false);
+      showToast("Added to Quick Plans", "success");
+    } catch (err) {
+      console.error("[CreatePlanReview] Error adding to quick plans:", err);
+      showToast("Failed to add to Quick Plans", "error");
+    } finally {
+      setIsSavingQuickPlan(false);
+    }
+  };
+
+  const handleCreateListAndSave = async (listName: string) => {
+    const creatorId = form.userProfile?.dbUuid || form.userProfile?.user_id || form.activeUserId;
+    if (!creatorId) return;
+    try {
+      const newList = await createList({ creator_id: creatorId, name: listName });
+      await handleSaveToQuickPlan(newList.id);
+    } catch (err) {
+      console.error("[CreatePlanReview] Error creating list:", err);
+      showToast("Failed to create list", "error");
+    }
+  };
+
   const totalInvited = (form.selectedFriends?.length || 0) + (form.isHostSelected ? 1 : 0);
-  const capacity = form.totalCapacity !== undefined ? form.totalCapacity : (totalInvited || 2);
+  const capacity = form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null;
   const isAssignedMode = form.waitlistMode === 'assigned';
 
   const assignedParticipants = useMemo(() => {
@@ -142,10 +222,11 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
     const hostOffset = form.isHostSelected ? 1 : 0;
     const totalInvitedCount = hostOffset + (form.selectedFriends?.length || 0);
     const hasCapacityConfigured = form.totalCapacity !== undefined;
-    const hasWaitlist = isAssignedMode && hasCapacityConfigured && capacity < totalInvitedCount;
+    const hasWaitlist = isAssignedMode && hasCapacityConfigured && capacity !== null && capacity < totalInvitedCount;
 
     let allMembers: any[] = [];
     if (isAssignedMode && assignedParticipants) {
+      const isNoLimit = capacity === null;
       const goingMembers = assignedParticipants.going.map((f) => {
         const isHost = Boolean(f.isHost);
         const memberId = isHost ? hostId : (f.id || f.dbUuid);
@@ -158,7 +239,8 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
           isHost,
           role: isHost ? ('HOST' as const) : ('PARTICIPANT' as const),
           joinState: isHost ? ('JOINED' as const) : ('INVITED' as any),
-          assignedGroup: 'going' as const,
+          // When No Limit, assignedGroup is null so InlineParticipantView does not treat them as joined
+          assignedGroup: isNoLimit ? null : ('going' as const),
           waitlistPosition: null,
           reminderState: 'none' as const,
           joinedAt: null,
@@ -265,7 +347,10 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
       computedDeadlineIso = deadlineDate.toISOString();
     }
 
-    const resolvedLocation = form.localLocation || form.placeAddress || form.location || form.venueName || '';
+    const rawLocation = form.localLocation || form.placeAddress || form.location || form.venueName || '';
+    const isMovieCategory = (selectedCategory || '').toLowerCase() === 'movies';
+    const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || '').trim());
+    const resolvedLocation = (isMovieCategory && isYearOnly(rawLocation)) ? '' : rawLocation;
 
     return {
       id: 'create-plan-preview',
@@ -284,11 +369,11 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
       paymentAmount: isCostConfigured ? Number(form.costAmount || 0) : undefined,
       total_cost: isCostConfigured ? Number(form.costAmount || 0) : undefined,
       isCostConfigured: isCostConfigured,
-      capacity: form.totalCapacity !== undefined ? form.totalCapacity : undefined,
-      joinLimit: form.totalCapacity !== undefined ? form.totalCapacity : undefined,
-      maxSpots: form.totalCapacity !== undefined ? form.totalCapacity : undefined,
-      plan_size: form.totalCapacity !== undefined ? form.totalCapacity : null,
-      planSize: form.totalCapacity !== undefined ? form.totalCapacity : null,
+      capacity: form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null,
+      joinLimit: form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null,
+      maxSpots: form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null,
+      plan_size: form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null,
+      planSize: form.totalCapacity !== undefined && form.totalCapacity !== null ? form.totalCapacity : null,
       waitlistEnabled: form.waitlistEnabled ?? true,
       participantFiltering: isAssignedMode ? 'ASSIGNED' : 'AUTOMATIC',
       participant_filtering: isAssignedMode ? 'ASSIGNED' : 'AUTOMATIC',
@@ -321,6 +406,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
     <>
       <PlansDetailsScreen
         createMode={true}
+        isQuickPlanMode={isQuickPlanMode}
         plan={syntheticPlan}
         userProfile={userProfile}
         activeUserId={userProfile.dbUuid || (userProfile as any)?.id}
@@ -361,6 +447,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
         onDecrementCapacity={isAssignedMode ? handleDecrementPlanSize : undefined}
         onSubmit={onSubmit}
         isSubmitting={isSubmitting}
+        onOpenMenu={() => setIsMenuOpen(true)}
       />
 
       <PlanImageEditorModal
@@ -375,6 +462,29 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
           setIsEditorOpen(false);
           setEditorImageFile(null);
         }}
+      />
+
+      {/* Plan Actions Bottom Sheet: Edit plan image / Add to quick plan */}
+      <CreatePlanActionsBottomSheet
+        isOpen={isMenuOpen}
+        onClose={() => setIsMenuOpen(false)}
+        planTitle={(form.localTitle || "").trim() || "Plan"}
+        planCoverImage={syntheticPlan.coverImage}
+        planCategory={selectedCategory}
+        planSubcategory={selectedSubcategory}
+        onEditImage={handlePickCoverImage}
+        onAddToQuickPlan={() => setIsSelectListOpen(true)}
+      />
+
+      {/* Select Quick Plan List Destination Bottom Sheet */}
+      <SelectQuickPlanListBottomSheet
+        isOpen={isSelectListOpen}
+        onClose={() => setIsSelectListOpen(false)}
+        quickPlanLists={quickPlanLists}
+        allQuickPlans={quickPlans}
+        onSelectList={(listId) => handleSaveToQuickPlan(listId)}
+        onCreateAndSelectList={handleCreateListAndSave}
+        isSaving={isSavingQuickPlan}
       />
     </>
   );

@@ -144,8 +144,7 @@ export function isJoinedRsvpParticipant(
   } | null
 ): boolean {
   if (!item) return false;
-  if (item.isHost) return true;
-
+  const rawSkipReason = item.skipReason || (item as any).skip_reason;
   const raw = String(
     item.rsvpStatus ||
     (item as any).rsvp_status ||
@@ -153,6 +152,12 @@ export function isJoinedRsvpParticipant(
     (item as any).status ||
     ''
   ).trim().toUpperCase();
+
+  if (raw === 'SKIPPED' || Boolean(rawSkipReason)) {
+    return false;
+  }
+
+  if (item.isHost || (item as any).role === 'HOST' || (item as any).role === 'host') return true;
 
   if (raw === 'JOINED' || raw === 'GOING' || raw === 'ACCEPTED' || raw === 'CONFIRMED') {
     return true;
@@ -170,6 +175,76 @@ export function isJoinedRsvpParticipant(
   }
 
   return Boolean(item.isAccepted);
+}
+
+/**
+ * Checks if a participant has an active Invited RSVP status (not joined, not waitlisted, not skipped).
+ * Only participants whose RSVP status is "Invited" return true.
+ */
+export function isInvitedRsvpParticipant(
+  item: {
+    rsvpStatus?: string;
+    isAccepted?: boolean;
+    isHost?: boolean;
+    role?: string;
+    skipReason?: string | null;
+    [key: string]: any;
+  } | null
+): boolean {
+  if (!item) return false;
+  if (isJoinedRsvpParticipant(item)) return false;
+
+  const rawSkipReason = item.skipReason || (item as any).skip_reason;
+  if (rawSkipReason) return false;
+
+  const raw = String(
+    item.rsvpStatus ||
+    (item as any).rsvp_status ||
+    (item as any).joinState ||
+    (item as any).status ||
+    ''
+  ).trim().toUpperCase();
+
+  if (
+    raw === 'SKIPPED' ||
+    raw === 'REJOINED' ||
+    raw === 'WAITLIST' ||
+    raw === 'WAITLISTED' ||
+    raw === 'DECLINED'
+  ) {
+    return false;
+  }
+
+  const rawGroup = String((item as any).assigned_group || (item as any).assignedGroup || '').trim().toUpperCase();
+  if (rawGroup === 'WAITLIST') {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Calculates the canonical No Limit plan join denominator: Joined + Invited.
+ * Represents the total number of participants currently eligible/in the active RSVP pool.
+ * Explicitly excludes Skipped, Rejoined, and Waitlisted participants.
+ */
+export function calculateNoLimitDenominator(participants: any[]): number {
+  if (!participants || participants.length === 0) return 0;
+  const seen = new Set<string>();
+  const uniqueParticipants: any[] = [];
+  for (const p of participants) {
+    if (!p) continue;
+    const id = p.dbUuid || p.userUuid || (p as any).user_uuid || p.userId || (p as any).user_id || p.id;
+    if (id) {
+      const key = typeof id === 'string' ? id.toLowerCase() : String(id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    uniqueParticipants.push(p);
+  }
+  const joined = uniqueParticipants.filter(isJoinedRsvpParticipant).length;
+  const invited = uniqueParticipants.filter(isInvitedRsvpParticipant).length;
+  return joined + invited;
 }
 
 export type EffectiveParticipantState = 'GOING' | 'WAITLIST' | 'SKIPPED' | 'INVITED';
@@ -279,15 +354,35 @@ export interface SortableParticipantEntry {
   dbUuid?: string;
   id?: string;
   isAccepted?: boolean;
+  rsvpStatus?: string;
   [key: string]: any;
+}
+
+/**
+ * Returns true if a participant entry is JOINED/ACCEPTED (not just INVITED).
+ * Checks rsvpStatus first (canonical), then isAccepted as fallback.
+ */
+function isJoinedEntry(item: SortableParticipantEntry): boolean {
+  const raw = String(
+    item.rsvpStatus || (item as any).rsvp_status || (item as any).joinState || ''
+  ).trim().toUpperCase();
+
+  if (raw === 'JOINED' || raw === 'ACCEPTED' || raw === 'GOING' || raw === 'CONFIRMED' || raw === 'WAITLISTED') {
+    return true;
+  }
+  if (raw === 'INVITED') {
+    return false;
+  }
+  // Fall back to isAccepted when rsvpStatus is absent/unrecognised
+  return item.isAccepted !== false;
 }
 
 /**
  * Shared ordering helper for the Going/Joined section across Inline Participant Toggle and Participant Management screen.
  * Ordering rules:
  * 1. You / current user (always first at index 0, regardless of RSVP state).
- * 2. Joined/accepted participants (isAccepted !== false) sorted alphabetically A -> Z.
- * 3. Invited participants (isAccepted === false) sorted alphabetically A -> Z.
+ * 2. JOINED/ACCEPTED participants sorted alphabetically A -> Z.
+ * 3. INVITED participants (not yet responded) sorted alphabetically A -> Z.
  */
 export function sortGoingParticipants<T extends SortableParticipantEntry>(
   list: T[],
@@ -309,8 +404,9 @@ export function sortGoingParticipants<T extends SortableParticipantEntry>(
 
   const remaining = list.filter((item) => item !== currentUser);
 
-  const joinedList = remaining.filter((item) => item.isAccepted !== false);
-  const invitedList = remaining.filter((item) => item.isAccepted === false);
+  // Split by effective RSVP status: JOINED/ACCEPTED before INVITED
+  const joinedList = remaining.filter((item) => isJoinedEntry(item));
+  const invitedList = remaining.filter((item) => !isJoinedEntry(item));
 
   const joinedSorted = sortAlpha(joinedList);
   const invitedSorted = sortAlpha(invitedList);
@@ -651,5 +747,79 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   };
 }
 
+export type ParticipantVisibleTab = 'going' | 'waitlist' | 'invited' | 'skipped';
 
+export interface ResolveParticipantVisibleTabsParams {
+  mode?: 'wizard' | 'editor';
+  waitlistMode?: 'assigned' | 'automatic' | string;
+  capacity?: number | null;
+  goingCount: number;
+  waitlistCount: number;
+  skippedCount?: number;
+  isCompletedPlan?: boolean;
+}
 
+/**
+ * Single shared source of truth for participant tab visibility across
+ * Participant Management (Assigned/Automatic screens) and Plan Preview (InlineParticipantView / CreatePlanReview).
+ */
+export function resolveParticipantVisibleTabs({
+  mode = 'wizard',
+  waitlistMode = 'automatic',
+  capacity,
+  goingCount,
+  waitlistCount,
+  skippedCount = 0,
+  isCompletedPlan = false,
+}: ResolveParticipantVisibleTabsParams): ParticipantVisibleTab[] {
+  if (isCompletedPlan) {
+    const tabs: ParticipantVisibleTab[] = [];
+    if (goingCount > 0) tabs.push('going');
+    if (skippedCount > 0) tabs.push('skipped');
+    return tabs;
+  }
+
+  const isNoLimit = capacity === null || capacity === undefined;
+  const normalizedWaitlistMode = String(waitlistMode ?? '').trim().toLowerCase();
+  const isAssigned = normalizedWaitlistMode === 'assigned';
+
+  // In wizard mode (Plan Creation / Arrange Participants):
+  if (mode === 'wizard') {
+    if (!isAssigned) {
+      // Automatic mode wizard: plan is not created yet; all selected participants are Invited
+      return ['invited'];
+    }
+
+    // Assigned mode wizard:
+    if (isNoLimit) {
+      // When plan size is No Limit, no waitlist exists; all participants are Invited
+      return ['invited'];
+    }
+
+    // When plan size is limited in Assigned mode:
+    const tabs: ParticipantVisibleTab[] = [];
+    if (goingCount > 0) tabs.push('going');
+    // If waitlist has participants, show waitlist tab.
+    // When waitlist reaches 0, stop showing waitlisted tab.
+    if (waitlistCount > 0) tabs.push('waitlist');
+    return tabs.length > 0 ? tabs : ['invited'];
+  }
+
+  // In editor / live plan mode:
+  const tabs: ParticipantVisibleTab[] = [];
+  if (isNoLimit) {
+    // No Limit plans always show 'going' (green Joined) in editor mode.
+    // There is no capacity constraint so all participants effectively "joined".
+    // This matches the Participant Management screen behavior for limited plans.
+    if (goingCount > 0) tabs.push('going');
+  } else {
+    if (goingCount > 0) tabs.push('going');
+    if (waitlistCount > 0) tabs.push('waitlist');
+  }
+
+  if (skippedCount > 0) {
+    tabs.push('skipped');
+  }
+
+  return tabs.length > 0 ? tabs : ['going'];
+}

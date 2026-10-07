@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion } from "motion/react";
 import { supabase } from "../../../../../lib/supabaseClient";
 import { UserProfile } from "../../../../core/types";
-import planlessLogo from "../../../../assets/planless_logo.png";
-import onboardingCups from "../../../../assets/Onboarding_cups.png";
-import defaultAvatar from "../../../../assets/default_avatar.png";
+import planlessLogo from "../../../../assets/planless_logo.webp";
+import onboardingCups from "../../../../assets/Onboarding_cups.webp";
+import defaultAvatar from "../../../../assets/default_avatar.webp";
 import { preloadImage } from "../../../../shared/imaging/preloadImage";
 
 // Session Persistence for OTP flow in localStorage

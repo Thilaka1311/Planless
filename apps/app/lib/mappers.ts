@@ -9,7 +9,7 @@ import {
 import { normalizeStatus } from "./participantStatus";
 import { getPlanCover, PLAN_COVER_IMAGES } from "../src/features/plans/config/planCoverImages";
 import { getPlanSlug } from "../src/features/plans/utils/planSlugUtils";
-import defaultAvatar from "../src/assets/default_avatar.png";
+import defaultAvatar from "../src/assets/default_avatar.webp";
 
 // ── avatar helper ───────────────────────────────────────────────────────────
 
@@ -87,6 +87,25 @@ export const mapPlansToLegacyPlans = (
     ) || (hostIdVal === activeUserId || hostIdVal === activeUuid || hostIdVal === activeShortId);
 
     let creator = findUserInList(hostIdVal);
+    if (!creator) {
+      const embeddedHost = (p as any).host_profile || (hostParticipant as any)?.user_profile;
+      if (embeddedHost) {
+        creator = {
+          id: embeddedHost.id,
+          user_id: embeddedHost.public_id || embeddedHost.id || "U001",
+          username: embeddedHost.username || (embeddedHost.full_name || "").toLowerCase().replace(/\s+/g, ""),
+          full_name: embeddedHost.full_name || "Host",
+          phone_number: embeddedHost.phone_number || "",
+          profile_photo: embeddedHost.profile_photo_path || embeddedHost.profile_photo || "",
+          profile_photo_path: embeddedHost.profile_photo_path || "",
+          bio: embeddedHost.bio || "",
+          college_or_work: embeddedHost.college_or_work || "",
+          created_at: embeddedHost.created_at || "",
+          wallet_balance: 0,
+          active_status: true,
+        };
+      }
+    }
     let hostNameVal = isUsersHydrating ? "Loading..." : "Anonymous Host";
     let hostAvatarVal = isUsersHydrating ? "" : defaultAvatar;
 
@@ -127,7 +146,24 @@ export const mapPlansToLegacyPlans = (
 
     const members = sortParticipantsByResponseOrder(
       uniqueParticipants.map(ip => {
-        const u = findUserInList(ip.user_id);
+        let u = findUserInList(ip.user_id);
+        if (!u && (ip as any).user_profile) {
+          const prof = (ip as any).user_profile;
+          u = {
+            id: prof.id,
+            user_id: prof.public_id || prof.id || "U001",
+            username: prof.username || (prof.full_name || "").toLowerCase().replace(/\s+/g, ""),
+            full_name: prof.full_name || "Participant",
+            phone_number: prof.phone_number || "",
+            profile_photo: prof.profile_photo_path || prof.profile_photo || "",
+            profile_photo_path: prof.profile_photo_path || "",
+            bio: prof.bio || "",
+            college_or_work: prof.college_or_work || "",
+            created_at: prof.created_at || "",
+            wallet_balance: 0,
+            active_status: true,
+          };
+        }
         if (!u) {
           if (!isUsersHydrating) {
             console.warn(
@@ -246,7 +282,7 @@ export const mapPlansToLegacyPlans = (
     const invitedParticipantsVal = (p as any).invited_participants ?? planSizeVal;
     const costVal = p.total_cost !== undefined ? Number(p.total_cost) : 0;
     const rawCover = p.cover_image || dbItem?.cover_image_url;
-    const coverImageVal = (rawCover && rawCover !== "planimagedefault.png" && rawCover !== "default" && !rawCover.includes("plan-covers"))
+    const coverImageVal = (rawCover && rawCover !== "planimagedefault.png" && rawCover !== "planimagedefault.webp" && rawCover !== "default" && !rawCover.includes("plan-covers"))
       ? rawCover
       : getPlanCover(p.category, p.subcategory);
 
@@ -283,9 +319,9 @@ export const mapPlansToLegacyPlans = (
       groupId: null,
       hostId: hostIdVal,
       members: members,
-      capacity: planSizeVal,
-      planSize: planSizeVal,
-      plan_size: planSizeVal,
+      capacity: (p as any).plan_size === null ? null : planSizeVal,
+      planSize: (p as any).plan_size === null ? null : planSizeVal,
+      plan_size: (p as any).plan_size === null ? null : planSizeVal,
       invited_participants: invitedParticipantsVal,
       date: dateVal,
       time: timeVal,

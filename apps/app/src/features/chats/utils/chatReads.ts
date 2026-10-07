@@ -67,11 +67,10 @@ export function subscribeToChatReadEvents(callback: (planId: string) => void): (
 }
 
 /**
- * Formats a message ISO timestamp into a WhatsApp-style compact chat list time string:
- * - "10:45 AM" if today
+ * Formats a message ISO timestamp into a compact chat list time string:
+ * - "16:26" (24-hour) if today
  * - "Yesterday" if yesterday
- * - "Wed" if within the last 6 days
- * - "Sep 15" if older
+ * - "dd-mm-yy" if older than yesterday
  */
 export function formatChatListTimestamp(dateString?: string | null): string {
   if (!dateString) return "";
@@ -85,12 +84,9 @@ export function formatChatListTimestamp(dateString?: string | null): string {
     date.getFullYear() === now.getFullYear();
 
   if (isToday) {
-    let hours = date.getHours();
-    const minutes = date.getMinutes().toString().padStart(2, "0");
-    const ampm = hours >= 12 ? "PM" : "AM";
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    return `${hours}:${minutes} ${ampm}`;
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${hours}:${minutes}`;
   }
 
   const yesterday = new Date(now);
@@ -104,11 +100,9 @@ export function formatChatListTimestamp(dateString?: string | null): string {
     return "Yesterday";
   }
 
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays < 7 && diffDays > 0) {
-    return date.toLocaleDateString("en-US", { weekday: "short" });
-  }
-
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  // Older than yesterday: dd-mm-yy
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yy = String(date.getFullYear()).slice(-2);
+  return `${dd}-${mm}-${yy}`;
 }

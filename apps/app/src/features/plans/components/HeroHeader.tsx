@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle, Share2 } from "lucide-react";
+import { ArrowLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle, Share2, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
@@ -19,6 +19,7 @@ export interface HostInfo {
 
 interface HeroHeaderProps {
   title: string;
+  headerBadge?: string;
   creatorName?: string;
   creatorAvatar?: string;
   hosts?: HostInfo[];
@@ -53,6 +54,8 @@ interface HeroHeaderProps {
   onOpenChat?: () => void;
   /** Called when the user taps Expenses in the chat header menu */
   onOpenExpenses?: () => void;
+  /** Called when the user taps the top-right menu button */
+  onOpenMenu?: () => void;
   currentPage?: number;
   onSelectPage?: (pageIndex: number) => void;
   titleError?: boolean | string | null;
@@ -61,6 +64,7 @@ interface HeroHeaderProps {
 
 export const HeroHeader: React.FC<HeroHeaderProps> = ({
   title,
+  headerBadge,
   creatorName,
   creatorAvatar,
   hosts,
@@ -73,6 +77,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   onOpenChat,
   onOpenSettings,
   onSharePlanLink,
+  onOpenMenu,
   overflowMenuItems = [],
   coverImage,
   category,
@@ -213,21 +218,25 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               </h1>
             </button>
 
-            {/* Header action button — right side: Direct Settings Action */}
+            {/* Header action button — right side: Direct Settings Action or Menu */}
             <div className="flex items-center gap-0.5 flex-shrink-0 -mr-2">
-              {onOpenSettings && (
+              {(onOpenMenu || onOpenSettings) && (
                 <button
                   id="immersive-plan-settings-btn"
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onOpenSettings();
+                    if (onOpenMenu) {
+                      onOpenMenu();
+                    } else if (onOpenSettings) {
+                      onOpenSettings();
+                    }
                   }}
                   className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
                   style={{ minWidth: "40px", minHeight: "40px" }}
-                  title="Settings"
+                  title="Plan Menu"
                 >
-                  <Settings className="w-5 h-5" />
+                  {onOpenMenu ? <MoreVertical className="w-5 h-5" /> : <Settings className="w-5 h-5" />}
                 </button>
               )}
             </div>
@@ -290,14 +299,18 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
 
         {/* Right action buttons — Contextual Popup Menu */}
         <div ref={menuRef} className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto">
-          {(onOpenChat || onOpenSettings || onSharePlanLink || showOverflow) && (
+          {(onOpenMenu || onOpenChat || onOpenSettings || onSharePlanLink || showOverflow) && (
             <div className="relative">
               <button
                 id="immersive-plan-overflow-btn"
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setMenuOpen((prev) => !prev);
+                  if (onOpenMenu) {
+                    onOpenMenu();
+                  } else {
+                    setMenuOpen((prev) => !prev);
+                  }
                 }}
                 className="w-9 h-9 flex items-center justify-center text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer"
                 title="Plan Menu"
@@ -345,7 +358,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                       >
                         <Share2 className="w-4 h-4 text-zinc-400 group-hover:text-white shrink-0" />
                         <span className="text-xs font-semibold text-white tracking-tight">
-                          Share Plan Link
+                          Share Plan
                         </span>
                       </button>
                     )}
@@ -378,6 +391,12 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           onClick={!isEditingTitle && onHeaderPress ? onHeaderPress : undefined}
           className={`flex flex-col items-center max-w-full ${onHeaderPress ? "cursor-pointer pointer-events-auto" : "pointer-events-none"}`}
         >
+          {headerBadge && (
+            <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#FF6B2C]/20 border border-[#FF6B2C]/40 text-[#FF6B2C] text-[11px] font-bold tracking-wider uppercase mb-1.5 shadow-sm">
+              <Zap className="w-3 h-3 fill-[#FF6B2C]" />
+              <span>{headerBadge}</span>
+            </div>
+          )}
           {coverImage && (
             <div
               onClick={onEditCoverImage ? (e) => { e.stopPropagation(); onEditCoverImage(); } : undefined}

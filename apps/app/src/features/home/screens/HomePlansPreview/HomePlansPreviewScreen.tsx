@@ -19,14 +19,15 @@ import { useHoldToAccept } from "../../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "../../components/HoldToAccept";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
 import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
-import { JoinPlanConfirmationBottomSheet, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet, InvitedPlanActionsBottomSheet } from "../../../plans/components/BottomSheets";
+import { JoinPlanConfirmationBottomSheet, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet, InvitedPlanActionsBottomSheet, SharePlanLinkBottomSheet } from "../../../plans/components/BottomSheets";
 import { LiveActionButton } from "../../../plans/components/LiveActionButton";
 import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
 import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../../plans/utils/planUtils";
 import { getPlanPreviewCtaState } from "../../../plans/utils/planPreviewCtaUtils";
-import { PlanChatScreen } from "../../../chats/screens/PlanChatScreen";
-import { PlanDetailsScreen as PlanBalancesScreen } from "../../../wallet/screens/PlanBalances";
+const PlanChatScreen = React.lazy(() =>
+  import("../../../chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen }))
+);
 
 export interface PlansPreviewScreenProps {
   planId: string;
@@ -83,8 +84,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const [showCompletionFlow, setShowCompletionFlow] = useState(false);
   const [showManageTeams, setShowManageTeams] = useState(false);
   const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
-  const [showPlanBalancesScreen, setShowPlanBalancesScreen] = useState(false);
   const [showPlanActionsSheet, setShowPlanActionsSheet] = useState(false);
+  const [showSharePlanLinkSheet, setShowSharePlanLinkSheet] = useState(false);
 
   const resolvedUserUuid = userProfile.dbUuid || activeUserId || "";
 
@@ -117,6 +118,9 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const isHost = selectedPlan?.members
     ? selectedPlan.members.some(m => (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid) && m.isHost)
     : false;
+
+  const isCancelled = Boolean((selectedPlan?.status || "").toUpperCase() === "CANCELLED");
+  const isCompleted = Boolean((selectedPlan?.status || "").toUpperCase() === "COMPLETED");
 
   const activeHostMembers = useMemo(() => {
     if (!selectedPlan?.members) return [];
@@ -155,6 +159,14 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   }, [selectedPlan?.members, resolvedUserUuid]);
 
   const isCreatorHost = isHost;
+
+  const allowParticipantInvites = useMemo(() => {
+    return Boolean(
+      selectedPlan?.allowParticipantInvites === true ||
+      (selectedPlan as any)?.allow_participant_invites === true ||
+      (rawDbPlan as any)?.allow_participant_invites === true
+    );
+  }, [selectedPlan, rawDbPlan]);
 
   const rsvp = useRSVPDeadline(selectedPlan?.response_deadline_at);
   const urgencyColor = rsvp.color;
@@ -246,18 +258,16 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const alreadySkipped = Boolean(myMemberEntry && myMemberEntry.joinState === "SKIPPED");
   const isWaitlist = Boolean(myMemberEntry && myMemberEntry.joinState === "WAITLISTED");
 
-  // CTA logic source of truth:
-  // - Assigned plans: participant's assigned_group (GOING -> Join Plan, WAITLIST -> Join Waitlist, capacity does not override)
-  // - Automatic plans: current capacity (joined_count < plan_size -> Join Plan, joined_count >= plan_size -> Join Waitlist)
+  const isNoLimit = rawDbPlan?.plan_size === null || (selectedPlan as any)?.plan_size === null;
   const ctaState = useMemo(() => {
     return getPlanPreviewCtaState({
       isAssignedMode,
       assignedGroup,
       joinedCount: currentCount,
-      planSize: maxSpots,
+      planSize: isNoLimit ? null : maxSpots,
       alreadySkipped,
     });
-  }, [isAssignedMode, assignedGroup, currentCount, maxSpots, alreadySkipped]);
+  }, [isAssignedMode, assignedGroup, currentCount, isNoLimit, maxSpots, alreadySkipped]);
 
   const isFull = ctaState.isWaitlistTarget;
 
@@ -456,6 +466,9 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, isSoleHost]);
 
   const handleLiveActionClick = useCallback(() => {
+    if (!isHost && (isCompleted || isCancelled)) {
+      return;
+    }
     const rawRsvp = effectiveParticipantRecord?.rsvp_status || (effectiveParticipantRecord as any)?.joinState;
     const status = normalizeStatus(rawRsvp);
     if (status === 'INVITED') {
@@ -471,7 +484,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     } else {
       setShowPlanActionsSheet(true);
     }
-  }, [effectiveParticipantRecord, isSoleHost]);
+  }, [effectiveParticipantRecord, isSoleHost, isHost, isCompleted, isCancelled]);
 
   if (!selectedPlan) return null;
 
@@ -545,7 +558,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 pointer-events-none z-10" />
 
-          {/* Shared Hero Header - Participant Role Strictly Enforced */}
+          {/* Shared Hero Header - Matches Plan Preview three-dot menu */}
           <HeroHeader
             title={selectedPlan.title}
             creatorName={selectedPlan.creatorName}
@@ -553,7 +566,24 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
             hosts={allHosts}
             viewerId={resolvedUserUuid}
             onClose={onClose}
-            isHost={false}
+            isHost={isHost && !isCancelled && !isCompleted}
+            onOpenChat={() => {
+              if (onOpenChat) {
+                onOpenChat(selectedPlan.id);
+              } else {
+                setSelectedChatPlanId(selectedPlan.id);
+              }
+            }}
+            onOpenSettings={
+              isCancelled || isCompleted
+                ? undefined
+                : () => setShowPlanSettingsScreen(true)
+            }
+            onSharePlanLink={
+              !isCancelled && !isCompleted && (isHost || allowParticipantInvites) && currentCount < 50
+                ? () => setShowSharePlanLinkSheet(true)
+                : undefined
+            }
           />
 
           {/* Integrated Glass Details Card Repositioned */}
@@ -569,14 +599,20 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
                 </div>
 
                 {/* 2. Location (Row 2) if location present */}
-                {selectedPlan.location && (
-                  <div className="flex items-center gap-3 p-1.5 -m-1.5 rounded-xl">
-                    <MapPin className="w-4.5 h-4.5 text-[#FF5A1F] flex-shrink-0" />
-                    <span className="text-[13px] font-semibold text-white/95 leading-none truncate">
-                      {selectedPlan.location}
-                    </span>
-                  </div>
-                )}
+                {(() => {
+                  const isMovie = (selectedPlan.category || "").toLowerCase() === "movies";
+                  const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
+                  const displayLoc = (isMovie && isYearOnly(selectedPlan.location)) ? "" : (selectedPlan.location || "");
+                  if (!displayLoc) return null;
+                  return (
+                    <div className="flex items-center gap-3 p-1.5 -m-1.5 rounded-xl">
+                      <MapPin className="w-4.5 h-4.5 text-[#FF5A1F] flex-shrink-0" />
+                      <span className="text-[13px] font-semibold text-white/95 leading-none truncate">
+                        {displayLoc}
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {/* 3. RSVP & Cost Row (Row 3) */}
                 <div className="flex items-center justify-between text-white/50 text-[11px] font-medium leading-none pt-1">
@@ -639,8 +675,10 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       {/* Bottom Live-Plan Action CTA for Invited Users ("You're Invited") */}
       <LiveActionButton
         myParticipantRecord={effectiveParticipantRecord}
+        isCancelled={isCancelled}
+        isCompleted={isCompleted}
         className="no-hold z-40"
-        onClick={handleLiveActionClick}
+        onClick={(!isHost && (isCompleted || isCancelled)) ? undefined : handleLiveActionClick}
       />
 
       {/* Hold-to-Join Overlay */}
@@ -753,6 +791,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
       <CancelLeaveRequestBottomSheet
         isOpen={showCancelLeaveRequestConfirmation}
+        plan={selectedPlan}
         planTitle={selectedPlan?.title}
         isSubmitting={isCancellingLeaveRequest}
         onConfirm={handleConfirmCancelLeaveRequest}
@@ -771,29 +810,22 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       {/* 💬 PLAN CHAT OVERLAY */}
       {selectedChatPlanId && (
         <div className="fixed inset-0 z-[80] bg-[#050505]">
-          <PlanChatScreen
-            planId={selectedChatPlanId}
-            onBack={() => setSelectedChatPlanId(null)}
-            onOpenPlanDetails={() => {
-              setSelectedChatPlanId(null);
-            }}
-          />
+          <React.Suspense fallback={
+            <div className="w-full h-full flex items-center justify-center bg-[#050505]">
+              <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
+            </div>
+          }>
+            <PlanChatScreen
+              planId={selectedChatPlanId}
+              onBack={() => setSelectedChatPlanId(null)}
+              onOpenPlanDetails={() => {
+                setSelectedChatPlanId(null);
+              }}
+            />
+          </React.Suspense>
         </div>
       )}
 
-      {/* 💳 PLAN BALANCES / EXPENSES OVERLAY */}
-      {showPlanBalancesScreen && selectedPlan && (
-        <div className="fixed inset-0 z-[80] bg-[#050505]">
-          <PlanBalancesScreen
-            planId={selectedPlan.id}
-            onBack={() => setShowPlanBalancesScreen(false)}
-            onRefreshBalances={async () => { }}
-            activeUserId={activeUserId || userProfile.dbUuid || (userProfile as any)?.id || ""}
-            onSelectPlan={() => { }}
-            onToggleBottomNav={() => { }}
-          />
-        </div>
-      )}
 
       <AnimatePresence>
         {showCompletionFlow && (
@@ -808,6 +840,15 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
           />
         )}
       </AnimatePresence>
+
+      {/* ---------------- 🔗 SHARE PLAN LINK BOTTOM SHEET ---------------- */}
+      <SharePlanLinkBottomSheet
+        isOpen={showSharePlanLinkSheet}
+        onClose={() => setShowSharePlanLinkSheet(false)}
+        planId={selectedPlan ? cleanPlanId(selectedPlan.dbUuid || selectedPlan.id) : ""}
+        userUuid={resolvedUserUuid}
+        plan={selectedPlan}
+      />
     </motion.div>
   );
 };

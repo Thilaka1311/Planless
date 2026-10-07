@@ -4,9 +4,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { subTabVariants } from '../../../shared/transitions/motionTokens';
 import { SharedParticipantScreenProps, Friend, ParticipantTab } from '../shared/types';
 import { ParticipantHeader } from '../shared/ParticipantHeader';
-import { PlanSizeCard } from '../shared/PlanSizeCard';
-import { partitionAutomaticParticipants } from '../../../../lib/participantStatus';
-
+import {
+  isJoinedRsvpParticipant,
+  partitionAutomaticParticipants,
+  calculateNoLimitDenominator,
+} from '../../../../lib/participantStatus';
 import { AutomaticParticipantTabs } from './AutomaticParticipantTabs';
 import { AutomaticWaitlistActions } from './AutomaticWaitlistActions';
 import { GoingSection } from '../components/GoingSection';
@@ -128,13 +130,13 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         goingJoinedCount: currentUserItem ? 1 : 0,
       };
     }
-    const allMembers = [
+    const members = [
       ...externalGoingList,
       ...externalWaitlist,
       ...externalInvitedList,
       ...(externalSkippedList || []),
     ];
-    return partitionAutomaticParticipants(allMembers, capacity ?? 2, userProfile?.dbUuid || userProfile?.id);
+    return partitionAutomaticParticipants(members, capacity ?? 0, userProfile?.dbUuid || userProfile?.id);
   }, [
     mode,
     hostItem,
@@ -153,17 +155,33 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   const displayGoing = partitioned.going;
   const displayWaitlist = partitioned.waitlist;
   const displaySkipped = partitioned.skipped;
-  const actualJoinedCount = partitioned.goingJoinedCount;
+  const actualJoinedCount = useMemo(() => {
+    if (isCompletedPlan) return displayGoing.length;
+    return displayGoing.filter(isJoinedRsvpParticipant).length;
+  }, [displayGoing, isCompletedPlan]);
 
-  const isConfigured = Boolean(isCapacityConfigured && capacity !== undefined);
-  const isFull = (capacity ?? 0) > 0 && actualJoinedCount >= (capacity ?? 0);
-  const totalInvitedCount = (hostItem ? 1 : 0) + selectedFriends.length;
-
-  useEffect(() => {
-    if (mode === 'wizard' && totalInvitedCount > 0 && capacity !== undefined && capacity > totalInvitedCount) {
-      onAdjustCapacity?.(totalInvitedCount);
+  const allMembers = useMemo(() => {
+    if (mode === 'wizard') {
+      return (hostItem ? [hostItem] : []).concat(selectedFriends);
     }
-  }, [mode, capacity, totalInvitedCount, onAdjustCapacity]);
+    return [
+      ...externalGoingList,
+      ...externalWaitlist,
+      ...externalInvitedList,
+      ...(externalSkippedList || []),
+    ];
+  }, [mode, hostItem, selectedFriends, externalGoingList, externalWaitlist, externalInvitedList, externalSkippedList]);
+
+  const isNoLimit = capacity === null || capacity === undefined;
+  const noLimitDenominator = useMemo(() => {
+    return calculateNoLimitDenominator(allMembers);
+  }, [allMembers]);
+
+  const isConfigured = Boolean(isCapacityConfigured && capacity !== undefined && capacity !== null);
+  const isFull = Boolean(capacity && capacity > 0 && actualJoinedCount >= capacity);
+  const totalInvitedCount = mode === 'wizard'
+    ? (hostItem ? 1 : 0) + selectedFriends.length
+    : (externalGoingList.length + externalWaitlist.length + externalInvitedList.length);
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     if (isCompletedPlan) {
@@ -180,29 +198,24 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       return ['invited'];
     }
 
+    const isNoLimit = capacity === null || capacity === undefined;
     const tabs: ParticipantTab[] = [];
 
-    if (!isFull) {
-      // Plan not full: RULE 4 — joined + invited all live in displayGoing,
-      // no waitlist yet. Show a single "Invited" tab that counts the whole roster.
-      if (displayGoing.length > 0) {
-        tabs.push('invited');
-      }
-    } else {
-      // Plan full: separate Joined and Waitlist tabs.
-      if (displayGoing.length > 0) {
-        tabs.push('going');
-      }
-      if (displayWaitlist.length > 0) {
-        tabs.push('waitlist');
-      }
+    // In editor mode (Participant Management screen), 'going' (Joined) is always the primary tab.
+    // The "Invited" tab is completely removed from Participant Management.
+    if (displayGoing.length > 0) {
+      tabs.push('going');
+    }
+
+    if (!isNoLimit && displayWaitlist.length > 0) {
+      tabs.push('waitlist');
     }
 
     if (displaySkipped.length > 0) {
       tabs.push('skipped');
     }
-    return tabs;
-  }, [mode, isFull, displayGoing.length, displayWaitlist.length, displaySkipped.length, isCompletedPlan]);
+    return tabs.length > 0 ? tabs : ['going'];
+  }, [mode, capacity, displayGoing.length, displayWaitlist.length, displaySkipped.length, isCompletedPlan]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>(
     mode === 'wizard' ? 'invited' : 'going'
@@ -215,12 +228,9 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       return;
     }
     if (initialMountRef.current && visibleTabs.length > 0) {
-      let defaultTab: ParticipantTab;
-      if (initialTab && visibleTabs.includes(initialTab)) {
+      let defaultTab: ParticipantTab = 'going';
+      if (initialTab && initialTab !== 'invited' && visibleTabs.includes(initialTab)) {
         defaultTab = initialTab;
-      } else if (visibleTabs.includes('invited')) {
-        // Pre-full state: default to the combined Invited tab.
-        defaultTab = 'invited';
       } else if (visibleTabs.includes('going')) {
         defaultTab = 'going';
       } else if (visibleTabs.includes('waitlist')) {
@@ -235,7 +245,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
 
   useEffect(() => {
     if (visibleTabs.length > 0 && !visibleTabs.includes(activeTab)) {
-      const fallbackTab = (['going', 'invited', 'waitlist', 'skipped'] as ParticipantTab[]).find((t) => visibleTabs.includes(t)) || visibleTabs[0];
+      const fallbackTab = (['going', 'waitlist', 'skipped'] as ParticipantTab[]).find((t) => visibleTabs.includes(t)) || visibleTabs[0];
       setActiveTab(fallbackTab);
     }
   }, [visibleTabs, activeTab]);
@@ -322,11 +332,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           variant={mode === 'wizard' ? 'plain' : 'card'}
           capacity={capacity}
           isCapacityConfigured={isCapacityConfigured}
-          invitedCount={
-            mode === 'wizard'
-              ? selectedFriends.length + (isHostSelected ? 1 : 0)
-              : externalGoingList.length + externalWaitlist.length + externalInvitedList.length + (externalSkippedList?.length || 0)
-          }
+          invitedCount={totalInvitedCount}
         />
       )}
 
@@ -334,15 +340,10 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         visibleTabs={visibleTabs}
         activeTab={activeTab}
         goingCount={isCompletedPlan ? displayGoing.length : actualJoinedCount}
-        capacity={isFull ? capacity : undefined}
+        capacity={capacity}
         waitlistCount={displayWaitlist.length}
-        invitedCount={
-          mode === 'wizard'
-            ? (hostItem ? 1 : 0) + selectedFriends.length
-            // Pre-full: the invited tab shows the full roster (joined + invited merged in displayGoing)
-            // Full: show going + waitlist combined count as a secondary context value (unused by tabs)
-            : displayGoing.length + displayWaitlist.length
-        }
+        noLimitDenominator={noLimitDenominator}
+        invitedCount={isNoLimit ? noLimitDenominator : totalInvitedCount}
         skippedCount={displaySkipped.length}
         isCompletedPlan={isCompletedPlan}
         hideCapacityDenominator={mode === 'wizard'}
@@ -446,13 +447,13 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
 
       <EditCapacityBottomSheet
         isOpen={effectiveIsHost && isCapacitySheetOpen}
-        capacity={mode === 'wizard' ? Math.min(capacity ?? totalInvitedCount, totalInvitedCount) : (capacity ?? 2)}
+        capacity={capacity ?? null}
         invitedCount={mode === 'wizard' ? totalInvitedCount : (externalGoingList.length + externalWaitlist.length + externalInvitedList.length)}
         joinedCount={mode === 'wizard' ? undefined : externalGoingList.length}
         waitlistedCount={mode === 'wizard' ? undefined : externalWaitlist.length}
         minCapacity={2}
-        maxCapacity={mode === 'wizard' ? totalInvitedCount : (maxCapacity ?? Math.max(2, externalGoingList.length + externalWaitlist.length + externalInvitedList.length))}
-        limitToInvitedCount={true}
+        maxCapacity={50}
+        limitToInvitedCount={false}
         isAutomatic={true}
         onCapacityChange={(newCap) => {
           if (onAdjustCapacity) {
@@ -460,8 +461,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
               onAdjustCapacity(null);
               return;
             }
-            const activeCount = externalGoingList.length + externalWaitlist.length + externalInvitedList.length;
-            const capped = Math.min(newCap, mode === 'wizard' ? totalInvitedCount : (maxCapacity ?? Math.max(2, activeCount)));
+            const capped = Math.min(newCap, 50);
             onAdjustCapacity(capped);
           }
         }}

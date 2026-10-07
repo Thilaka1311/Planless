@@ -14,11 +14,11 @@ import {
   X,
 } from "lucide-react";
 
-import movieCover from "../../../../assets/Movies.png";
-import diningCover from "../../../../assets/dining.png";
-import sportsCover from "../../../../assets/sports.png";
-import customPlanCover from "../../../../assets/planimagedefault.png";
-import defaultAvatar from "../../../../assets/default_avatar.png";
+import movieCover from "../../../../assets/Movies.webp";
+import diningCover from "../../../../assets/dining.webp";
+import sportsCover from "../../../../assets/sports.webp";
+import customPlanCover from "../../../../assets/planimagedefault.webp";
+import defaultAvatar from "../../../../assets/default_avatar.webp";
 import { preloadImage } from "../../../../shared/imaging/preloadImage";
 
 export { preloadImage };
@@ -122,7 +122,7 @@ export const PLAN_SLIDES: PlanSlideConfig[] = [
     coverImage: movieCover,
     time: "Today • 19:00",
     location: "Movie Theater",
-    cost: "350 / person",
+    cost: "350",
     participants: ORIGINAL_DEMO_PEOPLE.slice(0, 4), // You, Alex, Sam, Maya
   },
   {
@@ -132,7 +132,7 @@ export const PLAN_SLIDES: PlanSlideConfig[] = [
     coverImage: diningCover,
     time: "Today • 19:00",
     location: "Restaurant",
-    cost: "800 / person",
+    cost: "800",
     participants: [ORIGINAL_DEMO_PEOPLE[0], ORIGINAL_DEMO_PEOPLE[1], ORIGINAL_DEMO_PEOPLE[3], ORIGINAL_DEMO_PEOPLE[4]], // You, Alex, Maya, Jordan
   },
   {
@@ -142,7 +142,7 @@ export const PLAN_SLIDES: PlanSlideConfig[] = [
     coverImage: sportsCover,
     time: "Today • 19:00",
     location: "Ground",
-    cost: "200 / person",
+    cost: "200",
     participants: [ORIGINAL_DEMO_PEOPLE[0], ORIGINAL_DEMO_PEOPLE[1], ORIGINAL_DEMO_PEOPLE[2], ORIGINAL_DEMO_PEOPLE[5]], // You, Alex, Sam, Leo
   },
   {
@@ -152,7 +152,7 @@ export const PLAN_SLIDES: PlanSlideConfig[] = [
     coverImage: customPlanCover,
     time: "Today • 19:00",
     location: "Go-To Spot",
-    cost: "100 / person",
+    cost: "100",
     participants: ORIGINAL_DEMO_PEOPLE, // All 6 canonical participants
   },
 ];
@@ -1240,7 +1240,7 @@ export function PlanAnimation({
                     <div className="flex items-center gap-1 font-semibold text-right">
                       <IndianRupee className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400" />
                       <span className="font-sans tracking-tight text-[11.5px] xs:text-[12px] text-white/90 font-semibold">
-                        100 / person
+                        100
                       </span>
                     </div>
                   </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ParticipantManagementScreen, Friend } from '../../participants/screens/ParticipantManagementScreen';
 import {
   getSavedDraftParticipants,
@@ -82,11 +82,32 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
 
   const totalInvitedCount = (form.isHostSelected ? 1 : 0) + selectedFriends.length;
   const isCapacityConfigured = Boolean(form.isCapacityManuallySet || form.totalCapacity !== undefined);
-  const capacity: number | undefined =
-    form.totalCapacity !== undefined
+  const capacity: number | null =
+    form.totalCapacity !== undefined && form.totalCapacity !== null
       ? Math.max(2, form.totalCapacity)
-      : undefined;
+      : null;
   const currentWaitlistMode: 'automatic' | 'assigned' = form.waitlistMode || 'automatic';
+
+  const handleWaitlistModeChange = (newMode: 'automatic' | 'assigned') => {
+    form.setWaitlistMode(newMode);
+    if (newMode === 'assigned') {
+      if (form.totalCapacity !== undefined && form.totalCapacity !== null) {
+        if (form.totalCapacity > totalInvitedCount) {
+          form.setTotalCapacity(Math.max(2, totalInvitedCount));
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (currentWaitlistMode === 'assigned') {
+      if (form.totalCapacity !== undefined && form.totalCapacity !== null) {
+        if (form.totalCapacity > totalInvitedCount) {
+          form.setTotalCapacity(Math.max(2, totalInvitedCount));
+        }
+      }
+    }
+  }, [currentWaitlistMode, form.totalCapacity, totalInvitedCount, form.setTotalCapacity]);
 
   const eventDateObj = form.eventDateTime ? new Date(form.eventDateTime) : new Date();
   const formattedDate = eventDateObj.toLocaleDateString('en-US', {
@@ -191,7 +212,7 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
         }
       }}
       waitlistMode={currentWaitlistMode}
-      onWaitlistModeChange={form.setWaitlistMode}
+      onWaitlistModeChange={handleWaitlistModeChange}
       showWaitlistMode={true}
       initialOpenPlanSizeSheet={initialOpenPlanSizeSheet}
       onPlanSizeSheetDismissed={onPlanSizeSheetDismissed}

@@ -46,13 +46,15 @@ export function isUserInvolvedInPlan(plan: Plan, allMyUserIds: Set<string>): boo
 }
 
 /**
- * Calculates the total number of unread messages from current/active plans
- * for the bottom navigation Chat badge.
- * 
+ * Calculates the NUMBER OF CHAT CONVERSATIONS with at least one unread message
+ * from current/active plans, for the bottom navigation Chat badge.
+ *
  * Rules:
  * - Only includes chats belonging to active/current Plans.
  * - Completed, cancelled, and inactive plans contribute 0.
- * - Sums unread messages across active plans (e.g. Chat A with 5 + Chat B with 2 = 7).
+ * - Each chat/conversation contributes a maximum of 1 to the badge,
+ *   regardless of how many unread messages it has.
+ * - Example: Chat A (5 unread) + Chat B (3 unread) + Chat C (1 unread) → badge = 3.
  */
 export function calculateUnreadChatsCount(
   unreadMap: Record<string, number>,
@@ -61,12 +63,12 @@ export function calculateUnreadChatsCount(
 ): number {
   if (!unreadMap || Object.keys(unreadMap).length === 0) return 0;
 
-  // If plans array is not passed, sum all positive unread counts in the map
+  // If plans array is not passed, count entries with positive unread as distinct conversations
   if (!plans) {
-    return Object.values(unreadMap).reduce((sum, count) => sum + Math.max(0, count || 0), 0);
+    return Object.values(unreadMap).filter((count) => (count || 0) > 0).length;
   }
 
-  let totalUnread = 0;
+  let conversationsWithUnread = 0;
   const seenPlanKeys = new Set<string>();
 
   for (const plan of plans) {
@@ -98,12 +100,13 @@ export function calculateUnreadChatsCount(
       count = Math.max(count, unreadMap[plan.id]);
     }
 
+    // Each conversation contributes at most 1 to the badge
     if (count > 0) {
-      totalUnread += count;
+      conversationsWithUnread += 1;
     }
   }
 
-  return totalUnread;
+  return conversationsWithUnread;
 }
 
 /**
@@ -175,15 +178,18 @@ export function handleChatReadInUnreadMap(
   return hasChange ? next : prev;
 }
 
-/**
- * Custom React Hook: useUnreadChatsCount
- * 
- * Computes the total number of unread messages from CURRENT / ACTIVE plans
- * for the bottom navigation Chat badge.
- * 
- * Reuses existing plan_chat_reads and get_user_chat_summaries RPC architecture.
- * Updates reactively via Realtime and local synchronous chat read events.
- */
+  /**
+   * Custom React Hook: useUnreadChatsCount
+   *
+   * Computes the NUMBER OF ACTIVE CHAT CONVERSATIONS with unread messages
+   * for the bottom navigation Chat badge.
+   *
+   * Each conversation contributes max 1 to the badge regardless of message count.
+   * Example: Chat A (5 unread) + Chat B (3 unread) = badge of 2, not 8.
+   *
+   * Reuses existing plan_chat_reads and get_user_chat_summaries RPC architecture.
+   * Updates reactively via Realtime and local synchronous chat read events.
+   */
 export function useUnreadChatsCount({
   userUuid,
   activeUserId,

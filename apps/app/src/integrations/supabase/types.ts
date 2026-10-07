@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -34,6 +39,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      discovery_place_overrides: {
+        Row: {
+          id: string
+          place_id: string
+          name_override: string | null
+          address_override: string | null
+          latitude_override: number | null
+          longitude_override: number | null
+          image_path: string | null
+          image_source: string | null
+          google_photo_reference: string | null
+          description_override: string | null
+          category_override: string | null
+          subcategory: string | null
+          provider: string
+          is_deleted: boolean
+          updated_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          place_id: string
+          name_override?: string | null
+          address_override?: string | null
+          latitude_override?: number | null
+          longitude_override?: number | null
+          image_path?: string | null
+          image_source?: string | null
+          google_photo_reference?: string | null
+          description_override?: string | null
+          category_override?: string | null
+          subcategory?: string | null
+          provider?: string
+          is_deleted?: boolean
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          place_id?: string
+          name_override?: string | null
+          address_override?: string | null
+          latitude_override?: number | null
+          longitude_override?: number | null
+          image_path?: string | null
+          image_source?: string | null
+          google_photo_reference?: string | null
+          description_override?: string | null
+          category_override?: string | null
+          subcategory?: string | null
+          provider?: string
+          is_deleted?: boolean
+          updated_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       discovery_items: {
         Row: {
           category: Database["public"]["Enums"]["discovery_category"]
@@ -683,12 +748,11 @@ export type Database = {
           cover_card_image: string | null
           cover_image: string | null
           created_at: string
-          discovery_item_id: string | null
           id: string
           invited_participants: number | null
           latitude: number | null
           longitude: number | null
-          participant_filtering: Database["public"]["Enums"]["participant_filtering_type"]
+          participant_filtering: Database["public"]["Enums"]["participant_filtering_type"] | null
           place_address: string
           place_id: string | null
           place_name: string
@@ -697,7 +761,6 @@ export type Database = {
           rsvp_deadline: string
           scheduled_at: string
           status: Database["public"]["Enums"]["plan_status"]
-          subcategory: string
           title: string
           total_cost: number
           updated_at: string
@@ -710,12 +773,11 @@ export type Database = {
           cover_card_image?: string | null
           cover_image?: string | null
           created_at?: string
-          discovery_item_id?: string | null
           id?: string
           invited_participants?: number | null
           latitude?: number | null
           longitude?: number | null
-          participant_filtering?: Database["public"]["Enums"]["participant_filtering_type"]
+          participant_filtering?: Database["public"]["Enums"]["participant_filtering_type"] | null
           place_address: string
           place_id?: string | null
           place_name: string
@@ -724,7 +786,6 @@ export type Database = {
           rsvp_deadline: string
           scheduled_at: string
           status?: Database["public"]["Enums"]["plan_status"]
-          subcategory?: string
           title: string
           total_cost?: number
           updated_at?: string
@@ -737,12 +798,11 @@ export type Database = {
           cover_card_image?: string | null
           cover_image?: string | null
           created_at?: string
-          discovery_item_id?: string | null
           id?: string
           invited_participants?: number | null
           latitude?: number | null
           longitude?: number | null
-          participant_filtering?: Database["public"]["Enums"]["participant_filtering_type"]
+          participant_filtering?: Database["public"]["Enums"]["participant_filtering_type"] | null
           place_address?: string
           place_id?: string | null
           place_name?: string
@@ -751,20 +811,150 @@ export type Database = {
           rsvp_deadline?: string
           scheduled_at?: string
           status?: Database["public"]["Enums"]["plan_status"]
-          subcategory?: string
           title?: string
           total_cost?: number
           updated_at?: string
           waitlist_order_mode?: Database["public"]["Enums"]["waitlist_order_mode_enum"]
         }
+        Relationships: []
+      }
+      quick_plan_participants: {
+        Row: {
+          created_at: string
+          id: string
+          quick_plan_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          quick_plan_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          quick_plan_id?: string
+          user_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "plans_discovery_item_id_fkey"
-            columns: ["discovery_item_id"]
+            foreignKeyName: "quick_plan_participants_quick_plan_id_fkey"
+            columns: ["quick_plan_id"]
             isOneToOne: false
-            referencedRelation: "discovery_items"
+            referencedRelation: "quick_plans"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "quick_plan_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quick_plan_lists: {
+        Row: {
+          created_at: string
+          creator_id: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quick_plan_lists_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      quick_plans: {
+        Row: {
+          category: string
+          cover_image: string | null
+          created_at: string
+          creator_id: string
+          default_cost: number
+          description: string | null
+          id: string
+          latitude: number | null
+          longitude: number | null
+          name: string
+          place_address: string
+          place_id: string | null
+          place_name: string
+          plan_size: number | null
+          quick_plan_list_id: string | null
+          subcategory: string | null
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          cover_image?: string | null
+          created_at?: string
+          creator_id: string
+          default_cost?: number
+          description?: string | null
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          name: string
+          place_address?: string
+          place_id?: string | null
+          place_name?: string
+          plan_size?: number | null
+          quick_plan_list_id?: string | null
+          subcategory?: string | null
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          cover_image?: string | null
+          created_at?: string
+          creator_id?: string
+          default_cost?: number
+          description?: string | null
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          name?: string
+          place_address?: string
+          place_id?: string | null
+          place_name?: string
+          plan_size?: number | null
+          quick_plan_list_id?: string | null
+          subcategory?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quick_plans_quick_plan_list_id_fkey"
+            columns: ["quick_plan_list_id"]
+            isOneToOne: false
+            referencedRelation: "quick_plan_lists"
+            referencedColumns: ["id"]
+          }
         ]
       }
       users: {
@@ -1146,6 +1336,7 @@ export type Database = {
           first_unread_message_id: string
           last_read_at: string
           last_read_message_id: string
+          latest_unread_message_id: string
           unread_count: number
         }[]
       }
@@ -1217,7 +1408,7 @@ export type Database = {
             Returns: Json
           }
       mark_plan_chat_read: {
-        Args: { p_message_id?: string; p_plan_id: string }
+        Args: { p_message_id?: string; p_plan_id: string; p_user_id?: string }
         Returns: undefined
       }
       move_participant_to_waitlist_and_decrease_capacity: {
@@ -1451,12 +1642,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1480,11 +1671,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1505,11 +1696,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1530,11 +1721,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1547,11 +1738,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1666,4 +1857,3 @@ export const Constants = {
     },
   },
 } as const
-

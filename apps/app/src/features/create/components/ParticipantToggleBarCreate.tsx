@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Plan, UserProfile } from "../../../core/types";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { normalizeStatus } from "../../../../lib/participantStatus";
-import defaultAvatar from "../../../assets/default_avatar.png";
+import defaultAvatar from "../../../assets/default_avatar.webp";
 
 interface ParticipantToggleBarCreateProps {
   plan: Plan;

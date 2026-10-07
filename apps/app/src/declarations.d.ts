@@ -8,6 +8,11 @@ declare module "*.jpg" {
   export default value;
 }
 
+declare module "*.webp" {
+  const value: string;
+  export default value;
+}
+
 declare module 'virtual:pwa-register' {
   export interface RegisterSWOptions {
     immediate?: boolean;

@@ -193,16 +193,25 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     isRefreshingRef.current = true;
     try {
       const fetchAll = !targetTables || pendingFetchAllRef.current;
-      const tablesToUse = fetchAll ? undefined : Array.from(pendingTablesRef.current);
+      const tablesToUse = fetchAll
+        ? undefined
+        : Array.from(new Set([...(targetTables || []), ...pendingTablesRef.current]));
 
       pendingFetchAllRef.current = false;
       pendingTablesRef.current.clear();
 
       const shouldFetchAll = !tablesToUse;
+      const shouldFetchPlans = shouldFetchAll || tablesToUse.includes("plans") || tablesToUse.includes("plan_participants");
+      const shouldFetchMemories = shouldFetchAll || tablesToUse.includes("memories");
+      const shouldClearTeams = shouldFetchAll || tablesToUse?.includes("plan_team_assignments");
 
-      if (shouldFetchAll || tablesToUse.includes("plans") || tablesToUse.includes("plan_participants")) {
-        const joinedPlans = await api.getCurrentUserPlans(userId);
+      // Concurrently fetch independent Plan data and Memories with Promise.all
+      const [joinedPlans, memories] = await Promise.all([
+        shouldFetchPlans ? api.getCurrentUserPlans(userId) : Promise.resolve(null),
+        shouldFetchMemories ? api.fetchMemories() : Promise.resolve(null),
+      ]);
 
+      if (joinedPlans) {
         const plansList: DbPlan[] = [];
         const participantsList: DbPlanParticipant[] = [];
 
@@ -222,14 +231,67 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         setDbPlans(plansList);
         setDbPlanParticipants(participantsList);
+
+        // Synchronize embedded user_profile records into canonical dbUsers store
+        const profilesFromParticipants: User[] = [];
+        const seenProfileIds = new Set<string>();
+
+        participantsList.forEach((pp: any) => {
+          const prof = pp.user_profile;
+          if (prof && prof.id && !seenProfileIds.has(prof.id)) {
+            seenProfileIds.add(prof.id);
+            profilesFromParticipants.push({
+              id: prof.id,
+              user_id: prof.public_id || prof.id || "U001",
+              username: prof.username || (prof.full_name || "").toLowerCase().replace(/\s+/g, ""),
+              full_name: prof.full_name || "Participant",
+              phone_number: prof.phone_number || "",
+              profile_photo: prof.profile_photo_path || "",
+              profile_photo_path: prof.profile_photo_path || "",
+              bio: prof.bio || "",
+              college_or_work: prof.college_or_work || "",
+              created_at: prof.created_at || new Date().toISOString(),
+              wallet_balance: prof.wallet_balance || 0,
+              active_status: prof.active_status !== undefined ? prof.active_status : true,
+              profile_completed: prof.profile_completed || false,
+            });
+          }
+        });
+
+        if (profilesFromParticipants.length > 0) {
+          setDbUsers(prev => {
+            const existingMap = new Map(prev.map(u => [u.id, u]));
+            let changed = false;
+            profilesFromParticipants.forEach(newUser => {
+              const existing = existingMap.get(newUser.id);
+              if (!existing) {
+                existingMap.set(newUser.id, newUser);
+                changed = true;
+              } else if (
+                existing.full_name !== newUser.full_name ||
+                existing.profile_photo_path !== newUser.profile_photo_path ||
+                (newUser.bio && existing.bio !== newUser.bio)
+              ) {
+                existingMap.set(newUser.id, {
+                  ...existing,
+                  full_name: newUser.full_name,
+                  profile_photo_path: newUser.profile_photo_path,
+                  profile_photo: newUser.profile_photo_path,
+                  bio: newUser.bio || existing.bio,
+                });
+                changed = true;
+              }
+            });
+            return changed ? Array.from(existingMap.values()) : prev;
+          });
+        }
       }
 
-      if (shouldFetchAll || tablesToUse?.includes("plan_team_assignments")) {
+      if (shouldClearTeams) {
         setDbPlanTeamAssignments([]);
       }
 
-      if (shouldFetchAll || tablesToUse.includes("memories")) {
-        const memories = await api.fetchMemories();
+      if (memories) {
         setDbMemories(memories);
       }
 
@@ -295,35 +357,84 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [refreshPlans]);
 
-  // Periodic check for plans transitioning to OVERDUE while the app is active
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const hasOverdueTransition = dbPlansRef.current.some(
-        p => p.status === "LIVE" && p.scheduled_at && new Date(p.scheduled_at).getTime() < now
-      );
-      if (hasOverdueTransition) {
-        setDbPlans(prev =>
-          prev.map(p => {
-            if (p.status === "LIVE" && p.scheduled_at && new Date(p.scheduled_at).getTime() < now) {
-              return { ...p, status: "OVERDUE" };
-            }
-            return p;
-          })
-        );
-        api.syncOverduePlansRPC();
-      }
-    }, 15000);
+  // Check for plans transitioning to OVERDUE while the app is active and visible
+  const checkOverduePlans = useCallback(() => {
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+      return;
+    }
 
-    return () => clearInterval(interval);
+    const now = Date.now();
+    const hasOverdueTransition = dbPlansRef.current.some(
+      p => p.status === "LIVE" && p.scheduled_at && new Date(p.scheduled_at).getTime() < now
+    );
+    if (hasOverdueTransition) {
+      setDbPlans(prev =>
+        prev.map(p => {
+          if (p.status === "LIVE" && p.scheduled_at && new Date(p.scheduled_at).getTime() < now) {
+            return { ...p, status: "OVERDUE" };
+          }
+          return p;
+        })
+      );
+      api.syncOverduePlansRPC();
+    }
   }, []);
+
+  // Periodic check for plans transitioning to OVERDUE while the app is active and visible
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const startInterval = () => {
+      if (intervalId !== null) return;
+      intervalId = setInterval(checkOverduePlans, 15000);
+    };
+
+    const stopInterval = () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (typeof document === "undefined") return;
+
+      if (document.visibilityState === "visible") {
+        // Immediately perform overdue check once upon foregrounding
+        checkOverduePlans();
+        // Ensure exactly one active 15s interval exists
+        stopInterval();
+        startInterval();
+      } else {
+        // Document is hidden: stop interval completely to prevent background checks, date calculations, and RPCs
+        stopInterval();
+      }
+    };
+
+    // If document is visible on mount, start the 15-second polling interval
+    if (typeof document === "undefined" || document.visibilityState === "visible") {
+      startInterval();
+    }
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    return () => {
+      stopInterval();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+    };
+  }, [checkOverduePlans, userId]);
 
   // Realtime subscription
   useEffect(() => {
+    if (!userId) return;
 
     const lastStatusRef = { current: "" };
 
-    const channel = supabase.channel("plans-realtime-sync")
+    const channel = supabase.channel(`plans-realtime-sync:${userId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "plans" },
@@ -340,7 +451,12 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 updated[matchIndex] = newRec;
                 return updated;
               } else {
-                return [...prev, newRec];
+                // Only accept new plan if current user created/hosts it
+                const isHost = newRec.host_id === userId || (newRec.host_profile && newRec.host_profile.id === userId);
+                if (isHost) {
+                  return [...prev, newRec];
+                }
+                return prev;
               }
             });
           } else if (eventType === "DELETE") {
@@ -363,6 +479,18 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (eventType === "INSERT" || eventType === "UPDATE") {
             const planId = newRec.plan_id;
             const userIdVal = newRec.user_id;
+
+            const isOurPlan = dbPlansRef.current.some(p => p.id === planId || p.plan_id === planId);
+            const isCurrentUser = userId && (userIdVal === userId);
+
+            // Drop events for unrelated participants in unrelated plans
+            if (!isOurPlan && !isCurrentUser) return;
+
+            // If the current user was added/invited to a new plan not currently in dbPlans
+            if (isCurrentUser && !isOurPlan && eventType === "INSERT") {
+              refreshPlans(["plans", "plan_participants"], "new_plan_invitation");
+              return;
+            }
 
             setDbPlanParticipants(prev => {
               const matchIndex = prev.findIndex(pp => pp.plan_id === planId && pp.user_id === userIdVal);
@@ -387,7 +515,6 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
       )
-
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "memories" },
@@ -396,6 +523,10 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           if (eventType === "INSERT" || eventType === "UPDATE") {
             const memoryId = newRec.id;
+            const planId = newRec.plan_id;
+
+            const isOurPlan = planId && dbPlansRef.current.some(p => p.id === planId || p.plan_id === planId);
+            if (!isOurPlan) return;
 
             setDbMemories(prev => {
               const matchIndex = prev.findIndex(m => m.id === memoryId);
@@ -411,6 +542,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const memoryId = oldRec.id;
 
             setDbMemories(prev => {
+              const exists = prev.some(m => m.id === memoryId);
+              if (!exists) return prev;
               return prev.filter(m => m.id !== memoryId);
             });
           }
@@ -421,9 +554,9 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
     return () => {
-      channel.unsubscribe();
+      supabase.removeChannel(channel);
     };
-  }, [refreshPlans]);
+  }, [refreshPlans, userId]);
 
   // Detect missing user IDs in dbPlanParticipants and fetch them into canonical dbUsers store
   const fetchingUserIdsRef = React.useRef<Set<string>>(new Set());
@@ -440,7 +573,9 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const missingUserIds: string[] = [];
     dbPlanParticipants.forEach(pp => {
       const uid = pp.user_id;
-      if (uid && !existingUserIds.has(uid) && !fetchingUserIdsRef.current.has(uid)) {
+      // If the participant already has an embedded profile or is in dbUsers, it is NOT missing
+      const alreadyHasProfile = existingUserIds.has(uid) || Boolean(pp.user_profile?.id);
+      if (uid && !alreadyHasProfile && !fetchingUserIdsRef.current.has(uid)) {
         missingUserIds.push(uid);
       }
     });
@@ -608,6 +743,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     dbUsers: planUsers,
     userId,
     setDbPlans,
+    setDbPlanParticipants,
     setDbPlanTeamAssignments,
     refreshPlans,
     insertSystemMessage,
@@ -980,7 +1116,21 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const isHostRole = ppRecord.role === "HOST";
 
       // Home screen visibility strictly determined by plan_participants: role = PARTICIPANT & rsvp_status = INVITED
-      return !isHostRole && rsvp === "INVITED";
+      if (isHostRole || rsvp !== "INVITED") return false;
+
+      // Exclude plans that have reached the hard maximum of 50 joined participants (dynamic capacity)
+      const isNoLimit = plan.plan_size === null || plan.plan_size === undefined;
+      const counts = getParticipantCounts(planUuid);
+      const joinedCount = counts.host + counts.going;
+
+      if (isNoLimit && joinedCount >= 50) {
+        return false;
+      }
+      if (!isNoLimit && joinedCount >= 50) {
+        return false;
+      }
+
+      return true;
     });
 
     return filtered.sort((a, b) => {
@@ -1056,36 +1206,54 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [lifecycle, plans, updateLocalPlan]);
 
   const updatePlanDetails = useCallback(async (planId: string, updates: Partial<DbPlan>, options?: { totalCost?: number; autoPromote?: boolean }) => {
-    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId || (p as any).public_id === planId);
-    const planUuid = matchedPlan?.dbUuid || planId;
+    const matchedPlan = plans.find(p => p.id === planId || p.dbUuid === planId || (p as any).public_id === planId)
+      || dbPlans.find(p => p.id === planId || (p as any).dbUuid === planId || (p as any).public_id === planId);
+    const planUuid = (matchedPlan && isUuid((matchedPlan as any).dbUuid))
+      ? (matchedPlan as any).dbUuid
+      : (matchedPlan && isUuid(matchedPlan.id))
+      ? matchedPlan.id
+      : (isUuid(planId) ? planId : (matchedPlan?.id || planId));
 
     const previousPlanState = matchedPlan ? {
       plan_size: matchedPlan.plan_size,
-      capacity: matchedPlan.capacity,
-      joinLimit: matchedPlan.joinLimit,
+      capacity: (matchedPlan as any).capacity,
+      joinLimit: (matchedPlan as any).joinLimit,
+      participant_filtering: (matchedPlan as any).participant_filtering,
+      participantFiltering: (matchedPlan as any).participantFiltering,
     } : null;
 
     // Synchronously update local React state first so capacity bounds expand immediately
     updateLocalPlan(planUuid, updates);
+    if (planId !== planUuid) {
+      updateLocalPlan(planId, updates);
+    }
     if (updates.plan_size !== undefined) {
-      updateLocalPlan(planUuid, {
+      const planSizeFields = {
         plan_size: updates.plan_size,
         planSize: updates.plan_size,
         capacity: updates.plan_size,
         joinLimit: updates.plan_size,
         maxSpots: updates.plan_size,
-      } as any);
+        ...(updates.plan_size === null ? { participant_filtering: null, participantFiltering: null } : {}),
+      };
+      updateLocalPlan(planUuid, planSizeFields as any);
+      if (planId !== planUuid) {
+        updateLocalPlan(planId, planSizeFields as any);
+      }
     }
 
     try {
-      await lifecycle.updatePlanDetails(planId, updates, options);
+      await lifecycle.updatePlanDetails(planUuid || planId, updates, options);
     } catch (err) {
       if (previousPlanState) {
         updateLocalPlan(planUuid, previousPlanState as any);
+        if (planId !== planUuid) {
+          updateLocalPlan(planId, previousPlanState as any);
+        }
       }
       throw err;
     }
-  }, [lifecycle, plans, updateLocalPlan]);
+  }, [lifecycle, plans, dbPlans, updateLocalPlan]);
 
   const completePlan = useCallback(async (
     planId: string,
@@ -1373,6 +1541,28 @@ const DEFAULT_PLANS_STORE: PlansContextType = {
   swapParticipants: async () => {},
   removeAndReplaceWithWaitlist: async () => {},
 };
+
+/**
+ * Pure evaluation helper for identifying and transitioning overdue plans
+ */
+export function checkAndTransitionOverduePlans(
+  plans: any[],
+  now: number = Date.now()
+): { hasOverdueTransition: boolean; updatedPlans: any[] } {
+  const hasOverdueTransition = (plans || []).some(
+    p => p.status === "LIVE" && p.scheduled_at && new Date(p.scheduled_at).getTime() < now
+  );
+  if (!hasOverdueTransition) {
+    return { hasOverdueTransition: false, updatedPlans: plans };
+  }
+  const updatedPlans = plans.map(p => {
+    if (p.status === "LIVE" && p.scheduled_at && new Date(p.scheduled_at).getTime() < now) {
+      return { ...p, status: "OVERDUE" };
+    }
+    return p;
+  });
+  return { hasOverdueTransition: true, updatedPlans };
+}
 
 export const usePlansStore = () => {
   const context = useContext(PlansContext);
