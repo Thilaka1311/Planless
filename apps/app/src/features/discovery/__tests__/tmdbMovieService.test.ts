@@ -5,12 +5,14 @@ import {
   mapTmdbMovieToDiscoveryItem,
   fetchDiscoverMovies,
   searchMovies,
+  fetchMovieDetails,
   getLanguageLabel,
   TMDB_SUPPORTED_LANGUAGES,
   TMDB_LANGUAGE_NAMES,
   isMovieWithinSixMonths,
 } from "../services/tmdbMovieService";
 import { TmdbMovie } from "../../../core/types/discovery";
+import { supabase } from "../../../../lib/supabaseClient";
 
 describe("tmdbMovieService", () => {
   beforeEach(() => {
@@ -288,6 +290,86 @@ describe("tmdbMovieService", () => {
       expect(res.items.length).toBe(1);
       expect(res.items[0].title).toBe("Classic Blockbuster");
       expect(res.items[0].release_date).toBe("2018-05-15");
+    });
+  });
+
+  describe("fetchMovieDetails", () => {
+    it("fetches full movie details via Supabase Edge Function", async () => {
+      const mockDetails = {
+        id: 858485,
+        title: "Kantara",
+        overview: "A legendary folklore tale.",
+        release_date: "2022-09-30",
+        original_language: "kn",
+      };
+
+      const invokeSpy = vi.spyOn(Object.getPrototypeOf(supabase.functions) as any, "invoke").mockResolvedValueOnce({
+        data: mockDetails,
+        error: null,
+      } as any);
+
+      const res = await fetchMovieDetails(858485);
+      expect(invokeSpy).toHaveBeenCalledWith("maps", {
+        body: {
+          action: "movie-details",
+          movieId: 858485,
+        },
+      });
+      expect(res).toEqual(mockDetails);
+    });
+
+    it("falls back to local proxy when Supabase Edge Function fails", async () => {
+      const mockDetails = {
+        id: 777,
+        title: "Fallback Title",
+      };
+
+      vi.spyOn(Object.getPrototypeOf(supabase.functions) as any, "invoke").mockRejectedValueOnce(new Error("Network error"));
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => mockDetails,
+      });
+
+      const res = await fetchMovieDetails(777);
+      expect(res).toEqual(mockDetails);
+    });
+  });
+
+  describe("Production Edge Function Routing", () => {
+    it("routes discover calls to maps Edge Function with action movies-discover", async () => {
+      const mockDiscoverData = {
+        page: 1,
+        total_pages: 1,
+        results: [
+          {
+            id: 555,
+            title: "Super Cinema",
+            original_language: "hi",
+            release_date: "2026-08-01",
+            adult: false,
+            video: false,
+          },
+        ],
+      };
+
+      const invokeSpy = vi.spyOn(Object.getPrototypeOf(supabase.functions) as any, "invoke").mockResolvedValueOnce({
+        data: mockDiscoverData,
+        error: null,
+      } as any);
+
+      const res = await fetchDiscoverMovies("popular", 999);
+      expect(invokeSpy).toHaveBeenCalledWith("maps", {
+        body: {
+          action: "movies-discover",
+          type: "popular",
+          page: 999,
+          genre: undefined,
+          lang: "all",
+        },
+      });
+      expect(res.items.length).toBe(1);
+      expect(res.items[0].title).toBe("Super Cinema");
     });
   });
 });

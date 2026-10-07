@@ -233,7 +233,8 @@ async function startServer() {
           if (
             filePath.endsWith("sw.js") ||
             filePath.endsWith("index.html") ||
-            filePath.endsWith(".webmanifest")
+            filePath.endsWith(".webmanifest") ||
+            filePath.endsWith("version.json")
           ) {
             res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
             res.setHeader("Pragma", "no-cache");

@@ -5,10 +5,50 @@ import {defineConfig} from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
+  const buildId = process.env.VERCEL_GIT_COMMIT_SHA || process.env.VITE_BUILD_ID || `build-${Date.now()}`;
+
+  const planlessVersionPlugin = () => ({
+    name: 'planless-version-plugin',
+    generateBundle(this: any) {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify(
+          {
+            version: buildId,
+            builtAt: Date.now(),
+          },
+          null,
+          2
+        ),
+      });
+    },
+    configureServer(server: any) {
+      server.middlewares.use((req: any, res: any, next: any) => {
+        if (req.url && (req.url === '/version.json' || req.url.startsWith('/version.json?'))) {
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.end(
+            JSON.stringify({
+              version: buildId,
+              builtAt: Date.now(),
+            })
+          );
+          return;
+        }
+        next();
+      });
+    },
+  });
+
   return {
+    define: {
+      __APP_BUILD_ID__: JSON.stringify(buildId),
+    },
     plugins: [
       react(), 
       tailwindcss(),
+      planlessVersionPlugin(),
       VitePWA({
         registerType: 'prompt',
         includeAssets: [
@@ -60,6 +100,7 @@ export default defineConfig(() => {
           // Exclude Supabase to ensure Realtime, Auth, and DB endpoints remain network-live
           navigateFallbackDenylist: [
             /^\/api\//,
+            /^\/version\.json$/,
             /^\/auth\/v1\//,
             /^\/rest\/v1\//,
             /^\/storage\/v1\//,
@@ -70,6 +111,13 @@ export default defineConfig(() => {
             /.*\.ngrok(-free)?\.(app|dev).*/,
           ],
           runtimeCaching: [
+            {
+              urlPattern: /.*\/version\.json.*/,
+              handler: 'NetworkOnly',
+              options: {
+                cacheName: 'version-network-only',
+              },
+            },
             {
               urlPattern: /.*supabase\.co.*/,
               handler: 'NetworkOnly',
