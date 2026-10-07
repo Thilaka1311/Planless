@@ -29,6 +29,10 @@ class PwaManager {
     if (typeof window === 'undefined' || this.isInitialized) return;
     this.isInitialized = true;
 
+    if (this.currentBuildId && typeof localStorage !== 'undefined') {
+      localStorage.setItem('planless_app_build_id', this.currentBuildId);
+    }
+
     // Set up global environment listeners (visibility, focus, network, routing, interval)
     // These run in all environments to detect new Vercel deployments via /version.json
     this.setupGlobalListeners();
@@ -203,10 +207,20 @@ class PwaManager {
       const data = await res.json();
       const remoteVersion = data?.version;
 
-      if (remoteVersion && this.currentBuildId && remoteVersion !== this.currentBuildId) {
-        console.log(`[PWA] Newer deployment detected via version.json: current=${this.currentBuildId}, latest=${remoteVersion}`);
-        this.setHasUpdate(true);
-        return true;
+      if (remoteVersion) {
+        const storedBuildId = typeof localStorage !== 'undefined' ? localStorage.getItem('planless_app_build_id') : null;
+        const effectiveCurrentBuild = this.currentBuildId || storedBuildId;
+
+        if (effectiveCurrentBuild && remoteVersion !== effectiveCurrentBuild) {
+          console.log(`[PWA] Newer deployment detected via version.json: current=${effectiveCurrentBuild}, latest=${remoteVersion}`);
+          this.setHasUpdate(true);
+          return true;
+        } else if (!effectiveCurrentBuild) {
+          // If no current build was recorded, this client is running an older unversioned bundle!
+          console.log(`[PWA] Older unversioned bundle detected against remote version: ${remoteVersion}`);
+          this.setHasUpdate(true);
+          return true;
+        }
       }
     } catch {
       // Ignore network errors/offline mode
@@ -285,6 +299,41 @@ class PwaManager {
   }
 
   /**
+   * Forces a clean cache purge and reload to break out of stale cache loops or load latest deployment.
+   */
+  async forceHardUpdate(): Promise<void> {
+    console.log('[PWA] Performing forced hard update and cache purge...');
+    try {
+      if ('caches' in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map((k) => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistrations === 'function') {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          if (reg.waiting) {
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+          await reg.unregister().catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.warn('[PWA] Force update cache purge error:', e);
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem('planless_update_dismissed');
+        sessionStorage.removeItem('planless_vite_preload_reload');
+        sessionStorage.removeItem('planless_chunk_auto_reload');
+      } catch {}
+      const targetUrl = new URL(window.location.href);
+      targetUrl.searchParams.set('_v', String(Date.now()));
+      window.location.replace(targetUrl.toString());
+    }
+  }
+
+  /**
    * Activates the latest deployed version and cleanly reloads the application.
    * Preserves current route URL and query params.
    */
@@ -298,14 +347,29 @@ class PwaManager {
     }
 
     try {
+      // 1. Purge CacheStorage of stale chunks
+      if ('caches' in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map((k) => caches.delete(k)));
+      }
+
+      // 2. Instruct service workers to skip waiting
       if (!this.registration && 'serviceWorker' in navigator) {
         this.registration = await navigator.serviceWorker.getRegistration();
       }
-      // 1. Tell waiting service worker to take over
       if (this.registration?.waiting) {
         this.registration.waiting.postMessage({ type: 'SKIP_WAITING' });
       }
-      // 2. Trigger workbox skipWaiting reload
+      if ('serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistrations === 'function') {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          if (reg.waiting) {
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+        }
+      }
+
+      // 3. Trigger workbox skipWaiting reload
       if (this.updateSwFn) {
         await this.updateSwFn(true);
       }
@@ -313,13 +377,15 @@ class PwaManager {
       console.error('[PWA] Error activating waiting service worker:', err);
     }
 
-    // Safety fallback: if controllerchange hasn't reloaded the page within 800ms, reload directly
+    // Safety fallback: if controllerchange hasn't reloaded the page within 600ms, reload with cache busting
     setTimeout(() => {
       if (typeof window !== 'undefined' && !this.hasReloaded) {
         this.hasReloaded = true;
-        window.location.reload();
+        const targetUrl = new URL(window.location.href);
+        targetUrl.searchParams.set('_v', String(Date.now()));
+        window.location.replace(targetUrl.toString());
       }
-    }, 800);
+    }, 600);
   }
 }
 

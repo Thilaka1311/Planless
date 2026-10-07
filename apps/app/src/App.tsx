@@ -15,7 +15,6 @@ import {
   clearStoredPendingInviteToken,
 } from "./features/plans/services/planInviteService";
 import { isValidRoute } from "./features/navigation/appRouter";
-import { PwaUpdatePrompt } from "./shared/pwa/PwaUpdatePrompt";
 
 const PlansProviderComp = PlansProvider as React.ComponentType<{ children: React.ReactNode; userId?: string }>;
 
@@ -369,7 +368,6 @@ function AppContent({
 
   return (
     <>
-      <PwaUpdatePrompt />
       {appState === "initializing" || appState === "retrying" ? (
         <div className="h-[100dvh] w-screen bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
           {/* Sleek Gradient Glows */}

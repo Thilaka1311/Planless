@@ -14,6 +14,12 @@ describe('PWA Service and Update Lifecycle', () => {
       removeItem: (key: string) => { delete store[key]; },
       clear: () => { Object.keys(store).forEach(k => delete store[k]); },
     };
+    (globalThis as any).localStorage = {
+      getItem: (key: string) => store[key] ?? null,
+      setItem: (key: string, val: string) => { store[key] = val; },
+      removeItem: (key: string) => { delete store[key]; },
+      clear: () => { Object.keys(store).forEach(k => delete store[k]); },
+    };
   });
 
   it('initializes with no update pending', () => {
@@ -188,5 +194,48 @@ describe('PWA Service and Update Lifecycle', () => {
     expect(pwaManager.getHasUpdate()).toBe(false);
 
     globalThis.fetch = originalFetch;
+  });
+
+  it('detects update when running client has unversioned build ID', async () => {
+    (pwaManager as any).setHasUpdate(false);
+    pwaManager.setBuildId('');
+    localStorage.removeItem('planless_app_build_id');
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ version: 'build-2.0.0', builtAt: 123456789 }),
+    }) as any;
+
+    const hasNew = await pwaManager.checkVersionEndpoint();
+
+    expect(hasNew).toBe(true);
+    expect(pwaManager.getHasUpdate()).toBe(true);
+
+    globalThis.fetch = originalFetch;
+    (pwaManager as any).setHasUpdate(false);
+  });
+
+  it('forceHardUpdate clears caches and updates location safely', async () => {
+    const mockDelete = vi.fn().mockResolvedValue(true);
+    (globalThis as any).caches = {
+      keys: vi.fn().mockResolvedValue(['workbox-precache-v1', 'version-network-only']),
+      delete: mockDelete,
+    };
+
+    const replaceMock = vi.fn();
+    delete (globalThis as any).window.location;
+    (globalThis as any).window.location = {
+      href: 'https://planless.app/home',
+      origin: 'https://planless.app',
+      pathname: '/home',
+      replace: replaceMock,
+    };
+
+    await pwaManager.forceHardUpdate();
+
+    expect(mockDelete).toHaveBeenCalledWith('workbox-precache-v1');
+    expect(mockDelete).toHaveBeenCalledWith('version-network-only');
+    expect(replaceMock).toHaveBeenCalled();
   });
 });

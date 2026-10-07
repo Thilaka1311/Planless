@@ -15,8 +15,8 @@ export const PwaUpdatePrompt: React.FC = () => {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -24, scale: 0.96 }}
           transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
-          className="fixed left-1/2 -translate-x-1/2 z-[9999] max-w-[calc(100vw-32px)] w-auto px-3.5 py-2 rounded-2xl bg-[#18181b]/95 border border-white/10 shadow-2xl backdrop-blur-xl flex items-center gap-2.5 text-white select-none pointer-events-auto"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}
+          className="fixed left-1/2 -translate-x-1/2 z-[99999] max-w-[calc(100vw-32px)] w-auto px-3.5 py-2.5 rounded-2xl bg-[#18181b]/95 border border-white/15 shadow-2xl backdrop-blur-xl flex items-center gap-2.5 text-white select-none pointer-events-auto"
           role="alert"
           aria-live="polite"
         >

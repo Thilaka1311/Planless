@@ -35,8 +35,8 @@ export const ProfileProvider = ({
       return [{
         id: initialProfile.dbUuid,
         user_id: initialProfile.user_id || "U001",
-        username: initialProfile.name.toLowerCase().replace(/\s+/g, "") || "thilak",
-        full_name: initialProfile.name,
+        username: (initialProfile.name ? initialProfile.name.toLowerCase().replace(/\s+/g, "") : "") || "thilak",
+        full_name: initialProfile.name || "",
         phone_number: initialProfile.phone,
         profile_photo: initialProfile.avatar,
         bio: initialProfile.bio || "Always spontaneous, never planless.",
