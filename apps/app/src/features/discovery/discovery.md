@@ -66,8 +66,8 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
 ### Main Discovery Screen (`Discovery.tsx`)
 * **Container**: Dark full-height viewport (`bg-[#000000] text-white flex-1 flex flex-col h-full overflow-y-auto scrollbar-none font-sans select-none text-left`).
 * **Header Bar**:
-  * Pinned top navigation header (`HomeHeader`) with Planless logo and profile shortcut.
-  * Search bar container (`px-5 pt-1 pb-3`) with rounded input (`h-11 bg-zinc-900/90 border border-white/[0.08] rounded-full px-4 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-white/20`).
+  * Location selector with primary locality title (e.g. "Vidyaranyapura") on top, secondary city (e.g. "Bengaluru") below, and uncircled neutral grey MapPin icon.
+  * Top-right utility icons: Master Search shortcut and Quick Plans (⚡) shortcut, rendered with uncircled neutral grey styling without borders or colored backgrounds.
 * **Category Navigation Pills**:
   * Horizontal pill strip (`flex items-center gap-2.5 px-5 py-2 overflow-x-auto scrollbar-none`).
   * Pills feature category icons (`Film`, `Trophy`, `Utensils`) with smooth scale and background transitions (`hover:bg-white/10 active:scale-95`).

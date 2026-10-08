@@ -486,7 +486,10 @@ export const WheelPicker: React.FC<WheelPickerProps> = ({
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 550, color: 'rgba(255, 255, 255, 0.35)' }}>
-              {hour12}:{minuteStr} {ampmStr}
+              {(() => {
+                const h24 = ampmStr === 'PM' ? (hour12 === 12 ? 12 : hour12 + 12) : (hour12 === 12 ? 0 : hour12);
+                return `${String(h24).padStart(2, '0')}:${minuteStr}`;
+              })()}
             </span>
           </div>
         </button>

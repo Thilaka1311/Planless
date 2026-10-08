@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { formatChatListTimestamp, emitChatReadEvent, subscribeToChatReadEvents } from "../chatReads";
+import { formatChatListTimestamp, format24HourTime, formatRelativeDate, emitChatReadEvent, subscribeToChatReadEvents } from "../chatReads";
 import {
   appendMessageToCache,
   getCachedMessages,
@@ -44,6 +44,35 @@ describe("chatReads utils", () => {
       // Should be 15-01-25 format
       expect(result).toMatch(/^\d{2}-\d{2}-\d{2}$/);
       expect(result).toBe("15-01-25");
+    });
+  });
+
+  describe("format24HourTime and formatRelativeDate", () => {
+    it("converts PM times to 24-hour format without AM/PM (4:26 PM -> 16:26)", () => {
+      const date = new Date(2026, 8, 26, 16, 26);
+      expect(format24HourTime(date)).toBe("16:26");
+    });
+
+    it("converts AM times to 24-hour format without AM/PM (11:22 AM -> 11:22)", () => {
+      const date = new Date(2026, 8, 26, 11, 22);
+      expect(format24HourTime(date)).toBe("11:22");
+    });
+
+    it("relative date: today shows time only (16:26)", () => {
+      const today = new Date();
+      today.setHours(16, 26, 0, 0);
+      expect(formatRelativeDate(today)).toBe("16:26");
+    });
+
+    it("relative date: yesterday shows 'Yesterday'", () => {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      expect(formatRelativeDate(yesterday)).toBe("Yesterday");
+    });
+
+    it("relative date: older than yesterday shows 'dd-mm-yy'", () => {
+      const old = new Date(2026, 8, 20); // Sep 20, 2026
+      expect(formatRelativeDate(old)).toBe("20-09-26");
     });
   });
 

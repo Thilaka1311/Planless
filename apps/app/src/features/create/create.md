@@ -156,6 +156,7 @@ The **Create** feature is the plan authoring, customization, and publishing engi
 * **Action Button**: "Go to Plans" pill button routing to the Plans tab.
 
 ### 7. Quick Plans & Saved Collections UI (`QuickPlansScreen.tsx` & `QuickPlanCard.tsx`)
+* **Bottom Sheets**: All modal sheets (create list, edit list, rename list, delete confirmations) are full-width and responsive (`w-full`), stretching edge-to-edge across all screen sizes without fixed max-width constraints.
 * **Top-Level Lists Screen**:
   * Pinned top header: Standalone white `ArrowLeft`, left-aligned `Quick Plans` title, and white `Plus` icon button (opens `CreateListModal`). Header divider line is removed.
   * 2-column grid of saved collection cards (`aspect-[4/5]`) with cover image, collection name, plan count (`${count} plan` / `${count} plans`), and 3-dots action menu triggering rename/delete options.

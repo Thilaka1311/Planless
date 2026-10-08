@@ -890,7 +890,7 @@ export const AutomaticParticipantContainer: React.FC<PlanParticipantManagementWr
     ? eventDateObj.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })
     : undefined;
   const formattedTime = eventDateObj
-    ? eventDateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+    ? `${String(eventDateObj.getHours()).padStart(2, '0')}:${String(eventDateObj.getMinutes()).padStart(2, '0')}`
     : undefined;
 
   const handleRejoinAddToPlan = useCallback(

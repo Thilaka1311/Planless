@@ -115,11 +115,7 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
     day: 'numeric',
     month: 'long',
   });
-  const formattedTime = eventDateObj.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
+  const formattedTime = `${String(eventDateObj.getHours()).padStart(2, '0')}:${String(eventDateObj.getMinutes()).padStart(2, '0')}`;
 
   /**
    * Remove handler — must update the form so that when the user goes back and

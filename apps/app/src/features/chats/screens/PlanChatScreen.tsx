@@ -1136,8 +1136,8 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
 
                   const isMe = item.senderId === currentUserId;
                   const date = new Date(item.createdAt);
-                  const hours = date.getHours();
-                  const minutes = date.getMinutes().toString().padStart(2, "0");
+                  const hours = String(date.getHours()).padStart(2, "0");
+                  const minutes = String(date.getMinutes()).padStart(2, "0");
                   const timeStr = `${hours}:${minutes}`;
 
                   // Sender grouping: pure sender identity match (no time-gap splitting).

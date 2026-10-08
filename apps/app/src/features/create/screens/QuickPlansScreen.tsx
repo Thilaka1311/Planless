@@ -378,7 +378,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 260 }}
-              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto max-w-md mx-auto"
+              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto w-full"
               style={{
                 background: "#1C1C1E",
                 borderTopLeftRadius: 20,
@@ -507,7 +507,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 260 }}
-              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto max-w-md mx-auto"
+              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto w-full"
               style={{
                 background: "#1C1C1E",
                 borderTopLeftRadius: 20,
@@ -637,7 +637,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 260 }}
-              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto max-w-md mx-auto"
+              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto w-full"
               style={{
                 background: "#1C1C1E",
                 borderTopLeftRadius: 20,
@@ -740,7 +740,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 260 }}
-              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto max-w-md mx-auto"
+              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto w-full"
               style={{
                 background: "#1C1C1E",
                 borderTopLeftRadius: 20,
@@ -830,7 +830,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 260 }}
-              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto max-w-md mx-auto"
+              className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto w-full"
               style={{
                 background: "#1C1C1E",
                 borderTopLeftRadius: 20,

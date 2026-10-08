@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Search, MapPin, Sparkles, ChevronRight, ChevronDown, Zap } from "lucide-react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Search, MapPin, Sparkles, ChevronRight, ChevronDown, ChevronUp, Zap } from "lucide-react";
 import { getSectionsByCategory, getCachedSections, clearCachedSections } from "../services/discoveryService";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { useProfileStore } from "../../profile/state/ProfileContext";
@@ -265,83 +265,160 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     return null;
   };
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const lastScrollTopRef = useRef(0);
+  const isNavVisibleRef = useRef(true);
+
+  // Scroll listener to toggle bottom nav visibility and back-to-top button
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const currentScrollTop = e.currentTarget.scrollTop;
+    const delta = currentScrollTop - lastScrollTopRef.current;
+
+    // Toggle Back to top button at threshold (> 260px)
+    if (currentScrollTop > 260) {
+      setShowBackToTop(true);
+    } else {
+      setShowBackToTop(false);
+    }
+
+    // Always show nav if at or near top
+    if (currentScrollTop <= 30) {
+      if (!isNavVisibleRef.current) {
+        isNavVisibleRef.current = true;
+        window.dispatchEvent(new CustomEvent("planless_bottom_nav_visibility", { detail: { visible: true } }));
+      }
+    } else if (Math.abs(delta) > 10) {
+      // Threshold check to avoid jitter
+      if (delta > 0 && isNavVisibleRef.current) {
+        // Scrolling down -> hide nav
+        isNavVisibleRef.current = false;
+        window.dispatchEvent(new CustomEvent("planless_bottom_nav_visibility", { detail: { visible: false } }));
+      } else if (delta < 0 && !isNavVisibleRef.current) {
+        // Scrolling up -> show nav
+        isNavVisibleRef.current = true;
+        window.dispatchEvent(new CustomEvent("planless_bottom_nav_visibility", { detail: { visible: true } }));
+      }
+    }
+
+    lastScrollTopRef.current = currentScrollTop;
+  }, []);
+
+  const handleScrollToTop = useCallback(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    }
+    setShowBackToTop(false);
+    if (!isNavVisibleRef.current) {
+      isNavVisibleRef.current = true;
+      window.dispatchEvent(new CustomEvent("planless_bottom_nav_visibility", { detail: { visible: true } }));
+    }
+  }, []);
+
+  // Ensure bottom navigation is restored when unmounting
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(new CustomEvent("planless_bottom_nav_visibility", { detail: { visible: true } }));
+    };
+  }, []);
+
   return (
     <div
-      className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-24 text-left select-none"
+      ref={scrollContainerRef}
+      onScroll={handleScroll}
+      className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-24 text-left select-none relative"
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
-      {/* ── 1. COMPACT LOCATION HEADER AT THE VERY TOP (INTERACTIVE) ── */}
-      <section className="px-5 pt-3.5 pb-2 shrink-0 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setShowLocationSetter(true)}
-          className="flex items-center gap-2 text-left group active:opacity-75 transition cursor-pointer"
-        >
-          <div className="w-8 h-8 rounded-full bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-[#FF6B2C] shrink-0 group-hover:bg-[#FF6B2C]/10 group-hover:border-[#FF6B2C]/20 transition">
-            <MapPin className="w-4 h-4 text-[#FF6B2C]" />
-          </div>
-          <div className="flex flex-col text-left">
-            <div className="flex items-center gap-1 leading-tight">
-              <span className="text-sm font-bold text-white tracking-tight truncate max-w-[200px]">
+      {/* ── STICKY TOP HEADER (Location + 4 Categories) ── */}
+      <header className="sticky top-0 z-30 bg-[#000000] shrink-0 border-b border-white/[0.04]">
+        {/* ── 1. COMPACT LOCATION HEADER AT THE VERY TOP (INTERACTIVE) ── */}
+        <section className="px-5 pt-3.5 pb-2 shrink-0 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setShowLocationSetter(true)}
+            className="flex items-center gap-2 text-left group active:opacity-75 transition cursor-pointer"
+          >
+            <MapPin className="w-4 h-4 text-zinc-400 group-hover:text-zinc-200 transition shrink-0" />
+            <div className="flex flex-col text-left">
+              <div className="flex items-center gap-1 leading-tight">
+                <span className="text-sm font-bold text-white tracking-tight truncate max-w-[200px]">
+                  {displayLocality || displayCity}
+                </span>
+                <ChevronDown className="w-3.5 h-3.5 text-zinc-400 group-hover:text-white transition shrink-0" />
+              </div>
+              <span className="text-[11px] text-zinc-400 font-normal leading-tight truncate max-w-[200px]">
                 {displayCity}
               </span>
-              <ChevronDown className="w-3.5 h-3.5 text-zinc-400 group-hover:text-white transition shrink-0" />
             </div>
-            <span className="text-[11px] text-zinc-400 font-normal leading-tight truncate max-w-[200px]">
-              {displayLocality}
-            </span>
-          </div>
-        </button>
-
-        {/* ── Top Right: Master Search Icon + Quick Plans Icon ── */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => handleSubScreenChange("master-search")}
-            className="w-8 h-8 rounded-full bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] active:scale-95 hover:bg-[#FF6B2C]/20 transition cursor-pointer shrink-0 shadow-sm"
-            aria-label="Search"
-          >
-            <Search className="w-4 h-4 text-[#FF6B2C]" />
           </button>
 
-          <button
-            type="button"
-            onClick={() => handleSubScreenChange("quick-plans")}
-            className="w-8 h-8 rounded-full bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] active:scale-95 hover:bg-[#FF6B2C]/20 transition cursor-pointer shrink-0 shadow-sm"
-            aria-label="Quick Plans"
-          >
-            <Zap className="w-4 h-4 fill-[#FF6B2C]" />
-          </button>
-        </div>
-      </section>
-
-      {/* ── 2. THE FOUR PLANLESS CATEGORIES (DINING, MOVIES, SPORTS, ACTIVITIES) ── */}
-      <section className="px-5 pt-1.5 pb-3.5 shrink-0">
-        <div className="grid grid-cols-4 gap-2">
-          {PLANLESS_CATEGORIES.map((cat) => (
+          {/* ── Top Right: Master Search Icon + Quick Plans Icon ── */}
+          <div className="flex items-center gap-2">
             <button
-              key={cat.id}
               type="button"
-              onClick={() => handleCategoryClick(cat.id)}
-              className={`relative h-[86px] rounded-2xl border border-white/[0.08] bg-[#121216]/90 hover:bg-[#18181f] active:scale-[0.97] transition-all duration-200 cursor-pointer flex flex-col items-center justify-center p-1.5 group shadow-sm ${cat.glow}`}
+              onClick={() => handleSubScreenChange("master-search")}
+              className="text-zinc-400 hover:text-zinc-200 active:scale-95 transition cursor-pointer p-1 shrink-0"
+              aria-label="Search"
             >
-              {/* Category Icon / Illustration (occupying ~55-60% of card height) */}
-              <div className="w-11 h-11 flex items-center justify-center shrink-0">
-                <img
-                  src={cat.image}
-                  alt={cat.title}
-                  className="w-full h-full object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
-                />
-              </div>
-
-              {/* Category Name Underneath */}
-              <span className="text-[12px] font-semibold text-white/90 group-hover:text-white tracking-tight leading-tight mt-1 font-sans truncate max-w-full">
-                {cat.title}
-              </span>
+              <Search className="w-4 h-4 text-zinc-400" />
             </button>
-          ))}
-        </div>
-      </section>
+
+            <button
+              type="button"
+              onClick={() => handleSubScreenChange("quick-plans")}
+              className="text-zinc-400 hover:text-zinc-200 active:scale-95 transition cursor-pointer p-1 shrink-0"
+              aria-label="Quick Plans"
+            >
+              <Zap className="w-4 h-4 text-zinc-400" />
+            </button>
+          </div>
+        </section>
+
+        {/* ── 2. THE FOUR PLANLESS CATEGORIES (DINING, MOVIES, SPORTS, ACTIVITIES) ── */}
+        <section className="px-5 pt-1.5 pb-3.5 shrink-0">
+          <div className="grid grid-cols-4 gap-2">
+            {PLANLESS_CATEGORIES.map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => handleCategoryClick(cat.id)}
+                className={`relative h-[86px] rounded-2xl border border-white/[0.08] bg-[#121216]/90 hover:bg-[#18181f] active:scale-[0.97] transition-all duration-200 cursor-pointer flex flex-col items-center justify-center p-1.5 group shadow-sm ${cat.glow}`}
+              >
+                {/* Category Icon / Illustration (occupying ~55-60% of card height) */}
+                <div className="w-11 h-11 flex items-center justify-center shrink-0">
+                  <img
+                    src={cat.image}
+                    alt={cat.title}
+                    className="w-full h-full object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
+                  />
+                </div>
+
+                {/* Category Name Underneath */}
+                <span className="text-[12px] font-semibold text-white/90 group-hover:text-white tracking-tight leading-tight mt-1 font-sans truncate max-w-full">
+                  {cat.title}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      </header>
+
+      {/* ── FLOATING BACK-TO-TOP BUTTON ── */}
+      <button
+        type="button"
+        onClick={handleScrollToTop}
+        aria-label="Back to top"
+        className={`fixed top-[168px] left-1/2 -translate-x-1/2 z-30 w-8 h-8 rounded-full bg-[#18181b]/95 border border-white/10 text-white flex items-center justify-center shadow-lg backdrop-blur-md hover:bg-zinc-800 active:scale-95 transition-all duration-200 cursor-pointer ${
+          showBackToTop
+            ? "opacity-100 scale-100 pointer-events-auto"
+            : "opacity-0 scale-90 pointer-events-none"
+        }`}
+      >
+        <ChevronUp className="w-4 h-4 text-zinc-200" />
+      </button>
 
       {/* ── 3. DYNAMIC MULTI-SECTION DISCOVERY FEED ── */}
       {isLoading ? (

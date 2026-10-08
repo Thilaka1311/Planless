@@ -401,8 +401,9 @@ export const RelationshipDetailsScreen: React.FC<RelationshipDetailsScreenProps>
                         const monthUpper = validD.toLocaleString("en-US", { month: "short" }).toUpperCase();
                         const dayStr = String(validD.getDate()).padStart(2, "0");
                         const timeStr = (() => {
-                          if (!validD || isNaN(validD.getTime())) return null;
-                          return validD.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+                          const hours = String(validD.getHours()).padStart(2, "0");
+                          const minutes = String(validD.getMinutes()).padStart(2, "0");
+                          return `${hours}:${minutes}`;
                         })();
 
                         if (item.type === "expense") {

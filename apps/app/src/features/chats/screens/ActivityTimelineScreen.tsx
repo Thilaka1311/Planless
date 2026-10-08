@@ -69,11 +69,9 @@ interface ActivityTimelineScreenProps {
 }
 
 const formatExactTime = (d: Date): string => {
-  return d.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
 };
 
 const formatDateGroup = (d: Date): string => {
@@ -87,21 +85,14 @@ const formatDateGroup = (d: Date): string => {
   if (eventDay.getTime() === today.getTime()) return "Today";
   if (eventDay.getTime() === yesterday.getTime()) return "Yesterday";
 
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}-${mm}-${yy}`;
 };
 
 const formatDateSubtext = (d: Date): string => {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  const eventDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-  if (eventDay.getTime() === today.getTime()) return "Today";
-  if (eventDay.getTime() === yesterday.getTime()) return "Yesterday";
-
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatDateGroup(d);
 };
 
 const EventIcon: React.FC<{ type: ActivityEvent["type"]; isDisabled?: boolean }> = ({ type, isDisabled }) => {

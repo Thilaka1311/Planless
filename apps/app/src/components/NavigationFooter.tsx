@@ -29,7 +29,23 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
 
   // Keyboard awareness: prevent bottom navigation bar from popping up above the virtual keyboard when typing/searching
   const [isKeyboardOpen, setIsKeyboardOpen] = React.useState(false);
+  const [isNavHiddenByScroll, setIsNavHiddenByScroll] = React.useState(false);
   const initialHeightRef = React.useRef(typeof window !== "undefined" ? window.innerHeight : 0);
+
+  // Dynamic scroll-aware bottom nav visibility listener
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleNavVisibility = (e: Event) => {
+      const customEvent = e as CustomEvent<{ visible: boolean }>;
+      if (customEvent.detail && typeof customEvent.detail.visible === "boolean") {
+        setIsNavHiddenByScroll(!customEvent.detail.visible);
+      }
+    };
+    window.addEventListener("planless_bottom_nav_visibility", handleNavVisibility);
+    return () => {
+      window.removeEventListener("planless_bottom_nav_visibility", handleNavVisibility);
+    };
+  }, []);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -113,7 +129,7 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
   }, []);
 
   return (
-    <footer id="main_app_footer_nav" className={`fixed bottom-0 left-0 right-0 h-20 border-t border-zinc-950/20 bg-[#09090b]/95 backdrop-blur-xl flex justify-around items-center px-4 z-40 pb-[env(safe-area-inset-bottom,8px)] shadow-2xl select-none transition-opacity duration-150 ${isKeyboardOpen ? "!hidden pointer-events-none opacity-0" : ""}`}>
+    <footer id="main_app_footer_nav" className={`fixed bottom-0 left-0 right-0 h-20 border-t border-zinc-950/20 bg-[#09090b]/95 backdrop-blur-xl flex justify-around items-center px-4 z-40 pb-[env(safe-area-inset-bottom,8px)] shadow-2xl select-none transition-all duration-300 ease-out ${isKeyboardOpen ? "!hidden pointer-events-none opacity-0" : isNavHiddenByScroll ? "translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}>
       <button
         id="nav_item_home"
         onClick={() => { setActiveTab("home"); }}

@@ -56,9 +56,11 @@ function TeamOrganizerModalContent({
       id: `msg_${Date.now()}`,
       senderId: (userProfile as any).dbUuid || (userProfile as any).id || "",
       senderName: userProfile.name || "Me",
-      sender: { avatar: userProfile.avatar, name: userProfile.name || "Me" },
       content: text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: (() => {
+        const now = new Date();
+        return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      })(),
       isOwn: true
     }]);
   };

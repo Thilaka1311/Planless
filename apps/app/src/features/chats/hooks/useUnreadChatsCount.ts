@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../../../lib/supabaseClient";
-import { Plan } from "../../../core/types";
+import { Plan, DbPlanParticipant } from "../../../core/types";
 import { subscribeToChatReadEvents } from "../utils/chatReads";
 import { getCachedUnreadInfo } from "./useChatCache";
 
@@ -8,6 +8,7 @@ export interface UseUnreadChatsCountParams {
   userUuid: string | null;
   activeUserId?: string | null;
   plans?: Plan[];
+  dbPlanParticipants?: DbPlanParticipant[];
 }
 
 /**
@@ -27,8 +28,18 @@ export function isPlanActive(plan?: { status?: string; is_cancelled?: boolean; i
 /**
  * Checks whether a user is an involved participant (host or member) of a plan.
  */
-export function isUserInvolvedInPlan(plan: Plan, allMyUserIds: Set<string>): boolean {
+export function isUserInvolvedInPlan(
+  plan: Plan,
+  allMyUserIds: Set<string>,
+  participantMap?: Map<string, DbPlanParticipant>
+): boolean {
   if (!allMyUserIds || allMyUserIds.size === 0) return true;
+
+  if (participantMap) {
+    const myParticipant = participantMap.get(plan.id) || (plan.dbUuid ? participantMap.get(plan.dbUuid) : undefined);
+    if (myParticipant) return true;
+  }
+
   const isHost =
     Boolean(plan.creatorId && allMyUserIds.has(plan.creatorId)) ||
     Boolean(plan.hostId && allMyUserIds.has(plan.hostId)) ||
@@ -46,43 +57,62 @@ export function isUserInvolvedInPlan(plan: Plan, allMyUserIds: Set<string>): boo
 }
 
 /**
- * Calculates the NUMBER OF CHAT CONVERSATIONS with at least one unread message
- * from current/active plans, for the bottom navigation Chat badge.
+ * Canonical source/filter logic matching ChatsScreen:
+ * Filters plans strictly to those currently visible in the Chats screen:
+ * - Must NOT be cancelled (CANCELLED / CANCELED / is_cancelled)
+ * - Must NOT be completed/past (COMPLETED / is_completed)
+ * - Current user must be involved as host, member, or participant
+ */
+export function getVisibleChatPlans(
+  plans: Plan[],
+  allMyUserIds: Set<string>,
+  dbPlanParticipants?: DbPlanParticipant[]
+): Plan[] {
+  if (!plans || plans.length === 0) return [];
+
+  const participantMap = new Map<string, DbPlanParticipant>();
+  if (dbPlanParticipants && dbPlanParticipants.length > 0 && allMyUserIds && allMyUserIds.size > 0) {
+    dbPlanParticipants.forEach((pp) => {
+      if (pp.user_id && allMyUserIds.has(pp.user_id) && pp.plan_id) {
+        participantMap.set(pp.plan_id, pp);
+      }
+    });
+  }
+
+  return plans.filter((p) => {
+    if (!isPlanActive(p)) return false;
+    return isUserInvolvedInPlan(p, allMyUserIds, participantMap);
+  });
+}
+
+/**
+ * Calculates the NUMBER OF VISIBLE CHAT CONVERSATIONS with at least one unread message
+ * for the bottom navigation Chat badge.
  *
  * Rules:
- * - Only includes chats belonging to active/current Plans.
- * - Completed, cancelled, and inactive plans contribute 0.
+ * - Only includes chats that are currently shown on the Chats screen.
+ * - Completed, cancelled, and past plans contribute 0.
  * - Each chat/conversation contributes a maximum of 1 to the badge,
  *   regardless of how many unread messages it has.
- * - Example: Chat A (5 unread) + Chat B (3 unread) + Chat C (1 unread) → badge = 3.
+ * - If a chat has no unread messages, it contributes 0.
+ * - Example: Chat A (5 unread) + Chat B (3 unread) + Chat C (1 unread) → badge = 3 (NOT 9).
  */
 export function calculateUnreadChatsCount(
   unreadMap: Record<string, number>,
   plans?: Plan[],
-  allMyUserIds?: Set<string>
+  allMyUserIds?: Set<string>,
+  dbPlanParticipants?: DbPlanParticipant[]
 ): number {
   if (!unreadMap || Object.keys(unreadMap).length === 0) return 0;
+  if (!plans || plans.length === 0) return 0;
 
-  // If plans array is not passed, count entries with positive unread as distinct conversations
-  if (!plans) {
-    return Object.values(unreadMap).filter((count) => (count || 0) > 0).length;
-  }
+  const effectiveUserIds = allMyUserIds || new Set<string>();
+  const visiblePlans = getVisibleChatPlans(plans, effectiveUserIds, dbPlanParticipants);
 
-  let conversationsWithUnread = 0;
+  let visibleChatsWithUnread = 0;
   const seenPlanKeys = new Set<string>();
 
-  for (const plan of plans) {
-    // 1. Plan must be currently active (not completed or cancelled)
-    if (!isPlanActive(plan)) {
-      continue;
-    }
-
-    // 2. If user IDs are provided, verify user involvement
-    if (allMyUserIds && allMyUserIds.size > 0 && !isUserInvolvedInPlan(plan, allMyUserIds)) {
-      continue;
-    }
-
-    // Prevent duplicate counting if both plan.dbUuid and plan.id exist
+  for (const plan of visiblePlans) {
     const planKey = plan.dbUuid || plan.id;
     if (!planKey || seenPlanKeys.has(planKey)) {
       continue;
@@ -91,7 +121,6 @@ export function calculateUnreadChatsCount(
     if (plan.id) seenPlanKeys.add(plan.id);
     if (plan.dbUuid) seenPlanKeys.add(plan.dbUuid);
 
-    // Retrieve unread message count for this active plan
     let count = 0;
     if (plan.dbUuid && typeof unreadMap[plan.dbUuid] === "number") {
       count = Math.max(count, unreadMap[plan.dbUuid]);
@@ -100,13 +129,13 @@ export function calculateUnreadChatsCount(
       count = Math.max(count, unreadMap[plan.id]);
     }
 
-    // Each conversation contributes at most 1 to the badge
+    // Each visible chat with unread messages contributes strictly 1 to the badge
     if (count > 0) {
-      conversationsWithUnread += 1;
+      visibleChatsWithUnread += 1;
     }
   }
 
-  return conversationsWithUnread;
+  return visibleChatsWithUnread;
 }
 
 /**
@@ -178,22 +207,23 @@ export function handleChatReadInUnreadMap(
   return hasChange ? next : prev;
 }
 
-  /**
-   * Custom React Hook: useUnreadChatsCount
-   *
-   * Computes the NUMBER OF ACTIVE CHAT CONVERSATIONS with unread messages
-   * for the bottom navigation Chat badge.
-   *
-   * Each conversation contributes max 1 to the badge regardless of message count.
-   * Example: Chat A (5 unread) + Chat B (3 unread) = badge of 2, not 8.
-   *
-   * Reuses existing plan_chat_reads and get_user_chat_summaries RPC architecture.
-   * Updates reactively via Realtime and local synchronous chat read events.
-   */
+/**
+ * Custom React Hook: useUnreadChatsCount
+ *
+ * Computes the NUMBER OF VISIBLE CHAT CONVERSATIONS with unread messages
+ * for the bottom navigation Chat badge.
+ *
+ * Each conversation contributes max 1 to the badge regardless of message count.
+ * Example: Chat A (5 unread) + Chat B (3 unread) = badge of 2, not 8.
+ *
+ * Strictly synchronized with the ChatsScreen visible plan filtering logic.
+ * Updates reactively via Realtime and local synchronous chat read events.
+ */
 export function useUnreadChatsCount({
   userUuid,
   activeUserId,
   plans = [],
+  dbPlanParticipants,
 }: UseUnreadChatsCountParams): number {
   const allMyUserIds = useMemo(() => {
     const ids = new Set<string>();
@@ -318,10 +348,10 @@ export function useUnreadChatsCount({
     };
   }, [userUuid, allMyUserIds, involvedPlanIds, plans]);
 
-  // Compute total unread messages strictly from active/current plans
+  // Compute number of visible chat conversations strictly matching ChatsScreen
   const unreadChatsCount = useMemo(() => {
-    return calculateUnreadChatsCount(unreadMap, plans, allMyUserIds);
-  }, [unreadMap, plans, allMyUserIds]);
+    return calculateUnreadChatsCount(unreadMap, plans, allMyUserIds, dbPlanParticipants);
+  }, [unreadMap, plans, allMyUserIds, dbPlanParticipants]);
 
   return unreadChatsCount;
 }

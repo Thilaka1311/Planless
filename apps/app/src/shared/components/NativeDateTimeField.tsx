@@ -16,13 +16,10 @@ export const formatDateTimeStandard = (date: Date | null | undefined): string =>
   const month = date.toLocaleDateString('en-US', { month: 'short' });
   const day = date.getDate();
   
-  let hours = date.getHours();
+  const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12;
-  hours = hours ? hours : 12; // 0 should be 12
   
-  return `${weekday}, ${month} ${day} • ${hours}:${minutes} ${ampm}`;
+  return `${weekday}, ${month} ${day} • ${hours}:${minutes}`;
 };
 
 export const toLocalISOString = (date: Date | null | undefined): string => {

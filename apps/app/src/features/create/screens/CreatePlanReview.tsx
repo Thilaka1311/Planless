@@ -210,9 +210,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
   const formattedDate = eventDateObj.toLocaleDateString('en-US', {
     weekday: 'long', day: 'numeric', month: 'long'
   });
-  const formattedTime = eventDateObj.toLocaleTimeString('en-US', {
-    hour: 'numeric', minute: '2-digit', hour12: true
-  });
+  const formattedTime = `${String(eventDateObj.getHours()).padStart(2, '0')}:${String(eventDateObj.getMinutes()).padStart(2, '0')}`;
 
   const syntheticPlan: Plan = useMemo(() => {
     const hostId = form.userProfile?.dbUuid || form.activeUserId || 'host';

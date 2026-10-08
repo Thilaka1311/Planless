@@ -580,6 +580,7 @@ export default function MainApp({
     userUuid,
     activeUserId,
     plans,
+    dbPlanParticipants,
   });
 
   const pendingMemoryCount = React.useMemo(() => {

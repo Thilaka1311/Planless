@@ -1091,7 +1091,9 @@ export const ExpenseDetails: React.FC<ExpenseDetailsProps> = ({
 
           const monthShort = d.toLocaleString("en-US", { month: "short" });
           const dayNum = d.getDate();
-          const timeStr = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+          const hours = String(d.getHours()).padStart(2, "0");
+          const minutes = String(d.getMinutes()).padStart(2, "0");
+          const timeStr = `${hours}:${minutes}`;
 
           return `${monthShort} ${dayNum} · ${timeStr}`;
         })();

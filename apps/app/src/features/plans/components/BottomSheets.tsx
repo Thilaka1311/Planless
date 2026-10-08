@@ -2081,17 +2081,17 @@ export const RestorePlanBottomSheet: React.FC<RestorePlanBottomSheetProps> = ({
                 className="w-full active:scale-[0.98] transition-transform"
                 style={{
                   width: '100%',
-                  height: 48,
+                  height: 40,
                   padding: '0 14px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   background: '#FF6B2C',
                   border: 'none',
-                  borderRadius: 12,
+                  borderRadius: 9999,
                   color: '#FFFFFF',
                   fontSize: 14,
-                  fontWeight: 600,
+                  fontWeight: 700,
                   cursor: isRestoring ? 'default' : 'pointer',
                   opacity: isRestoring ? 0.5 : 1,
                   textAlign: 'center',
@@ -2176,10 +2176,18 @@ export function getRSVPValidationError(
 export function getPlanDateTimeValidationError(
   tempDate: string,
   tempTime: string,
-  _isLiveEditing: boolean = false,
-  minDate?: string
+  isLiveEditing: boolean = false,
+  minDate?: string,
+  existingDate?: string,
+  existingTime?: string
 ): string | null {
   if (!tempDate || !tempTime) {
+    return null;
+  }
+
+  // When editing an existing/live plan, if the date/time matches the existing plan date/time,
+  // overdue/past timestamp is a legitimate, valid state and must NEVER return an error.
+  if (isLiveEditing && existingDate && existingTime && tempDate === existingDate && tempTime === existingTime) {
     return null;
   }
 
@@ -2211,9 +2219,18 @@ export function getDateTimeValidationError(
   tempRSVPOption: string | null,
   isLiveEditing: boolean = false,
   currentSavedRsvpDeadline?: string | null,
-  minDate?: string
+  minDate?: string,
+  existingDate?: string,
+  existingTime?: string
 ): { type: 'dateTime' | 'rsvp'; message: string } | null {
-  const dateTimeError = getPlanDateTimeValidationError(tempDate, tempTime, isLiveEditing, minDate);
+  const dateTimeError = getPlanDateTimeValidationError(
+    tempDate,
+    tempTime,
+    isLiveEditing,
+    minDate,
+    existingDate,
+    existingTime
+  );
   if (dateTimeError) {
     return {
       type: 'dateTime',
@@ -2241,15 +2258,24 @@ export function getDateTimeValidationErrors(
   tempRSVPOption: string | null,
   isLiveEditing: boolean = false,
   currentSavedRsvpDeadline?: string | null,
-  minDate?: string
+  minDate?: string,
+  existingDate?: string,
+  existingTime?: string
 ): DateTimeValidationErrors {
   return {
-    dateTimeError: getPlanDateTimeValidationError(tempDate, tempTime, isLiveEditing, minDate),
+    dateTimeError: getPlanDateTimeValidationError(
+      tempDate,
+      tempTime,
+      isLiveEditing,
+      minDate,
+      existingDate,
+      existingTime
+    ),
     rsvpError: getRSVPValidationError(tempDate, tempTime, tempRSVPOption, isLiveEditing, currentSavedRsvpDeadline),
   };
 }
 
-interface EditDateTimeBottomSheetProps {
+export interface EditDateTimeBottomSheetProps {
   isOpen: boolean;
   tempDate: string;
   tempTime: string;
@@ -2263,6 +2289,9 @@ interface EditDateTimeBottomSheetProps {
   onTempRSVPOptionChange: (val: string | null) => void;
   onClose: () => void;
   onCancel?: () => void;
+  existingDate?: string;
+  existingTime?: string;
+  existingRSVPOption?: string | null;
 }
 
 export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = ({
@@ -2279,19 +2308,43 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
   onTempRSVPOptionChange,
   onClose,
   onCancel,
+  existingDate,
+  existingTime,
+  existingRSVPOption,
 }) => {
   const [isRSVPExpanded, setIsRSVPExpanded] = useState(initialSection === 'rsvp');
   const [, setTick] = useState(0);
 
-  const initialValuesRef = useRef({ date: tempDate, time: tempTime, rsvpOption: tempRSVPOption });
+  const initialValuesRef = useRef({
+    date: existingDate ?? tempDate,
+    time: existingTime ?? tempTime,
+    rsvpOption: existingRSVPOption !== undefined ? existingRSVPOption : tempRSVPOption,
+  });
   const [hasUserEditedDateTime, setHasUserEditedDateTime] = useState(false);
   const [hasUserEditedRsvp, setHasUserEditedRsvp] = useState(false);
+
+  // Synchronously capture baseline values during render when transitioning from closed to open
+  const prevIsOpenRef = useRef(isOpen);
+  if (!prevIsOpenRef.current && isOpen) {
+    initialValuesRef.current = {
+      date: existingDate ?? tempDate,
+      time: existingTime ?? tempTime,
+      rsvpOption: existingRSVPOption !== undefined ? existingRSVPOption : tempRSVPOption,
+    };
+    if (hasUserEditedDateTime) setHasUserEditedDateTime(false);
+    if (hasUserEditedRsvp) setHasUserEditedRsvp(false);
+  }
+  prevIsOpenRef.current = isOpen;
 
   const effectiveMinDate = minDate ?? getTodayDateString();
 
   useEffect(() => {
     if (isOpen) {
-      initialValuesRef.current = { date: tempDate, time: tempTime, rsvpOption: tempRSVPOption };
+      initialValuesRef.current = {
+        date: existingDate ?? tempDate,
+        time: existingTime ?? tempTime,
+        rsvpOption: existingRSVPOption !== undefined ? existingRSVPOption : tempRSVPOption,
+      };
       setHasUserEditedDateTime(false);
       setHasUserEditedRsvp(false);
       setIsRSVPExpanded(initialSection === 'rsvp');
@@ -2300,19 +2353,34 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
       }, 10000);
       return () => clearInterval(interval);
     }
-  }, [isOpen, initialSection]);
+  }, [isOpen, initialSection, existingDate, existingTime, existingRSVPOption]);
 
-  const isDateTimeChanged = tempDate !== initialValuesRef.current.date || tempTime !== initialValuesRef.current.time;
-  const isRsvpChanged = tempRSVPOption !== initialValuesRef.current.rsvpOption;
+  const baseDate = existingDate ?? initialValuesRef.current.date;
+  const baseTime = existingTime ?? initialValuesRef.current.time;
+  const baseRsvp = existingRSVPOption !== undefined ? existingRSVPOption : initialValuesRef.current.rsvpOption;
 
-  const rawDateTimeError = getPlanDateTimeValidationError(tempDate, tempTime, isLiveEditing, effectiveMinDate);
+  const isDateChanged = tempDate !== baseDate;
+  const isTimeChanged = tempTime !== baseTime;
+  const isDateTimeChanged = isDateChanged || isTimeChanged;
+  const isRsvpChanged = tempRSVPOption !== baseRsvp;
+
+  // When editing an existing plan, validation ONLY applies to newly edited values.
+  // The existing overdue plan state is completely valid and must never show an error.
+  const rawDateTimeError = getPlanDateTimeValidationError(
+    tempDate,
+    tempTime,
+    isLiveEditing,
+    effectiveMinDate,
+    baseDate,
+    baseTime
+  );
   const rawRsvpError = getRSVPValidationError(tempDate, tempTime, tempRSVPOption, isLiveEditing, currentSavedRsvpDeadline);
 
   // Validation only triggers when a value is actively edited away from initial values
-  const dateTimeError = (hasUserEditedDateTime || isDateTimeChanged) && isDateTimeChanged ? rawDateTimeError : null;
+  const dateTimeError = isDateTimeChanged ? rawDateTimeError : null;
+
   const rsvpError =
-    ((hasUserEditedRsvp || isRsvpChanged) && isRsvpChanged) ||
-    ((hasUserEditedDateTime || isDateTimeChanged) && isDateTimeChanged && tempRSVPOption)
+    (isRsvpChanged || (isDateTimeChanged && tempRSVPOption))
       ? rawRsvpError
       : null;
 
@@ -2341,9 +2409,9 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
     if (onCancel) {
       onCancel();
     } else {
-      onTempDateChange(initialValuesRef.current.date);
-      onTempTimeChange(initialValuesRef.current.time);
-      onTempRSVPOptionChange(initialValuesRef.current.rsvpOption);
+      onTempDateChange(baseDate);
+      onTempTimeChange(baseTime);
+      onTempRSVPOptionChange(baseRsvp);
       onClose();
     }
   };
@@ -3785,7 +3853,8 @@ export const SwitchToAutomaticSelectionBottomSheet: React.FC<SwitchToAutomaticSe
           disabled={!isReady || isSubmitting}
           style={{
             width: '100%',
-            padding: '12px',
+            height: 40,
+            padding: '0 14px',
             borderRadius: 9999,
             background: isReady ? '#FF6B2C' : 'rgba(255, 255, 255, 0.1)',
             color: isReady ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
@@ -3793,6 +3862,9 @@ export const SwitchToAutomaticSelectionBottomSheet: React.FC<SwitchToAutomaticSe
             fontWeight: 700,
             cursor: isReady ? 'pointer' : 'not-allowed',
             border: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             transition: 'all 0.2s ease',
           }}
         >
@@ -4132,7 +4204,8 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
           disabled={!isReady || isSubmitting}
           style={{
             width: '100%',
-            padding: '12px',
+            height: 40,
+            padding: '0 14px',
             borderRadius: 9999,
             background: isReady ? '#FF6B2C' : 'rgba(255, 255, 255, 0.1)',
             color: isReady ? '#FFFFFF' : 'rgba(255, 255, 255, 0.3)',
@@ -4140,6 +4213,9 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
             fontWeight: 700,
             cursor: isReady && !isSubmitting ? 'pointer' : 'not-allowed',
             border: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             transition: 'all 0.15s ease',
           }}
         >
@@ -4304,12 +4380,12 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
                 onClick={handleShare}
                 style={{
                   width: "100%",
-                  height: 44,
+                  height: 40,
                   padding: "0 14px",
                   borderRadius: 9999,
                   background: !inviteUrl ? "rgba(255, 255, 255, 0.1)" : "#FF6B2C",
                   color: !inviteUrl ? "rgba(255, 255, 255, 0.3)" : "#FFFFFF",
-                  fontSize: 15,
+                  fontSize: 14,
                   fontWeight: 700,
                   cursor: !inviteUrl ? "not-allowed" : "pointer",
                   border: "none",

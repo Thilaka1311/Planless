@@ -305,15 +305,7 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
     day: 'numeric',
     month: 'long'
   });
-  const formattedTime = selectedDateTime.toLocaleDateString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  }).split(',')[1]?.trim() || selectedDateTime.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  });
+  const formattedTime = `${String(selectedDateTime.getHours()).padStart(2, '0')}:${String(selectedDateTime.getMinutes()).padStart(2, '0')}`;
 
   return (
     <div

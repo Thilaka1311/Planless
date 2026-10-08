@@ -621,52 +621,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [locationQuery, setLocationQuery] = useState("");
   const locationInputRef = useRef<HTMLInputElement>(null);
 
-  // Track unconstrained viewport height for createMode so mobile virtual keyboard
-  // doesn't push the lower actions (Manage Participants & Create Plan CTA) upward.
-  const [viewportHeight, setViewportHeight] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 844));
-
-  useEffect(() => {
-    if (!createMode || typeof window === 'undefined') return;
-
-    const handleResize = () => {
-      const activeEl = document.activeElement;
-      const isInputFocused = Boolean(
-        activeEl && (
-          activeEl.tagName === 'INPUT' ||
-          activeEl.tagName === 'TEXTAREA' ||
-          (activeEl as HTMLElement).isContentEditable
-        )
-      );
-      // If height increased, viewport expanded (keyboard closed or device rotated).
-      // If height decreased while an input is focused, virtual keyboard opened -> do NOT shrink viewportHeight.
-      if (!isInputFocused || window.innerHeight > viewportHeight) {
-        setViewportHeight(window.innerHeight);
-      }
-    };
-
-    const handleFocusOut = () => {
-      setTimeout(() => {
-        const activeEl = document.activeElement;
-        const stillFocused = Boolean(
-          activeEl && (
-            activeEl.tagName === 'INPUT' ||
-            activeEl.tagName === 'TEXTAREA' ||
-            (activeEl as HTMLElement).isContentEditable
-          )
-        );
-        if (!stillFocused) {
-          setViewportHeight(window.innerHeight);
-        }
-      }, 150);
-    };
-
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('focusout', handleFocusOut);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('focusout', handleFocusOut);
-    };
-  }, [createMode, viewportHeight]);
 
   const getLocalDateString = (d: Date) => {
     const year = d.getFullYear();
@@ -752,7 +706,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       tempRSVPOption,
       isLiveEditing,
       currentSavedRsvpDeadline,
-      effectiveMinDate
+      effectiveMinDate,
+      initial.date,
+      initial.time
     );
     if (validationError) {
       return;
@@ -2309,8 +2265,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 15 }}
       transition={{ duration: 0.18, ease: 'easeOut' }}
-      className={`fixed ${createMode ? 'top-0 left-0 right-0' : 'inset-0'} bg-[#050505] z-[60] flex flex-col ${createMode ? '' : 'h-full'} overflow-hidden text-left`}
-      style={createMode ? { height: `${viewportHeight}px`, minHeight: `${viewportHeight}px`, maxHeight: `${viewportHeight}px` } : undefined}
+      className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left"
     >
       <div id="immersive-plan-scroll-container" className={`flex-1 ${isFixedViewportView ? 'overflow-hidden flex flex-col h-full pb-20' : 'overflow-y-auto scrollbar-none pb-28'}`}>
         <div id="immersive-plan-hero-wrapper" className={`w-full flex-shrink-0 relative ${isEditingLocationInline ? 'z-50' : 'z-10'}`}>
@@ -2622,7 +2577,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
 
           {/* Fixed Manage Participants action for host — floating icon + text only, tightly anchored above LiveActionButton / Create Plan button */}
           {isHost && !isCancelled && (
-            <div className={`${createMode ? 'absolute bottom-[54px]' : 'fixed bottom-[58px]'} left-6 right-6 z-40 flex items-center justify-center pointer-events-auto`}>
+            <div className="fixed bottom-[58px] left-6 right-6 z-40 flex items-center justify-center pointer-events-auto">
               <button
                 type="button"
                 id="host_manage_participants_btn"
@@ -2701,7 +2656,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             return (
               <div
                 style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
-                className={`${createMode ? 'absolute' : 'fixed'} bottom-0 left-0 right-0 px-6 pt-2 pb-4 bg-gradient-to-t from-black via-black/90 to-transparent z-40`}
+                className="fixed bottom-0 left-0 right-0 px-6 pt-2 pb-4 bg-gradient-to-t from-black via-black/90 to-transparent z-40"
               >
                 <button
                   type="button"
@@ -3146,6 +3101,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         tempDate={tempDate}
         tempTime={tempTime}
         tempRSVPOption={tempRSVPOption}
+        existingDate={initialDateTimeRef.current.date}
+        existingTime={initialDateTimeRef.current.time}
+        existingRSVPOption={initialDateTimeRef.current.rsvpOption}
         initialSection={dateTimeSheetInitialSection}
         minDate={getLocalDateString(new Date())}
         isLiveEditing={!createMode}

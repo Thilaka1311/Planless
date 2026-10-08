@@ -23,6 +23,7 @@ import {
   ChatSummaryItem,
   ChatMessage,
 } from "../hooks/useChatCache";
+import { getVisibleChatPlans } from "../hooks/useUnreadChatsCount";
 
 interface ChatsScreenProps {
   onSelectChatPlan: (planId: string) => void;
@@ -171,16 +172,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
   // Retrieve every plan where the authenticated user is a participant (Hosted, Joined, Waitlisted, Invited)
   // excluding cancelled plans. Dynamically sorted by latest message/activity DESC (newest activity first).
   const userPlanChats = useMemo(() => {
-    const userInvolvedPlans = plans.filter((p) => {
-      // Exclude cancelled and completed plans from active chat list
-      if ((p.status || "").toUpperCase() === "CANCELLED" || (p.status || "").toUpperCase() === "COMPLETED") return false;
-
-      const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
-      const isHostRole = myParticipant?.role === "HOST" || p.hostId === userUuid || p.creatorId === userUuid;
-      const isMember = p.members.some((m) => m.userUuid && allMyUserIds.has(m.userUuid));
-
-      return Boolean(myParticipant || isHostRole || isMember);
-    });
+    const userInvolvedPlans = getVisibleChatPlans(plans, allMyUserIds, dbPlanParticipants);
 
     // Dynamic sort descending by latest message/activity timestamp (newest activity first)
     return userInvolvedPlans.sort((a, b) => {
@@ -188,7 +180,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
       const timeB = getPlanLatestActivityTime(b);
       return timeB - timeA;
     });
-  }, [plans, participantMap, userUuid, allMyUserIds, chatSummaries]);
+  }, [plans, dbPlanParticipants, allMyUserIds, chatSummaries]);
 
   // Real-time title search filtering while preserving latest-activity DESC sort order
   const filteredChats = useMemo(() => {

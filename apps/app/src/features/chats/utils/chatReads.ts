@@ -67,14 +67,27 @@ export function subscribeToChatReadEvents(callback: (planId: string) => void): (
 }
 
 /**
- * Formats a message ISO timestamp into a compact chat list time string:
- * - "16:26" (24-hour) if today
- * - "Yesterday" if yesterday
- * - "dd-mm-yy" if older than yesterday
+ * Formats time in 24-hour format: "HH:mm" (e.g. "16:26", "11:22"). Never shows AM/PM.
  */
-export function formatChatListTimestamp(dateString?: string | null): string {
-  if (!dateString) return "";
-  const date = new Date(dateString);
+export function format24HourTime(dateInput?: Date | string | number | null): string {
+  if (!dateInput) return "";
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (isNaN(date.getTime())) return "";
+
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+/**
+ * Formats a timestamp into standardized relative date string:
+ * - Today → "16:26" (time only in 24-hour format)
+ * - Yesterday → "Yesterday"
+ * - Older than yesterday → "dd-mm-yy"
+ */
+export function formatRelativeDate(dateInput?: Date | string | number | null): string {
+  if (!dateInput) return "";
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
   if (isNaN(date.getTime())) return "";
 
   const now = new Date();
@@ -84,9 +97,7 @@ export function formatChatListTimestamp(dateString?: string | null): string {
     date.getFullYear() === now.getFullYear();
 
   if (isToday) {
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${hours}:${minutes}`;
+    return format24HourTime(date);
   }
 
   const yesterday = new Date(now);
@@ -106,3 +117,14 @@ export function formatChatListTimestamp(dateString?: string | null): string {
   const yy = String(date.getFullYear()).slice(-2);
   return `${dd}-${mm}-${yy}`;
 }
+
+/**
+ * Formats a message ISO timestamp into a compact chat list time string:
+ * - "16:26" (24-hour) if today
+ * - "Yesterday" if yesterday
+ * - "dd-mm-yy" if older than yesterday
+ */
+export function formatChatListTimestamp(dateString?: string | null): string {
+  return formatRelativeDate(dateString);
+}
+
