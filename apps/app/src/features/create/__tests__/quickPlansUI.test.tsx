@@ -260,5 +260,27 @@ describe("QuickPlansScreen Dedicated Screen", () => {
     expect(html).not.toContain("overflow-menu");
     expect(html).not.toContain("aria-label=\"Plan options\"");
   });
+
+  it("verifies Rename List bottom sheet styling matches canonical Planless action sheet design", () => {
+    const filePath = require("path").resolve(__dirname, "../screens/QuickPlansScreen.tsx");
+    const content = require("fs").readFileSync(filePath, "utf-8");
+
+    // Must have Rename List bottom sheet
+    expect(content).toContain("Rename List");
+    expect(content).toContain("Update the name of this Quick Plan list");
+
+    // Primary action button must be pill with #FF6B2C
+    expect(content).toContain('id="edit_list_submit_btn"');
+    expect(content).toContain('borderRadius: 9999');
+    expect(content).toContain('#FF6B2C');
+    expect(content).toContain('height: 40');
+    expect(content).toContain('Save Changes');
+
+    // Cancel button must be text-only
+    expect(content).toContain('id="edit_list_cancel_btn"');
+    expect(content).toContain('color: "rgba(255, 255, 255, 0.4)"');
+    expect(content).toContain('background: "none"');
+    expect(content).toContain('border: "none"');
+  });
 });
 

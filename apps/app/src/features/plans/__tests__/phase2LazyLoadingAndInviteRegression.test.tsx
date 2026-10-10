@@ -208,6 +208,18 @@ describe("Phase 2 Lazy Loading & Invite Regression Suite", () => {
             }),
           };
         }
+        if (table === "plans") {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { id: TEST_TOKEN, status: "LIVE", title: "Weekend Football" },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
         return {};
       });
 

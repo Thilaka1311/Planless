@@ -26,9 +26,9 @@ function computeShouldShowBottomNav({
   childrenWantBottomNavHidden?: boolean;
 }): boolean {
   // 1. Fullscreen modal overlays hide bottom navigation across the entire app
+  // Note: A plan detail modal is ONLY open if selectedPlanId is actively set.
   if (
     selectedPlanId ||
-    currentRoute.selectedPlanId ||
     selectedChatPlanId ||
     currentRoute.selectedChatPlanId ||
     showPlansSearchScreen ||
@@ -233,6 +233,126 @@ describe('Bottom Navigation Visibility State', () => {
           })
         ).toBe(true);
       }
+    });
+  });
+
+  describe('Plans Screen Regression Scenarios (Always Shows Bottom Navigation on Plans)', () => {
+    it('1. Plans -> open Plan -> Back -> Plans keeps bottom navigation visible', () => {
+      // 1. On Plans screen
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans' },
+          activeTab: 'plans',
+          selectedPlanId: null,
+        })
+      ).toBe(true);
+
+      // 2. Open Plan (e.g. Doomsday)
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans', selectedPlanId: 'doomsday' },
+          activeTab: 'plans',
+          selectedPlanId: 'doomsday',
+        })
+      ).toBe(false);
+
+      // 3. Back to Plans (even if route param is clearing or transition in progress)
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans', selectedPlanId: null },
+          activeTab: 'plans',
+          selectedPlanId: null,
+        })
+      ).toBe(true);
+    });
+
+    it('2. Plans -> open Plan -> open bottom sheet -> dismiss -> Back -> Plans', () => {
+      // Open Plan
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans', selectedPlanId: 'doomsday' },
+          activeTab: 'plans',
+          selectedPlanId: 'doomsday',
+        })
+      ).toBe(false);
+
+      // Sheet opened inside plan: modal still mounted
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans', selectedPlanId: 'doomsday' },
+          activeTab: 'plans',
+          selectedPlanId: 'doomsday',
+        })
+      ).toBe(false);
+
+      // Sheet dismissed, then Back to Plans
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans' },
+          activeTab: 'plans',
+          selectedPlanId: null,
+        })
+      ).toBe(true);
+    });
+
+    it('3. Plans -> open Plan -> bottom sheet action (leave/cancel) -> Back -> Plans', () => {
+      // User executes action in sheet which closes the modal and returns to Plans
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans' },
+          activeTab: 'plans',
+          selectedPlanId: null,
+        })
+      ).toBe(true);
+    });
+
+    it('4. Plans -> open Plan -> swipe/dismiss bottom sheet -> Back -> Plans', () => {
+      // Swipe/dismiss sheet then Back
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans' },
+          activeTab: 'plans',
+          selectedPlanId: null,
+        })
+      ).toBe(true);
+    });
+
+    it('5. Plans -> open Plan -> browser/device back -> Plans', () => {
+      // Popstate returns directly to /plans
+      const poppedRoute: AppRoute = { tab: 'plans', selectedPlanId: null };
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: poppedRoute,
+          activeTab: 'plans',
+          selectedPlanId: null,
+        })
+      ).toBe(true);
+    });
+
+    it('6. Plans -> switch another bottom-nav tab -> Plans', () => {
+      // Tab 1: Plans
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans' },
+          activeTab: 'plans',
+        })
+      ).toBe(true);
+
+      // Switch to Home
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'home' },
+          activeTab: 'home',
+        })
+      ).toBe(true);
+
+      // Switch back to Plans
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans' },
+          activeTab: 'plans',
+        })
+      ).toBe(true);
     });
   });
 });

@@ -19,10 +19,10 @@ export const renumberWaitlist = (friends: Friend[]): Friend[] => {
 
 /**
  * Orders Joined participants in Assigned mode:
- * 1. Current user as "You" (always first).
- * 2. JOINED/ACCEPTED participants, sorted alphabetically A → Z.
- * 3. INVITED participants (not yet responded), sorted alphabetically A → Z.
- * 4. Host appears in slot 1 if not the current user.
+ * 1. Current user as "You" (always first when present).
+ * 2. Active host(s) (always near the top; preserved with isHost: true and Host badge).
+ * 3. JOINED/ACCEPTED participants, sorted alphabetically A → Z.
+ * 4. INVITED participants (not yet responded), sorted alphabetically A → Z.
  */
 export const formatAssignedGoingList = <T extends Record<string, any>>(
   list: T[],
@@ -38,29 +38,62 @@ export const formatAssignedGoingList = <T extends Record<string, any>>(
       getName(a).localeCompare(getName(b), undefined, { sensitivity: 'base' })
     );
 
-  const activeId = activeUserId ? String(activeUserId).toLowerCase() : '';
+  const getItemId = (item: T): string => {
+    return String(
+      item.userId ||
+      item.dbUuid ||
+      item.id ||
+      (item as any).user_id ||
+      (item as any).userUuid ||
+      ''
+    ).trim().toLowerCase();
+  };
+
+  const isHostParticipant = (item: T): boolean => {
+    return (
+      item.isHost === true ||
+      String((item as any).role || '').trim().toUpperCase() === 'HOST'
+    );
+  };
+
+  const activeId = activeUserId ? String(activeUserId).trim().toLowerCase() : '';
 
   const currentUser = list.find((item) => {
     const isYou = item.name === 'You';
-    const itemUserId = String(item.userId || item.dbUuid || item.id || (item as any).user_id || '').toLowerCase();
-    return isYou || (Boolean(activeId) && itemUserId === activeId);
+    const itemUserId = getItemId(item);
+    return isYou || (Boolean(activeId) && Boolean(itemUserId) && itemUserId === activeId);
   });
 
-  const host = list.find((item) => {
-    return item.isHost === true || (item as any).role === 'HOST';
-  });
+  const isCurrentUserHost = Boolean(currentUser && isHostParticipant(currentUser));
 
-  const isCurrentUserHost = Boolean(
-    currentUser && (currentUser === host || currentUser.isHost || (currentUser as any).role === 'HOST')
-  );
+  const seenIds = new Set<string>();
+  const seenItems = new Set<T>();
 
-  const excluded = new Set<T>();
-  if (currentUser) excluded.add(currentUser);
-  if (host) excluded.add(host);
+  if (currentUser) {
+    seenItems.add(currentUser);
+    const cId = getItemId(currentUser);
+    if (cId) seenIds.add(cId);
+  }
 
-  const remaining = list.filter((item) => !excluded.has(item));
+  const otherHosts: T[] = [];
+  const remainingGuests: T[] = [];
 
-  // Classify each remaining participant by their RSVP status:
+  for (const item of list) {
+    if (seenItems.has(item)) continue;
+    const id = getItemId(item);
+    if (id && seenIds.has(id)) continue;
+
+    seenItems.add(item);
+    if (id) seenIds.add(id);
+
+    if (isHostParticipant(item)) {
+      otherHosts.push({ ...item, isHost: true });
+    } else {
+      remainingGuests.push(item);
+    }
+  }
+
+  // Classify each remaining non-host participant by their RSVP status:
   // JOINED/ACCEPTED → first bucket; INVITED → second bucket
   const isJoined = (item: T): boolean => {
     const raw = String(
@@ -72,24 +105,23 @@ export const formatAssignedGoingList = <T extends Record<string, any>>(
     return true;
   };
 
-  const joinedRemaining = sortAlpha(remaining.filter((item) => isJoined(item)));
-  const invitedRemaining = sortAlpha(remaining.filter((item) => !isJoined(item)));
+  const sortedOtherHosts = sortAlpha(otherHosts).map((h) => ({
+    ...h,
+    isHost: true,
+  }));
+  const joinedRemaining = sortAlpha(remainingGuests.filter((item) => isJoined(item)));
+  const invitedRemaining = sortAlpha(remainingGuests.filter((item) => !isJoined(item)));
   const sortedRemaining = [...joinedRemaining, ...invitedRemaining];
-
-  if (isCurrentUserHost) {
-    return [
-      { ...currentUser, name: 'You', isHost: true },
-      ...sortedRemaining,
-    ];
-  }
 
   const result: T[] = [];
   if (currentUser) {
-    result.push({ ...currentUser, name: 'You' });
+    result.push(
+      isCurrentUserHost
+        ? { ...currentUser, name: 'You', isHost: true }
+        : { ...currentUser, name: 'You' }
+    );
   }
-  if (host && host !== currentUser) {
-    result.push(host);
-  }
+  result.push(...sortedOtherHosts);
   result.push(...sortedRemaining);
 
   return result;
@@ -100,6 +132,7 @@ export const formatAssignedGoingList = <T extends Record<string, any>>(
  * - Preserves actual waitlist ordering/position.
  * - Does not alphabetically reorder the waitlist.
  * - Displays current user as "You" in their existing waitlist position.
+ * - Guarantees unique participants by canonical ID.
  */
 export const formatAssignedWaitlist = <T extends Record<string, any>>(
   list: T[],
@@ -107,10 +140,21 @@ export const formatAssignedWaitlist = <T extends Record<string, any>>(
 ): T[] => {
   if (!list || list.length === 0) return [];
   const activeId = activeUserId ? String(activeUserId).toLowerCase() : '';
+  const seenIds = new Set<string>();
 
-  return list.map((item) => {
+  const deduplicated: T[] = [];
+  for (const item of list) {
+    const itemUserId = String(item.userId || item.dbUuid || item.id || (item as any).user_id || (item as any).userUuid || '').trim().toLowerCase();
+    if (itemUserId && seenIds.has(itemUserId)) {
+      continue;
+    }
+    if (itemUserId) seenIds.add(itemUserId);
+    deduplicated.push(item);
+  }
+
+  return deduplicated.map((item) => {
     const isYou = item.name === 'You';
-    const itemUserId = String(item.userId || item.dbUuid || item.id || (item as any).user_id || '').toLowerCase();
+    const itemUserId = String(item.userId || item.dbUuid || item.id || (item as any).user_id || (item as any).userUuid || '').trim().toLowerCase();
     if (isYou || (Boolean(activeId) && itemUserId === activeId)) {
       return { ...item, name: 'You' };
     }

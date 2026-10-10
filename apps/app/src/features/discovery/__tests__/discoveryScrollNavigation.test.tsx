@@ -33,8 +33,8 @@ vi.mock("../../profile/state/ProfileContext", () => ({
   }),
 }));
 
-describe("Discovery Scroll Navigation (Request 3)", () => {
-  it("wraps the location header and 4 categories inside a sticky header container", () => {
+describe("Discovery Scroll Navigation", () => {
+  it("wraps only location, search, and quick plans inside the sticky header container, while categories are scrollable content outside it", () => {
     const html = renderToString(
       <BrowseExperiencesStep
         userProfile={{ name: "Thilak" }}
@@ -46,7 +46,25 @@ describe("Discovery Scroll Navigation (Request 3)", () => {
 
     // Sticky header container present with dark background and border
     expect(html).toContain('class="sticky top-0 z-30 bg-[#000000] shrink-0 border-b border-white/[0.04]"');
-    // Contains location and all 4 categories
+
+    // Extract the content inside the sticky <header>...</header>
+    const headerMatch = html.match(/<header class="sticky top-0 z-30 bg-\[#000000\] shrink-0 border-b border-white\/\[0\.04\]"[^>]*>([\s\S]*?)<\/header>/);
+    expect(headerMatch).not.toBeNull();
+    const headerContent = headerMatch![1];
+
+    // Sticky header must contain location, search, and quick plans
+    expect(headerContent).toContain("Vidyaranyapura");
+    expect(headerContent).toContain("Bengaluru");
+    expect(headerContent).toContain('aria-label="Search"');
+    expect(headerContent).toContain('aria-label="Quick Plans"');
+
+    // Categories must NOT be inside the sticky header
+    expect(headerContent).not.toContain("Dining");
+    expect(headerContent).not.toContain("Movies");
+    expect(headerContent).not.toContain("Sports");
+    expect(headerContent).not.toContain("Activities");
+
+    // But all 4 categories must still exist in the overall scrollable page html
     expect(html).toContain("Dining");
     expect(html).toContain("Movies");
     expect(html).toContain("Sports");
@@ -65,7 +83,7 @@ describe("Discovery Scroll Navigation (Request 3)", () => {
 
     // Back to top button rendered with aria-label and fixed centered classes
     expect(html).toContain('aria-label="Back to top"');
-    expect(html).toContain("fixed top-[168px] left-1/2 -translate-x-1/2 z-30");
+    expect(html).toContain("fixed top-[68px] left-1/2 -translate-x-1/2 z-30");
     // Initially hidden / opacity-0 at the top
     expect(html).toContain("opacity-0 scale-90 pointer-events-none");
   });

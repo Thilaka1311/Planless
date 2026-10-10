@@ -94,6 +94,129 @@ function cleanLocalityString(str: string): string {
 }
 
 /**
+ * Detects Indian administrative subdivision markers (e.g. "Hobli", "Taluk") or pure numbers.
+ */
+function isSkipComponent(s: string): boolean {
+  const lower = s.trim().toLowerCase();
+  if (/^(hobli|taluk|taluka|tehsil|mandal|district)$/i.test(lower)) return true;
+  if (/^\d{5,6}$/.test(lower)) return true;
+  return false;
+}
+
+/**
+ * Strips plus code prefix, postal codes, and punctuation from an area candidate.
+ */
+function cleanAreaCandidate(s: string): string {
+  let cleaned = cleanLocalityString(s);
+  // Strip leading plus code: e.g. "3GQW+G4W Vidyaranyapura" -> "Vidyaranyapura"
+  cleaned = cleaned.replace(/^[a-z0-9+]{4,8}\+[a-z0-9]{2,4}\s*,?\s*/i, "").trim();
+  // Strip trailing postal code if appended: e.g. "Vidyaranyapura 560097" -> "Vidyaranyapura"
+  cleaned = cleaned.replace(/\s*,?\s*\b\d{5,6}\b.*$/, "").trim();
+  return cleanLocalityString(cleaned);
+}
+
+/**
+ * Canonical helper for the Create + Plan experience:
+ * Extracts only the area name from an address.
+ *
+ * Rule:
+ * Identifies the city (Bengaluru / Bangalore), and extracts the second-to-last
+ * location component immediately before the city.
+ *
+ * Examples:
+ * - "3GQW+G4W, Subbana Layout, Vinayak Nagar, Vidyaranyapura, Bengaluru" -> "Vidyaranyapura"
+ * - "Bellary Road, Byatarayanapura Village, Hobli, Yelahanka, Bengaluru" -> "Yelahanka"
+ * - "..., HSR Layout, Bengaluru" -> "HSR Layout"
+ */
+export function getPlanAreaName(rawAddress?: string | null): string | null {
+  if (!rawAddress || !rawAddress.trim()) return null;
+
+  const trimmed = rawAddress.trim();
+  const lower = trimmed.toLowerCase();
+  if (
+    lower === "nearby" ||
+    lower === "location removed" ||
+    lower === "in theatres" ||
+    lower === "in theaters"
+  ) {
+    return null;
+  }
+
+  // Split by comma or dash/pipe with surrounding spaces
+  const parts = trimmed
+    .split(/,|\s+[-–—|]\s+/)
+    .map((p) => cleanLocalityString(p))
+    .filter(Boolean);
+
+  if (parts.length === 0) return null;
+
+  // 1. Identify Bengaluru / Bangalore (case-insensitive) from right to left
+  const BENGALURU_REGEX = /\b(bengaluru|bangalore)\b/i;
+  let cityIndex = -1;
+
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (BENGALURU_REGEX.test(parts[i])) {
+      cityIndex = i;
+      break;
+    }
+  }
+
+  // Fallback: If not Bengaluru/Bangalore, check for other major city names from right to left
+  if (cityIndex === -1) {
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const partLower = parts[i].toLowerCase();
+      for (const geo of GENERIC_GEO_WORDS) {
+        if (
+          partLower === geo ||
+          partLower.startsWith(geo + " ") ||
+          partLower.endsWith(" " + geo)
+        ) {
+          cityIndex = i;
+          break;
+        }
+      }
+      if (cityIndex !== -1) break;
+    }
+  }
+
+  // If a city was found
+  if (cityIndex !== -1) {
+    if (cityIndex > 0) {
+      // Take the component immediately before the city
+      let candidateIdx = cityIndex - 1;
+
+      // Skip intermediate non-area descriptors like "Hobli", "Taluk", or pure PIN codes
+      while (candidateIdx > 0 && isSkipComponent(parts[candidateIdx])) {
+        candidateIdx--;
+      }
+
+      const candidate = cleanAreaCandidate(parts[candidateIdx]);
+      if (candidate && !isStreetNumberOrPureDigits(candidate)) {
+        return candidate;
+      }
+    } else {
+      // If the entire address was just the city itself
+      return cleanLocalityString(parts[0]);
+    }
+  }
+
+  // If no explicit city keyword was found:
+  // 1. If only 1 part exists, return it cleaned
+  if (parts.length === 1) {
+    const single = cleanAreaCandidate(parts[0]);
+    return single || null;
+  }
+
+  // 2. Fall back to existing locality extraction or second-to-last non-empty part
+  const fallbackLocality = extractLocalityFromAddress(rawAddress);
+  if (fallbackLocality) {
+    return cleanAreaCandidate(fallbackLocality);
+  }
+
+  return cleanAreaCandidate(parts[parts.length - 1]) || null;
+}
+
+/**
  * Checks whether a candidate locality string is essentially identical to the venue title.
  */
 function isDuplicateOfTitle(candidate: string, placeTitle?: string | null): boolean {
@@ -137,6 +260,19 @@ export function extractLocalityFromAddress(
     if (isDuplicateOfTitle(p, placeTitle)) return false;
     return true;
   };
+
+  // Special handling for Indian administrative divisions: "<Locality>, Hobli, <Taluk>, <City>"
+  // The specific neighborhood/village sits before the Hobli/Taluk demarcation.
+  const isHobliOrTaluk = (p: string) => /\b(hobli|taluk|taluka|tehsil|mandal)\b/i.test(p);
+  const hobliOrTalukIndex = parts.findIndex(isHobliOrTaluk);
+  if (hobliOrTalukIndex > 0) {
+    for (let i = hobliOrTalukIndex - 1; i >= 0; i--) {
+      const p = parts[i];
+      if (isValidLocalityCandidate(p) && !isLikelyStreet(p)) {
+        return p;
+      }
+    }
+  }
 
   // 1. Primary pass (right-to-left): Find first candidate that is not a city/admin and NOT a pure street
   for (let i = parts.length - 1; i >= 0; i--) {

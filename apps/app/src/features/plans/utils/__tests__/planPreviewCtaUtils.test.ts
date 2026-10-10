@@ -25,7 +25,7 @@ describe('planPreviewCtaUtils', () => {
       expect(res.ctaText).toBe('Join Waitlist');
     });
 
-    it('shows Rejoin Waitlist when assigned_group = WAITLIST and alreadySkipped is true', () => {
+    it('shows Rejoin Plan when assigned_group = WAITLIST and alreadySkipped is true', () => {
       const res = getPlanPreviewCtaState({
         isAssignedMode: true,
         assignedGroup: 'WAITLIST',
@@ -34,7 +34,7 @@ describe('planPreviewCtaUtils', () => {
         alreadySkipped: true,
       });
       expect(res.isWaitlistTarget).toBe(true);
-      expect(res.ctaText).toBe('Rejoin Waitlist');
+      expect(res.ctaText).toBe('Rejoin Plan');
     });
 
     it('shows Rejoin Plan when assigned_group = GOING and alreadySkipped is true', () => {
@@ -92,7 +92,7 @@ describe('planPreviewCtaUtils', () => {
       expect(res.ctaText).toBe('Rejoin Plan');
     });
 
-    it('shows Rejoin Waitlist when joined_count >= plan_size and alreadySkipped is true', () => {
+    it('shows Rejoin Plan when joined_count >= plan_size and alreadySkipped is true', () => {
       const res = getPlanPreviewCtaState({
         isAssignedMode: false,
         joinedCount: 4,
@@ -100,7 +100,7 @@ describe('planPreviewCtaUtils', () => {
         alreadySkipped: true,
       });
       expect(res.isWaitlistTarget).toBe(true);
-      expect(res.ctaText).toBe('Rejoin Waitlist');
+      expect(res.ctaText).toBe('Rejoin Plan');
     });
   });
 

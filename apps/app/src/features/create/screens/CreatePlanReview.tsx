@@ -3,6 +3,7 @@ import { UserProfile, Plan } from "../../../core/types";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { PlansDetailsScreen } from "../../plans/screens/PlansScreen/PlansPreview/PlansPreviewScreen";
 import { pickImageFromGallery } from "../../../shared/utils/imageUtils";
+import { toCanonicalPlanPhoto } from "../../../shared/imaging/imageResolver";
 import { PlanImageEditorModal } from "../components/PlanImageEditorModal";
 import { CreatePlanActionsBottomSheet } from "../../plans/components/BottomSheets";
 import { SelectQuickPlanListBottomSheet } from "../components/SelectQuickPlanListBottomSheet";
@@ -84,7 +85,8 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
     let placeAddressToUse = (form.placeAddress || "").trim() || locationToUse;
     if (isMovieCategory && isYearOnly(placeAddressToUse)) placeAddressToUse = "";
     const costToUse = Math.max(0, Number(form.costAmount) || 0);
-    const coverUrl = form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory || undefined);
+    const rawCoverUrl = form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory || undefined);
+    const coverUrl = toCanonicalPlanPhoto(rawCoverUrl) || rawCoverUrl;
     const participantIds: string[] = (form.selectedFriends || []).map((f: any) => f.id || f.dbUuid).filter(Boolean);
 
     try {

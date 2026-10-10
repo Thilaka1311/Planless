@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from '../shared/types';
@@ -10,6 +10,7 @@ interface AutomaticWaitlistActionsProps {
   showConfirmRemove: boolean;
   isHostUser: boolean;
   userProfile?: any;
+  isPlanFull?: boolean;
   onClose: () => void;
   onShowConfirmRemove: (show: boolean) => void;
   onPromoteHost?: (item: Friend) => void;
@@ -25,6 +26,7 @@ interface AutomaticWaitlistActionsProps {
   onAddToWaitlist?: (item: Friend) => void;
   onRemoveFromPlan?: (item: Friend) => void;
   onMoveToGoing?: (item: Friend) => void;
+  onRejoinPlanFull?: (item: Friend) => void;
 }
 
 export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> = ({
@@ -33,6 +35,7 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
   showConfirmRemove,
   isHostUser,
   userProfile,
+  isPlanFull,
   onClose,
   onShowConfirmRemove,
   onPromoteHost,
@@ -48,28 +51,61 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
   onAddToWaitlist,
   onRemoveFromPlan,
   onMoveToGoing,
+  onRejoinPlanFull,
 }) => {
   const isActionProcessingRef = useRef(false);
 
-  if (!selectedItem || !sheetType) return null;
+  const executeActionWithImmediateDismiss = useCallback(
+    (actionFn: () => Promise<void> | void) => {
+      if (isActionProcessingRef.current) return;
+      isActionProcessingRef.current = true;
+      onClose();
 
-  const executeActionWithImmediateDismiss = (actionFn: () => Promise<void> | void) => {
-    if (isActionProcessingRef.current) return;
-    isActionProcessingRef.current = true;
-    onClose();
+      Promise.resolve()
+        .then(async () => {
+          try {
+            await actionFn();
+          } finally {
+            isActionProcessingRef.current = false;
+          }
+        })
+        .catch((err) => {
+          console.error('[AutomaticWaitlistActions] Action error:', err);
+        });
+    },
+    [onClose]
+  );
 
-    Promise.resolve()
-      .then(async () => {
-        try {
-          await actionFn();
-        } finally {
-          isActionProcessingRef.current = false;
-        }
-      })
-      .catch((err) => {
-        console.error('[AutomaticWaitlistActions] Action error:', err);
+  const isLeaveRequested = Boolean(
+    selectedItem &&
+      (selectedItem.leave_requested === true || (selectedItem as any).leaveRequested === true) &&
+      selectedItem.rsvpStatus !== 'SKIPPED' &&
+      (selectedItem as any).rsvp_status !== 'SKIPPED'
+  );
+
+  useEffect(() => {
+    if (isLeaveRequested && onRemoveParticipant && selectedItem) {
+      executeActionWithImmediateDismiss(() => {
+        onRemoveParticipant(selectedItem);
       });
-  };
+    }
+  }, [isLeaveRequested, selectedItem, onRemoveParticipant, executeActionWithImmediateDismiss]);
+
+  const isRejoined = Boolean(
+    selectedItem &&
+      (selectedItem.rsvpStatus === 'REJOINED' || (selectedItem as any).rsvp_status === 'REJOINED')
+  );
+  const isRejoinedAndFull = Boolean(isRejoined && isPlanFull);
+
+  useEffect(() => {
+    if (isRejoinedAndFull && onRejoinPlanFull && selectedItem) {
+      executeActionWithImmediateDismiss(() => {
+        onRejoinPlanFull(selectedItem);
+      });
+    }
+  }, [isRejoinedAndFull, selectedItem, onRejoinPlanFull, executeActionWithImmediateDismiss]);
+
+  if (!selectedItem || !sheetType || isLeaveRequested || isRejoinedAndFull) return null;
 
   const isSelf = Boolean(
     (userProfile?.dbUuid && (selectedItem.dbUuid === userProfile.dbUuid || selectedItem.id === userProfile.dbUuid)) ||
@@ -77,8 +113,6 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
     selectedItem.name === 'You'
   );
 
-  const isRejoined = selectedItem.rsvpStatus === 'REJOINED' || (selectedItem as any).rsvp_status === 'REJOINED';
-  const isLeaveRequested = selectedItem.leave_requested === true;
   const effectiveState = getEffectiveParticipantState(selectedItem, sheetType);
   const isSkipped = effectiveState === 'SKIPPED';
 
@@ -127,7 +161,7 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
           <UserAvatar src={selectedItem.avatar} alt={selectedItem.name} size="w-10 h-10" />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: 16, fontWeight: 600 }}>{selectedItem.name}</span>
-            <span style={{ fontSize: 12, color: (isLeaveRequested || isRejoined) ? '#FFFFFF' : 'rgba(255, 255, 255, 0.4)', fontWeight: 400 }}>
+            <span style={{ fontSize: 12, color: isRejoined ? '#FFFFFF' : 'rgba(255, 255, 255, 0.4)', fontWeight: 400 }}>
               {getParticipantRsvpDisplayStatus(selectedItem)}
             </span>
           </div>
@@ -135,66 +169,53 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
 
         {/* ── REJOINED PARTICIPANT FLOW ── */}
         {isRejoined ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {/* 1. Add to Plan */}
-            <button
-              onClick={() => {
-                executeActionWithImmediateDismiss(() => {
-                  if (onAddToPlan) {
-                    onAddToPlan(selectedItem);
-                  } else if (onAddToJoined) {
-                    onAddToJoined(selectedItem);
-                  } else if (onMoveToGoing) {
-                    onMoveToGoing(selectedItem);
-                  }
-                });
-              }}
-              style={{
-                width: '100%',
-                padding: '14px',
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: 'none',
-                borderRadius: 12,
-                color: '#FFFFFF',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              Add to Plan
-            </button>
-
-            {/* 2. Remove from Plan */}
-            <button
-              onClick={() => {
-                executeActionWithImmediateDismiss(() => {
-                  if (onRemoveFromPlan) {
-                    onRemoveFromPlan(selectedItem);
-                  } else if (onRemoveParticipant) {
-                    onRemoveParticipant(selectedItem);
-                  }
-                });
-              }}
-              style={{
-                width: '100%',
-                padding: '14px',
-                background: 'rgba(239, 68, 68, 0.12)',
-                border: 'none',
-                borderRadius: 12,
-                color: '#EF4444',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              Remove from Plan
-            </button>
+            {!isPlanFull && (
+              <button
+                onClick={() => {
+                  executeActionWithImmediateDismiss(() => {
+                    if (onAddToPlan) {
+                      onAddToPlan(selectedItem);
+                    } else if (onAddToJoined) {
+                      onAddToJoined(selectedItem);
+                    } else if (onMoveToGoing) {
+                      onMoveToGoing(selectedItem);
+                    }
+                  });
+                }}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: 'none',
+                  borderRadius: 12,
+                  color: '#FFFFFF',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                Add to Plan
+              </button>
+            )}
 
             <button
               onClick={handleClose}
-              style={{ width: '100%', padding: '14px', background: 'none', border: 'none', borderRadius: 12, color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: 500, cursor: 'pointer', textAlign: 'center', marginTop: 4 }}
+              style={{
+                width: '100%',
+                padding: '14px',
+                background: 'none',
+                border: 'none',
+                borderRadius: 12,
+                color: 'rgba(255, 255, 255, 0.4)',
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: 'pointer',
+                textAlign: 'center',
+                marginTop: 4,
+              }}
             >
               Cancel
             </button>
@@ -235,93 +256,63 @@ export const AutomaticWaitlistActions: React.FC<AutomaticWaitlistActionsProps> =
           /* ── NORMAL (GOING / WAITLIST) PARTICIPANT FLOW ── */
           !showConfirmRemove ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {isLeaveRequested ? (
-                <>
-                  {onRemoveParticipant && (
-                    <button
-                      onClick={() => {
-                        executeActionWithImmediateDismiss(() => {
-                          onRemoveParticipant(selectedItem);
-                        });
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '14px',
-                        background: 'rgba(239, 68, 68, 0.12)',
-                        border: 'none',
-                        borderRadius: 12,
-                        color: '#EF4444',
-                        fontSize: 14,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                      }}
-                    >
-                      Remove Participant
-                    </button>
-                  )}
-                </>
+              {onViewProfile && (
+                <button
+                  onClick={() => {
+                    executeActionWithImmediateDismiss(() => onViewProfile(selectedItem));
+                  }}
+                  style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                >
+                  View Profile
+                </button>
+              )}
+
+              {onPromoteHost && isJoinedRsvpParticipant(selectedItem) && !selectedItem.isHost && (
+                <button
+                  onClick={() => {
+                    executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));
+                  }}
+                  style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(245,158,11,0.08)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                >
+                  Make Host
+                </button>
+              )}
+
+              {onDemoteHost && selectedItem.isHost && (
+                <button
+                  onClick={() => {
+                    executeActionWithImmediateDismiss(() => onDemoteHost(selectedItem));
+                  }}
+                  style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(245,158,11,0.08)', border: 'none', borderRadius: 12, color: '#F59E0B', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                >
+                  {isSelf ? 'Stop Hosting' : 'Remove Host'}
+                </button>
+              )}
+
+              {isSelf ? (
+                <button
+                  onClick={() => {
+                    if (onLeavePlan) {
+                      executeActionWithImmediateDismiss(() => onLeavePlan());
+                    } else {
+                      executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                    }
+                  }}
+                  style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                >
+                  Leave Plan
+                </button>
               ) : (
-                <>
-                  {onViewProfile && (
-                    <button
-                      onClick={() => {
-                        executeActionWithImmediateDismiss(() => onViewProfile(selectedItem));
-                      }}
-                      style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      View Profile
-                    </button>
-                  )}
-
-                  {onPromoteHost && isJoinedRsvpParticipant(selectedItem) && !selectedItem.isHost && (
-                    <button
-                      onClick={() => {
-                        executeActionWithImmediateDismiss(() => onPromoteHost(selectedItem));
-                      }}
-                      style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(245,158,11,0.08)', border: 'none', borderRadius: 12, color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      Make Host
-                    </button>
-                  )}
-
-                  {onDemoteHost && selectedItem.isHost && (
-                    <button
-                      onClick={() => {
-                        executeActionWithImmediateDismiss(() => onDemoteHost(selectedItem));
-                      }}
-                      style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(245,158,11,0.08)', border: 'none', borderRadius: 12, color: '#F59E0B', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      {isSelf ? 'Stop Hosting' : 'Remove Host'}
-                    </button>
-                  )}
-
-                  {isSelf ? (
-                    <button
-                      onClick={() => {
-                        if (onLeavePlan) {
-                          executeActionWithImmediateDismiss(() => onLeavePlan());
-                        } else {
-                          executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
-                        }
-                      }}
-                      style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
-                    >
-                      Leave Plan
-                    </button>
-                  ) : (
-                    isHostUser && (!selectedItem.isHost || onDemoteHost) && (
-                      <button
-                        onClick={() => {
-                          executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
-                        }}
-                        style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
-                      >
-                        Remove from Plan
-                      </button>
-                    )
-                  )}
-                </>
+                isHostUser && (!selectedItem.isHost || onDemoteHost) && (
+                  <button
+                    onClick={() => {
+                      executeActionWithImmediateDismiss(() => onRemoveParticipant(selectedItem));
+                    }}
+                    style={{ width: '100%', height: 48, padding: '0 14px', display: 'flex', alignItems: 'center', background: 'rgba(239,68,68,0.08)', border: 'none', borderRadius: 12, color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    Remove from Plan
+                  </button>
+                )
               )}
 
               <button

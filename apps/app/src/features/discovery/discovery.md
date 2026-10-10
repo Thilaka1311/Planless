@@ -281,4 +281,7 @@ The **Discovery** feature is Planless's curated experience and venue catalog. It
      - **STATE 1: LOCATION AVAILABLE**: Shows MapPin icon, primary text "Using your current location", secondary text with detected readable area/city. Automatically detected on mount if permission granted without re-prompting. Entire card is tappable to select current location.
      - **STATE 2: LOCATION NOT PERMITTED**: Primary text "Use your current location", secondary text "Tap to enable location access". Tapping triggers native `navigator.geolocation.getCurrentPosition`. If granted, resolves location and selects it; if denied, remains in prompt state without repeated popups.
      - **STATE 3: LOCATION SERVICES OFF**: Primary text "Location is turned off", secondary text "Tap to enable location". Triggers retry/device settings prompt when tapped.
-
+7. **Category Icons & Discovery Instant Rendering**:
+   - Static category icons (`Dining`, `Movies`, `Sports`, `Activities`) are bundled in `coreStaticAssets.ts` and pre-warmed into browser image cache on module import.
+   - `getCachedSections` resolves synchronously with multi-level fallback (exact coordinates -> city -> default -> any cached), eliminating skeleton flicker on return visits.
+   - Discovery scroll position (`savedDiscoveryScrollTop`) is preserved across navigation transitions.

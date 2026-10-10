@@ -87,6 +87,7 @@ export interface SharedParticipantScreenProps {
   onRejoinAddToJoined?: (friend: Friend) => Promise<void> | void;
   onRejoinAddToWaitlist?: (friend: Friend) => Promise<void> | void;
   onRejoinRemoveFromPlan?: (friend: Friend) => Promise<void> | void;
+  onRejoinPlanFull?: (friend: Friend) => void;
   isCompletedPlan?: boolean;
   initialOpenPlanSizeSheet?: boolean;
   onPlanSizeSheetDismissed?: () => void;

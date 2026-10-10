@@ -27,16 +27,20 @@ export const GoingSection: React.FC<GoingSectionProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
-      {goingList.map((item, idx) => (
-        <StackingFriends
-          key={item.dbUuid || item.id}
-          item={item}
-          isHost={isHost}
-          index={undefined}
-          showIndex={false}
-          onClick={onItemTap ? () => onItemTap(item) : undefined}
-        />
-      ))}
+      {goingList.map((item) => {
+        const itemKey = item.dbUuid || item.id || (item as any).user_id || (item as any).userId || (item as any).userUuid;
+        if (!itemKey) return null;
+        return (
+          <StackingFriends
+            key={itemKey}
+            item={item}
+            isHost={isHost}
+            index={undefined}
+            showIndex={false}
+            onClick={onItemTap ? () => onItemTap(item) : undefined}
+          />
+        );
+      })}
     </div>
   );
 };

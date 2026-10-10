@@ -23,6 +23,7 @@ import { createQuickPlan } from "../services/quickPlanService";
 
 import defaultPlanCover from "../../../assets/planimagedefault.webp";
 import { uploadPlanImage, uploadPlanCardImage } from "../../../shared/utils/imageUtils";
+import { toCanonicalPlanPhoto } from "../../../shared/imaging/imageResolver";
 import { clearDraftParticipants, clearCreatePlanDraft } from "../utils/draftParticipantStorage";
 import {
   parseCurrentRoute,
@@ -68,6 +69,9 @@ export const CreatePlanScreen = ({
     ) {
       return initialRoute.tab;
     }
+    if (initialRoute.tab === "create" && initialRoute.subScreen) {
+      return initialRoute.subScreen;
+    }
     return null;
   });
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -108,7 +112,7 @@ export const CreatePlanScreen = ({
           setCreatePhase(route.createPhase);
         } else if (!route.createPhase || route.createPhase === 'category') {
           setCreatePhase('category');
-          setLastSubScreen(null);
+          setLastSubScreen(route.subScreen || null);
         }
       } else if (
         route.tab === "sports" ||
@@ -216,7 +220,8 @@ export const CreatePlanScreen = ({
     const locationToUse = form.localLocation ? form.localLocation.trim() : "";
     const placeAddressToUse = form.placeAddress ? form.placeAddress.trim() : (locationToUse || "");
     const costToUse = Math.max(0, Number(form.costAmount) || 0);
-    const coverUrl = form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory);
+    const rawCoverUrl = form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory);
+    const coverUrl = toCanonicalPlanPhoto(rawCoverUrl) || rawCoverUrl;
 
     const participantIds: string[] = (form.selectedFriends || []).map((f: any) => f.id || f.dbUuid).filter(Boolean);
 
@@ -312,9 +317,10 @@ export const CreatePlanScreen = ({
         form.customCoverImage.startsWith('blob:') ||
         form.customCoverImage === 'custom_draft_blob')
     );
-    const coverUrl = isLocalCustomImage
+    const rawCoverUrl = isLocalCustomImage
       ? getPlanCover(selectedCategory, selectedSubcategory)
       : (form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory));
+    const coverUrl = toCanonicalPlanPhoto(rawCoverUrl) || rawCoverUrl;
 
     let hoursOffset = 0;
     let isPlanStart = false;

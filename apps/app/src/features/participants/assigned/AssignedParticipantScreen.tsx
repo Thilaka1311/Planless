@@ -92,6 +92,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   onRejoinAddToJoined,
   onRejoinAddToWaitlist,
   onRejoinRemoveFromPlan,
+  onRejoinPlanFull,
   isCompletedPlan,
   initialOpenPlanSizeSheet,
   onPlanSizeSheetDismissed,
@@ -384,6 +385,10 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     return { displayGoing: nextGoing, displayWaitlist: nextWait };
   }, [rawDisplayGoing, rawDisplayWaitlist, effectiveCapacity, isCompletedPlan]);
 
+  const isFull = Boolean(
+    effectiveCapacity && effectiveCapacity > 0 && displayGoing.length >= effectiveCapacity
+  );
+
   const activeUserIdStr = userProfile?.dbUuid || (userProfile as any)?.id || (userProfile as any)?.userId;
 
   const formattedGoingList = useMemo(() => {
@@ -545,6 +550,31 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       return;
     }
 
+    const isLeaveRequested = Boolean(
+      (item.leave_requested === true || (item as any).leaveRequested === true) &&
+      item.rsvpStatus !== 'SKIPPED' &&
+      (item as any).rsvp_status !== 'SKIPPED'
+    );
+
+    if (isLeaveRequested && onRemoveParticipant) {
+      onRemoveParticipant(item);
+      return;
+    }
+
+    const isRejoined =
+      item.rsvpStatus === 'REJOINED' || (item as any).rsvp_status === 'REJOINED';
+
+    if (isRejoined && isFull && effectiveIsHost) {
+      if (onRejoinPlanFull) {
+        onRejoinPlanFull(item);
+        return;
+      }
+      if (onRejoinAddToJoined) {
+        onRejoinAddToJoined(item);
+        return;
+      }
+    }
+
     setSelectedItem(item);
     setSheetType(tab);
   };
@@ -593,7 +623,21 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       const nextWait = renumberWaitlist(internalWaitlist.filter((f) => f.id !== item.id));
       const hostPart = internalGoingList.filter((f) => f.isHost);
       const guestPart = internalGoingList.filter((f) => !f.isHost && f.id !== item.id);
-      const nextGoing = [...hostPart, ...sortGoingFriends([...guestPart, { ...item, waitlistPosition: undefined }])];
+      const rawStatus = item.rsvpStatus || (item as any).rsvp_status;
+      const isWaitlisted = rawStatus === 'WAITLISTED' || rawStatus === 'REJOINED';
+      const nextRsvp = isWaitlisted ? 'JOINED' : (rawStatus || 'INVITED');
+      const nextGoing = [
+        ...hostPart,
+        ...sortGoingFriends([
+          ...guestPart,
+          {
+            ...item,
+            waitlistPosition: undefined,
+            assignedGroup: 'GOING' as const,
+            rsvpStatus: nextRsvp,
+          },
+        ]),
+      ];
 
       setInternalWaitlist(nextWait);
       setInternalGoingList(nextGoing);
@@ -754,7 +798,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 16, flex: 1, overflowY: activeTab === 'waitlist' ? 'visible' : 'auto' }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
-            key={activeTab === 'invited' ? 'going' : activeTab}
+            key={`assigned-tab-${activeTab === 'invited' ? 'going' : (activeTab || 'going')}`}
             variants={subTabVariants}
             initial="initial"
             animate="animate"
@@ -800,6 +844,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
                     } : (effectiveIsHost ? onReorderWaitlistComplete : undefined)}
                     reorderable={mode === 'wizard' || (effectiveIsHost && Boolean(onReorderWaitlist))}
                     showIndex={true}
+                    useParticipantPosition={mode === 'editor'}
+                    waitlistMode="assigned"
                   />
                 ) : (
                   <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
@@ -813,14 +859,18 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
             {activeTab === 'skipped' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-                {displaySkipped.map((item) => (
-                  <StackingFriends
-                    key={item.id}
-                    item={item}
-                    isHost={effectiveIsHost}
-                    onClick={() => handleItemTap(item, 'skipped')}
-                  />
-                ))}
+                {displaySkipped.map((item) => {
+                  const itemKey = item.dbUuid || item.id || (item as any).user_id || (item as any).userId || (item as any).userUuid;
+                  if (!itemKey) return null;
+                  return (
+                    <StackingFriends
+                      key={itemKey}
+                      item={item}
+                      isHost={effectiveIsHost}
+                      onClick={() => handleItemTap(item, 'skipped')}
+                    />
+                  );
+                })}
               </div>
             )}
           </motion.div>
@@ -850,6 +900,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           goingCount={displayGoing.length}
           waitlistCount={displayWaitlist.length}
           mode={mode}
+          isPlanFull={isFull}
           onClose={closeSheet}
           onShowConfirmRemove={setShowConfirmRemove}
           onMoveToWaitlist={moveToWaitlistAction}
@@ -865,6 +916,7 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
           onAddToJoined={onRejoinAddToJoined || moveToGoingAction}
           onAddToWaitlist={onRejoinAddToWaitlist}
           onRemoveFromPlan={onRejoinRemoveFromPlan || removeFromPlanAction}
+          onRejoinPlanFull={onRejoinPlanFull}
         />
       )}
 

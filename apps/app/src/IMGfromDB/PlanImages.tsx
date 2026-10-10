@@ -57,17 +57,25 @@ export function classifyImageSource(
   }
   const raw = src.trim();
 
-  // If the raw path itself is cached as planimagedefault or points to obsolete plan-covers
+  // If the raw path itself is cached as planimagedefault, points to obsolete plan-covers, or points to obsolete .png category assets
   if (
     getPlanCachedImage(raw) === "planimagedefault.png" ||
     getPlanCachedImage(raw) === "planimagedefault.webp" ||
-    raw.includes("plan-covers")
+    raw.includes("plan-covers") ||
+    raw.endsWith("Movies.png") ||
+    raw.endsWith("sports.png") ||
+    raw.endsWith("dining.png") ||
+    (raw.startsWith("/src/assets/") && raw.endsWith(".png"))
   ) {
     return { sourceType: "LOCAL_DEFAULT", cleanedPath: "" };
   }
 
-  // 1. Local default or asset paths / external URLs
+  // 1. Local default or asset paths / external URLs / Maps proxy URLs
   if (
+    raw.includes("/functions/v1/maps") ||
+    raw.includes("action=photo") ||
+    raw.includes("photo_reference=") ||
+    (raw.startsWith("places/") && raw.includes("/photos/")) ||
     raw.startsWith("/assets/") ||
     raw.startsWith("data:") ||
     raw.startsWith("blob:") ||
@@ -184,16 +192,12 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
       return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
     }
 
-    const defaultAsset = cleanedPath && (
-      cleanedPath.startsWith("/assets/") ||
-      cleanedPath.startsWith("/") ||
-      cleanedPath.startsWith("blob:") ||
-      cleanedPath.startsWith("data:") ||
-      cleanedPath.startsWith("http://") ||
-      cleanedPath.startsWith("https://")
-    )
-      ? cleanedPath
-      : getPlanCover(category, subcategory);
+    if (cleanedPath) {
+      const details = resolveImageDetails(cleanedPath, ImageType.PlanCover);
+      return { resolvedPath: details.objectKey, resolvedUrl: details.url };
+    }
+
+    const defaultAsset = getPlanCover(category, subcategory);
     return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
   }, [sourceType, cleanedPath, catalogFailed, localFailed, category, subcategory, version]);
 

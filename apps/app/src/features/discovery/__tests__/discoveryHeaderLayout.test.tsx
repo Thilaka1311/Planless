@@ -71,4 +71,47 @@ describe("Discovery Header Layout (Request 2)", () => {
     // Both icons styled with neutral grey
     expect(html).toContain("text-zinc-400");
   });
+
+  it("renders Search and Quick Plans icons with larger size and white styling", () => {
+    const html = renderToString(
+      <BrowseExperiencesStep
+        userProfile={{ name: "Thilak" }}
+        setActiveTab={vi.fn()}
+        onSelectDiscoveryItem={vi.fn()}
+        onSelectCustomPlan={vi.fn()}
+      />
+    );
+
+    // Both action icons must be white and larger (w-5.5 h-5.5 text-white)
+    expect(html).toContain("w-5.5 h-5.5 text-white");
+    expect(html).toContain('aria-label="Search"');
+    expect(html).toContain('aria-label="Quick Plans"');
+  });
+
+  it("renders all four category cards with consistent container dimensions and equal visual image sizing rule", () => {
+    const html = renderToString(
+      <BrowseExperiencesStep
+        userProfile={{ name: "Thilak" }}
+        setActiveTab={vi.fn()}
+        onSelectDiscoveryItem={vi.fn()}
+        onSelectCustomPlan={vi.fn()}
+      />
+    );
+
+    // All four categories exist
+    expect(html).toContain("Dining");
+    expect(html).toContain("Movies");
+    expect(html).toContain("Sports");
+    expect(html).toContain("Activities");
+
+    // All category image containers use w-11 h-11
+    const containerMatches = html.match(/w-11 h-11 flex items-center justify-center shrink-0/g);
+    expect(containerMatches).not.toBeNull();
+    expect(containerMatches!.length).toBe(4);
+
+    // All category images use the consistent sizing rule h-full w-auto max-w-none object-contain
+    const imageMatches = html.match(/h-full w-auto max-w-none object-contain/g);
+    expect(imageMatches).not.toBeNull();
+    expect(imageMatches!.length).toBe(4);
+  });
 });

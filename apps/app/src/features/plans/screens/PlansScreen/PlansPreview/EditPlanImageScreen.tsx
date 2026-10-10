@@ -220,8 +220,8 @@ export const EditPlanImageScreen: React.FC<EditPlanImageScreenProps> = ({
           <DiscoveryImages
             src={coverImage}
             planId={planId}
-            category="CUSTOM"
-            subcategory={null}
+            category={category}
+            subcategory={subcategory}
             screen="Edit Image Screen"
             alt={title}
             className="w-full h-full object-cover"

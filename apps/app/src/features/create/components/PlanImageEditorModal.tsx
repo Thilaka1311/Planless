@@ -21,6 +21,9 @@ export interface PlanImageEditorModalProps {
   subtitle?: string;
   outputWidth?: number;
   outputHeight?: number;
+  initialScale?: number;
+  initialTranslateX?: number;
+  initialTranslateY?: number;
   onSave: (result: {
     previewUrl: string;         // Cropped preview URL
     blob: Blob;                 // Cropped blob
@@ -31,6 +34,32 @@ export interface PlanImageEditorModalProps {
   }) => Promise<void> | void;
 }
 
+const getInitialViewport = (isCircle: boolean) => {
+  if (typeof window === "undefined") {
+    return isCircle ? { width: 300, height: 300 } : { width: 270, height: 480 };
+  }
+  const windowWidth = window.innerWidth;
+  const windowHeight = window.innerHeight;
+  const maxAvailableHeight = Math.max(200, windowHeight - 190);
+  const maxAvailableWidth = Math.max(150, windowWidth - 48);
+
+  if (isCircle) {
+    const size = Math.round(Math.min(maxAvailableWidth, maxAvailableHeight, 340));
+    return { width: size, height: size };
+  } else {
+    const portraitRatio = 9 / 16;
+    let targetHeight = maxAvailableHeight;
+    let targetWidth = Math.round(targetHeight * portraitRatio);
+
+    if (targetWidth > maxAvailableWidth) {
+      targetWidth = maxAvailableWidth;
+      targetHeight = Math.round(targetWidth / portraitRatio);
+    }
+
+    return { width: targetWidth, height: targetHeight };
+  }
+};
+
 export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
   imageSrc,
   isOpen,
@@ -40,6 +69,9 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
   subtitle,
   outputWidth,
   outputHeight,
+  initialScale,
+  initialTranslateX,
+  initialTranslateY,
   onSave,
 }) => {
   const isCircle = cropShape === 'circle';
@@ -49,9 +81,9 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
   const [isImageLoaded, setIsImageLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Viewport dimensions (in px) — dynamically calculated based on crop shape
-  const [viewportWidth, setViewportWidth] = useState(270);
-  const [viewportHeight, setViewportHeight] = useState(480);
+  // Viewport dimensions (in px) — initialized synchronously to window dimensions
+  const [viewportWidth, setViewportWidth] = useState(() => getInitialViewport(isCircle).width);
+  const [viewportHeight, setViewportHeight] = useState(() => getInitialViewport(isCircle).height);
 
   // Transform state: Scale and translation (X, Y) relative to viewport center
   const [scale, setScale] = useState(1);
@@ -65,6 +97,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
   const dragStartRef = useRef<{ x: number; y: number; tx: number; ty: number }>({ x: 0, y: 0, tx: 0, ty: 0 });
   const touchDistanceRef = useRef<number | null>(null);
   const initialPinchScaleRef = useRef<number>(1);
+  const isInitializedRef = useRef<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -145,6 +178,10 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
       setImageElement(null);
       setLoadedUrl(null);
       setIsImageLoaded(false);
+      isInitializedRef.current = false;
+      setScale(1);
+      setTranslateX(0);
+      setTranslateY(0);
     }
   }, [isOpen]);
 
@@ -165,6 +202,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
       setImageElement(null);
       setLoadedUrl(null);
       setIsImageLoaded(false);
+      isInitializedRef.current = false;
       return;
     }
 
@@ -176,6 +214,9 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
       if (createdUrlRef.current) {
         URL.revokeObjectURL(createdUrlRef.current);
         createdUrlRef.current = null;
+      }
+      if (prevSourceRef.current !== imageSrc) {
+        isInitializedRef.current = false;
       }
       prevSourceRef.current = imageSrc;
 
@@ -202,6 +243,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
         }
         prevSourceRef.current = imageSrc;
         createdUrlRef.current = URL.createObjectURL(imageSrc as Blob);
+        isInitializedRef.current = false;
       } else if (!createdUrlRef.current) {
         createdUrlRef.current = URL.createObjectURL(imageSrc as Blob);
       }
@@ -218,6 +260,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
 
     img.onload = () => {
       if (!active) return;
+      isInitializedRef.current = false;
       setImageElement(img);
       setLoadedUrl(urlToLoad);
       setIsImageLoaded(true);
@@ -246,7 +289,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
 
   // Adjust scale whenever imageElement or viewport dimensions change
   useEffect(() => {
-    if (!imageElement) return;
+    if (!imageElement || viewportWidth <= 0 || viewportHeight <= 0) return;
 
     const scaleX = viewportWidth / imageElement.naturalWidth;
     const scaleY = viewportHeight / imageElement.naturalHeight;
@@ -256,13 +299,71 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
     setMinScale(calculatedMinScale);
     setMaxScale(calculatedMaxScale);
 
-    setScale((prevScale) => {
-      if (prevScale < calculatedMinScale || prevScale === 1) {
-        return calculatedMinScale;
-      }
-      return Math.min(calculatedMaxScale, prevScale);
-    });
-  }, [imageElement, viewportWidth, viewportHeight]);
+    if (!isInitializedRef.current) {
+      // First initialization for this image / open session:
+      // Always start at minimum supported zoom level (showing maximum image content)
+      // or at restored initialScale if explicitly passed from a previous edit.
+      const startingScale =
+        initialScale != null && !isNaN(initialScale)
+          ? Math.max(calculatedMinScale, Math.min(calculatedMaxScale, initialScale))
+          : calculatedMinScale;
+
+      const startingX = initialTranslateX ?? 0;
+      const startingY = initialTranslateY ?? 0;
+
+      const clamped = clampTranslation(
+        startingX,
+        startingY,
+        startingScale,
+        imageElement.naturalWidth,
+        imageElement.naturalHeight
+      );
+
+      setScale(startingScale);
+      setTranslateX(clamped.x);
+      setTranslateY(clamped.y);
+      isInitializedRef.current = true;
+    } else {
+      // Viewport dimensions resized while already initialized:
+      // Clamp scale to the new [calculatedMinScale, calculatedMaxScale] range
+      setScale((prevScale) => {
+        // If user was at or near minScale, keep locked to the new minimum scale
+        if (prevScale <= calculatedMinScale || Math.abs(prevScale - minScale) < 0.001) {
+          return calculatedMinScale;
+        }
+        return Math.max(calculatedMinScale, Math.min(calculatedMaxScale, prevScale));
+      });
+
+      setTranslateX((prevX) => {
+        const clamped = clampTranslation(
+          prevX,
+          translateY,
+          scale,
+          imageElement.naturalWidth,
+          imageElement.naturalHeight
+        );
+        return clamped.x;
+      });
+      setTranslateY((prevY) => {
+        const clamped = clampTranslation(
+          translateX,
+          prevY,
+          scale,
+          imageElement.naturalWidth,
+          imageElement.naturalHeight
+        );
+        return clamped.y;
+      });
+    }
+  }, [
+    imageElement,
+    viewportWidth,
+    viewportHeight,
+    initialScale,
+    initialTranslateX,
+    initialTranslateY,
+    clampTranslation,
+  ]);
 
   // Pointer event handlers for Pan
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -410,6 +511,29 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
     setTranslateY(clamped.y);
   };
 
+  // Step zoom in/out with Zoom buttons
+  const handleZoomOutStep = () => {
+    if (!imageElement || isSaving) return;
+    const step = (maxScale - minScale) / 10;
+    const newScale = Math.max(minScale, scale - step);
+    setScale(newScale);
+
+    const clamped = clampTranslation(translateX, translateY, newScale, imageElement.naturalWidth, imageElement.naturalHeight);
+    setTranslateX(clamped.x);
+    setTranslateY(clamped.y);
+  };
+
+  const handleZoomInStep = () => {
+    if (!imageElement || isSaving) return;
+    const step = (maxScale - minScale) / 10;
+    const newScale = Math.min(maxScale, scale + step);
+    setScale(newScale);
+
+    const clamped = clampTranslation(translateX, translateY, newScale, imageElement.naturalWidth, imageElement.naturalHeight);
+    setTranslateX(clamped.x);
+    setTranslateY(clamped.y);
+  };
+
   // Save current crop to canvas & output WebP blob
   const handleSave = async () => {
     if (!imageElement || isSaving) return;
@@ -446,12 +570,18 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
       const sourceX = centerOnImageX - sourceCropWidth / 2;
       const sourceY = centerOnImageY - sourceCropHeight / 2;
 
+      // Safe bounds clamping to prevent floating-point rounding errors outside source dimensions
+      const safeSourceX = Math.max(0, Math.min(imgWidth - sourceCropWidth, sourceX));
+      const safeSourceY = Math.max(0, Math.min(imgHeight - sourceCropHeight, sourceY));
+      const safeSourceWidth = Math.min(imgWidth - safeSourceX, sourceCropWidth);
+      const safeSourceHeight = Math.min(imgHeight - safeSourceY, sourceCropHeight);
+
       ctx.drawImage(
         imageElement,
-        sourceX,
-        sourceY,
-        sourceCropWidth,
-        sourceCropHeight,
+        safeSourceX,
+        safeSourceY,
+        safeSourceWidth,
+        safeSourceHeight,
         0,
         0,
         targetOutputWidth,
@@ -616,7 +746,15 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
 
         {/* Zoom Slider */}
         <div className="w-full max-w-[280px] flex items-center gap-3">
-          <ZoomOut className="w-4 h-4 text-white/50 shrink-0" />
+          <button
+            type="button"
+            onClick={handleZoomOutStep}
+            disabled={isSaving || !isImageLoaded || scale <= minScale}
+            className="text-white/50 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition p-1 cursor-pointer shrink-0"
+            title="Zoom out"
+          >
+            <ZoomOut className="w-4 h-4" />
+          </button>
           <input
             type="range"
             min={minScale}
@@ -626,7 +764,15 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
             onChange={handleSliderChange}
             className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-white"
           />
-          <ZoomIn className="w-4 h-4 text-white/50 shrink-0" />
+          <button
+            type="button"
+            onClick={handleZoomInStep}
+            disabled={isSaving || !isImageLoaded || scale >= maxScale}
+            className="text-white/50 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition p-1 cursor-pointer shrink-0"
+            title="Zoom in"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </div>

@@ -96,6 +96,7 @@ export const PendingDecisionsSection: React.FC<PendingDecisionsSectionProps> = (
         <AnimatePresence initial={false}>
           {isExpanded && (
             <motion.div
+              key="pending-decisions-accordion-content"
               initial={{ height: 0, opacity: 0, marginTop: 0 }}
               animate={{ height: 'auto', opacity: 1, marginTop: 10 }}
               exit={{ height: 0, opacity: 0, marginTop: 0 }}
@@ -103,9 +104,12 @@ export const PendingDecisionsSection: React.FC<PendingDecisionsSectionProps> = (
               style={{ overflow: 'hidden' }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {pendingRequests.map((req) => (
-                  <div
-                    key={req.id}
+                {pendingRequests.map((req) => {
+                  const reqKey = req.id || req.dbUuid || (req as any).user_id || (req as any).userId;
+                  if (!reqKey) return null;
+                  return (
+                    <div
+                      key={reqKey}
                     style={{
                       background: 'rgba(255, 255, 255, 0.03)',
                       border: '1px solid rgba(255, 255, 255, 0.06)',
@@ -195,7 +199,8 @@ export const PendingDecisionsSection: React.FC<PendingDecisionsSectionProps> = (
                       </button>
                     </div>
                   </div>
-                ))}
+                );
+              })}
               </div>
             </motion.div>
           )}

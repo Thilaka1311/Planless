@@ -37,13 +37,19 @@ describe("chatReads utils", () => {
       expect(result).toBe("Yesterday");
     });
 
-    it("formats older dates as dd-mm-yy", () => {
-      // Use a fixed date to test the dd-mm-yy format precisely
+    it("formats older dates as DD/MM/YY", () => {
+      // Use a fixed date to test the DD/MM/YY format precisely
       const oldDate = new Date(2025, 0, 15); // Jan 15, 2025 local
       const result = formatChatListTimestamp(oldDate.toISOString());
-      // Should be 15-01-25 format
-      expect(result).toMatch(/^\d{2}-\d{2}-\d{2}$/);
-      expect(result).toBe("15-01-25");
+      // Should be 15/01/25 format
+      expect(result).toMatch(/^\d{2}\/\d{2}\/\d{2}$/);
+      expect(result).toBe("15/01/25");
+
+      // Verify prompt examples (06-10-26 -> 06/10/26, 14-09-26 -> 14/09/26)
+      const date1 = new Date(2026, 9, 6);
+      expect(formatChatListTimestamp(date1.toISOString())).toBe("06/10/26");
+      const date2 = new Date(2026, 8, 14);
+      expect(formatChatListTimestamp(date2.toISOString())).toBe("14/09/26");
     });
   });
 
@@ -70,9 +76,9 @@ describe("chatReads utils", () => {
       expect(formatRelativeDate(yesterday)).toBe("Yesterday");
     });
 
-    it("relative date: older than yesterday shows 'dd-mm-yy'", () => {
+    it("relative date: older than yesterday shows 'DD/MM/YY'", () => {
       const old = new Date(2026, 8, 20); // Sep 20, 2026
-      expect(formatRelativeDate(old)).toBe("20-09-26");
+      expect(formatRelativeDate(old)).toBe("20/09/26");
     });
   });
 

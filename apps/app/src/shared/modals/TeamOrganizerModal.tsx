@@ -5,6 +5,7 @@ import { Plan, UserProfile } from "../../core/types";
 import { usePlansStore } from "../../features/plans/state/PlansContext";
 import { useLivePlan } from "../../features/plans/hooks/useLivePlan";
 import { UserAvatar } from "../../IMGfromDB/UserAvatar";
+import { getPlanAreaName } from "../../features/discovery/services/addressUtils";
 
 interface TeamOrganizerModalProps {
   planId: string;
@@ -226,7 +227,7 @@ function TeamOrganizerModalContent({
         <div className="px-4 pb-3 flex flex-col gap-1.5">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <div className="truncate max-w-[220px]">
-              <span className="font-semibold text-zinc-200">{plan.location}</span> • {plan.time}
+              <span className="font-semibold text-zinc-200">{getPlanAreaName(plan.location) || plan.location}</span> • {plan.time}
             </div>
             <div className="shrink-0 text-zinc-500 font-mono text-[10px]">
               {teamA.length + teamB.length} Assigned • {unassigned.length} Remaining

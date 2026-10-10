@@ -83,7 +83,7 @@ export function format24HourTime(dateInput?: Date | string | number | null): str
  * Formats a timestamp into standardized relative date string:
  * - Today → "16:26" (time only in 24-hour format)
  * - Yesterday → "Yesterday"
- * - Older than yesterday → "dd-mm-yy"
+ * - Older than yesterday → "DD/MM/YY"
  */
 export function formatRelativeDate(dateInput?: Date | string | number | null): string {
   if (!dateInput) return "";
@@ -111,18 +111,18 @@ export function formatRelativeDate(dateInput?: Date | string | number | null): s
     return "Yesterday";
   }
 
-  // Older than yesterday: dd-mm-yy
+  // Older than yesterday: DD/MM/YY
   const dd = String(date.getDate()).padStart(2, "0");
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const yy = String(date.getFullYear()).slice(-2);
-  return `${dd}-${mm}-${yy}`;
+  return `${dd}/${mm}/${yy}`;
 }
 
 /**
  * Formats a message ISO timestamp into a compact chat list time string:
  * - "16:26" (24-hour) if today
  * - "Yesterday" if yesterday
- * - "dd-mm-yy" if older than yesterday
+ * - "DD/MM/YY" if older than yesterday
  */
 export function formatChatListTimestamp(dateString?: string | null): string {
   return formatRelativeDate(dateString);

@@ -2,13 +2,16 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeft, ChevronRight, TrendingUp, TrendingDown, Hourglass, Check, AlertCircle, ArrowLeftRight, UserMinus, UserPlus, Trash2, Minus, Plus, Users, CalendarClock, Link2, Share, Image as ImageIcon, Zap } from "lucide-react";
 import { useToast } from "../../../shared/contexts/ToastContext";
-import { buildInviteUrl, copyInviteUrlToClipboard } from "../services/planInviteService";
+import { buildInviteUrl, copyInviteUrlToClipboard, cleanPlanIdentifier } from "../services/planInviteService";
+import { isUuid } from "../utils/planUtils";
+import { findPlanBySlugOrId } from "../utils/planSlugUtils";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import type { Plan } from "../../../core/types";
 import { HostInfo } from "./HeroHeader";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { usePlansStore } from "../state/PlansContext";
+import { normalizeStatus } from "../../../../lib/participantStatus";
 
 // Helper functions for date/time formatting inside EditDateTimeBottomSheet
 function formatDateFriendly(dateStr: string): string {
@@ -219,6 +222,7 @@ export const DiscardPlanBottomSheet: React.FC<DiscardPlanBottomSheetProps> = ({
       {isOpen && (
         <>
           <motion.div
+            key="capacity-backdrop"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -226,6 +230,7 @@ export const DiscardPlanBottomSheet: React.FC<DiscardPlanBottomSheetProps> = ({
             className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
           />
           <motion.div
+            key="capacity-sheet"
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -326,6 +331,8 @@ interface LeavePlanBottomSheetProps {
   isSkipping?: boolean;
   isSubmitting?: boolean;
   isPaid?: boolean;
+  rsvpStatus?: string;
+  isWaitlist?: boolean;
   plan?: Plan | any | null;
   planTitle?: string;
   planCoverImage?: string | null;
@@ -341,6 +348,8 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
   isSkipping = false,
   isSubmitting = false,
   isPaid,
+  rsvpStatus,
+  isWaitlist = false,
   plan,
   planTitle,
   planCoverImage,
@@ -356,13 +365,22 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
   const resolvedCategory = plan?.category || planCategory;
   const resolvedSubcategory = (plan as any)?.subcategory || planSubcategory;
 
+  const currentStatus = normalizeStatus(
+    rsvpStatus ||
+    (plan as any)?.myRsvpStatus ||
+    (plan as any)?.my_rsvp_status ||
+    (plan as any)?.rsvp_status ||
+    (plan as any)?.rsvpStatus
+  );
+  const isWaitlisted = isWaitlist || currentStatus === "WAITLISTED";
+
   const resolvedCost = Number(
     plan?.total_cost ??
     (plan as any)?.cost ??
     (plan as any)?.totalCost ??
     0
   );
-  const isPaidPlan = isPaid !== undefined ? isPaid : resolvedCost > 0;
+  const isPaidPlan = isWaitlisted ? false : (isPaid !== undefined ? isPaid : resolvedCost > 0);
   const isLoading = Boolean(isSkipping || isSubmitting);
   const buttonText = isPaidPlan
     ? (isLoading ? "Sending Request…" : "Request to leave")
@@ -373,6 +391,7 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
       {isOpen && (
         <>
           <motion.div
+            key="guided-capacity-backdrop"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -380,6 +399,7 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
             className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
           />
           <motion.div
+            key="guided-capacity-sheet"
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -586,7 +606,7 @@ export const RejoinPlanBottomSheet: React.FC<RejoinPlanBottomSheetProps> = ({
                   opacity: isRejoining ? 0.5 : 1,
                 }}
               >
-                {isRejoining ? "Rejoining…" : (isFull ? "Rejoin Waitlist" : "Rejoin Plan")}
+                {isRejoining ? "Rejoining…" : "Rejoin Plan"}
               </button>
 
               {/* Text-only Cancel — no border, no background */}
@@ -772,6 +792,10 @@ interface MakeAnotherParticipantHostBottomSheetProps {
   isSubmitting?: boolean;
   onConfirm: (selectedParticipantId: string) => Promise<void> | void;
   onClose: () => void;
+  mode?: 'leave' | 'stop_hosting';
+  title?: string;
+  subtitle?: string;
+  confirmText?: string;
 }
 
 export const MakeAnotherParticipantHostBottomSheet: React.FC<MakeAnotherParticipantHostBottomSheetProps> = ({
@@ -780,6 +804,10 @@ export const MakeAnotherParticipantHostBottomSheet: React.FC<MakeAnotherParticip
   isSubmitting = false,
   onConfirm,
   onClose,
+  mode = 'leave',
+  title,
+  subtitle,
+  confirmText,
 }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -825,10 +853,10 @@ export const MakeAnotherParticipantHostBottomSheet: React.FC<MakeAnotherParticip
             {/* Header */}
             <div className="px-5 pb-3 text-left">
               <h2 className="text-[18px] font-bold text-white mb-1 tracking-tight">
-                You're the only host
+                {title || (mode === 'stop_hosting' ? "Transfer Host" : "You're the only host")}
               </h2>
               <p className="text-[13px] text-white/55 leading-relaxed">
-                Choose someone else to host this plan before you leave
+                {subtitle || (mode === 'stop_hosting' ? "Choose someone else to host this plan" : "Choose someone else to host this plan before you leave")}
               </p>
             </div>
 
@@ -884,7 +912,7 @@ export const MakeAnotherParticipantHostBottomSheet: React.FC<MakeAnotherParticip
                 {/* Actions */}
                 <div className="px-5 pt-3 flex flex-col gap-2">
                   <button
-                    id="host_leave_replacement_confirm_btn"
+                    id={mode === 'stop_hosting' ? "host_transfer_replacement_confirm_btn" : "host_leave_replacement_confirm_btn"}
                     type="button"
                     disabled={!selectedId || isSubmitting}
                     onClick={() => {
@@ -894,7 +922,9 @@ export const MakeAnotherParticipantHostBottomSheet: React.FC<MakeAnotherParticip
                     }}
                     className="w-full py-3 rounded-full text-[15px] font-semibold text-white bg-[#FF6B2C] active:scale-[0.98] transition-transform disabled:opacity-40 disabled:cursor-not-allowed shadow-md flex items-center justify-center cursor-pointer"
                   >
-                    {isSubmitting ? "Transferring & Leaving…" : "Confirm & Leave"}
+                    {isSubmitting
+                      ? (mode === 'stop_hosting' ? "Transferring Host…" : "Transferring & Leaving…")
+                      : (confirmText || (mode === 'stop_hosting' ? "Transfer Host" : "Confirm & Leave"))}
                   </button>
 
                   <button
@@ -918,7 +948,9 @@ export const MakeAnotherParticipantHostBottomSheet: React.FC<MakeAnotherParticip
                 </h3>
 
                 <p className="text-[13px] text-white/50 leading-relaxed max-w-[280px] mb-6">
-                  There are currently no other joined participants. Once a participant joins, you can assign them as host and leave.
+                  {mode === 'stop_hosting'
+                    ? "There are currently no other joined participants. Once a participant joins, you can assign them as host."
+                    : "There are currently no other joined participants. Once a participant joins, you can assign them as host and leave."}
                 </p>
 
                 <button
@@ -1365,7 +1397,7 @@ export const CancelLeaveRequestBottomSheet: React.FC<CancelLeaveRequestBottomShe
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
                 <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
-                  {resolvedTitle}
+                  Cancel leave request?
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
                   Plan Actions
@@ -1373,16 +1405,8 @@ export const CancelLeaveRequestBottomSheet: React.FC<CancelLeaveRequestBottomShe
               </div>
             </div>
 
-            {/* Title & Short Explanation */}
-            <div className="px-5 pt-3 pb-1 text-left">
-              <h2 className="text-[17px] font-bold text-white mb-1">Cancel leave request?</h2>
-              <p className="text-[13.5px] text-white/55 leading-[1.55]">
-                You're still part of this plan. Would you like to stay?
-              </p>
-            </div>
-
             {/* Action Buttons */}
-            <div className="px-4 pt-3 flex flex-col gap-2.5">
+            <div className="px-4 pt-4 flex flex-col gap-2.5">
               <button
                 id="cancel_leave_request_confirm_btn"
                 type="button"
@@ -1763,82 +1787,6 @@ export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
 
 // ----------------------------------------------------------------------
 // 2B. COMPLETE PLAN CONFIRMATION BOTTOM SHEET
-// ----------------------------------------------------------------------
-interface CompletePlanConfirmationBottomSheetProps {
-  isOpen: boolean;
-  isSubmitting?: boolean;
-  onConfirm: () => void;
-  onClose: () => void;
-}
-
-export const CompletePlanConfirmationBottomSheet: React.FC<CompletePlanConfirmationBottomSheetProps> = ({
-  isOpen,
-  isSubmitting = false,
-  onConfirm,
-  onClose,
-}) => {
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/70 z-60 pointer-events-auto"
-          />
-          <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 260 }}
-            className="fixed bottom-0 left-0 right-0 z-[65] pointer-events-auto"
-            style={{
-              background: "#1C1C1E",
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              paddingBottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
-            }}
-          >
-            <div className="flex justify-center pt-3 pb-4">
-              <div className="w-9 h-1 rounded-full bg-white/20" />
-            </div>
-
-            <div className="px-5 pb-2 text-left">
-              <h2 className="text-[18px] font-bold text-white mb-2">End this plan?</h2>
-              <p className="text-[14px] text-white/55 leading-[1.55]">
-                This will move the plan to Past Plans. Any unsettled expenses will remain in Wallet until they're cleared.
-              </p>
-            </div>
-
-            <div className="px-4 pt-5 flex flex-col gap-2.5">
-              <button
-                id="end_plan_confirm_btn"
-                type="button"
-                onClick={onConfirm}
-                disabled={isSubmitting}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
-                style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)" }}
-              >
-                {isSubmitting ? "Ending Plan…" : "End Plan"}
-              </button>
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-full py-4 rounded-2xl text-[15px] font-semibold text-white/70 active:scale-[0.98] transition-transform cursor-pointer"
-                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
-              >
-                Cancel
-              </button>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  );
-};
 
 // ----------------------------------------------------------------------
 // 2C. EARLY COMPLETE PLAN CONFIRMATION BOTTOM SHEET
@@ -4269,17 +4217,32 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
   planSubcategory: propPlanSubcategory,
 }) => {
   const { showToast } = useToast();
-  const inviteUrl = planId ? buildInviteUrl(planId) : "";
-  const [copied, setCopied] = useState<boolean>(false);
-
   const { plans } = usePlansStore();
-  const activePlan = propPlan || (plans || []).find((p: any) => (p.dbUuid || p.id) === planId);
+  const activePlan = propPlan || findPlanBySlugOrId(plans, planId) || (plans || []).find((p: any) => (p.dbUuid || p.id) === planId);
 
   const resolvedTitle = activePlan?.title || propPlanTitle || "Plan";
   const resolvedCover = activePlan?.coverImage || (activePlan as any)?.cover_image || propPlanCoverImage;
-  const resolvedPlanId = activePlan?.dbUuid || activePlan?.id || planId;
+  const rawId = (activePlan?.dbUuid && isUuid(activePlan.dbUuid))
+    ? activePlan.dbUuid
+    : (activePlan?.id && isUuid(activePlan.id))
+    ? activePlan.id
+    : (planId && isUuid(planId))
+    ? planId
+    : (activePlan?.dbUuid || activePlan?.id || planId || "");
+  const canonicalPlanId = cleanPlanIdentifier(rawId) || rawId;
+
+  const inviteUrl = canonicalPlanId ? buildInviteUrl(canonicalPlanId) : "";
+  const [copied, setCopied] = useState<boolean>(false);
+
+  const resolvedPlanId = canonicalPlanId;
   const resolvedCategory = activePlan?.category || propPlanCategory;
   const resolvedSubcategory = (activePlan as any)?.subcategory || propPlanSubcategory;
+
+  useEffect(() => {
+    if (isOpen && canonicalPlanId) {
+      console.log("[InviteFlow] Generated share identifier:", canonicalPlanId, "inviteUrl:", inviteUrl);
+    }
+  }, [isOpen, canonicalPlanId, inviteUrl]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -4371,7 +4334,7 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
             </div>
 
             {/* Actions: Share & Cancel */}
-            <div className="px-4 pt-3 flex flex-col gap-2.5">
+            <div className="px-4 pt-3 flex flex-col gap-1">
               {/* Primary Action Button: "Share" */}
               <button
                 id="share_plan_btn"
@@ -4424,7 +4387,6 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
                   fontWeight: 500,
                   cursor: "pointer",
                   textAlign: "center",
-                  marginTop: 4,
                 }}
               >
                 Cancel

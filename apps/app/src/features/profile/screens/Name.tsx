@@ -116,7 +116,7 @@ export const Name = ({
             type="button"
             onClick={() => handleSave()}
             disabled={isSaving}
-            className="w-full bg-[#FF6B2C] hover:bg-[#FF8552] text-white py-3.5 rounded-xl font-bold text-xs tracking-wide transition shadow-lg shadow-[#FF6B2C]/10 active:scale-98 cursor-pointer flex items-center justify-center gap-2"
+            className="w-full bg-[#FF6B2C] hover:bg-[#FF8552] text-white py-3.5 rounded-full font-bold text-xs tracking-wide transition shadow-lg shadow-[#FF6B2C]/10 active:scale-98 cursor-pointer flex items-center justify-center gap-2"
           >
             {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             Save

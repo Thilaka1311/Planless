@@ -47,6 +47,7 @@ import { InlineParticipantView } from "../../../components/InlineParticipantView
 import { HeroHeader } from "../../../components/HeroHeader";
 import { HeroMetadataCard } from "../../../components/HeroMetadataCard";
 import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGooglePlacesAutocomplete";
+import { getPlanAreaName } from "../../../../discovery/services/addressUtils";
 import { lazyWithRetry } from "../../../../../shared/utils/lazyWithRetry";
 
 const PlanChatScreen = lazyWithRetry(
@@ -68,7 +69,6 @@ import {
   MakeAnotherParticipantHostBottomSheet,
   CancelLeaveRequestBottomSheet,
   CancelPlanBottomSheet,
-  CompletePlanConfirmationBottomSheet,
   EarlyCompletePlanConfirmationBottomSheet,
   RestorePlanBottomSheet,
   EditDateTimeBottomSheet,
@@ -211,7 +211,7 @@ function ActionButtons({
               disabled={isRejoining}
               className="w-full py-2.5 px-6 rounded-full text-[13px] font-sans font-black tracking-[0.14em] uppercase transition-all duration-200 text-center cursor-pointer bg-[#FF6B2C] text-white hover:bg-[#FF854C] border border-[#FF6B2C]/20 shadow-lg shadow-[#FF6B2C]/15 active:scale-[0.98] disabled:opacity-40"
             >
-              {isRejoining ? "Rejoining…" : (isFull ? "Rejoin Waitlist" : "Rejoin Plan")}
+              {isRejoining ? "Rejoining…" : "Rejoin Plan"}
             </button>
           )}
           <button
@@ -311,6 +311,7 @@ function InlineLocationEditor({
   validationShakeKey = 0,
 }: InlineLocationEditorProps) {
   const isPristine = locationQuery === currentLocation;
+  const displayLocation = getPlanAreaName(currentLocation) || currentLocation;
   const { suggestions, isLoading, clearSuggestions, getPlaceDetails } = useGooglePlacesAutocomplete(
     isPristine ? "" : locationQuery
   );
@@ -362,8 +363,8 @@ function InlineLocationEditor({
         >
           <MapPin className={`w-4 h-4 flex-shrink-0 ${currentLocation ? "text-red-500" : "text-zinc-500 opacity-60"}`} />
           <div className="flex items-center gap-1.5 truncate">
-            <span className={`text-[13px] font-sans tracking-wide truncate ${currentLocation ? "text-white font-semibold" : "text-white/40 font-medium"}`}>
-              {currentLocation || "Add a location"}
+            <span className={`text-[13px] font-sans tracking-wide truncate whitespace-nowrap ${currentLocation ? "text-white font-semibold" : "text-white/40 font-medium"}`}>
+              {displayLocation || "Add a location"}
             </span>
             {hasError && !currentLocation && (
               <motion.span
@@ -394,7 +395,7 @@ function InlineLocationEditor({
                 onCancel();
               }
             }}
-            placeholder={currentLocation || "Search for a place…"}
+            placeholder={displayLocation || "Search for a place…"}
             className="flex-1 bg-transparent text-[13px] font-sans font-semibold tracking-wide text-white placeholder:text-white/30 focus:outline-none min-w-0"
           />
         </div>
@@ -404,6 +405,7 @@ function InlineLocationEditor({
       <AnimatePresence>
         {showDropdown && (
           <motion.div
+            key="location-autocomplete-dropdown"
             initial={{ opacity: 0, y: -4, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
@@ -534,6 +536,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     updatePlanDetails,
     moveParticipantToGoing,
     moveParticipantToWaitlist,
+    moveParticipantToWaitlistAndDecreaseCapacity,
     moveParticipantToInvited,
     addParticipantsToPlan,
     updatePlanSettings,
@@ -2183,7 +2186,13 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     }
   }, [selectedPlan, removeParticipant]);
 
-  if (!selectedPlan) return null;
+  if (!selectedPlan) {
+    return (
+      <div className="h-full w-full bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
+        <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (showPlanSettingsScreen) {
     return (
@@ -2221,7 +2230,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           await updatePlanDetails(targetPlanId, { cover_image: `${targetPlanId}.webp`, skipDbWrite: true });
         }}
         onLeavePlan={async () => {
-          if (hasCost) {
+          if (hasCost && currentStatus !== "WAITLISTED") {
             await handleConfirmPaidLeaveRequest();
           } else {
             await handleSkipConfirm();
@@ -2232,7 +2241,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     );
   }
 
-  const isFixedViewportView = !isCancelled;
+  const isFixedViewportView = !createMode && !isCancelled;
   const isLiveHostView = isHost && !isCancelled && !isCompleted;
 
   const isMoviePlan = (selectedPlan?.category || "").toLowerCase() === "movies";
@@ -2571,6 +2580,19 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               plan={selectedPlan}
               activeUserId={userProfile?.dbUuid || activeUserId}
               isHost={isHost}
+              onManageParticipants={
+                isHost && !isCancelled
+                  ? () => {
+                      if (isCompleted) {
+                        setShowAttendanceSheet(true);
+                      } else if (!hasPlanTimeEnded) {
+                        setShowParticipantManagement(true);
+                      } else {
+                        showToast("Plan time is up. This plan has completed.", "info");
+                      }
+                    }
+                  : undefined
+              }
               variant="flat"
             />
           )}
@@ -2584,14 +2606,12 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 onClick={
                   createMode
                     ? () => onEditParticipants?.()
-                    : hasPlanTimeEnded
-                      ? () => {
-                          showToast("Plan time is up. This plan has completed.", "info");
-                        }
-                      : isCompleted
-                        ? !isManagementExpired
-                          ? () => setShowAttendanceSheet(true)
-                          : () => {}
+                    : isCompleted
+                      ? () => setShowAttendanceSheet(true)
+                      : hasPlanTimeEnded
+                        ? () => {
+                            showToast("Plan time is up. This plan has completed.", "info");
+                          }
                         : () => setShowParticipantManagement(true)
                 }
                 className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
@@ -2766,6 +2786,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               }}
               onMoveToGoing={(planId, userId, opts) => moveParticipantToGoing(planId, userId, opts)}
               onMoveToWaitlist={(planId, userId) => moveParticipantToWaitlist(planId, userId)}
+              onMoveParticipantToWaitlistAndDecreaseCapacity={(planId, userId) => moveParticipantToWaitlistAndDecreaseCapacity(planId, userId)}
               onMoveToInvited={(planId, userId) => moveParticipantToInvited(planId, userId)}
               onSwapParticipants={(planId, goingUserId, waitlistUserId) => swapParticipants(planId, goingUserId, waitlistUserId)}
               onRemoveAndReplaceWithWaitlist={(planId, removeId, promoteId) => removeAndReplaceWithWaitlist(planId, removeId, promoteId)}
@@ -2872,6 +2893,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       <AnimatePresence>
         {showCompletionFlow && (
           <PlanCompletionModal
+            key="plan-completion-modal"
             plan={selectedPlan}
             onClose={() => setShowCompletionFlow(false)}
             activeUserId={activeUserId || ""}
@@ -2897,6 +2919,8 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       <LeavePlanBottomSheet
         isOpen={showSkipConfirmation}
         isSkipping={isSkipping}
+        isPaid={false}
+        rsvpStatus={currentStatus}
         plan={selectedPlan}
         onConfirm={handleConfirmSkip}
         onClose={() => setShowSkipConfirmation(false)}
@@ -2915,11 +2939,12 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         isOpen={showLeavePlanConfirm}
         isSkipping={isSkipping}
         isSubmitting={isSubmittingPaidLeave}
-        isPaid={hasCost}
+        isPaid={currentStatus === "WAITLISTED" ? false : hasCost}
+        rsvpStatus={currentStatus}
         plan={selectedPlan}
         onConfirm={async () => {
           setShowLeavePlanConfirm(false);
-          if (hasCost) {
+          if (hasCost && currentStatus !== "WAITLISTED") {
             await handleConfirmPaidLeaveRequest();
           } else {
             handleConfirmSkip();
@@ -3025,16 +3050,13 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               isCompletedMode={selectedPlan?.status === 'COMPLETED'}
               onConfirm={async (attendanceInput, expenseMode, usersToAdd, usersToRemove) => {
                 if (selectedPlan?.status === 'COMPLETED') {
-                  if (isManagementExpired) {
-                    setShowAttendanceSheet(false);
-                    return;
-                  }
                   setIsManagingCompletedParticipants(true);
                   try {
-                    await manageCompletedPlanParticipants(selectedPlan.id, usersToAdd || [], usersToRemove || [], expenseMode);
+                    await manageCompletedPlanParticipants(selectedPlan.id, usersToAdd || [], usersToRemove || [], 'NONE');
                     setShowAttendanceSheet(false);
                   } catch (err: any) {
                     console.error("Failed to update participants:", err);
+                    showToast(err?.message || "Failed to update participants", "error");
                   } finally {
                     setIsManagingCompletedParticipants(false);
                   }
@@ -3047,7 +3069,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                     const now = new Date();
                     const isEarly = !isNaN(planScheduledDate.getTime()) && now.getTime() < planScheduledDate.getTime();
 
-                    await completePlan(selectedPlan.id, attendanceInput, { isEarly, expenseMode });
+                    await completePlan(selectedPlan.id, attendanceInput, { isEarly, expenseMode: 'NONE' });
                     setShowAttendanceSheet(false);
                     onClose();
                   } catch (err: any) {
@@ -3119,6 +3141,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       <AnimatePresence>
         {isEditingCostSheetOpen && (
           <SetCostScreen
+            key="set-cost-screen"
             planTitle={selectedPlan?.title || (selectedPlan as any)?.name || "Plan"}
             planCoverImage={selectedPlan?.coverImage || (selectedPlan as any)?.cover_image || (selectedPlan as any)?.cover_photo || getPlanCover(selectedPlan?.category, (selectedPlan as any)?.subcategory)}
             initialCost={editTotalCostInput}

@@ -47,6 +47,18 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
     };
   }, []);
 
+  // Reset any temporary scroll-hide or keyboard state when activeTab changes
+  React.useEffect(() => {
+    setIsNavHiddenByScroll(false);
+    const activeEl = typeof document !== "undefined" ? document.activeElement : null;
+    const isInput =
+      activeEl instanceof HTMLInputElement ||
+      activeEl instanceof HTMLTextAreaElement;
+    if (!isInput) {
+      setIsKeyboardOpen(false);
+    }
+  }, [activeTab]);
+
   React.useEffect(() => {
     if (typeof window === "undefined") return;
 

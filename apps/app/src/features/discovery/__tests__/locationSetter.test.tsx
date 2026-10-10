@@ -130,4 +130,65 @@ describe("Location Setter & Discovery Flow Suite", () => {
     expect(state.discoveryLocation.locality).toBe("Koramangala");
     expect(state.discoveryLocation.latitude).toBe(12.9352);
   });
+
+  it("renders search results without SEARCH RESULTS heading, without map-pin icons, and without card borders", async () => {
+    // Mock useGooglePlacesAutocomplete to return active suggestions
+    const autocompleteModule = await import("../../../shared/hooks/useGooglePlacesAutocomplete");
+    vi.spyOn(autocompleteModule, "useGooglePlacesAutocomplete").mockReturnValue({
+      suggestions: [
+        {
+          place_id: "place_1",
+          description: "Sarojini Nagar Market, New Delhi",
+          structured_formatting: {
+            main_text: "Sarojini Nagar Market",
+            secondary_text: "New Delhi, Delhi, India",
+          },
+        } as any,
+        {
+          place_id: "place_2",
+          description: "Sardar Vallabhbhai Patel International Airport",
+          structured_formatting: {
+            main_text: "Sardar Vallabhbhai Patel International Airport (AMD)",
+            secondary_text: "Hansol, Ahmedabad, Gujarat, India",
+          },
+        } as any,
+      ],
+      isLoading: false,
+      error: null,
+      getPlaceDetails: vi.fn(),
+      geocodeAddress: vi.fn(),
+      reverseGeocode: vi.fn(),
+      clearSuggestions: vi.fn(),
+      resetSessionToken: vi.fn(),
+      setProgrammaticSelection: vi.fn(),
+    } as any);
+
+    const html = renderToString(
+      <LocationSetter
+        currentCity="Bengaluru"
+        currentLocality="Indiranagar"
+        hasLocation={true}
+        initialQuery="sar"
+        onBack={vi.fn()}
+        onSelectLocation={vi.fn()}
+      />
+    );
+
+    // 1. Heading "SEARCH RESULTS" is removed entirely
+    expect(html).not.toContain("SEARCH RESULTS");
+    expect(html).not.toContain("Search Results");
+
+    // 2. Results start directly with location names and subtitles
+    expect(html).toContain("Sarojini Nagar Market");
+    expect(html).toContain("New Delhi, Delhi, India");
+    expect(html).toContain("Sardar Vallabhbhai Patel International Airport (AMD)");
+    expect(html).toContain("Hansol, Ahmedabad, Gujarat, India");
+
+    // 3. No bordered card container styling (no bg-[#0c0c0e] or rounded-2xl on results)
+    expect(html).not.toContain("bg-[#0c0c0e]");
+
+    // 4. "Using your current location" row still has its icon and text
+    expect(html).toContain("Using your current location");
+    expect(html).toContain("Indiranagar, Bengaluru");
+  });
 });

@@ -504,15 +504,6 @@ new = ${planUpdate.cover_image}`);
       throw new Error("Only the plan host can manage participants of a completed plan.");
     }
 
-    // 24-hour window check from scheduled_at
-    const scheduledAtRaw = (matchedPlan as any)?.scheduled_at || (matchedPlan as any)?.datetime || (matchedPlan as any)?.time || dbPlanObj?.scheduled_at;
-    if (scheduledAtRaw) {
-      const endTimeMs = new Date(scheduledAtRaw).getTime();
-      if (!isNaN(endTimeMs) && Date.now() >= endTimeMs + 24 * 60 * 60 * 1000) {
-        throw new Error("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.");
-      }
-    }
-
     try {
       const res = await api.manageCompletedPlanParticipantsRPC(planUuid, usersToAdd, usersToRemove, expenseMode);
       
@@ -523,9 +514,6 @@ new = ${planUpdate.cover_image}`);
     } catch (err: any) {
       console.error("[PLAN_MANAGE_COMPLETED_ERROR] Failed DB update:", JSON.stringify(err, null, 2));
       const rawMsg = err?.message || err?.details || String(err);
-      if (rawMsg.includes("24-hour") || rawMsg.includes("MANAGEMENT_WINDOW_EXPIRED") || rawMsg.includes("expired")) {
-        throw new Error("Participant management is no longer available. You can only make changes within 24 hours after the plan ends.");
-      }
       throw new Error(rawMsg || "Failed to manage participants");
     }
   }, [plans, dbPlans, userId, resolveUserUuid, refreshPlans]);

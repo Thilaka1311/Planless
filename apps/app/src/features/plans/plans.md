@@ -56,7 +56,7 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
 * **Host Succession**: Hosts can promote other members to host (`promoteToHostRPC`), demote hosts (`demoteFromHostRPC`), or step down while appointing a replacement (`stopHostingWithReplacementRPC`).
 
 ### 7. Plan Conclusion
-* **Completing a Plan**: Host initiates completion via `<CompletePlanConfirmationBottomSheet />` or `<HostAttendanceScreen />`. The host marks final attendance (`ATTENDED` vs `DID_NOT_ATTEND`) for each participant, chooses an expense distribution mode (`SPLIT_ALL`, `KEEP_CURRENT_COST`, or `NONE`), and completes the plan. Once completed, a 24-hour management window allows late adjustments before the plan locks permanently.
+* **Completing a Plan & Managing Attendees**: Host initiates completion via `<HostAttendanceScreen />` (or `<EarlyCompletePlanConfirmationBottomSheet />` if completing ahead of scheduled time). The host marks final attendance (`ATTENDED` vs `DID_NOT_ATTEND`) for each participant, directly completing the plan with expense mode `'NONE'` without cost modification dialogs. After completion, hosts can continue managing participants via the working "Manage Participants" action (in both the fixed host control bar and `<InlineParticipantView />`), reopening `<HostAttendanceScreen />` in completed mode to re-tweak attendance or add walk-in attendees without uncompleting the plan or triggering expense recalculations.
 * **Cancelling a Plan**: Host initiates cancellation via `<CancelPlanBottomSheet />`. Cancelling deletes all team assignments, transitions status to `CANCELLED`, and dispatches cancellation alerts to all participants.
 
 ---
@@ -106,7 +106,7 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
 ### 5. Detailed Plan Modal (`PlansDetailsScreen` / `PlansPreviewScreen`)
 * **Hero Header (`HeroHeader.tsx`)**:
   * Full-bleed hero cover image with layered dark bottom gradient.
-  * Sticky Top Controls: Circular back button, truncated plan title, host avatar with name, share link button (`Share2`), chat icon (`MessageSquare`), and 3-dot overflow menu (`MoreVertical`).
+  * Sticky Top Controls: Circular back button, centered truncated plan title, centered overlapping host avatar group directly below title, single-line cleanly-truncated host attribution (`Hosted by <Hosts>...`), share link button (`Share2`), chat icon (`MessageSquare`), and 3-dot overflow menu (`MoreVertical`).
 * **Floating Hero Metadata Card (`HeroMetadataCard.tsx`)**:
   * Dark frosted glass capsule floating over the hero cover image (`bg-zinc-950/80 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl`):
     * *When*: Calendar icon, formatted date/time, and dynamic RSVP countdown urgency badge (`Respond within 2h`).
@@ -131,7 +131,7 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
   * *Cancel Plan*: Red destructive confirmation button (`#EF4444`) with cancellation reason field.
   * *Discard / Exit Plan*: Plan Action confirmation sheet with Plan identity header (`DiscoveryImages`, title, "Plan Actions" subtitle), unsaved changes advisory, and standard destructive action styling (`Discard`, text-only `Cancel`).
   * *Edit Date/Time*: Dual time wheels and quick-select day chips (Today, Tomorrow, Weekend).
-  * *Cancel Leave Request*: Plan Actions confirmation sheet with Plan identity header (`DiscoveryImages`, title, "Plan Actions" subtitle), "Cancel leave request?" title and explanation, single primary action "Stay in Plan", and simple text "Cancel" dismissal.
+  * *Cancel Leave Request*: Plan Actions confirmation sheet with Plan identity header (`DiscoveryImages`, "Cancel leave request?" title, "Plan Actions" subtitle), single primary action "Stay in Plan", and simple text "Cancel" dismissal.
   * *Host Attendance*: Roster checklist to mark each member as `ATTENDED` or `DID_NOT_ATTEND` before final plan closure.
 
 ---

@@ -281,12 +281,18 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
     );
   }
 
+  const visibleHostAvatars = React.useMemo(() => {
+    return hostList.slice(0, 4);
+  }, [hostList]);
+
+  const remainingHostCount = Math.max(0, hostList.length - 4);
+
   return (
     <div
       id="immersive-plan-glass-header"
       className="absolute top-0 left-0 right-0 z-30 bg-black/30 backdrop-blur-xl border-b border-white/10 shadow-lg pb-3 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] rounded-b-2xl"
     >
-      <div className="w-full flex flex-col items-center relative px-4">
+      <div className="w-full flex flex-col items-center relative px-4 min-w-0">
         {/* Back / Close button — top-left */}
         <button
           id="immersive-plan-back-btn"
@@ -322,6 +328,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               <AnimatePresence>
                 {menuOpen && (
                   <motion.div
+                    key="hero-header-context-menu"
                     initial={{ opacity: 0, scale: 0.92, y: -6 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.92, y: -6 }}
@@ -389,7 +396,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
         {/* Circular Plan Avatar & Centered Title */}
         <div
           onClick={!isEditingTitle && onHeaderPress ? onHeaderPress : undefined}
-          className={`flex flex-col items-center max-w-full ${onHeaderPress ? "cursor-pointer pointer-events-auto" : "pointer-events-none"}`}
+          className={`flex flex-col items-center max-w-full min-w-0 ${onHeaderPress ? "cursor-pointer pointer-events-auto" : "pointer-events-none"}`}
         >
           {headerBadge && (
             <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#FF6B2C]/20 border border-[#FF6B2C]/40 text-[#FF6B2C] text-[11px] font-bold tracking-wider uppercase mb-1.5 shadow-sm">
@@ -415,7 +422,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           )}
 
           {isEditingTitle ? (
-            <div className="pointer-events-auto px-4 w-full max-w-[320px]">
+            <div className="pointer-events-auto px-14 w-full max-w-[320px]">
               <input
                 ref={titleInputRef}
                 type="text"
@@ -443,11 +450,11 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                   setIsEditingTitle(true);
                 }
               }}
-              className={`text-[17px] font-bold tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full inline-flex items-center justify-center gap-1.5 ${
+              className={`text-[17px] font-bold tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full flex items-center justify-center gap-1.5 min-w-0 ${
                 isHost && onEditTitle ? "cursor-pointer pointer-events-auto hover:opacity-90 active:opacity-75" : ""
               } ${!title || title === "Set a title" || title === "Enter Title" ? "text-white/60 font-semibold" : "text-white"}`}
             >
-              <span className="truncate max-w-full">{title && title !== "Enter Title" ? title : "Set a title"}</span>
+              <span className="truncate max-w-full min-w-0">{title && title !== "Enter Title" ? title : "Set a title"}</span>
               {Boolean(titleError) && (!title || title === "Set a title" || title === "Enter Title") && (
                 <motion.span
                   key={validationShakeKey}
@@ -464,22 +471,39 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
 
         {/* Centered Hosted By with Overlapping Avatars (Plan Details Mode) */}
         {!hideHostAttribution && (
-          <div className="flex items-center gap-2 mt-1 select-none">
-            <div className="flex items-center -space-x-1.5 flex-shrink-0">
-              {hostList.map((h, idx) => (
+          <div className="w-full flex flex-col items-center mt-1 select-none min-w-0">
+            {/* Centered Overlapping Host Avatars directly below Plan title */}
+            <div className="flex items-center justify-center -space-x-1.5 flex-shrink-0 mb-1">
+              {visibleHostAvatars.map((h, idx) => (
                 <UserAvatar
                   key={h.id || idx}
                   src={h.avatar}
                   alt={h.name || "Host"}
-                  size="w-4.5 h-4.5"
+                  size="w-5 h-5"
                   className="border border-black/80 rounded-full relative"
-                  style={{ zIndex: hostList.length - idx }}
+                  style={{ zIndex: visibleHostAvatars.length - idx }}
                 />
               ))}
+              {remainingHostCount > 0 && (
+                <div
+                  className="w-5 h-5 rounded-full bg-zinc-800 border border-black/80 flex items-center justify-center text-[9px] text-zinc-300 font-bold leading-none shrink-0 relative"
+                  style={{ zIndex: 0 }}
+                >
+                  +{remainingHostCount}
+                </div>
+              )}
             </div>
-            <span id="immersive-host-attribution" className="text-[12px] text-white/60 font-medium select-none">
-              Hosted by <span className="text-white/90 font-semibold">{hostedByText}</span>
-            </span>
+
+            {/* Cleanly Truncated Single-Line Host Attribution Text */}
+            <div className="w-full max-w-full px-14 flex items-center justify-center min-w-0">
+              <span
+                id="immersive-host-attribution"
+                className="text-[12px] text-white/60 font-medium select-none truncate text-center block max-w-full"
+                title={`Hosted by ${hostedByText}`}
+              >
+                Hosted by <span className="text-white/90 font-semibold">{hostedByText}</span>
+              </span>
+            </div>
           </div>
         )}
       </div>
