@@ -109,6 +109,13 @@ describe('appRouter URL and Navigation Architecture', () => {
       expect(isValidRoute('/join/invite_token_123')).toBe(true);
     });
 
+    it('accepts search and quick-plans routes', () => {
+      expect(isValidRoute('/search')).toBe(true);
+      expect(isValidRoute('/quick-plans')).toBe(true);
+      expect(isValidRoute('/create/search')).toBe(true);
+      expect(isValidRoute('/create/quick-plans')).toBe(true);
+    });
+
     it('rejects invalid or unknown routes', () => {
       expect(isValidRoute('/invalid-route')).toBe(false);
       expect(isValidRoute('/some/deep/fake/path')).toBe(false);
@@ -179,6 +186,20 @@ describe('appRouter URL and Navigation Architecture', () => {
       mockWindow.location = new URL('http://localhost:3000/join/token123');
       expect(parseCurrentRoute()).toEqual({ tab: 'home', inviteToken: 'token123' });
     });
+
+    it('parses search and quick-plans subScreen routes', () => {
+      mockWindow.location = new URL('http://localhost:3000/search');
+      expect(parseCurrentRoute()).toEqual({ tab: 'create', subScreen: 'master-search' });
+
+      mockWindow.location = new URL('http://localhost:3000/create/search');
+      expect(parseCurrentRoute()).toEqual({ tab: 'create', subScreen: 'master-search' });
+
+      mockWindow.location = new URL('http://localhost:3000/quick-plans');
+      expect(parseCurrentRoute()).toEqual({ tab: 'create', subScreen: 'quick-plans' });
+
+      mockWindow.location = new URL('http://localhost:3000/create/quick-plans');
+      expect(parseCurrentRoute()).toEqual({ tab: 'create', subScreen: 'quick-plans' });
+    });
   });
 
   describe('getRoutePath', () => {
@@ -204,6 +225,8 @@ describe('appRouter URL and Navigation Architecture', () => {
     it('produces exact paths for detail and wizard screens', () => {
       expect(getRoutePath({ tab: 'create', createPhase: 'who' })).toBe('/create/who');
       expect(getRoutePath({ tab: 'create', createPhase: 'when' })).toBe('/create/when');
+      expect(getRoutePath({ tab: 'create', subScreen: 'master-search' })).toBe('/create/search');
+      expect(getRoutePath({ tab: 'create', subScreen: 'quick-plans' })).toBe('/create/quick-plans');
       expect(getRoutePath({ tab: 'plans', selectedPlanId: 'p_100' })).toBe('/plans/p_100');
       expect(getRoutePath({ tab: 'chats', selectedChatPlanId: 'c_200' })).toBe('/chats/c_200');
       expect(getRoutePath({ tab: 'home', inviteToken: 'inv_abc' })).toBe('/join/inv_abc');

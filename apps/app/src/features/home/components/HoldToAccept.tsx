@@ -7,6 +7,7 @@ import { usePlansStore } from "../../plans/state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { getHeroMetadataCostText } from "../../plans/components/HeroMetadataCard";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
+import { getPlanAreaName } from "../../discovery/services/addressUtils";
 
 interface HoldToAcceptOverlayProps {
   planId: string;
@@ -153,16 +154,21 @@ export const HoldToAcceptOverlay: React.FC<HoldToAcceptOverlayProps> = ({
             {plan.title}
           </motion.span>
           
-          {/* 2. Venue details (Medium emphasis, immediately scannable location cue) */}
+          {/* 2. Venue details (Medium emphasis, immediately scannable location cue: area/locality only) */}
           {(() => {
             const isMovie = (plan.category || "").toLowerCase() === "movies";
             const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
-            const displayLoc = (isMovie && isYearOnly(plan.location)) ? "" : (plan.location || "");
+            const rawLoc = (isMovie && isYearOnly(plan.location))
+              ? ""
+              : (plan.location || (plan as any).place_address || (plan as any).place_name || "");
+            if (!rawLoc) return null;
+            const areaLocality = getPlanAreaName(rawLoc);
+            const displayLoc = areaLocality || rawLoc;
             if (!displayLoc) return null;
             return (
-              <div className="flex items-center justify-center gap-1.5 mt-2.5">
+              <div className="flex items-center justify-center gap-1.5 mt-2.5 max-w-full px-2">
                 <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />
-                <span className="text-[14.5px] font-sans font-extrabold text-white tracking-tight">
+                <span className="text-[14.5px] font-sans font-extrabold text-white tracking-tight truncate whitespace-nowrap">
                   {displayLoc}
                 </span>
               </div>

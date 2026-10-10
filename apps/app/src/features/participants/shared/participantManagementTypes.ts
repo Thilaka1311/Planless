@@ -34,4 +34,5 @@ export interface PlanParticipantManagementWrapperProps {
   onConfirmReplacement?: (planId: string, targetUserId: string, replacementUserId: string) => Promise<void>;
   currentPage?: number;
   initialOpenPlanSizeSheet?: boolean;
+  onMoveParticipantToWaitlistAndDecreaseCapacity?: (planId: string, userId: string) => Promise<any>;
 }

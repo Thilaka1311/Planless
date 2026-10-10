@@ -135,8 +135,8 @@ The **Invite Link** feature provides a direct URL-sharing mechanism for Planless
     "success": true,
     "plan_id": "uuid",
     "rsvp_status": "INVITED",
-    "assigned_group": null,
-    "waitlist_position": null,
+    "assigned_group": "WAITLIST", // "WAITLIST" in Assigned mode when participant invites enabled, null otherwise
+    "waitlist_position": 5, // Next sequential integer position in Assigned mode when assigned_group = 'WAITLIST', null otherwise
     "already_participating": false,
     "plan_size": 8,
     "invited_participants": 7
@@ -146,10 +146,13 @@ The **Invite Link** feature provides a direct URL-sharing mechanism for Planless
 ### 2. Affected Database Tables
 * **`public.plans`**:
   * `invited_participants`: Incremented by 1 for every new non-skipped claimant.
-  * `plan_size`: Incremented dynamically ONLY when the expansion condition is met (`invited_participants === current plan_size`). Never increments when someone joins a waitlisted or full plan.
+  * `plan_size`: Unchanged upon claiming an invite link (opening a link is an invitation action, not an attendance decision).
 * **`public.plan_participants`**:
-  * **No existing row**: Inserts new row with `role = 'PARTICIPANT'`, `rsvp_status = 'INVITED'`, and `delivery_status = 'DELIVERED'`. This applies universally across all plan modes (Automatic, Assigned, etc.).
-  * **Existing row**: Retains the existing `rsvp_status` (`JOINED`, `WAITLISTED`, `SKIPPED`, `INVITED`) unchanged.
+  * **No existing row**:
+    * **Assigned mode with participant invites enabled** (`participant_filtering = 'ASSIGNED'` and `allow_participant_invites = true`): Inserts row with `role = 'PARTICIPANT'`, `rsvp_status = 'INVITED'`, `assigned_group = 'WAITLIST'`, `waitlist_position = COALESCE(MAX(waitlist_position), 0) + 1`, `joined_queue_at = NULL`, and `delivery_status = 'DELIVERED'`.
+    * **Assigned mode without participant invites enabled** (`participant_filtering = 'ASSIGNED'` and `allow_participant_invites = false`): Inserts row with `role = 'PARTICIPANT'`, `rsvp_status = 'INVITED'`, `assigned_group = NULL`, `waitlist_position = NULL`, `joined_queue_at = NULL`, and `delivery_status = 'DELIVERED'`.
+    * **Automatic mode** (`participant_filtering = 'AUTOMATIC'`): Inserts row with `role = 'PARTICIPANT'`, `rsvp_status = 'INVITED'`, `assigned_group = NULL`, `waitlist_position = NULL`, `joined_queue_at = NULL`, and `delivery_status = 'DELIVERED'`.
+  * **Existing row**: Retains the existing `rsvp_status` (`JOINED`, `WAITLISTED`, `SKIPPED`, `INVITED`), `assigned_group`, and `waitlist_position` unchanged.
 
 ---
 
@@ -161,22 +164,29 @@ The **Invite Link** feature provides a direct URL-sharing mechanism for Planless
 ```text
 No existing participant row
         ↓
-Create participant row
-        ↓
-RSVP = INVITED
+Assigned mode + allow_participant_invites = true:
+  RSVP = INVITED, assigned_group = WAITLIST, waitlist_pos = NULL
+Assigned mode + allow_participant_invites = false:
+  RSVP = INVITED, assigned_group = NULL, waitlist_pos = NULL
+Automatic mode:
+  RSVP = INVITED, assigned_group = NULL, waitlist_pos = NULL
 
 Existing participant row
         ↓
-Preserve existing RSVP status
+Preserve existing RSVP status & assigned_group
 ```
 
 * **New Participant Row**:
   If the person does not already have a `plan_participants` row for that Plan and a new row is created because they opened the invite link:
   → Their RSVP status must **ALWAYS** be `INVITED`.
-  This applies regardless of the Plan type or participant mode:
-  - Automatic
-  - Assigned
-  - Any other existing Plan configuration
+  - In **Assigned mode with participant invites enabled** (`allow_participant_invites = true`):
+    - `rsvp_status = 'INVITED'`, `assigned_group = 'WAITLIST'`, `waitlist_position = NULL`, `joined_queue_at = NULL`.
+    - The participant appears in the Assigned mode waitlist section under the invited-only subgroup (`waitlistMembers` filters by `group === 'WAITLIST'`).
+    - Their `rsvp_status` remains `INVITED`, so they receive pending/dulled visual treatment (opacity `0.55`) and do not receive a numbered queue badge (`waitlistPosition = null`).
+    - Attendance breakdown (`calculateParticipantBreakdown`) counts them as `invited: 1`, `waitlisted: 0`.
+    - They only become `WAITLISTED` if they explicitly take an attendance action (`join_plan`).
+  - In **Assigned mode with participant invites disabled** or **Automatic mode**:
+    - `rsvp_status = 'INVITED'`, `assigned_group = NULL`, `waitlist_position = NULL`, `joined_queue_at = NULL`.
   Do NOT automatically put a newly invited person into:
   - `JOINED`
   - `WAITLISTED`
@@ -184,12 +194,13 @@ Preserve existing RSVP status
   - Any other RSVP state
 
 * **Existing Participant Row**:
-  If the person already has a participant row for that Plan, preserve their existing state when they open the invite link:
-  - Already `JOINED` → show `JOINED`
-  - Already `WAITLISTED` → show `WAITLISTED`
-  - Already `SKIPPED` → show `SKIPPED`
-  - Already `INVITED` → show `INVITED`
-  Opening the invite link must not overwrite an existing participant's RSVP state.
+  If the person already has a participant row for that Plan, preserve their existing state and assignment when they open the invite link:
+  - Already `HOST` → retain `role: 'HOST'`, `rsvp_status: 'JOINED'`
+  - Already `JOINED` → retain `rsvp_status: 'JOINED'`, group preserved
+  - Already `WAITLISTED` → retain `rsvp_status: 'WAITLISTED'`, group preserved
+  - Already `SKIPPED` → retain `rsvp_status: 'SKIPPED'`, group preserved
+  - Already `INVITED` → retain `rsvp_status: 'INVITED'`, group preserved
+  Opening the invite link must never overwrite an existing participant's RSVP state or group assignment.
 
 ### Link Claim Invariants
 * **Strict Idempotency**: Opening an invite link multiple times is completely safe. The RPC inspects existing rows; if the user is already `JOINED`, `WAITLISTED`, or `INVITED`, their existing status is preserved untouched.
@@ -268,7 +279,9 @@ invited participants === current Plan size
 * `src/features/plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen.tsx`: Host link sharing trigger.
 * `src/features/plans/hooks/usePlanParticipants.ts`: Client-side join flow protecting Automatic participants from manual status overrides.
 * `supabase/migrations/20260924093500_update_automatic_participants_join_flow.sql`: Initial join-time capacity re-evaluation and waitlist invariants.
-* `supabase/migrations/20260924094500_enforce_invite_link_always_invited_status.sql`: Authoritative PostgreSQL definition enforcing `rsvp_status = 'INVITED'` for all newly created rows upon opening invite links while strictly preserving existing participant state.
+* `supabase/migrations/20261009170500_enforce_all_invite_links_always_invited.sql`: Authoritative PostgreSQL definition enforcing `rsvp_status = 'INVITED'` for all newly created rows upon opening invite links (across all plan types: no-limit, limited with capacity, full with waitlist) while strictly preserving existing participant state.
+* `supabase/migrations/20261009172500_fix_claim_plan_invite_assigned_waitlist_group.sql`: Differentiates Assigned mode from Automatic mode.
+* `supabase/migrations/20261009174500_fix_participant_shared_invites_assigned_mode.sql`: Enforces that in Assigned mode, `assigned_group = 'WAITLIST'` is applied when host has enabled participant invitations (`allow_participant_invites = true`), keeping newly invited participants in the invited-only waitlist subgroup with `rsvp_status = 'INVITED'`, without waitlist position or queue timestamp. Updates `invite_participants` so participant invites in Assigned mode are always assigned to `WAITLIST`.
 
 ---
 

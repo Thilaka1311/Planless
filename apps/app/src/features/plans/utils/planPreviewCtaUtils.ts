@@ -17,7 +17,6 @@ export type PlanPreviewCtaText =
   | "Join Plan"
   | "Join Waitlist"
   | "Rejoin Plan"
-  | "Rejoin Waitlist"
   | "Plan size reached";
 
 export interface PlanPreviewCtaResult {
@@ -81,9 +80,9 @@ export function getPlanPreviewCtaState({
     ? normalizedGroup === "WAITLIST" || normalizedGroup === "WAITLISTED"
     : joinedCount >= numericLimit;
 
-  const ctaText = isWaitlistTarget
-    ? (alreadySkipped ? "Rejoin Waitlist" : "Join Waitlist")
-    : (alreadySkipped ? "Rejoin Plan" : "Join Plan");
+  const ctaText = alreadySkipped
+    ? "Rejoin Plan"
+    : (isWaitlistTarget ? "Join Waitlist" : "Join Plan");
 
   return {
     isWaitlistTarget,

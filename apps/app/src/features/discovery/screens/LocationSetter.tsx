@@ -20,6 +20,7 @@ export interface LocationSetterProps {
   currentLocality?: string;
   currentCoordinates?: { latitude: number; longitude: number };
   hasLocation?: boolean;
+  initialQuery?: string;
   onBack: () => void;
   onSelectLocation: (location: DiscoveryLocation) => void;
 }
@@ -31,10 +32,11 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
   currentLocality = "Nearby",
   currentCoordinates,
   hasLocation,
+  initialQuery = "",
   onBack,
   onSelectLocation,
 }) => {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [isResolvingPlaceId, setIsResolvingPlaceId] = useState<string | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
   const [deviceLocationError, setDeviceLocationError] = useState<string | null>(null);
@@ -427,45 +429,36 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
 
       {/* ── 3. Search Suggestions List (when active) ── */}
       {showSuggestions && (
-        <div className="px-4 pt-1 space-y-1">
-          <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-1 py-1.5">
-            Search Results
-          </div>
-          <div className="space-y-1">
-            {suggestions.map((suggestion) => {
-              const isResolving = isResolvingPlaceId === suggestion.place_id;
-              const mainText = suggestion.structured_formatting?.main_text || suggestion.description;
-              const subText = suggestion.structured_formatting?.secondary_text || "";
+        <div className="px-5 pt-2 space-y-3">
+          {suggestions.map((suggestion) => {
+            const isResolving = isResolvingPlaceId === suggestion.place_id;
+            const mainText = suggestion.structured_formatting?.main_text || suggestion.description;
+            const subText = suggestion.structured_formatting?.secondary_text || "";
 
-              return (
-                <button
-                  key={suggestion.place_id}
-                  type="button"
-                  disabled={isResolving}
-                  onClick={() => handleSelectSuggestion(suggestion)}
-                  className="w-full text-left p-3 rounded-2xl bg-[#0c0c0e] hover:bg-white/[0.06] active:bg-white/[0.1] border border-white/[0.05] transition flex items-center gap-3 cursor-pointer group"
-                >
-                  <div className="w-8 h-8 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-zinc-400 group-hover:text-[#FF6B2C] group-hover:bg-[#FF6B2C]/10 transition shrink-0">
-                    {isResolving ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-[#FF6B2C]" />
-                    ) : (
-                      <MapPin className="w-4 h-4" />
-                    )}
+            return (
+              <button
+                key={suggestion.place_id}
+                type="button"
+                disabled={isResolving}
+                onClick={() => handleSelectSuggestion(suggestion)}
+                className="w-full text-left py-2 px-1 hover:opacity-80 active:opacity-60 transition flex items-center justify-between gap-3 cursor-pointer group"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-[14.5px] font-semibold text-white group-hover:text-white truncate">
+                    {mainText}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-white group-hover:text-white truncate">
-                      {mainText}
+                  {subText && (
+                    <div className="text-xs text-zinc-400 truncate mt-0.5">
+                      {subText}
                     </div>
-                    {subText && (
-                      <div className="text-xs text-zinc-400 truncate mt-0.5">
-                        {subText}
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  )}
+                </div>
+                {isResolving && (
+                  <Loader2 className="w-4 h-4 animate-spin text-[#FF6B2C] shrink-0" />
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 

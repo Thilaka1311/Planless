@@ -664,7 +664,9 @@ export const PlanCard: React.FC<PlanCardProps> = ({
       {/* Full-bleed crisp hero poster cover image - original colors & brightness */}
       <DiscoveryImages
         src={coverToUse}
+        planId={plan.dbUuid || plan.id}
         category={plan.category}
+        subcategory={(plan as any).subcategory || (plan as any).sports_type}
         alt={plan.title}
         className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 pointer-events-none"
       />

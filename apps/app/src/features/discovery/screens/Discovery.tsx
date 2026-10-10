@@ -22,6 +22,7 @@ import moviesCategoryIcon from "../../../assets/categories/movies.png";
 import activitiesCategoryIcon from "../../../assets/categories/activity.png";
 import diningCategoryIcon from "../../../assets/categories/dining.png";
 import sportsCategoryIcon from "../../../assets/categories/sports.png";
+import { preloadImage } from "../../../shared/imaging/preloadImage";
 import { QuickPlansScreen } from "../../create/screens/QuickPlansScreen";
 import { QuickPlan } from "../../../core/types";
 import { MasterSearchScreen } from "./MasterSearchScreen";
@@ -31,6 +32,16 @@ import {
   parseCurrentRoute,
   listenToNavigation,
 } from "../../navigation/appRouter";
+
+// Eagerly pre-warm static category icons so they are instantly in memory/GPU cache
+if (typeof window !== "undefined") {
+  [diningCategoryIcon, moviesCategoryIcon, sportsCategoryIcon, activitiesCategoryIcon].forEach((src) => {
+    if (src) preloadImage(src);
+  });
+}
+
+// Module-level scroll position to preserve scroll when returning to Discovery
+let savedDiscoveryScrollTop = 0;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,22 +121,22 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
   const [previewItem, setPreviewItem] = useState<DiscoveryItem | null>(null);
 
   const [sections, setSections] = useState<DiscoverySectionType[]>(() => {
-    return (
-      getCachedSections({
-        latitude: activeCoordinates.latitude,
-        longitude: activeCoordinates.longitude,
-        city: displayCity,
-        cityBounds: discoveryLocation?.cityBounds,
-      }, displayCity) || []
-    );
-  });
-  const [isLoading, setIsLoading] = useState(() => {
-    return !getCachedSections({
+    const cached = getCachedSections({
       latitude: activeCoordinates.latitude,
       longitude: activeCoordinates.longitude,
       city: displayCity,
       cityBounds: discoveryLocation?.cityBounds,
     }, displayCity);
+    return cached && cached.length > 0 ? cached : [];
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    const cached = getCachedSections({
+      latitude: activeCoordinates.latitude,
+      longitude: activeCoordinates.longitude,
+      city: displayCity,
+      cityBounds: discoveryLocation?.cityBounds,
+    }, displayCity);
+    return !cached || cached.length === 0;
   });
   const [discoveryVersion, setDiscoveryVersion] = useState(0);
   const [activeSubScreen, setActiveSubScreen] = useState<DiscoverySubScreen>(() => {
@@ -138,6 +149,9 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
       current.tab === "activities"
     ) {
       return current.tab;
+    }
+    if (current.tab === "create" && current.subScreen) {
+      return current.subScreen;
     }
     return null;
   });
@@ -159,8 +173,9 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
         route.tab === "activities"
       ) {
         setActiveSubScreen(route.tab);
+      } else if (route.tab === "create") {
+        setActiveSubScreen(route.subScreen || null);
       } else if (
-        route.tab === "create" ||
         route.tab === "home" ||
         route.tab === "plans" ||
         route.tab === "chats" ||
@@ -178,9 +193,20 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     if (screen === "sports" || screen === "dining" || screen === "movies" || screen === "activities") {
       setActiveTab?.(screen);
       navigateToRoute({ tab: screen });
+    } else if (screen === "master-search" || screen === "quick-plans") {
+      navigateToRoute({ tab: "create", subScreen: screen });
     } else if (screen === null) {
-      setActiveTab?.("create");
-      navigateBack({ tab: "create" });
+      const current = parseCurrentRoute();
+      if (
+        current.subScreen ||
+        current.tab === "sports" ||
+        current.tab === "dining" ||
+        current.tab === "movies" ||
+        current.tab === "activities"
+      ) {
+        setActiveTab?.("create");
+        navigateBack({ tab: "create" });
+      }
     }
   };
 
@@ -198,6 +224,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
   const handleLocationSelect = (loc: DiscoveryLocation) => {
     setDiscoveryLocation(loc);
     clearCachedSections();
+    savedDiscoveryScrollTop = 0;
     setDiscoveryVersion((v) => v + 1);
     setShowLocationSetter(false);
   };
@@ -228,11 +255,12 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     return unsubscribe;
   }, []);
 
-  // Load discovery sections
+  // Load discovery sections with lazy non-blocking background refresh when cache exists
   useEffect(() => {
     let active = true;
     const forceRefresh = discoveryVersion > 0;
-    if (forceRefresh) {
+    // Show skeleton ONLY on first-ever visit when zero sections exist, or on explicit forceRefresh
+    if (sections.length === 0 || forceRefresh) {
       setIsLoading(true);
     }
     const locationParams = {
@@ -244,7 +272,9 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     getSectionsByCategory("all", forceRefresh, locationParams)
       .then((data) => {
         if (active) {
-          setSections(data);
+          if (data && data.length > 0) {
+            setSections(data);
+          }
           setIsLoading(false);
         }
       })
@@ -273,6 +303,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
   // Scroll listener to toggle bottom nav visibility and back-to-top button
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const currentScrollTop = e.currentTarget.scrollTop;
+    savedDiscoveryScrollTop = currentScrollTop;
     const delta = currentScrollTop - lastScrollTopRef.current;
 
     // Toggle Back to top button at threshold (> 260px)
@@ -311,10 +342,18 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
         behavior: "smooth",
       });
     }
+    savedDiscoveryScrollTop = 0;
     setShowBackToTop(false);
     if (!isNavVisibleRef.current) {
       isNavVisibleRef.current = true;
       window.dispatchEvent(new CustomEvent("planless_bottom_nav_visibility", { detail: { visible: true } }));
+    }
+  }, []);
+
+  // Restore saved scroll position when returning to Discovery
+  useEffect(() => {
+    if (scrollContainerRef.current && savedDiscoveryScrollTop > 0) {
+      scrollContainerRef.current.scrollTop = savedDiscoveryScrollTop;
     }
   }, []);
 
@@ -332,10 +371,10 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
       className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-24 text-left select-none relative"
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
-      {/* ── STICKY TOP HEADER (Location + 4 Categories) ── */}
+      {/* ── STICKY TOP HEADER (Location, Search, Quick Plans) ── */}
       <header className="sticky top-0 z-30 bg-[#000000] shrink-0 border-b border-white/[0.04]">
         {/* ── 1. COMPACT LOCATION HEADER AT THE VERY TOP (INTERACTIVE) ── */}
-        <section className="px-5 pt-3.5 pb-2 shrink-0 flex items-center justify-between">
+        <section className="px-5 pt-3.5 pb-2.5 shrink-0 flex items-center justify-between">
           <button
             type="button"
             onClick={() => setShowLocationSetter(true)}
@@ -360,58 +399,60 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             <button
               type="button"
               onClick={() => handleSubScreenChange("master-search")}
-              className="text-zinc-400 hover:text-zinc-200 active:scale-95 transition cursor-pointer p-1 shrink-0"
+              className="text-white hover:text-white/80 active:scale-95 transition cursor-pointer p-1 shrink-0"
               aria-label="Search"
             >
-              <Search className="w-4 h-4 text-zinc-400" />
+              <Search className="w-5.5 h-5.5 text-white" />
             </button>
 
             <button
               type="button"
               onClick={() => handleSubScreenChange("quick-plans")}
-              className="text-zinc-400 hover:text-zinc-200 active:scale-95 transition cursor-pointer p-1 shrink-0"
+              className="text-white hover:text-white/80 active:scale-95 transition cursor-pointer p-1 shrink-0"
               aria-label="Quick Plans"
             >
-              <Zap className="w-4 h-4 text-zinc-400" />
+              <Zap className="w-5.5 h-5.5 text-white" />
             </button>
           </div>
         </section>
-
-        {/* ── 2. THE FOUR PLANLESS CATEGORIES (DINING, MOVIES, SPORTS, ACTIVITIES) ── */}
-        <section className="px-5 pt-1.5 pb-3.5 shrink-0">
-          <div className="grid grid-cols-4 gap-2">
-            {PLANLESS_CATEGORIES.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => handleCategoryClick(cat.id)}
-                className={`relative h-[86px] rounded-2xl border border-white/[0.08] bg-[#121216]/90 hover:bg-[#18181f] active:scale-[0.97] transition-all duration-200 cursor-pointer flex flex-col items-center justify-center p-1.5 group shadow-sm ${cat.glow}`}
-              >
-                {/* Category Icon / Illustration (occupying ~55-60% of card height) */}
-                <div className="w-11 h-11 flex items-center justify-center shrink-0">
-                  <img
-                    src={cat.image}
-                    alt={cat.title}
-                    className="w-full h-full object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
-                  />
-                </div>
-
-                {/* Category Name Underneath */}
-                <span className="text-[12px] font-semibold text-white/90 group-hover:text-white tracking-tight leading-tight mt-1 font-sans truncate max-w-full">
-                  {cat.title}
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
       </header>
+
+      {/* ── 2. THE FOUR PLANLESS CATEGORIES (DINING, MOVIES, SPORTS, ACTIVITIES) ── */}
+      <section className="px-5 pt-3 pb-3 shrink-0">
+        <div className="grid grid-cols-4 gap-2">
+          {PLANLESS_CATEGORIES.map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => handleCategoryClick(cat.id)}
+              className={`relative h-[86px] rounded-2xl border border-white/[0.08] bg-[#121216]/90 hover:bg-[#18181f] active:scale-[0.97] transition-all duration-200 cursor-pointer flex flex-col items-center justify-center p-1.5 group shadow-sm ${cat.glow}`}
+            >
+              {/* Category Icon / Illustration (occupying ~55-60% of card height) */}
+              <div className="w-11 h-11 flex items-center justify-center shrink-0">
+                <img
+                  src={cat.image}
+                  alt={cat.title}
+                  loading="eager"
+                  decoding="sync"
+                  className="h-full w-auto max-w-none object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
+                />
+              </div>
+
+              {/* Category Name Underneath */}
+              <span className="text-[12px] font-semibold text-white/90 group-hover:text-white tracking-tight leading-tight mt-1 font-sans truncate max-w-full">
+                {cat.title}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* ── FLOATING BACK-TO-TOP BUTTON ── */}
       <button
         type="button"
         onClick={handleScrollToTop}
         aria-label="Back to top"
-        className={`fixed top-[168px] left-1/2 -translate-x-1/2 z-30 w-8 h-8 rounded-full bg-[#18181b]/95 border border-white/10 text-white flex items-center justify-center shadow-lg backdrop-blur-md hover:bg-zinc-800 active:scale-95 transition-all duration-200 cursor-pointer ${
+        className={`fixed top-[68px] left-1/2 -translate-x-1/2 z-30 w-8 h-8 rounded-full bg-[#18181b]/95 border border-white/10 text-white flex items-center justify-center shadow-lg backdrop-blur-md hover:bg-zinc-800 active:scale-95 transition-all duration-200 cursor-pointer ${
           showBackToTop
             ? "opacity-100 scale-100 pointer-events-auto"
             : "opacity-0 scale-90 pointer-events-none"

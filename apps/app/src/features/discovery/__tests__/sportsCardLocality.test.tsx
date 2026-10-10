@@ -96,6 +96,14 @@ describe("Sports Card Locality / Area Extraction & UI Rendering Suite", () => {
       expect(loc).toBe("Bandra West");
     });
 
+    it("extracts 'Byatarayanapura Village' from 'Bellary Road, Byatarayanapura Village, Hobli, Yelahanka, Bengaluru'", () => {
+      const loc = extractLocalityFromAddress(
+        "Bellary Road, Byatarayanapura Village, Hobli, Yelahanka, Bengaluru",
+        "Timezone Phoenix Mall of Asia - Bangalore"
+      );
+      expect(loc).toBe("Byatarayanapura Village");
+    });
+
     it("extracts locality from structured Google Places address_components when present", () => {
       const item: DiscoveryItem = {
         id: "place_structured_1",
@@ -182,23 +190,23 @@ describe("Sports Card Locality / Area Extraction & UI Rendering Suite", () => {
       expect(html).toContain("text-zinc-400");
       expect(html).toContain("truncate");
 
-      // 3. Rating badge
+      // 3. Distance (bottom row left)
+      expect(html).toContain("0.0 km");
+
+      // 4. Rating badge (bottom row right)
       expect(html).toContain("3.3");
       expect(html).toContain("★");
 
-      // 4. Distance
-      expect(html).toContain("0.0 km");
-
-      // Check sequence order in rendered HTML: Place Name (Row 1) -> Locality (Row 2) -> Rating (Row 3) -> Distance (Row 4)
+      // Check sequence order in rendered HTML: Place Name (Row 1) -> Locality (Row 2) -> Distance (Row 3 Left) -> Rating (Row 3 Right)
       const titleIndex = html.indexOf("Bengaluru Turf Inc.");
       const areaIndex = html.indexOf("HSR Layout");
-      const ratingIndex = html.indexOf("3.3");
       const distanceIndex = html.indexOf("0.0 km");
+      const ratingIndex = html.indexOf("3.3");
 
       expect(titleIndex).toBeGreaterThan(-1);
       expect(areaIndex).toBeGreaterThan(titleIndex);
-      expect(ratingIndex).toBeGreaterThan(areaIndex);
-      expect(distanceIndex).toBeGreaterThan(ratingIndex);
+      expect(distanceIndex).toBeGreaterThan(areaIndex);
+      expect(ratingIndex).toBeGreaterThan(distanceIndex);
     });
 
     it("truncates long place names and area names with 'truncate' class without overflowing layout", () => {

@@ -145,7 +145,7 @@ export async function leavePlanRPC(planId: string): Promise<any> {
 
 /**
  * Invokes request_host_leave_with_replacement SECURITY DEFINER RPC in PostgreSQL.
- * Atomically promotes a joined participant to HOST and creates a leave request / executes leave for the current host.
+ * Atomically promotes a joined participant to HOST and executes immediate leave for the current host without creating a leave request.
  */
 export async function requestHostLeaveWithReplacementRPC(planId: string, replacementUserId: string): Promise<any> {
   const { data, error } = await supabase.rpc("request_host_leave_with_replacement" as any, {

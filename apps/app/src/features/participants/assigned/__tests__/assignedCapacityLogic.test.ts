@@ -5,8 +5,10 @@ import {
   resolveAssignedParticipants,
   incrementAssignedPlanSize,
   decrementAssignedPlanSize,
+  formatAssignedGoingList,
 } from '../assignedCapacityLogic';
 import { Friend } from '../../shared/types';
+import { isJoinedRsvpParticipant } from '../../../../../lib/participantStatus';
 
 describe('assignedCapacityLogic', () => {
   // Mock data: 1 Host + 7 Friends
@@ -571,6 +573,313 @@ describe('assignedCapacityLogic', () => {
       expect(totalCapacity).toBe(15);
     });
   });
+
+  describe('formatAssignedGoingList - Regression tests for promoted host and multiple hosts', () => {
+    it('1. includes both current user and another host when both are hosts', () => {
+      const activeUserId = 'user-current';
+      const participants = [
+        {
+          id: 'user-promoted',
+          userId: 'user-promoted',
+          name: 'Bob Promoted',
+          role: 'HOST',
+          isHost: true,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+        {
+          id: 'user-current',
+          userId: 'user-current',
+          name: 'Alice Creator',
+          role: 'HOST',
+          isHost: true,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+        {
+          id: 'user-guest',
+          userId: 'user-guest',
+          name: 'Charlie Guest',
+          role: 'MEMBER',
+          isHost: false,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+      ];
+
+      const result = formatAssignedGoingList(participants, activeUserId);
+      expect(result).toHaveLength(3);
+      expect(result.map((p) => p.userId)).toContain('user-current');
+      expect(result.map((p) => p.userId)).toContain('user-promoted');
+      expect(result.map((p) => p.userId)).toContain('user-guest');
+    });
+
+    it('2. keeps the current user ("You") first in the list regardless of input array order', () => {
+      const activeUserId = 'user-current';
+      // Promoted host appears first in array because updated_at was newer
+      const participantsWithPromotedFirst = [
+        {
+          id: 'user-promoted',
+          userId: 'user-promoted',
+          name: 'Bob Promoted',
+          role: 'HOST',
+          isHost: true,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+        {
+          id: 'user-current',
+          userId: 'user-current',
+          name: 'Alice Creator',
+          role: 'HOST',
+          isHost: true,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+        {
+          id: 'user-guest',
+          userId: 'user-guest',
+          name: 'Charlie Guest',
+          role: 'MEMBER',
+          isHost: false,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+      ];
+
+      const result = formatAssignedGoingList(participantsWithPromotedFirst, activeUserId);
+      expect(result[0].userId).toBe('user-current');
+      expect(result[0].name).toBe('You');
+      expect(result[0].isHost).toBe(true);
+
+      // Verify when current user is a non-host guest
+      const participantsWithGuestCurrent = [
+        {
+          id: 'user-promoted',
+          userId: 'user-promoted',
+          name: 'Bob Promoted',
+          role: 'HOST',
+          isHost: true,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+        {
+          id: 'user-guest',
+          userId: 'user-guest',
+          name: 'Charlie Guest',
+          role: 'MEMBER',
+          isHost: false,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+      ];
+      const resultGuest = formatAssignedGoingList(participantsWithGuestCurrent, 'user-guest');
+      expect(resultGuest[0].userId).toBe('user-guest');
+      expect(resultGuest[0].name).toBe('You');
+    });
+
+    it('3. newly promoted host is included regardless of input-array order', () => {
+      const activeUserId = 'user-current';
+      const currentUser = {
+        id: 'user-current',
+        userId: 'user-current',
+        name: 'Alice Creator',
+        role: 'HOST',
+        isHost: true,
+        rsvpStatus: 'JOINED',
+        assignedGroup: 'GOING',
+      };
+      const promotedHost = {
+        id: 'user-promoted',
+        userId: 'user-promoted',
+        name: 'Bob Promoted',
+        role: 'HOST',
+        isHost: true,
+        rsvpStatus: 'JOINED',
+        assignedGroup: 'GOING',
+      };
+      const regularGuest = {
+        id: 'user-guest',
+        userId: 'user-guest',
+        name: 'David Guest',
+        role: 'MEMBER',
+        isHost: false,
+        rsvpStatus: 'JOINED',
+        assignedGroup: 'GOING',
+      };
+
+      // Order A: Promoted host is at index 0 (as caused by updated_at after promotion)
+      const orderA = [promotedHost, currentUser, regularGuest];
+      const resultA = formatAssignedGoingList(orderA, activeUserId);
+      expect(resultA).toHaveLength(3);
+      expect(resultA.some((p) => p.userId === 'user-promoted')).toBe(true);
+      expect(resultA[0].name).toBe('You');
+      expect(resultA[1].name).toBe('Bob Promoted');
+      expect(resultA[2].name).toBe('David Guest');
+
+      // Order B: Current user is at index 0
+      const orderB = [currentUser, promotedHost, regularGuest];
+      const resultB = formatAssignedGoingList(orderB, activeUserId);
+      expect(resultB).toHaveLength(3);
+      expect(resultB.some((p) => p.userId === 'user-promoted')).toBe(true);
+      expect(resultB[0].name).toBe('You');
+      expect(resultB[1].name).toBe('Bob Promoted');
+      expect(resultB[2].name).toBe('David Guest');
+
+      // Order C: Promoted host is at the end of the array
+      const orderC = [currentUser, regularGuest, promotedHost];
+      const resultC = formatAssignedGoingList(orderC, activeUserId);
+      expect(resultC).toHaveLength(3);
+      expect(resultC.some((p) => p.userId === 'user-promoted')).toBe(true);
+      expect(resultC[0].name).toBe('You');
+      expect(resultC[1].name).toBe('Bob Promoted');
+      expect(resultC[2].name).toBe('David Guest');
+    });
+
+    it('4. multiple hosts retain their Host badges (isHost: true)', () => {
+      const activeUserId = 'user-current';
+      const participants = [
+        {
+          id: 'host-2',
+          userId: 'host-2',
+          name: 'Bob Promoted',
+          role: 'HOST',
+          isHost: false, // In db participant may only have role = 'HOST'
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+        {
+          id: 'user-current',
+          userId: 'user-current',
+          name: 'Alice Creator',
+          role: 'HOST',
+          isHost: true,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+        {
+          id: 'host-3',
+          userId: 'host-3',
+          name: 'Catherine CoHost',
+          isHost: true,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+        {
+          id: 'guest-1',
+          userId: 'guest-1',
+          name: 'Dan Guest',
+          isHost: false,
+          rsvpStatus: 'JOINED',
+          assignedGroup: 'GOING',
+        },
+      ];
+
+      const result = formatAssignedGoingList(participants, activeUserId);
+      expect(result).toHaveLength(4);
+
+      const alice = result.find((p) => p.userId === 'user-current');
+      const bob = result.find((p) => p.userId === 'host-2');
+      const catherine = result.find((p) => p.userId === 'host-3');
+      const dan = result.find((p) => p.userId === 'guest-1');
+
+      expect(alice?.isHost).toBe(true);
+      expect(bob?.isHost).toBe(true);
+      expect(catherine?.isHost).toBe(true);
+      expect(dan?.isHost).toBe(false);
+    });
+
+    it('5. duplicate participant records do not produce duplicate rows', () => {
+      const activeUserId = 'user-current';
+      const duplicatesList = [
+        // Duplicate promoted host
+        { id: 'host-2', userId: 'host-2', name: 'Bob Promoted', role: 'HOST', isHost: true },
+        { dbUuid: 'host-2', name: 'Bob Promoted Dup', role: 'HOST', isHost: true },
+        // Duplicate current user
+        { id: 'user-current', userId: 'user-current', name: 'Alice', role: 'HOST', isHost: true },
+        { userId: 'user-current', name: 'Alice Dup', role: 'HOST', isHost: true },
+        // Duplicate guest
+        { id: 'guest-1', userId: 'guest-1', name: 'Dan Guest', isHost: false },
+        { user_id: 'guest-1', name: 'Dan Dup', isHost: false },
+      ];
+
+      const result = formatAssignedGoingList(duplicatesList, activeUserId);
+      expect(result).toHaveLength(3);
+      expect(result.map((p) => p.name)).toEqual(['You', 'Bob Promoted', 'Dan Guest']);
+    });
+
+    it('6. joined counts remain consistent with the rendered participant list without manual incrementing', () => {
+      const activeUserId = 'user-current';
+      const participants = [
+        // Promoted host (JOINED)
+        {
+          id: 'user-promoted',
+          userId: 'user-promoted',
+          name: 'Bob Promoted',
+          role: 'HOST',
+          isHost: true,
+          rsvp_status: 'JOINED',
+          assigned_group: 'GOING',
+        },
+        // Creator host (JOINED)
+        {
+          id: 'user-current',
+          userId: 'user-current',
+          name: 'Alice Creator',
+          role: 'HOST',
+          isHost: true,
+          rsvp_status: 'JOINED',
+          assigned_group: 'GOING',
+        },
+        // Guest 1 (JOINED)
+        {
+          id: 'guest-1',
+          userId: 'guest-1',
+          name: 'Charlie Joined',
+          role: 'MEMBER',
+          isHost: false,
+          rsvp_status: 'JOINED',
+          assigned_group: 'GOING',
+        },
+        // Guest 2 (INVITED - not joined yet)
+        {
+          id: 'guest-2',
+          userId: 'guest-2',
+          name: 'David Invited',
+          role: 'MEMBER',
+          isHost: false,
+          rsvp_status: 'INVITED',
+          assigned_group: 'GOING',
+        },
+      ];
+
+      const renderedList = formatAssignedGoingList(participants, activeUserId);
+
+      // Verify rendered list contains 4 participants (2 hosts + 1 joined guest + 1 invited guest)
+      expect(renderedList).toHaveLength(4);
+
+      // Joined count calculation using the production predicate
+      const joinedCount = renderedList.filter(isJoinedRsvpParticipant).length;
+
+      // Alice (Host, JOINED), Bob (Host, JOINED), Charlie (Guest, JOINED) = 3 joined
+      // David (Guest, INVITED) = not joined
+      expect(joinedCount).toBe(3);
+
+      // Both hosts must be recognized as joined RSVP participants
+      const youParticipant = renderedList.find((p) => p.userId === 'user-current');
+      const promotedParticipant = renderedList.find((p) => p.userId === 'user-promoted');
+      expect(isJoinedRsvpParticipant(youParticipant!)).toBe(true);
+      expect(isJoinedRsvpParticipant(promotedParticipant!)).toBe(true);
+
+      // Joined count exactly matches the count of rendered participants that are joined
+      const expectedJoinedUserIds = ['user-current', 'user-promoted', 'guest-1'];
+      const actualJoinedUserIds = renderedList
+        .filter(isJoinedRsvpParticipant)
+        .map((p) => p.userId);
+      expect(actualJoinedUserIds.sort()).toEqual(expectedJoinedUserIds.sort());
+    });
+  });
 });
+
 
 

@@ -134,6 +134,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const pendingFetchAllRef = React.useRef(false);
   const pendingTablesRef = React.useRef<Set<string>>(new Set());
   const isInitialLoadCompleteRef = React.useRef(false);
+  const pendingRefreshResolversRef = React.useRef<Array<() => void>>([]);
 
   const planUsers = useMemo(() => {
     const list: any[] = [];
@@ -187,7 +188,9 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } else {
         targetTables.forEach(t => pendingTablesRef.current.add(t));
       }
-      return;
+      return new Promise<void>((resolve) => {
+        pendingRefreshResolversRef.current.push(resolve);
+      });
     }
 
     isRefreshingRef.current = true;
@@ -310,7 +313,16 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         pendingFetchAllRef.current = false;
         pendingTablesRef.current.clear();
 
-        refreshPlans(nextTables, "coalesced_pending_refresh");
+        const pendingResolvers = [...pendingRefreshResolversRef.current];
+        pendingRefreshResolversRef.current = [];
+
+        refreshPlans(nextTables, "coalesced_pending_refresh").finally(() => {
+          pendingResolvers.forEach(res => res());
+        });
+      } else {
+        const pendingResolvers = [...pendingRefreshResolversRef.current];
+        pendingRefreshResolversRef.current = [];
+        pendingResolvers.forEach(res => res());
       }
     }
   }, [userId]);
@@ -1115,8 +1127,8 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const rsvp = normalizeStatus(ppRecord.rsvp_status);
       const isHostRole = ppRecord.role === "HOST";
 
-      // Home screen visibility strictly determined by plan_participants: role = PARTICIPANT & rsvp_status = INVITED
-      if (isHostRole || rsvp !== "INVITED") return false;
+      // Home screen visibility strictly determined by plan_participants: role = PARTICIPANT & rsvp_status = INVITED or WAITLISTED
+      if (isHostRole || (rsvp !== "INVITED" && rsvp !== "WAITLISTED")) return false;
 
       // Exclude plans that have reached the hard maximum of 50 joined participants (dynamic capacity)
       const isNoLimit = plan.plan_size === null || plan.plan_size === undefined;

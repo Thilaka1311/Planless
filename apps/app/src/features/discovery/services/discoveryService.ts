@@ -15,6 +15,7 @@ import { applyPlaceOverrides, subscribePlaceOverrides } from "./placeOverridesSe
 
 import { isPlaceInCity, CityBoundingBox, cleanCityString } from "./cityBoundary";
 import { onDiscoveryLocationChange, getStoredDiscoveryLocation } from "../hooks/useUserLocation";
+import { preloadImage } from "../../../shared/imaging/preloadImage";
 
 const sectionsCache = new Map<string, DiscoverySection[]>();
 let inFlightRequest: Promise<DiscoverySection[]> | null = null;
@@ -45,17 +46,21 @@ export function getCachedSections(coords?: DiscoveryLocationParams, city?: strin
   const effectiveCity = coords?.city || city;
   if (coords) {
     raw = sectionsCache.get(getCacheKey(coords, effectiveCity)) || sectionsCache.get(getCacheKey(coords)) || null;
-  } else if (effectiveCity && sectionsCache.has(`default_${effectiveCity.toLowerCase()}`)) {
+  }
+  if (!raw && effectiveCity && sectionsCache.has(`default_${effectiveCity.toLowerCase()}`)) {
     raw = sectionsCache.get(`default_${effectiveCity.toLowerCase()}`) || null;
-  } else if (sectionsCache.has("default")) {
+  }
+  if (!raw && sectionsCache.has("default")) {
     raw = sectionsCache.get("default") || null;
-  } else if (sectionsCache.has("default_bengaluru")) {
+  }
+  if (!raw && sectionsCache.has("default_bengaluru")) {
     raw = sectionsCache.get("default_bengaluru") || null;
-  } else if (sectionsCache.size > 0) {
-    raw = Array.from(sectionsCache.values())[0];
+  }
+  if (!raw && sectionsCache.size > 0) {
+    raw = Array.from(sectionsCache.values())[0] || null;
   }
 
-  if (!raw) return null;
+  if (!raw || raw.length === 0) return null;
   return raw;
 }
 
@@ -175,6 +180,17 @@ export async function getSectionsByCategory(
             }
 
             sectionsCache.set(cacheKey, loadedSections);
+
+            // Pre-warm discovery card cover images in memory cache for instant render
+            if (typeof window !== "undefined") {
+              for (const sec of loadedSections) {
+                for (const item of (sec.items || []).slice(0, 4)) {
+                  if (item.cover_image_url) {
+                    preloadImage(item.cover_image_url);
+                  }
+                }
+              }
+            }
             return loadedSections;
           } catch (err: any) {
             console.warn("[DiscoveryService] Places API failed, using database items:", err?.message || err);

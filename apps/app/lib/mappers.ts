@@ -282,7 +282,8 @@ export const mapPlansToLegacyPlans = (
     const invitedParticipantsVal = (p as any).invited_participants ?? planSizeVal;
     const costVal = p.total_cost !== undefined ? Number(p.total_cost) : 0;
     const rawCover = p.cover_image || dbItem?.cover_image_url;
-    const coverImageVal = (rawCover && rawCover !== "planimagedefault.png" && rawCover !== "planimagedefault.webp" && rawCover !== "default" && !rawCover.includes("plan-covers"))
+    const isObsoleteCover = !rawCover || rawCover === "planimagedefault.png" || rawCover === "planimagedefault.webp" || rawCover === "default" || rawCover.includes("plan-covers") || rawCover.endsWith("Movies.png") || rawCover.endsWith("sports.png") || rawCover.endsWith("dining.png") || (rawCover.startsWith("/src/assets/") && rawCover.endsWith(".png"));
+    const coverImageVal = !isObsoleteCover
       ? rawCover
       : getPlanCover(p.category, p.subcategory);
 

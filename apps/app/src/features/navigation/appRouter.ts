@@ -17,6 +17,7 @@ export interface AppRoute {
   tab: AppTab;
   createPhase?: CreatePhase;
   discoveryCategory?: DiscoveryCategory | null;
+  subScreen?: 'master-search' | 'quick-plans' | null;
   selectedPlanId?: string | null;
   selectedChatPlanId?: string | null;
   inviteToken?: string | null;
@@ -42,6 +43,7 @@ export function isValidRoute(pathname: string): boolean {
   const clean = pathname.replace(/\/+$/, '') || '/';
   if (clean === '/' || clean === '/home') return true;
   if (clean === '/create' || clean.startsWith('/create/')) return true;
+  if (clean === '/search' || clean === '/quick-plans') return true;
   if (clean === '/sports' || clean === '/dining' || clean === '/movies' || clean === '/activities') return true;
   if (clean === '/plans' || clean.startsWith('/plans/') || clean.startsWith('/plan/')) return true;
   if (clean === '/chats' || clean.startsWith('/chats/') || clean.startsWith('/chat/')) return true;
@@ -67,6 +69,14 @@ export function parseCurrentRoute(): AppRoute {
 
   const primary = parts[0].toLowerCase();
 
+  // Top-level search / quick-plans routes
+  if (primary === 'search') {
+    return { tab: 'create', subScreen: 'master-search' };
+  }
+  if (primary === 'quick-plans') {
+    return { tab: 'create', subScreen: 'quick-plans' };
+  }
+
   // Top-level discovery categories: /sports, /dining, /movies, /activities
   if (primary === 'sports' || primary === 'dining' || primary === 'movies' || primary === 'activities') {
     return { tab: primary as AppTab, discoveryCategory: primary as DiscoveryCategory };
@@ -75,6 +85,12 @@ export function parseCurrentRoute(): AppRoute {
   // Create flow: /create, /create/who, /create/participants, /create/when, /create/review, /create/confirmation
   if (primary === 'create') {
     const sub = (parts[1] || '').toLowerCase();
+    if (sub === 'search' || sub === 'master-search') {
+      return { tab: 'create', subScreen: 'master-search' };
+    }
+    if (sub === 'quick-plans') {
+      return { tab: 'create', subScreen: 'quick-plans' };
+    }
     // Sub-routes for discovery categories under create
     if (sub === 'sports' || sub === 'dining' || sub === 'movies' || sub === 'activities') {
       return { tab: sub as AppTab, discoveryCategory: sub as DiscoveryCategory };
@@ -151,6 +167,8 @@ export function getRoutePath(route: AppRoute): string {
   }
 
   if (route.tab === 'create') {
+    if (route.subScreen === 'master-search') return '/create/search';
+    if (route.subScreen === 'quick-plans') return '/create/quick-plans';
     if (!route.createPhase || route.createPhase === 'category') return '/create';
     if (route.createPhase === 'who') return '/create/who';
     if (route.createPhase === 'who-actually') return '/create/participants';

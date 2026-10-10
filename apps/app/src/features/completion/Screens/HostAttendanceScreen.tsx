@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { X, Search, ArrowRight, Split, Merge } from "lucide-react";
+import { X, Search, ArrowRight } from "lucide-react";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { PlanMember } from "../../../core/types";
@@ -50,7 +50,6 @@ export const HostAttendanceScreen: React.FC<HostAttendanceScreenProps> = ({
   const [attendanceState, setAttendanceState] = useState<Record<string, 'ATTENDED' | 'DID_NOT_ATTEND'>>({});
   const [extraMembers, setExtraMembers] = useState<PlanMember[]>([]);
   const [initialAttendedIds, setInitialAttendedIds] = useState<Set<string>>(new Set());
-  const [showExpenseDialog, setShowExpenseDialog] = useState(false);
 
   // Combine initial members + extra members added from Attendance Search
   const combinedMembers = useMemo(() => {
@@ -77,7 +76,13 @@ export const HostAttendanceScreen: React.FC<HostAttendanceScreenProps> = ({
         if (isCompletedMode) {
           const finalAttendance = (m as any).final_attendance;
           const finalState = (m as any).final_state;
-          isAttended = isHostUser || finalAttendance === 'ATTENDED' || (status === 'JOINED' && !finalAttendance) || finalState === 'JOINED';
+          if (isHostUser) {
+            isAttended = true;
+          } else if (finalAttendance) {
+            isAttended = finalAttendance === 'ATTENDED';
+          } else {
+            isAttended = status === 'JOINED' || finalState === 'JOINED';
+          }
         } else {
           isAttended = isHostUser || status === 'JOINED';
         }
@@ -231,14 +236,6 @@ export const HostAttendanceScreen: React.FC<HostAttendanceScreenProps> = ({
   // Completed-management mode: show arrow only when changes have been made from the initial state.
   const showFloatingCta = isCompletedMode ? hasCompletedModeChanges : attendedMembers.length > 0;
 
-  const hasAddedParticipants = useMemo(() => {
-    return attendedMembers.some((m) => {
-      if (isHost(m)) return false;
-      const originalStatus = normalizeStatus(m.joinState || (m as any).rsvp_status);
-      return originalStatus !== 'JOINED';
-    });
-  }, [attendedMembers, hostId]);
-
   if (!isOpen) return null;
 
   if (step === 'search') {
@@ -278,22 +275,15 @@ export const HostAttendanceScreen: React.FC<HostAttendanceScreenProps> = ({
         return;
       }
 
-      if (hasExpense) {
-        setShowExpenseDialog(true);
-      } else {
-        executeSubmission('NONE', usersToAdd, usersToRemove);
-      }
+      // Completed mode: persist participant changes directly with mode 'NONE' without showing expense dialog
+      executeSubmission('NONE', usersToAdd, usersToRemove);
     } else {
-      const countChanged = attendedMembers.length !== costDenominator;
-      if (hasExpense && (hasAddedParticipants || countChanged)) {
-        setShowExpenseDialog(true);
-      } else {
-        executeSubmission(hasExpense ? 'SPLIT_ALL' : 'NONE');
-      }
+      // Plan completion flow: directly finalize attendance with mode 'NONE' without showing expense dialog
+      executeSubmission('NONE');
     }
   };
 
-  const executeSubmission = (mode: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE', addOverride?: string[], removeOverride?: string[]) => {
+  const executeSubmission = (mode: 'SPLIT_ALL' | 'KEEP_CURRENT_COST' | 'NONE' = 'NONE', addOverride?: string[], removeOverride?: string[]) => {
     const payload = combinedMembers.map((m) => {
       const mId = getMemberId(m);
       const isHostUser = isHost(m);
@@ -324,34 +314,8 @@ export const HostAttendanceScreen: React.FC<HostAttendanceScreenProps> = ({
       });
     }
 
-    const effectiveExpenseMode = hasExpense ? mode : 'NONE';
-    setShowExpenseDialog(false);
-    onConfirm(payload, effectiveExpenseMode, usersToAdd, usersToRemove);
+    onConfirm(payload, 'NONE', usersToAdd, usersToRemove);
   };
-
-  // Calculations for Expense Split Bottom Sheet
-  // Use planTotalCost if provided, fallback to planExpense.total_amount
-  const totalExpense = (planTotalCost !== undefined && planTotalCost !== null && Number(planTotalCost) > 0)
-    ? Number(planTotalCost)
-    : (planExpense ? Number(planExpense.total_amount || 0) : 0);
-  const hasExpense = totalExpense > 0;
-
-  const currentGoingCount = attendedMembers.length;
-  const splitAllCostPerPerson = currentGoingCount > 0 ? Math.round((totalExpense / currentGoingCount) * 100) / 100 : 0;
-
-  // Use the real plan capacity (plan_size) as the denominator for the existing per-person cost.
-  // Fall back to members who joined, then 1.
-  const joinedMembersCount = members.filter(m => {
-    const status = normalizeStatus(m.joinState || (m as any).rsvp_status);
-    return isHost(m) || status === 'JOINED';
-  }).length;
-  const costDenominator = (planCapacity && planCapacity > 0)
-    ? planCapacity
-    : (joinedMembersCount > 0 ? joinedMembersCount : 1);
-
-  const initialPerPerson = Math.round((totalExpense / costDenominator) * 100) / 100;
-  const keepCostNewTotal = Math.round(initialPerPerson * currentGoingCount * 100) / 100;
-  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
 
   return (
     <div className="fixed inset-0 z-[70] bg-[#000000] flex flex-col h-full overflow-hidden text-left relative" style={{ fontFamily: 'Inter, sans-serif' }}>
@@ -582,216 +546,6 @@ export const HostAttendanceScreen: React.FC<HostAttendanceScreenProps> = ({
           </button>
         )}
       </div>
-
-      {/* ── Update Cost Bottom Sheet (matches AutomaticParticipantContainer style) ── */}
-      {showExpenseDialog && (
-        <div
-          onClick={() => {
-            if (!isSubmittingExpense) {
-              setShowExpenseDialog(false);
-            }
-          }}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.6)',
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'flex-end',
-            animation: 'fadeIn 0.2s ease-out',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%',
-              background: '#1C1C1E',
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              paddingBottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
-              color: '#FFFFFF',
-              fontFamily: 'Inter, sans-serif',
-              boxShadow: '0 -8px 24px rgba(0, 0, 0, 0.3)',
-              animation: 'slideUp 0.28s cubic-bezier(0.25, 1, 0.5, 1)',
-            }}
-            className="select-none text-left"
-          >
-            <div className="flex justify-center pt-3 pb-4">
-              <div className="w-9 h-1 rounded-full bg-white/20" />
-            </div>
-
-            <div className="px-5 pb-1 text-left flex items-center gap-3.5">
-              <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-white/[0.08] shadow-sm flex-shrink-0 relative bg-zinc-900">
-                {planCoverImage || planId ? (
-                  <DiscoveryImages
-                    src={planCoverImage}
-                    planId={planId || ''}
-                    category={planCategory}
-                    subcategory={planSubcategory}
-                    screen="Plan Actions Avatar"
-                    alt={planTitle || 'Plan'}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
-                    <span style={{ fontSize: 18 }}>🗓️</span>
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
-                  {planTitle || 'Plan'}
-                </h3>
-                <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
-                  Update the cost
-                </p>
-              </div>
-            </div>
-
-            <div className="px-4 pt-4 flex flex-col gap-2.5">
-              {/* Option A: Split the total */}
-              <button
-                type="button"
-                disabled={isSubmittingExpense}
-                onClick={() => {
-                  if (!isSubmittingExpense) {
-                    setIsSubmittingExpense(true);
-                    executeSubmission('SPLIT_ALL');
-                    setIsSubmittingExpense(false);
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  height: 48,
-                  padding: '0 14px',
-                  background: 'rgba(255, 255, 255, 0.06)',
-                  border: 'none',
-                  borderRadius: 12,
-                  color: '#FFFFFF',
-                  textAlign: 'left',
-                  cursor: isSubmittingExpense ? 'default' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  transition: 'all 0.15s ease',
-                  opacity: isSubmittingExpense ? 0.5 : 1,
-                }}
-              >
-                <Split className="w-5 h-5 text-[#10B981] flex-shrink-0" />
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    minWidth: 0,
-                    flex: 1,
-                    justifyContent: 'center',
-                  }}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF', lineHeight: 1.2 }}>
-                    Split the total
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: 'rgba(255, 255, 255, 0.5)',
-                      lineHeight: 1.2,
-                      marginTop: 1,
-                    }}
-                  >
-                    {hasExpense && currentGoingCount > 0
-                      ? `₹${Math.round(totalExpense).toLocaleString('en-IN')} ÷ ${currentGoingCount} = ₹${(splitAllCostPerPerson % 1 === 0 ? splitAllCostPerPerson : splitAllCostPerPerson.toFixed(2)).toLocaleString('en-IN')}/person`
-                      : 'Keep the total cost and split it among attendees'}
-                  </span>
-                </div>
-              </button>
-
-              {/* Option B: Keep ₹X/person */}
-              <button
-                type="button"
-                disabled={isSubmittingExpense}
-                onClick={() => {
-                  if (!isSubmittingExpense) {
-                    setIsSubmittingExpense(true);
-                    executeSubmission('KEEP_CURRENT_COST');
-                    setIsSubmittingExpense(false);
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  height: 48,
-                  padding: '0 14px',
-                  background: 'rgba(255, 255, 255, 0.06)',
-                  border: 'none',
-                  borderRadius: 12,
-                  color: '#FFFFFF',
-                  textAlign: 'left',
-                  cursor: isSubmittingExpense ? 'default' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  transition: 'all 0.15s ease',
-                  opacity: isSubmittingExpense ? 0.5 : 1,
-                }}
-              >
-                <Merge className="w-5 h-5 text-[#10B981] flex-shrink-0" />
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    minWidth: 0,
-                    flex: 1,
-                    justifyContent: 'center',
-                  }}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF', lineHeight: 1.2 }}>
-                    {hasExpense
-                      ? `Keep ₹${(initialPerPerson % 1 === 0 ? initialPerPerson : initialPerPerson.toFixed(2)).toLocaleString('en-IN')}/person`
-                      : 'Keep cost per person'}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: 'rgba(255, 255, 255, 0.5)',
-                      lineHeight: 1.2,
-                      marginTop: 1,
-                    }}
-                  >
-                    {hasExpense
-                      ? `New total: ₹${Math.round(keepCostNewTotal).toLocaleString('en-IN')}`
-                      : 'Calculate new total based on attendee count'}
-                  </span>
-                </div>
-              </button>
-
-              {/* Cancel */}
-              <button
-                type="button"
-                disabled={isSubmittingExpense}
-                onClick={() => {
-                  if (!isSubmittingExpense) {
-                    setShowExpenseDialog(false);
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  background: 'none',
-                  border: 'none',
-                  borderRadius: 12,
-                  color: 'rgba(255, 255, 255, 0.4)',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  cursor: isSubmittingExpense ? 'default' : 'pointer',
-                  textAlign: 'center',
-                  marginTop: 6,
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

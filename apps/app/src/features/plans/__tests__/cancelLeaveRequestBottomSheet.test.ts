@@ -33,17 +33,13 @@ describe("CancelLeaveRequestBottomSheet Plan Actions Invariants", () => {
     const resolvedSubcategory = plan?.subcategory || planSubcategory;
 
     const header = {
-      title: resolvedTitle,
+      title: "Cancel leave request?",
       subtitle: "Plan Actions",
       coverImage: resolvedCover,
       planId: resolvedPlanId,
       category: resolvedCategory,
       subcategory: resolvedSubcategory,
-    };
-
-    const dialogContent = {
-      title: "Cancel leave request?",
-      description: "You're still part of this plan. Would you like to stay?",
+      altText: resolvedTitle,
     };
 
     const primaryAction = {
@@ -63,13 +59,12 @@ describe("CancelLeaveRequestBottomSheet Plan Actions Invariants", () => {
     return {
       isOpen,
       header,
-      dialogContent,
       primaryAction,
       dismissAction,
     };
   }
 
-  it("extracts plan identity for the header matching Plan Actions layout", () => {
+  it("extracts plan identity for the header matching Plan Actions layout with Cancel leave request? title", () => {
     const mockPlan = {
       id: "plan-test-123",
       dbUuid: "uuid-test-123",
@@ -89,22 +84,23 @@ describe("CancelLeaveRequestBottomSheet Plan Actions Invariants", () => {
       onClose,
     });
 
-    expect(result.header.title).toBe("Weekend Sunset Trek");
+    expect(result.header.title).toBe("Cancel leave request?");
     expect(result.header.subtitle).toBe("Plan Actions");
     expect(result.header.coverImage).toBe("trek-cover.webp");
     expect(result.header.category).toBe("nature");
     expect(result.header.subcategory).toBe("hiking");
+    expect(result.header.altText).toBe("Weekend Sunset Trek");
   });
 
-  it("has exact title and explanation text required", () => {
+  it("does not have separate body title or helper text", () => {
     const result = resolveCancelLeaveRequestProps({
       isOpen: true,
       onConfirm: vi.fn(),
       onClose: vi.fn(),
     });
 
-    expect(result.dialogContent.title).toBe("Cancel leave request?");
-    expect(result.dialogContent.description).toBe("You're still part of this plan. Would you like to stay?");
+    expect(result.header.title).toBe("Cancel leave request?");
+    expect((result as any).dialogContent).toBeUndefined();
   });
 
   it("has only one primary action 'Stay in Plan' and simple text 'Cancel' that dismisses", () => {

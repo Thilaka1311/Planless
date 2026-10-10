@@ -533,7 +533,15 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
 
   // Helper to get parsed timestamp from join_queue_at without inventing timestamps
   const getQueueTimestamp = (m: T): number | null => {
-    const raw = m.join_queue_at || m.joinQueueAt || m.joined_queue_at || m.joinedQueueAt;
+    const raw =
+      m.join_queue_at ||
+      m.joinQueueAt ||
+      m.joined_queue_at ||
+      m.joinedQueueAt ||
+      m.responded_at ||
+      m.respondedAt ||
+      m.created_at ||
+      m.createdAt;
     if (!raw) return null;
     const t = new Date(raw).getTime();
     return isNaN(t) ? null : t;
@@ -682,16 +690,18 @@ export function partitionAutomaticParticipants<T extends Record<string, any>>(
   //         - Sort these invited people alphabetically.
   const overflowJoined = sortedJoined.slice(cap);
 
-  const validJoinedWaitlist = overflowJoined.filter((item) =>
-    getQueueTimestamp(item) !== null ||
-    typeof item.waitlistPosition === 'number' ||
-    typeof (item as any).waitlist_position === 'number'
-  );
-  const invalidJoinedWaitlist = overflowJoined.filter((item) =>
-    getQueueTimestamp(item) === null &&
-    typeof item.waitlistPosition !== 'number' &&
-    typeof (item as any).waitlist_position !== 'number'
-  );
+  const isValidWaitlistMember = (item: T): boolean => {
+    const st = normalizeStatus((item as any).rsvp_status || (item as any).rsvpStatus || (item as any).joinState || (item as any).status);
+    return (
+      st === 'WAITLISTED' ||
+      getQueueTimestamp(item) !== null ||
+      typeof item.waitlistPosition === 'number' ||
+      typeof (item as any).waitlist_position === 'number'
+    );
+  };
+
+  const validJoinedWaitlist = overflowJoined.filter(isValidWaitlistMember);
+  const invalidJoinedWaitlist = overflowJoined.filter((item) => !isValidWaitlistMember(item));
 
   // Group A: Sort by waitlist_position ASC if both present, then join_queue_at ASC
   const sortedValidWaitlist = [...validJoinedWaitlist].sort((a, b) => {

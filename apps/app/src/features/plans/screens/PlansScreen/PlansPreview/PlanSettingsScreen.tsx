@@ -72,11 +72,13 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
 
   // Edit Image Screen navigation & state
   const [showEditImageScreen, setShowEditImageScreen] = useState(false);
-  const [currentCoverImage, setCurrentCoverImage] = useState<string | null | undefined>(plan.coverImage);
+  const [currentCoverImage, setCurrentCoverImage] = useState<string | null | undefined>(
+    plan.coverImage || (plan as any).cover_image || (plan as any).cover_photo
+  );
 
   useEffect(() => {
-    setCurrentCoverImage(plan.coverImage);
-  }, [plan.coverImage]);
+    setCurrentCoverImage(plan.coverImage || (plan as any).cover_image || (plan as any).cover_photo);
+  }, [plan.coverImage, (plan as any).cover_image, (plan as any).cover_photo]);
 
   const [allowInvites, setAllowInvites] = useState<boolean>(
     plan.allowParticipantInvites ?? false
@@ -336,6 +338,10 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     (resolvedParticipantRecord as any)?.leaveRequested === true
   );
 
+  const currentStatus = useMemo(() => {
+    return normalizeStatus(effectiveParticipantRecord?.rsvp_status);
+  }, [effectiveParticipantRecord?.rsvp_status]);
+
   const isCancelled = Boolean((plan?.status || "").toUpperCase() === "CANCELLED");
   const isCompleted = Boolean((plan?.status || "").toUpperCase() === "COMPLETED");
   const hasPlanTimeEnded = Boolean(plan && isPlanTimeEnded(plan));
@@ -419,7 +425,6 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       return;
     }
 
-    const currentStatus = normalizeStatus(effectiveParticipantRecord?.rsvp_status);
     const leaveRequested = Boolean(effectiveParticipantRecord?.leave_requested);
 
     if (currentStatus === "INVITED") {
@@ -453,7 +458,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     }
     setIsLeaving(true);
     try {
-      if (hasCost) {
+      const isWaitlisted = currentStatus === "WAITLISTED";
+      if (hasCost && !isWaitlisted) {
         await requestPaidPlanLeave(plan.id);
         setShowLeavePlanSheet(false);
         onBack();
@@ -462,6 +468,9 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         onBack();
       } else if (onRemoveParticipant) {
         await onRemoveParticipant(activeUserUuid);
+        onBack();
+      } else if (skipPlan) {
+        await skipPlan(plan.id, activeUserUuid);
         onBack();
       }
     } catch (err) {
@@ -603,8 +612,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
             <DiscoveryImages
               src={currentCoverImage}
               planId={plan.dbUuid || plan.id}
-              category="CUSTOM"
-              subcategory={null}
+              category={plan.category || (plan as any).category}
+              subcategory={(plan as any).subcategory || (plan as any).sports_type}
               screen="Plan Settings"
               alt={plan.title}
               className="w-full h-full object-cover"
@@ -1060,7 +1069,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         isOpen={showLeavePlanSheet}
         isSkipping={isLeaving}
         isSubmitting={isLeaving}
-        isPaid={hasCost}
+        isPaid={currentStatus === "WAITLISTED" ? false : hasCost}
+        rsvpStatus={currentStatus}
         plan={plan}
         onConfirm={async () => {
           setShowLeavePlanSheet(false);
@@ -1150,6 +1160,7 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           isOpen={showPromoteHostToLeaveModal}
           eligibleParticipants={eligibleGoingParticipants}
           isSubmitting={isPromotingToLeave}
+          mode={hostReplacementMode}
           onConfirm={handleConfirmHostReplacement}
           onClose={() => setShowPromoteHostToLeaveModal(false)}
         />
@@ -1160,8 +1171,8 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
         <EditPlanImageScreen
           planId={cleanPlanId(plan.dbUuid || (plan as any).public_id || plan.id)}
           currentCoverImage={currentCoverImage}
-          category={plan.category}
-          subcategory={(plan as any).subcategory}
+          category={plan.category || (plan as any).category}
+          subcategory={(plan as any).subcategory || (plan as any).sports_type}
           title={plan.title}
           onBack={() => setShowEditImageScreen(false)}
           onImageUpdated={(newImage, newCardImage) => {

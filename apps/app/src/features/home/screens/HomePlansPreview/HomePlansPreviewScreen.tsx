@@ -17,6 +17,7 @@ import { useRSVPDeadline } from "../../../plans/utils/rsvpFormatter";
 import { useLiveCountdown, rsvpUrgencyStyles } from "../../components/PlanCard";
 import { useHoldToAccept } from "../../hooks/useHoldForStatus";
 import { HoldToAcceptOverlay } from "../../components/HoldToAccept";
+import { getPlanAreaName } from "../../../discovery/services/addressUtils";
 import TeamOrganizerModal from "../../../../shared/modals/TeamOrganizerModal";
 import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
 import { JoinPlanConfirmationBottomSheet, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet, InvitedPlanActionsBottomSheet, SharePlanLinkBottomSheet } from "../../../plans/components/BottomSheets";
@@ -233,6 +234,11 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     }
     return { rsvp_status: "INVITED" };
   }, [myParticipantRecord, myMemberEntry]);
+
+  const currentStatus = useMemo(() => {
+    const rawRsvp = effectiveParticipantRecord?.rsvp_status || (effectiveParticipantRecord as any)?.joinState;
+    return normalizeStatus(rawRsvp);
+  }, [effectiveParticipantRecord]);
 
   const isAssignedMode = useMemo(() => {
     const rawMode =
@@ -455,7 +461,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       return;
     }
     
-    const isActuallyJoined = myParticipantRecord?.rsvp_status === "JOINED";
+    const isActuallyJoined = currentStatus === "JOINED";
     
     if (isActuallyJoined) {
       if (isSoleHost) {
@@ -466,17 +472,15 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
     } else {
       setShowSkipConfirmation(true);
     }
-  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, isSoleHost]);
+  }, [selectedPlan, activeUserId, isSkipping, myParticipantRecord, currentStatus, isSoleHost]);
 
   const handleLiveActionClick = useCallback(() => {
     if (!isHost && (isCompleted || isCancelled)) {
       return;
     }
-    const rawRsvp = effectiveParticipantRecord?.rsvp_status || (effectiveParticipantRecord as any)?.joinState;
-    const status = normalizeStatus(rawRsvp);
-    if (status === 'INVITED') {
+    if (currentStatus === 'INVITED') {
       setShowPlanActionsSheet(true);
-    } else if (status === 'JOINED') {
+    } else if (currentStatus === 'JOINED') {
       if ((effectiveParticipantRecord as any)?.leave_requested) {
         setShowCancelLeaveRequestConfirmation(true);
       } else if (isSoleHost) {
@@ -484,10 +488,12 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       } else {
         setShowLeavePlanConfirm(true);
       }
+    } else if (currentStatus === 'WAITLISTED') {
+      setShowSkipConfirmation(true);
     } else {
       setShowPlanActionsSheet(true);
     }
-  }, [effectiveParticipantRecord, isSoleHost, isHost, isCompleted, isCancelled]);
+  }, [effectiveParticipantRecord, currentStatus, isSoleHost, isHost, isCompleted, isCancelled]);
 
   if (!selectedPlan) return null;
 
@@ -605,12 +611,13 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
                 {(() => {
                   const isMovie = (selectedPlan.category || "").toLowerCase() === "movies";
                   const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
-                  const displayLoc = (isMovie && isYearOnly(selectedPlan.location)) ? "" : (selectedPlan.location || "");
-                  if (!displayLoc) return null;
+                  const rawLoc = (isMovie && isYearOnly(selectedPlan.location)) ? "" : (selectedPlan.location || "");
+                  if (!rawLoc) return null;
+                  const displayLoc = getPlanAreaName(rawLoc) || rawLoc;
                   return (
                     <div className="flex items-center gap-3 p-1.5 -m-1.5 rounded-xl">
                       <MapPin className="w-4.5 h-4.5 text-[#FF5A1F] flex-shrink-0" />
-                      <span className="text-[13px] font-semibold text-white/95 leading-none truncate">
+                      <span className="text-[13px] font-semibold text-white/95 leading-none truncate whitespace-nowrap">
                         {displayLoc}
                       </span>
                     </div>
@@ -762,6 +769,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         isOpen={showSkipConfirmation}
         isSkipping={isSkipping}
         isPaid={false}
+        rsvpStatus={currentStatus}
         plan={selectedPlan}
         onConfirm={handleConfirmSkip}
         onClose={() => setShowSkipConfirmation(false)}
@@ -771,11 +779,12 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         isOpen={showLeavePlanConfirm}
         isSkipping={isSkipping}
         isSubmitting={isSubmittingPaidLeave}
-        isPaid={hasCost}
+        isPaid={currentStatus === "WAITLISTED" ? false : hasCost}
+        rsvpStatus={currentStatus}
         plan={selectedPlan}
         onConfirm={async () => {
           setShowLeavePlanConfirm(false);
-          if (hasCost) {
+          if (hasCost && currentStatus !== "WAITLISTED") {
             await handleConfirmPaidLeaveRequest();
           } else {
             handleConfirmSkip();

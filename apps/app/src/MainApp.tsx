@@ -44,6 +44,7 @@ import {
   setStoredPendingInviteToken,
   extractInviteTokenFromPath,
   resolveInviteDestination,
+  cleanPlanIdentifier,
 } from "./features/plans/services/planInviteService";
 import { tabVariants, screenModalVariants } from "./shared/transitions/motionTokens";
 import { lazyWithRetry } from "./shared/utils/lazyWithRetry";
@@ -179,7 +180,10 @@ export default function MainApp({
     } else if (activeTab === "create") {
       localStorage.removeItem("planless_selected_plan_id");
       const currentRoute = parseCurrentRoute();
-      if (currentRoute.tab === "create" && currentRoute.createPhase && currentRoute.createPhase !== "category") {
+      if (
+        (currentRoute.tab === "create" && currentRoute.createPhase && currentRoute.createPhase !== "category") ||
+        (currentRoute.tab === "create" && currentRoute.subScreen)
+      ) {
         return;
       }
       navigateToRoute({ tab: "create" }, { replace: isInitial });
@@ -193,29 +197,42 @@ export default function MainApp({
     }
   }, [activeTab, selectedPlanId, selectedChatPlanId, plans, initialRoute.inviteToken, pendingInviteToken]);
 
-  // Listen for external / popstate route changes
+  // Refs to allow persistent subscription to router navigation without missed events or rebinding
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  const selectedPlanIdRef = useRef(selectedPlanId);
+  selectedPlanIdRef.current = selectedPlanId;
+
+  const selectedChatPlanIdRef = useRef(selectedChatPlanId);
+  selectedChatPlanIdRef.current = selectedChatPlanId;
+
+  const selectedPlanSourceRef = useRef(selectedPlanSource);
+  selectedPlanSourceRef.current = selectedPlanSource;
+
+  // Listen for external / popstate route changes with a persistent listener
   React.useEffect(() => {
     const unsubscribe = listenToNavigation((route) => {
       setCurrentRoute(route);
-      if (route.tab && route.tab !== activeTab && route.tab !== "wallet") {
+      if (route.tab && route.tab !== activeTabRef.current && route.tab !== "wallet") {
         setActiveTab(route.tab);
       }
 
       // Synchronize selectedPlanId with route
       if (route.tab === "plans" || route.tab === "home") {
         const targetPlanId = route.selectedPlanId || null;
-        if (targetPlanId !== selectedPlanId) {
+        if (targetPlanId !== selectedPlanIdRef.current) {
           setSelectedPlanId(targetPlanId);
         }
-      } else if (selectedPlanSource === "list") {
-        if (selectedPlanId) {
+      } else if (selectedPlanSourceRef.current === "list") {
+        if (selectedPlanIdRef.current) {
           setSelectedPlanId(null);
         }
       }
 
       // Synchronize selectedChatPlanId with route
       const targetChatId = route.tab === "chats" ? (route.selectedChatPlanId || null) : null;
-      if (targetChatId !== selectedChatPlanId) {
+      if (targetChatId !== selectedChatPlanIdRef.current) {
         setSelectedChatPlanId(targetChatId);
       }
 
@@ -240,7 +257,7 @@ export default function MainApp({
         route.tab === "home" ||
         (route.tab === "plans" && !route.selectedPlanId) ||
         (route.tab === "chats" && !route.selectedChatPlanId) ||
-        (route.tab === "create" && (!route.createPhase || route.createPhase === "category") && !route.discoveryCategory) ||
+        (route.tab === "create" && (!route.createPhase || route.createPhase === "category") && !route.discoveryCategory && !route.subScreen) ||
         route.tab === "profile";
 
       if (isCategoryDiscovery) {
@@ -250,7 +267,7 @@ export default function MainApp({
       }
     });
     return unsubscribe;
-  }, [activeTab, selectedPlanId, selectedChatPlanId]);
+  }, []);
 
   // --- Process shared plan invite token based on participant state ---
   const isResolvingInviteRef = useRef(false);
@@ -271,40 +288,51 @@ export default function MainApp({
         // isResolvingInviteRef above still prevents concurrent duplicate attempts.
         processedTokensRef.current.add(tokenToProcess);
         const userUuid = userProfile?.dbUuid || activeUserId;
-        const resolution = await resolveInviteDestination(tokenToProcess, userUuid);
+        const cleanToken = cleanPlanIdentifier(tokenToProcess) || tokenToProcess.trim();
+        console.log(`[InviteFlow] Parsed invite identifier: "${cleanToken}", resolving for user: "${userUuid}"`);
+        const resolution = await resolveInviteDestination(cleanToken, userUuid);
+        console.log(`[InviteFlow] Resolution result for "${cleanToken}":`, {
+          resolvedPlanId: resolution.planId,
+          status: resolution.status,
+          destination: resolution.destination,
+          claimResult: resolution.claimResult,
+          error: resolution.error,
+        });
 
-        if (resolution.destination === "PLAN_PREVIEW") {
-          // Cases 3, 4, 5, 6: Existing JOINED / WAITLISTED / SKIPPED / HOST
-          // Do not claim/reset/update their state. Open specific Plan Preview screen.
+        if (resolution.destination === "HOME") {
+          // Navigate to Home screen: invited/waitlisted plan appears in the Home feed
           onClearPendingInvite?.();
           clearStoredPendingInviteToken();
 
           await refreshPlans();
 
-          const targetPlanId = resolution.planId || tokenToProcess;
+          const targetPlanId = resolution.planId || cleanToken;
+          localStorage.removeItem("planless_selected_plan_id");
+          setSelectedPlanId(null);
+          setActiveCardId(targetPlanId);
+          setActiveTab("home");
+          navigateToRoute({ tab: "home" }, { replace: true });
+        } else if (resolution.destination === "PLAN_PREVIEW") {
+          // Existing HOST or JOINED participant: open plan preview
+          onClearPendingInvite?.();
+          clearStoredPendingInviteToken();
+
+          await refreshPlans();
+
+          const targetPlanId = resolution.planId || cleanToken;
           setSelectedPlanSource("deep_link");
           setSelectedPlanId(targetPlanId);
           setActiveTab("plans");
           navigateToRoute({ tab: "plans", selectedPlanId: targetPlanId }, { replace: true });
-        } else if (resolution.destination === "HOME") {
-          // Case 1 (new participant claimed) & Case 2 (existing INVITED participant)
-          const targetPlanId = resolution.planId || tokenToProcess;
-          setActiveCardId(targetPlanId);
-
-          await refreshPlans();
-
-          onClearPendingInvite?.();
-          clearStoredPendingInviteToken();
-
-          setSelectedPlanId(null);
-          setActiveTab("home");
-          setActiveCardId(targetPlanId);
-          navigateToRoute({ tab: "home" }, { replace: true });
         } else {
           // Inactive / invalid / expired / not found
           console.warn("[MainApp] Invite resolution failed or inactive plan:", resolution.error);
-          onClearPendingInvite?.();
-          clearStoredPendingInviteToken();
+          if (resolution.error !== "Not authenticated") {
+            onClearPendingInvite?.();
+            clearStoredPendingInviteToken();
+          } else {
+            processedTokensRef.current.delete(tokenToProcess);
+          }
           setActiveCardId(null);
           navigateToRoute({ tab: "home" }, { replace: true });
         }
@@ -594,9 +622,10 @@ export default function MainApp({
   // Derive bottom navigation visibility strictly from current active route/screen
   const shouldShowBottomNav = React.useMemo(() => {
     // 1. Fullscreen modal overlays hide bottom navigation across the entire app
+    // Note: A plan detail modal is ONLY open if selectedPlanId is actively set.
+    // When returning to Plans or Home, a lagging route param must never suppress bottom nav.
     if (
       selectedPlanId ||
-      currentRoute.selectedPlanId ||
       selectedChatPlanId ||
       currentRoute.selectedChatPlanId ||
       showPlansSearchScreen ||
@@ -845,6 +874,7 @@ export default function MainApp({
               activeTab={selectedPlanSource === "chat" ? "chat" : activeTab}
               onClose={() => {
                 setSelectedPlanId(null);
+                setCurrentRoute({ tab: activeTab, selectedPlanId: null });
                 localStorage.removeItem("planless_selected_plan_id");
                 if (selectedPlanSource === "past_plans" || selectedPlanSource === "past") {
                   setShowPastPlansScreen(true);
@@ -860,6 +890,7 @@ export default function MainApp({
                   setSelectedPlanSource("list");
                 } else {
                   setSelectedPlanSource("list");
+                  navigateToRoute({ tab: activeTab }, { replace: true });
                 }
               }}
               userProfile={userProfile}
@@ -868,6 +899,7 @@ export default function MainApp({
                 selectedPlanSource === "chat"
                   ? () => {
                       setSelectedPlanId(null);
+                      setCurrentRoute({ tab: "chats", selectedChatPlanId });
                       localStorage.removeItem("planless_selected_plan_id");
                     }
                   : undefined
@@ -877,12 +909,16 @@ export default function MainApp({
               setShowLeftSuccess={setShowLeftSuccessId}
               onLeavePlan={() => {
                 setSelectedPlanId(null);
+                setCurrentRoute({ tab: activeTab, selectedPlanId: null });
                 localStorage.removeItem("planless_selected_plan_id");
+                navigateToRoute({ tab: activeTab }, { replace: true });
               }}
               onPlanCancelled={() => {
                 setSelectedPlanId(null);
+                setCurrentRoute({ tab: activeTab, selectedPlanId: null });
                 localStorage.removeItem("planless_selected_plan_id");
                 setShowCancelConfirmation(true);
+                navigateToRoute({ tab: activeTab }, { replace: true });
               }}
             />
           </motion.div>

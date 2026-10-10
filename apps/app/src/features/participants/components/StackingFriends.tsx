@@ -39,9 +39,10 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
   );
   const hasPendingRequest = isLeaveRequested || isRejoined;
   const showPendingIndicator = Boolean(isHost && hasPendingRequest);
-  const isSkipped = !isRejoined && (item.rsvpStatus === 'SKIPPED' || (item as any).rsvp_status === 'SKIPPED' || Boolean(item.skipReason || (item as any).skip_reason));
-  const isDulled = !showPendingIndicator && (item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED' || isSkipped);
-  const skipReasonText = isRejoined ? '' : formatSkipReason(item.skipReason || (item as any).skip_reason || (isSkipped ? 'SKIPPED' : null));
+  const isSkipped = item.rsvpStatus === 'SKIPPED' || (item as any).rsvp_status === 'SKIPPED' || isRejoined || Boolean(item.skipReason || (item as any).skip_reason);
+  const isDulled = isSkipped || (!showPendingIndicator && (item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED'));
+  const skipReasonText = formatSkipReason(item.skipReason || (item as any).skip_reason || (isRejoined ? 'LEFT' : (isSkipped ? 'SKIPPED' : null)));
+  const isMutedWithPendingIndicator = Boolean(isDulled && showPendingIndicator);
 
   const indexLabel = (() => {
     if (!showIndex) return null;
@@ -61,7 +62,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
 
   const renderAvatar = () => {
     return (
-      <div style={{ position: 'relative', width: 28, height: 28, marginRight: 12, flexShrink: 0, opacity: isDulled ? 0.6 : 1 }}>
+      <div style={{ position: 'relative', width: 28, height: 28, marginRight: 12, flexShrink: 0, opacity: isDulled ? (isMutedWithPendingIndicator ? 0.33 : 0.6) : 1 }}>
         <UserAvatar
           src={item.avatar}
           alt={item.name}
@@ -89,7 +90,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
         boxShadow: 'none',
         zIndex: isItemDragged ? 0 : 1,
         position: 'relative',
-        opacity: isItemDragged ? 0.25 : isDulled ? 0.55 : 1,
+        opacity: isItemDragged ? 0.25 : (isDulled && !showPendingIndicator) ? 0.55 : 1,
         transition: 'background 0.2s ease, opacity 0.2s ease',
       }}
       className={`select-none ${className}`}
@@ -105,6 +106,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
           fontSize: 11,
           fontWeight: 700,
           color: 'rgba(255, 255, 255, 0.4)',
+          opacity: isMutedWithPendingIndicator ? 0.55 : 1,
           marginRight: 10,
           width: 24,
           minWidth: 24,
@@ -118,7 +120,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
       )}
       {renderAvatar()}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-        <span style={{ fontSize: 13.5, fontWeight: 600, color: isDulled ? '#8E8E93' : '#FFFFFF', fontFamily: 'Inter, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 13.5, fontWeight: 600, color: isDulled ? '#8E8E93' : '#FFFFFF', opacity: isMutedWithPendingIndicator ? 0.55 : 1, fontFamily: 'Inter, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {item.name}
         </span>
         {showPendingIndicator && (
@@ -142,6 +144,7 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
           fontSize: 11,
           fontWeight: 500,
           color: 'rgba(255, 255, 255, 0.5)',
+          opacity: isMutedWithPendingIndicator ? 0.55 : 1,
           marginRight: item.isHost ? 10 : 4,
           lineHeight: 1,
           flexShrink: 0,

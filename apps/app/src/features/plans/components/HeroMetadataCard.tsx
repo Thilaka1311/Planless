@@ -4,6 +4,7 @@ import { formatPlanDate } from "../../../../lib/mappers";
 import { formatDeadlineFull } from "../../home/components/PlanCard";
 import { useRSVPDeadline } from "../utils/rsvpFormatter";
 import { CostBreakdownPopover } from "./CostBreakdownPopover";
+import { getPlanAreaName } from "../../discovery/services/addressUtils";
 
 interface HeroMetadataCardProps {
   datetime?: string;
@@ -73,6 +74,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
   const isMovie = (category || "").toLowerCase() === "movies";
   const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
   const effectiveLocation = (isMovie && isYearOnly(location)) ? "" : (location || "");
+  const displayLocation = effectiveLocation ? (getPlanAreaName(effectiveLocation) || effectiveLocation) : "";
 
   const handleLocationClick = () => {
     if (!effectiveLocation) return;
@@ -176,7 +178,7 @@ export const HeroMetadataCard: React.FC<HeroMetadataCardProps> = ({
       >
         <div className="flex items-center gap-2 text-white/90 max-w-[80%]">
           <MapPin className="w-4 h-4 text-white/50 flex-shrink-0" />
-          <span className="text-xs font-semibold truncate leading-none">{effectiveLocation || "Add a location"}</span>
+          <span className="text-xs font-semibold truncate whitespace-nowrap leading-none">{displayLocation || "Add a location"}</span>
         </div>
         <ChevronRight className="w-4 h-4 text-white/40 flex-shrink-0" />
       </button>

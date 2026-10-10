@@ -672,23 +672,25 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                   />
                 </div>
 
-                <div className="flex flex-col gap-2.5 pt-1">
+                <div className="flex flex-col gap-1 pt-1">
                   <button
+                    id="edit_list_submit_btn"
                     type="submit"
                     disabled={!editListName.trim() || isUpdatingList}
                     style={{
                       width: "100%",
-                      height: 48,
+                      height: 40,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      background: "rgba(255, 255, 255, 0.12)",
-                      border: "1px solid rgba(255, 255, 255, 0.18)",
-                      borderRadius: 12,
+                      background: !editListName.trim() ? "rgba(255, 255, 255, 0.1)" : "#FF6B2C",
+                      border: "none",
+                      borderRadius: 9999,
                       color: "#FFFFFF",
                       fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
+                      fontWeight: 700,
+                      cursor: !editListName.trim() || isUpdatingList ? "not-allowed" : "pointer",
+                      transition: "all 0.15s ease",
                     }}
                     className="active:scale-[0.98] transition-transform font-sans disabled:opacity-40 disabled:cursor-not-allowed"
                   >
@@ -696,22 +698,21 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                   </button>
 
                   <button
+                    id="edit_list_cancel_btn"
                     type="button"
                     disabled={isUpdatingList}
                     onClick={() => setListToEdit(null)}
                     style={{
                       width: "100%",
-                      height: 48,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "rgba(255, 255, 255, 0.06)",
+                      padding: "14px",
+                      background: "none",
                       border: "none",
                       borderRadius: 12,
-                      color: "#FFFFFF",
+                      color: "rgba(255, 255, 255, 0.4)",
                       fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
+                      fontWeight: 500,
+                      cursor: isUpdatingList ? "default" : "pointer",
+                      textAlign: "center",
                     }}
                     className="active:scale-[0.98] transition-transform font-sans"
                   >

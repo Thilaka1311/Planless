@@ -23,6 +23,7 @@ import { FriendshipsScreen } from "../../friendships/screens/FriendshipsScreen";
 import { supabase } from "../../../../lib/supabaseClient";
 import defaultPlanCover from "../../../assets/planimagedefault.webp";
 import { uploadPlanImage, uploadPlanCardImage } from "../../../shared/utils/imageUtils";
+import { toCanonicalPlanPhoto } from "../../../shared/imaging/imageResolver";
 import {
   getSavedCreatePlanDraft,
   saveCreatePlanDraft,
@@ -234,9 +235,10 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
         form.customCoverImage.startsWith('blob:') ||
         form.customCoverImage === 'custom_draft_blob')
     );
-    const coverUrl = isLocalCustomImage
+    const rawCoverUrl = isLocalCustomImage
       ? getPlanCover(selectedCategory, selectedSubcategory)
       : (form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory));
+    const coverUrl = toCanonicalPlanPhoto(rawCoverUrl) || rawCoverUrl;
 
     let hoursOffset = 0;
     let isPlanStart = false;

@@ -5,6 +5,7 @@ import { Plan as ActivePlan } from '../../../core/types';
 import { usePlansStore } from "../state/PlansContext";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
+import { getPlanAreaName } from "../../discovery/services/addressUtils";
 
 interface PlanConfirmedOverlayProps {
   plan: ActivePlan;
@@ -36,6 +37,7 @@ export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
   const isYearOnly = (s: string | null | undefined) => /^\d{4}$/.test((s || "").trim());
   const rawLoc = livePlan.location || (livePlan as any).place_name || (livePlan as any).place_address || "";
   const location = (isMoviePlan && isYearOnly(rawLoc)) ? "" : rawLoc;
+  const displayArea = location ? (getPlanAreaName(location) || location) : "";
 
   const waitlistPosition = React.useMemo(() => {
     if (!isWaitlist || !livePlan.members) return null;
@@ -157,7 +159,7 @@ export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
               </motion.div>
 
               {/* 5. Plan Location with red vector pin */}
-              {location && (
+              {displayArea && (
                 <motion.div
                   initial={{ y: 8, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
@@ -165,7 +167,7 @@ export const PlanConfirmedOverlay: React.FC<PlanConfirmedOverlayProps> = ({
                   className="flex items-center justify-center gap-1.5 text-[13px] text-zinc-300 font-sans font-medium"
                 >
                   <MapPin className="w-4 h-4 text-red-500 shrink-0" />
-                  <span className="truncate max-w-[240px]">{location}</span>
+                  <span className="truncate max-w-[240px] whitespace-nowrap">{displayArea}</span>
                 </motion.div>
               )}
 

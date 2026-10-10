@@ -28,12 +28,9 @@ The **Completion** feature manages the post-event conclusion lifecycle for plans
   * "Select All" / "Deselect All" convenience buttons allow bulk updating.
 * If uninvited friends attended, host taps "Add Attendee" to open `<AttendanceSearch />` and select them from their friend list.
 
-### 3. Resolving Shared Expenses (`ExpenseMode`)
-* If the plan has associated wallet expenses (`wallet_expenses`), host is prompted with an Expense Resolution dialog:
-  * **Split Among Attendees (`SPLIT_ALL`)**: Divides the total plan bill equally among verified attendees (`ATTENDED`). Attendees who did not attend are excused from future share splits.
-  * **Keep Current Cost (`KEEP_CURRENT_COST`)**: Retains previous individual share allocations and absorbs differences.
-  * **No Changes (`NONE`)**: Preserves existing expense records as-is without re-splitting.
-* If no expenses exist on the plan, this step is bypassed.
+### 3. Direct Completion Without Cost Alterations
+* The completion workflow directly finalizes physical attendance without showing any "Update the cost" or expense split dialogs.
+* The completion flow defaults to expense mode `'NONE'`, leaving pre-existing wallet expense records unchanged while archiving the plan.
 
 ### 4. Database Finalization (`complete_plan` RPC)
 * Host taps **Finalize & Complete Plan**.
@@ -74,13 +71,8 @@ The **Completion** feature manages the post-event conclusion lifecycle for plans
 * **Search Input**: Pill input with magnifying glass icon and instant debounce filtering.
 * **Result Items**: Displays avatar, name, and username with a plus button to append the user to `extraMembers`.
 
-### Expense Resolution Dialog (`showExpenseDialog`)
-* **Modal Overlay**: Centered dialog card (`w-[90%] max-w-sm p-6 bg-zinc-950 border border-zinc-800 rounded-3xl shadow-2xl space-y-4`).
-* **Header**: Title "How should expenses be split?" with subtitle displaying total plan cost in INR (`₹`).
-* **Option Cards**:
-  * **Split Among Attendees**: Radio card highlighting recalculated per-person cost (`₹X/ea`).
-  * **Keep Current Cost**: Radio card keeping original per-person share.
-  * **Skip Expenses**: Radio card bypassing cost changes.
+### Direct Completion Flow (No Expense Modification)
+* The obsolete "Update the cost" bottom sheet and "Split the total" options have been completely removed from the plan completion flow. Attendance finalizes directly via the floating confirmation CTA.
 
 ### Post-Completion Management (`ManageCompletedParticipantsScreen.tsx`)
 * Dedicated review screen active during the 24-hour grace window. Displays "Attended (X)" and "Did Not Attend (Y)" sections with options to re-toggle members.

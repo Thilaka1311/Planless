@@ -60,4 +60,20 @@ describe("Orange Bottom Sheet Primary CTA Button Styling Invariants", () => {
       expect(inv.fullWidth).toBe(true);
     }
   });
+
+  it("verifies SharePlanLinkBottomSheet has reduced vertical gap (gap-1, no marginTop) for visual grouping", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const content = fs.readFileSync(path.resolve(__dirname, "../components/BottomSheets.tsx"), "utf-8");
+
+    // Invariant: Actions container uses compact gap-1
+    expect(content).toContain('<div className="px-4 pt-3 flex flex-col gap-1">');
+
+    // Invariant: Cancel button does not have redundant marginTop
+    const cancelIndex = content.indexOf('id="share_plan_cancel_btn"');
+    expect(cancelIndex).toBeGreaterThan(-1);
+    const shareCancelBlock = content.slice(cancelIndex, cancelIndex + 300);
+    expect(shareCancelBlock).not.toContain("marginTop");
+  });
 });
+

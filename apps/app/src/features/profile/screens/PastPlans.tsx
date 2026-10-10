@@ -387,7 +387,7 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
                   const now = new Date();
                   const isEarly = !isNaN(planScheduledDate.getTime()) && now.getTime() < planScheduledDate.getTime();
 
-                  await completePlan(completingPlan.id, attendanceInput, { isEarly, expenseMode });
+                  await completePlan(completingPlan.id, attendanceInput, { isEarly, expenseMode: 'NONE' });
                   setShowAttendanceSheet(false);
                   setCompletingPlan(null);
                 } catch (err: any) {

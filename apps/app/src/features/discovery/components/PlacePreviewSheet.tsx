@@ -3,8 +3,9 @@ import { createPortal } from "react-dom";
 import { MapPin, ArrowRight, Calendar, Film, Globe } from "lucide-react";
 import { DiscoveryItem } from "../../../core/types/discovery";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
-import { resolveVenueCategories, resolveVenueRating, resolveVenueDistance } from "./DiscoveryCard";
+import { resolveVenueRating, resolveVenueDistance } from "./DiscoveryCard";
 import { TMDB_LANGUAGE_NAMES } from "../services/tmdbMovieService";
+import { getPlanAreaName } from "../services/addressUtils";
 
 export interface PlacePreviewSheetProps {
   item: DiscoveryItem | null;
@@ -26,10 +27,10 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
 
   // Single source of truth across DiscoveryCard and Place Details sheet
   const rating = resolveVenueRating(effectiveItem);
-  const placeType = resolveVenueCategories(effectiveItem);
   const distance = resolveVenueDistance(effectiveItem, userCoordinates);
 
-  const locationText = effectiveItem.place_address || effectiveItem.location || "Nearby";
+  const rawLocationText = effectiveItem.place_address || effectiveItem.location || "Nearby";
+  const displayLocation = rawLocationText === "Nearby" ? "Nearby" : (getPlanAreaName(rawLocationText) || rawLocationText);
   const hasDistinctDescription =
     Boolean(effectiveItem.description) &&
     effectiveItem.description !== effectiveItem.location &&
@@ -132,26 +133,22 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
             ) : (
               /* Venue Specific Metadata (Dining, Sports) */
               <>
-                <div className="flex items-center gap-2 text-xs flex-wrap font-sans">
-                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#178544] text-white font-bold rounded text-[11px] shrink-0 leading-none">
-                    {rating}
-                    <span className="text-[10px]">★</span>
-                  </span>
-
-                  <span className="text-zinc-300 font-medium truncate max-w-[200px]">
-                    {placeType}
-                  </span>
-
-                  <span className="text-zinc-600">·</span>
-
+                <div className="flex items-center justify-between text-xs font-sans">
                   <span className="text-zinc-400 font-medium shrink-0">
                     {distance}
                   </span>
+
+                  {rating && (
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#178544] text-white font-bold rounded text-[11px] shrink-0 leading-none ml-auto">
+                      {rating}
+                      <span className="text-[10px]">★</span>
+                    </span>
+                  )}
                 </div>
 
-                <div className="flex items-start gap-1.5 text-xs text-zinc-400 leading-relaxed pt-0.5 font-sans">
-                  <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-0.5" />
-                  <span>{locationText}</span>
+                <div className="flex items-center gap-1.5 text-xs text-zinc-400 leading-relaxed pt-0.5 font-sans min-w-0">
+                  <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                  <span className="truncate whitespace-nowrap">{displayLocation}</span>
                 </div>
 
                 {hasDistinctDescription && (
@@ -168,9 +165,9 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
         <div className="p-4 px-6 bg-[#111113]/95 border-t border-white/[0.06] backdrop-blur-md shrink-0 pb-[calc(1.25rem+env(safe-area-inset-bottom,16px))]">
           <button
             onClick={() => onConfirmPlan(item)}
-            className="w-full h-12 rounded-xl bg-[#FF6B2C] hover:bg-[#ff5a14] active:scale-[0.98] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#FF6B2C]/20 transition-all duration-200 cursor-pointer"
+            className="w-full h-12 rounded-2xl bg-[#FF6B2C] hover:bg-[#ff5a14] active:scale-[0.98] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#FF6B2C]/20 transition-all duration-200 cursor-pointer"
           >
-            <span>{isMovie ? "Create Plan with this Movie" : "Start a Plan Here"}</span>
+            <span>{isMovie ? "Create Plan with this Movie" : "Create a plan"}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>

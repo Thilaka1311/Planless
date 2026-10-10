@@ -342,13 +342,6 @@ export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
       : ""
     : null;
 
-  const costText =
-    typeof item.suggested_cost_amount === "number" && item.suggested_cost_amount > 0
-      ? (item.category || "").toUpperCase() === "DINING"
-        ? `₹${item.suggested_cost_amount} for two`
-        : `₹${item.suggested_cost_amount}`
-      : null;
-
   return (
     <div
       {...(shouldEnableAdminHold ? longPress : { onClick: onTap })}
@@ -400,68 +393,30 @@ export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
         className="p-3 flex flex-col justify-between flex-1 min-w-0 text-left bg-[#121216] pointer-events-none select-none"
         style={{ userSelect: "none", WebkitUserSelect: "none", pointerEvents: "none" }}
       >
-        {isSports ? (
-          <>
-            {/* Top Block: Place Name & Area / Locality */}
-            <div className="min-w-0 flex flex-col">
-              <h4 className="text-[14px] font-bold text-white tracking-tight leading-snug truncate select-none">
-                {item.title}
-              </h4>
-              {locality && (
-                <p className="text-[12px] text-zinc-400 font-normal truncate leading-tight mt-0.5 select-none">
-                  {locality}
-                </p>
-              )}
-            </div>
+        {/* Top Block: Place Name & Area / Locality */}
+        <div className="min-w-0 flex flex-col">
+          <h4 className="text-[14px] font-bold text-white tracking-tight leading-snug truncate select-none">
+            {item.title}
+          </h4>
+          {locality && (
+            <p className="text-[12px] text-zinc-400 font-normal truncate leading-tight mt-0.5 select-none">
+              {locality}
+            </p>
+          )}
+        </div>
 
-            {/* Rating */}
-            <div className="flex items-center gap-1.5 text-[11px] min-w-0 select-none">
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#178544] text-white font-bold rounded text-[10px] shrink-0 leading-none select-none">
-                {rating}
-                <span className="text-[9px]">★</span>
-              </span>
-              {costText && (
-                <span className="text-zinc-400 truncate font-normal select-none">
-                  {costText}
-                </span>
-              )}
-            </div>
-
-            {/* Distance */}
-            <div className="text-[11px] text-zinc-400 font-normal select-none">
-              <span className="text-zinc-300 font-medium select-none">
-                {distance}
-              </span>
-            </div>
-          </>
-        ) : (
-          <>
-            {/* Venue / Movie Name */}
-            <h4 className="text-[14px] font-bold text-white tracking-tight leading-snug truncate select-none">
-              {item.title}
-            </h4>
-
-            {/* Rating & Optional Price (Zero Category Labels) */}
-            <div className="flex items-center gap-1.5 text-[11px] min-w-0 select-none">
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#178544] text-white font-bold rounded text-[10px] shrink-0 leading-none select-none">
-                {rating}
-                <span className="text-[9px]">★</span>
-              </span>
-              {costText && (
-                <span className="text-zinc-400 truncate font-normal select-none">
-                  {costText}
-                </span>
-              )}
-            </div>
-
-            {/* Distance for venues or Release Date for movies */}
-            <div className="text-[11px] text-zinc-400 font-normal select-none">
-              <span className="text-zinc-300 font-medium select-none">
-                {isMovie ? movieMeta : distance}
-              </span>
-            </div>
-          </>
-        )}
+        {/* Bottom Row: Distance on the left, Rating on the right */}
+        <div className="flex items-center justify-between text-[11px] min-w-0 select-none pt-1">
+          <span className="text-zinc-300 font-medium select-none truncate">
+            {isMovie ? movieMeta : distance}
+          </span>
+          {rating && (
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#178544] text-white font-bold rounded text-[10px] shrink-0 leading-none select-none ml-2">
+              {rating}
+              <span className="text-[9px]">★</span>
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

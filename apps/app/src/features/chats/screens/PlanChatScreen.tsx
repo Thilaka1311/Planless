@@ -37,7 +37,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   onBack,
   onOpenPlanDetails,
 }) => {
-  const { plans, dbPlanParticipants, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, replaceParticipant, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
+  const { plans, dbPlanParticipants, moveParticipantToGoing, moveParticipantToWaitlist, moveParticipantToWaitlistAndDecreaseCapacity, moveParticipantToInvited, removeParticipant, promoteParticipantToHost, demoteHostToParticipant, addParticipantsToPlan, reorderWaitlist, swapParticipants, removeAndReplaceWithWaitlist, resolvePaidPlanLeaveRequest, replaceParticipant, updatePlanDetails, updatePlanSettings, leavePlan, changePlanHost, cancelPlan } = usePlansStore();
   const { userProfile, activeUserId, activeUserUuid, dbUsers } = useProfileStore();
 
   const rawSenderId =
@@ -1011,6 +1011,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 onBack={() => goToPage(1)}
                 onMoveToGoing={(pId, uId, opts) => moveParticipantToGoing(pId, uId, opts)}
                 onMoveToWaitlist={(pId, uId) => moveParticipantToWaitlist(pId, uId)}
+                onMoveParticipantToWaitlistAndDecreaseCapacity={(pId, uId) => moveParticipantToWaitlistAndDecreaseCapacity(pId, uId)}
                 onMoveToInvited={(pId, uId) => moveParticipantToInvited(pId, uId)}
                 onRemoveParticipant={(pId, uId) => removeParticipant(pId, uId)}
                 onPromoteToHost={(pId, uId) => promoteParticipantToHost(pId, uId)}

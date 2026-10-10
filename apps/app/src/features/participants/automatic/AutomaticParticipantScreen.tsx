@@ -71,6 +71,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   onRejoinAddToJoined,
   onRejoinAddToWaitlist,
   onRejoinRemoveFromPlan,
+  onRejoinPlanFull,
   isCompletedPlan,
   initialOpenPlanSizeSheet,
   onPlanSizeSheetDismissed,
@@ -218,7 +219,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   }, [mode, capacity, displayGoing.length, displayWaitlist.length, displaySkipped.length, isCompletedPlan]);
 
   const [activeTab, setActiveTab] = useState<ParticipantTab>(
-    mode === 'wizard' ? 'invited' : 'going'
+    mode === 'wizard' ? 'invited' : (initialTab && initialTab !== 'invited' ? initialTab : 'going')
   );
   const initialMountRef = React.useRef(true);
 
@@ -276,6 +277,32 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       return;
     }
     if (isInviteOnly || isPlanSizeEditing) return;
+
+    const isLeaveRequested = Boolean(
+      (item.leave_requested === true || (item as any).leaveRequested === true) &&
+      item.rsvpStatus !== 'SKIPPED' &&
+      (item as any).rsvp_status !== 'SKIPPED'
+    );
+
+    if (isLeaveRequested && onRemoveParticipant) {
+      onRemoveParticipant(item);
+      return;
+    }
+
+    const isRejoined =
+      item.rsvpStatus === 'REJOINED' || (item as any).rsvp_status === 'REJOINED';
+
+    if (isRejoined && isFull && effectiveIsHost) {
+      if (onRejoinPlanFull) {
+        onRejoinPlanFull(item);
+        return;
+      }
+      if (onRejoinAddToPlan) {
+        onRejoinAddToPlan(item);
+        return;
+      }
+    }
+
     setSelectedItem(item);
     setSheetType(type);
     setShowConfirmRemove(false);
@@ -359,7 +386,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       <div className="touch-pan-y" style={{ display: 'flex', flexDirection: 'column', padding: '8px 20px 100px', gap: 8, flex: 1, overflowY: 'auto' }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
-            key={activeTab === 'invited' ? 'going' : activeTab}
+            key={`automatic-tab-${activeTab === 'invited' ? 'going' : (activeTab || 'going')}`}
             variants={subTabVariants}
             initial="initial"
             animate="animate"
@@ -383,18 +410,23 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
                 reorderable={false}
                 showIndex={true}
                 useParticipantPosition={true}
+                waitlistMode="automatic"
               />
             )}
             {activeTab === 'skipped' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-                {displaySkipped.map((item) => (
-                  <StackingFriends
-                    key={item.id}
-                    item={item}
-                    isHost={effectiveIsHost}
-                    onClick={effectiveIsHost ? () => handleItemTap(item, 'skipped') : () => setViewProfileUserId(item.dbUuid || item.id)}
-                  />
-                ))}
+                {displaySkipped.map((item) => {
+                  const itemKey = item.dbUuid || item.id || (item as any).user_id || (item as any).userId || (item as any).userUuid;
+                  if (!itemKey) return null;
+                  return (
+                    <StackingFriends
+                      key={itemKey}
+                      item={item}
+                      isHost={effectiveIsHost}
+                      onClick={effectiveIsHost ? () => handleItemTap(item, 'skipped') : () => setViewProfileUserId(item.dbUuid || item.id)}
+                    />
+                  );
+                })}
               </div>
             )}
           </motion.div>
@@ -421,6 +453,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           showConfirmRemove={showConfirmRemove}
           isHostUser={effectiveIsHost}
           userProfile={userProfile}
+          isPlanFull={isFull}
           onClose={closeSheet}
           onShowConfirmRemove={setShowConfirmRemove}
           onPromoteHost={onPromoteHost}
@@ -436,6 +469,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
           onAddToWaitlist={onRejoinAddToWaitlist}
           onRemoveFromPlan={onRejoinRemoveFromPlan || onRemoveParticipant}
           onMoveToGoing={onMoveToGoing}
+          onRejoinPlanFull={onRejoinPlanFull}
         />
       )}
 

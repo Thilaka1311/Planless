@@ -26,7 +26,23 @@
  *   const url = resolveImage(storagePath);
  */
 
-import { supabase } from "../../../lib/supabaseClient";
+import { supabase, SUPABASE_URL } from "../../../lib/supabaseClient";
+
+/**
+ * Normalizes any Google Places photo proxy URL into a canonical relative storage path.
+ * Strips developer host/port (e.g. http://127.0.0.1:54321) so the database
+ * row is clean, durable, and independent of specific host environments.
+ */
+export function toCanonicalPlanPhoto(urlOrPath: string | null | undefined): string | null {
+  if (!urlOrPath || !urlOrPath.trim()) return null;
+  const raw = urlOrPath.trim();
+  const mapsIdx = raw.indexOf("/functions/v1/maps");
+  if (mapsIdx !== -1) {
+    return raw.slice(mapsIdx);
+  }
+  return raw;
+}
+
 
 // ─── Image types ──────────────────────────────────────────────────────────────
 
@@ -278,7 +294,30 @@ export function resolveImageDetails(
     return { bucket: "none", objectKey: "planimagedefault.webp", url: defaultPlanCoverSrc };
   }
 
-  // ── 2. Already a full URL, blob URL, data URI, or local asset → passthrough ─────────
+  // ── 2. Maps photo proxy URL or Google Places photo reference ───────────────────
+  if (
+    raw.includes("/functions/v1/maps") ||
+    raw.includes("action=photo") ||
+    raw.includes("photo_reference=") ||
+    (raw.startsWith("places/") && raw.includes("/photos/"))
+  ) {
+    let canonicalQueryOrPath = raw;
+    const mapsIdx = raw.indexOf("/functions/v1/maps");
+    if (mapsIdx !== -1) {
+      canonicalQueryOrPath = raw.slice(mapsIdx);
+    } else if (raw.includes("action=photo") || raw.includes("photo_reference=")) {
+      const qIdx = raw.indexOf("?");
+      canonicalQueryOrPath = qIdx !== -1 ? `/functions/v1/maps${raw.slice(qIdx)}` : `/functions/v1/maps?${raw}`;
+    } else if (raw.startsWith("places/") && raw.includes("/photos/")) {
+      canonicalQueryOrPath = `/functions/v1/maps?action=photo&photo_reference=${encodeURIComponent(raw)}&maxwidth=800`;
+    }
+
+    const cleanBase = SUPABASE_URL.replace(/\/+$/, "");
+    const cleanPath = canonicalQueryOrPath.startsWith("/") ? canonicalQueryOrPath : `/${canonicalQueryOrPath}`;
+    return { bucket: "none", objectKey: cleanPath, url: `${cleanBase}${cleanPath}` };
+  }
+
+  // ── 3. Already a full URL, blob URL, data URI, or local asset → passthrough ─────────
   if (
     raw.startsWith("http://") ||
     raw.startsWith("https://") ||

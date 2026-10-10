@@ -222,7 +222,7 @@ describe("District Discovery UI Architecture Suite", () => {
   });
 
   describe("PlacePreviewSheet Bottom Sheet", () => {
-    it("renders place details and Start a Plan CTA", () => {
+    it("renders place details and Create a plan CTA", () => {
       const html = renderToString(
         <PlacePreviewSheet
           item={mockSportsItem}
@@ -232,10 +232,11 @@ describe("District Discovery UI Architecture Suite", () => {
       );
 
       expect(html).toContain("Fusion The Turf");
-      expect(html).toContain("100 Feet Rd, Koramangala");
+      expect(html).toContain("Koramangala");
+      expect(html).not.toContain("100 Feet Rd, Koramangala");
       expect(html).toContain("Turf");
       expect(html).toContain("5.2 km");
-      expect(html).toContain("Start a Plan Here");
+      expect(html).toContain("Create a plan");
       expect(html).not.toContain("Pick a date, invite your squad");
       expect(html).not.toContain("DINING &amp; CAFE");
     });
