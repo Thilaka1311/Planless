@@ -132,18 +132,26 @@ describe("Places Search Betterment & Distance Verification", () => {
   });
 
   it("queries the database globally and retains distant places without geographic filtering", async () => {
-    // Mock Supabase from('discovery_items') query builder
+    // Mock Supabase from('discovery_place_overrides') query builder
     const mockDbPlace = {
       id: "place-hyd-mcd-1",
+      place_id: "place-hyd-mcd-1",
       public_id: "place-hyd-mcd-1",
       title: "McDonald's Jubilee Hills",
+      name_override: "McDonald's Jubilee Hills",
       category: "DINING",
+      category_override: "DINING",
       subcategory: "Fast Food",
       description: "Fast food restaurant in Hyderabad",
+      description_override: "Fast food restaurant in Hyderabad",
       location: "Jubilee Hills, Hyderabad",
       place_address: "Road No 36, Jubilee Hills, Hyderabad, Telangana",
+      address_override: "Road No 36, Jubilee Hills, Hyderabad, Telangana",
       latitude: 17.4319,
+      latitude_override: 17.4319,
       longitude: 78.4073, // Hyderabad (~500 km from Bengaluru)
+      longitude_override: 78.4073,
+      is_deleted: false,
       status: "ACTIVE",
     };
 
@@ -153,7 +161,7 @@ describe("Places Search Betterment & Distance Verification", () => {
     const mockOrder = vi.fn().mockResolvedValue({ data: [mockDbPlace], error: null });
 
     vi.spyOn(supabase, "from").mockImplementation((table: string) => {
-      if (table === "discovery_items") {
+      if (table === "discovery_items" || table === "discovery_place_overrides") {
         return {
           select: mockSelect,
           eq: mockEq,
@@ -190,20 +198,28 @@ describe("Places Search Betterment & Distance Verification", () => {
   it("respects category filter for Movies, Sports, and Activities", async () => {
     const mockMoviesPlace = {
       id: "place-pvr-1",
+      place_id: "place-pvr-1",
       public_id: "place-pvr-1",
       title: "PVR Cinemas Forum",
+      name_override: "PVR Cinemas Forum",
       category: "MOVIES",
+      category_override: "MOVIES",
       subcategory: "Cinema",
       description: "Multiplex cinema hall",
+      description_override: "Multiplex cinema hall",
       location: "Koramangala, Bengaluru",
       place_address: "Forum Mall, Koramangala",
+      address_override: "Forum Mall, Koramangala",
       latitude: 12.9352,
+      latitude_override: 12.9352,
       longitude: 77.6133,
+      longitude_override: 77.6133,
+      is_deleted: false,
       status: "ACTIVE",
     };
 
     vi.spyOn(supabase, "from").mockImplementation((table: string) => {
-      if (table === "discovery_items") {
+      if (table === "discovery_items" || table === "discovery_place_overrides") {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),

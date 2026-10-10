@@ -1,7 +1,6 @@
 import { supabase, SUPABASE_URL } from "../../../../lib/supabaseClient";
 import { DiscoveryItem } from "../../../core/types/discovery";
 import { RawCandidatePlace } from "../search/types/provider";
-import { searchDiscoveryItems } from "./discoveryQueries";
 
 export interface PlaceOverride {
   id?: string;
