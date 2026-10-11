@@ -140,12 +140,13 @@ describe("Movies Pure TMDB Feed Integration", () => {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     movie_id: 12345,
-    release_date: "2025-01-15",
+    release_date: "2026-01-15",
   };
 
   beforeEach(() => {
     vi.spyOn(tmdbService, "getCachedMovieSection").mockReturnValue([mockTmdbMovie]);
     vi.spyOn(tmdbService, "isMovieWithinSixMonths").mockReturnValue(true);
+    vi.spyOn(tmdbService, "isMovieReleased2026OrLater").mockReturnValue(true);
   });
 
   it("does not render Google Places cinema venues even if passed in sections prop", () => {

@@ -2,6 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Crown } from 'lucide-react';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
+import { useDismissibleOverlay } from '../../navigation/appRouter';
 
 interface DisplacedHostModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export const DisplacedHostModal: React.FC<DisplacedHostModalProps> = ({
   onMoveToWaitlist,
   onCancel,
 }) => {
+  useDismissibleOverlay(isOpen, onCancel);
   if (!isOpen) return null;
 
   return (

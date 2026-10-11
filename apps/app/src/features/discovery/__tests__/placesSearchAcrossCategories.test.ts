@@ -191,13 +191,20 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
     // Mock DB fallback search
     const mockDbItem = {
       id: "db-truffles-1",
+      place_id: "db-truffles-1",
       public_id: "db-truffles-1",
       title: "Truffles St Marks Road",
+      name_override: "Truffles St Marks Road",
       category: "DINING",
+      category_override: "DINING",
       subcategory: "Restaurant",
       description: "Famous burger joint",
+      description_override: "Famous burger joint",
       latitude: 12.972,
+      latitude_override: 12.972,
       longitude: 77.601,
+      longitude_override: 77.601,
+      is_deleted: false,
       status: "ACTIVE",
     };
 
@@ -207,7 +214,7 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
     const mockOrder = vi.fn().mockResolvedValue({ data: [mockDbItem], error: null });
 
     vi.spyOn(supabase, "from").mockImplementation((table: string) => {
-      if (table === "discovery_items") {
+      if (table === "discovery_items" || table === "discovery_place_overrides") {
         return {
           select: mockSelect,
           eq: mockEq,

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Plan, UserProfile } from "../../core/types";
 import { usePlansStore } from "../../features/plans/state/PlansContext";
 import { useLivePlan } from "../../features/plans/hooks/useLivePlan";
+import { useDismissibleOverlay } from "../../features/navigation/appRouter";
 import { UserAvatar } from "../../IMGfromDB/UserAvatar";
 import { getPlanAreaName } from "../../features/discovery/services/addressUtils";
 
@@ -21,6 +22,7 @@ export default function TeamOrganizerModal({
   onClose,
 }: TeamOrganizerModalProps) {
   const plan = useLivePlan(planId);
+  useDismissibleOverlay(Boolean(plan), onClose);
   useEffect(() => {
     
   }, [planId, plan]);

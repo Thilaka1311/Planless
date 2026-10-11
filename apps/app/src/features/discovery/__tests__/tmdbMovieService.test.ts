@@ -10,6 +10,8 @@ import {
   TMDB_SUPPORTED_LANGUAGES,
   TMDB_LANGUAGE_NAMES,
   isMovieWithinSixMonths,
+  isMovieReleased2026OrLater,
+  MIN_MOVIE_RELEASE_DATE,
 } from "../services/tmdbMovieService";
 import { TmdbMovie } from "../../../core/types/discovery";
 import { supabase } from "../../../../lib/supabaseClient";
@@ -19,34 +21,28 @@ describe("tmdbMovieService", () => {
     vi.restoreAllMocks();
   });
 
-  describe("isMovieWithinSixMonths", () => {
-    const fixedNow = new Date("2026-09-29T10:00:00Z");
-
-    it("returns true for a movie released 2 months ago", () => {
-      expect(isMovieWithinSixMonths("2026-07-15", fixedNow)).toBe(true);
+  describe("isMovieReleased2026OrLater & isMovieWithinSixMonths", () => {
+    it("returns true for a movie released in 2026 or later", () => {
+      expect(isMovieReleased2026OrLater("2026-01-01")).toBe(true);
+      expect(isMovieReleased2026OrLater("2026-07-15")).toBe(true);
+      expect(isMovieReleased2026OrLater("2026-12-31")).toBe(true);
+      expect(isMovieReleased2026OrLater("2027-04-10")).toBe(true);
+      expect(isMovieWithinSixMonths("2026-07-15")).toBe(true);
     });
 
-    it("returns true for a movie released today or in the future", () => {
-      expect(isMovieWithinSixMonths("2026-09-29", fixedNow)).toBe(true);
-      expect(isMovieWithinSixMonths("2026-11-01", fixedNow)).toBe(true);
+    it("returns false for a movie released prior to 2026", () => {
+      expect(isMovieReleased2026OrLater("2025-12-31")).toBe(false);
+      expect(isMovieReleased2026OrLater("2024-05-10")).toBe(false);
+      expect(isMovieReleased2026OrLater("2022-05-10")).toBe(false);
+      expect(isMovieWithinSixMonths("2025-12-31")).toBe(false);
     });
 
-    it("returns true for a movie released exactly 5 months ago", () => {
-      expect(isMovieWithinSixMonths("2026-04-29", fixedNow)).toBe(true);
-    });
-
-    it("returns false for a movie released 7 months ago", () => {
-      expect(isMovieWithinSixMonths("2026-02-01", fixedNow)).toBe(false);
-    });
-
-    it("returns false for a movie released years ago", () => {
-      expect(isMovieWithinSixMonths("2022-05-10", fixedNow)).toBe(false);
-    });
-
-    it("returns false if release_date is missing or invalid", () => {
-      expect(isMovieWithinSixMonths("", fixedNow)).toBe(false);
-      expect(isMovieWithinSixMonths(null, fixedNow)).toBe(false);
-      expect(isMovieWithinSixMonths("invalid-date", fixedNow)).toBe(false);
+    it("returns false if release_date is missing, empty, or invalid", () => {
+      expect(isMovieReleased2026OrLater("")).toBe(false);
+      expect(isMovieReleased2026OrLater(null)).toBe(false);
+      expect(isMovieReleased2026OrLater(undefined)).toBe(false);
+      expect(isMovieReleased2026OrLater("invalid-date")).toBe(false);
+      expect(isMovieWithinSixMonths("")).toBe(false);
     });
   });
 
@@ -170,7 +166,7 @@ describe("tmdbMovieService", () => {
             title: "Tamil Action Thriller",
             overview: "An exciting Tamil action film",
             poster_path: "/test.jpg",
-            release_date: "2024-09-01",
+            release_date: "2026-09-01",
             vote_average: 8.1,
             vote_count: 500,
             original_language: "ta",
@@ -183,6 +179,7 @@ describe("tmdbMovieService", () => {
             title: "French Drama",
             overview: "Unsupported language film",
             poster_path: "/french.jpg",
+            release_date: "2026-09-01",
             original_language: "fr",
             adult: false,
             video: false,
@@ -227,6 +224,7 @@ describe("tmdbMovieService", () => {
             id: 111,
             title: "Kantara",
             poster_path: "/safe.jpg",
+            release_date: "2026-03-01",
             original_language: "kn",
             adult: false,
             video: false,
@@ -235,6 +233,7 @@ describe("tmdbMovieService", () => {
             id: 222,
             title: "Adult Feature",
             poster_path: "/adult.jpg",
+            release_date: "2026-03-01",
             original_language: "hi",
             adult: true,
             video: false,
@@ -243,6 +242,7 @@ describe("tmdbMovieService", () => {
             id: 333,
             title: "German Movie",
             poster_path: "/german.jpg",
+            release_date: "2026-03-01",
             original_language: "de",
             adult: false,
             video: false,
@@ -264,7 +264,7 @@ describe("tmdbMovieService", () => {
       expect(res.items[0].language_name).toBe("Kannada");
     });
 
-    it("returns movies older than 6 months when searching", async () => {
+    it("filters out movies released before 2026 when searching", async () => {
       const mockSearchResults = {
         page: 1,
         total_pages: 1,
@@ -273,6 +273,14 @@ describe("tmdbMovieService", () => {
             id: 999,
             title: "Classic Blockbuster",
             release_date: "2018-05-15",
+            original_language: "hi",
+            adult: false,
+            video: false,
+          },
+          {
+            id: 1000,
+            title: "2026 Blockbuster",
+            release_date: "2026-02-15",
             original_language: "hi",
             adult: false,
             video: false,
@@ -286,10 +294,10 @@ describe("tmdbMovieService", () => {
         json: async () => mockSearchResults,
       });
 
-      const res = await searchMovies("Classic", 1);
+      const res = await searchMovies("Blockbuster", 1);
       expect(res.items.length).toBe(1);
-      expect(res.items[0].title).toBe("Classic Blockbuster");
-      expect(res.items[0].release_date).toBe("2018-05-15");
+      expect(res.items[0].title).toBe("2026 Blockbuster");
+      expect(res.items[0].release_date).toBe("2026-02-15");
     });
   });
 

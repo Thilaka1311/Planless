@@ -96,12 +96,8 @@ export async function upsertParticipants(records: any[]): Promise<any[]> {
 }
 
 export async function fetchMemories(): Promise<any[]> {
-  const { data, error } = await supabase
-    .from("memories")
-    .select("*");
-
-  if (error) throw error;
-  return (data || []) as any[];
+  // Obsolete prototype memories table removed; return empty list in-memory
+  return [];
 }
 
 export async function updatePlanDetails(planId: string, updates: any): Promise<any> {

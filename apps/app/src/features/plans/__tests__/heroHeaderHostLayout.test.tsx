@@ -4,7 +4,7 @@ import { renderToString } from "react-dom/server";
 import { HeroHeader, HostInfo } from "../components/HeroHeader";
 
 describe("HeroHeader Host Layout Regression Suite", () => {
-  it("renders 1 host with centered avatar directly below title and cleanly truncated text", () => {
+  it("renders 1 host with title and 'Hosted by [host]' text directly below, without host avatars", () => {
     const singleHost: HostInfo[] = [
       { id: "h1", name: "Thilak", avatar: "https://example.com/thilak.jpg" },
     ];
@@ -19,20 +19,19 @@ describe("HeroHeader Host Layout Regression Suite", () => {
 
     // Title renders
     expect(html).toContain("Dinner at Indiranagar");
-    // Avatar rendered with host's avatar
-    expect(html).toContain("https://example.com/thilak.jpg");
-    // Attribution text
+    // No host avatar image rendered
+    expect(html).not.toContain("https://example.com/thilak.jpg");
+    expect(html).not.toContain("-space-x-1.5");
+    // Attribution text directly below title
     expect(html).toContain("Hosted by <span");
     expect(html).toContain("Thilak");
     // Attribution has truncate and max-w-full px-14 to guarantee single line
     expect(html).toContain("id=\"immersive-host-attribution\"");
     expect(html).toContain("truncate");
     expect(html).toContain("px-14");
-    // Avatars have -space-x-1.5 and are in their own centered container
-    expect(html).toContain("-space-x-1.5");
   });
 
-  it("renders 2-3 hosts with overlapping avatar group centered below title", () => {
+  it("renders 2-3 hosts with comma-separated names directly below title and no host avatars", () => {
     const multiHosts: HostInfo[] = [
       { id: "h1", name: "You", avatar: "https://example.com/you.jpg" },
       { id: "h2", name: "Maanastej", avatar: "https://example.com/maanastej.jpg" },
@@ -48,17 +47,16 @@ describe("HeroHeader Host Layout Regression Suite", () => {
       />
     );
 
-    // All 3 avatars rendered
-    expect(html).toContain("https://example.com/you.jpg");
-    expect(html).toContain("https://example.com/maanastej.jpg");
-    expect(html).toContain("https://example.com/thilaka.jpg");
+    // No avatars rendered
+    expect(html).not.toContain("https://example.com/you.jpg");
+    expect(html).not.toContain("https://example.com/maanastej.jpg");
+    expect(html).not.toContain("https://example.com/thilaka.jpg");
+    expect(html).not.toContain("-space-x-1.5");
     // Attribution string joined with commas
     expect(html).toContain("You, Maanastej, Thilaka");
-    // No +N badge for <= 4 hosts
-    expect(html).not.toContain("bg-zinc-800");
   });
 
-  it("renders many hosts (> 4 hosts) with compact capped avatars and +N badge, never expanding header vertically", () => {
+  it("renders many hosts (> 4 hosts) with comma-separated text on single line and no avatars or +N badge", () => {
     const manyHosts: HostInfo[] = [
       { id: "h1", name: "You", avatar: "https://example.com/h1.jpg" },
       { id: "h2", name: "Maanastej", avatar: "https://example.com/h2.jpg" },
@@ -77,9 +75,10 @@ describe("HeroHeader Host Layout Regression Suite", () => {
       />
     );
 
-    // Capped at 4 visible avatars + overflow badge
-    expect(html).toContain("+<!-- -->2");
-    // Host attribution contains all names for tooltip/accessibility, truncated via CSS
+    // No avatars or +N badge
+    expect(html).not.toContain("+<!-- -->2");
+    expect(html).not.toContain("-space-x-1.5");
+    // Host attribution contains all names, truncated via CSS
     expect(html).toContain("You, Maanastej, Thilaka, Renjith, Vaishakh, Aznan");
     expect(html).toContain("title=\"Hosted by You, Maanastej, Thilaka, Renjith, Vaishakh, Aznan\"");
     expect(html).toContain("truncate");

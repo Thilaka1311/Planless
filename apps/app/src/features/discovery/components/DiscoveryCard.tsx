@@ -344,6 +344,7 @@ export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
 
   return (
     <div
+      data-discovery-item-id={item.place_id || item.id}
       {...(shouldEnableAdminHold ? longPress : { onClick: onTap })}
       draggable={false}
       onDragStart={(e) => e.preventDefault()}
@@ -374,11 +375,16 @@ export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
           src={item.cover_image_url}
           category={item.category}
           alt={item.title}
+          width={220}
+          height={130}
+          loading="lazy"
+          decoding="async"
           draggable={false}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none select-none"
           style={{
             width: "100%",
             height: "100%",
+            aspectRatio: "220 / 130",
             objectFit: "cover",
             opacity: 1,
             pointerEvents: "none",

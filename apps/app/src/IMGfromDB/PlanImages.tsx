@@ -16,6 +16,14 @@ export interface DiscoveryImagesProps {
   screen?: string;
   /** Alt text for accessibility */
   alt?: string;
+  /** Explicit width for aspect ratio reservation */
+  width?: number | string;
+  /** Explicit height for aspect ratio reservation */
+  height?: number | string;
+  /** Image loading strategy - defaults to lazy */
+  loading?: "lazy" | "eager";
+  /** Image decoding strategy - defaults to async */
+  decoding?: "async" | "sync" | "auto";
   /** Extra CSS styles */
   className?: string;
   /** Draggable attribute */
@@ -128,6 +136,10 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
   subcategory,
   screen = "Plan Image",
   alt = "Discovery Preview",
+  width,
+  height,
+  loading = "lazy",
+  decoding = "async",
   className = "",
   onClick,
   style,
@@ -218,7 +230,11 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
     <img
       id={id}
       src={resolvedUrl}
-      alt={alt}
+      alt={alt || ""}
+      width={width}
+      height={height}
+      loading={loading || "lazy"}
+      decoding={decoding || "async"}
       className={className}
       draggable={false}
       onDragStart={(e) => e.preventDefault()}

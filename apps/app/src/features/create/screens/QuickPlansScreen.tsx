@@ -9,12 +9,12 @@ import { useLongPress } from "../../../shared/hooks/useLongPress";
 
 export interface QuickPlansScreenProps {
   userId?: string;
+  initialListId?: string;
   onBack: () => void;
   onSelectQuickPlan: (plan: QuickPlan) => void;
   onAddQuickPlan: (listId?: string) => void;
 }
 
-const LIST_NAME_SUGGESTIONS = ["Football", "Movies", "Dining", "Weekend", "College Friends", "Work"];
 
 interface ListCoverInfo {
   src: string | null;
@@ -105,6 +105,7 @@ const QuickPlanListCard: React.FC<QuickPlanListCardProps> = ({
 
 export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
   userId,
+  initialListId,
   onBack,
   onSelectQuickPlan,
   onAddQuickPlan,
@@ -119,7 +120,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
   } = useQuickPlans(userId);
 
   // Navigation state within Quick Plans screen
-  const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  const [selectedListId, setSelectedListId] = useState<string | null>(initialListId || null);
 
   // Create List state
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
@@ -276,25 +277,19 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
       {activeList ? (
         /* ================= LIST DETAIL SCREEN ================= */
         plansInCurrentList.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center px-6 py-20 text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] shadow-lg shadow-[#FF6B2C]/10">
-              <Zap className="w-7 h-7 fill-[#FF6B2C]" />
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-20 text-center space-y-3.5">
+            <div className="flex items-center justify-center">
+              <Zap className="w-8 h-8 text-white fill-white" />
             </div>
-            <div className="space-y-1.5 max-w-xs">
-              <h3 className="text-base font-bold text-white tracking-tight font-sans">
-                No Quick Plans in this list yet.
-              </h3>
-              <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-                Save a favorite setup (place, category, and squad) to spin up plans in 1 tap without filling in details every time.
-              </p>
-            </div>
+            <h3 className="text-base font-bold text-white tracking-tight font-sans">
+              No Quick Plans in this list yet.
+            </h3>
             <button
               type="button"
               onClick={() => onAddQuickPlan(activeList.id)}
-              className="mt-3 px-5 py-2.5 rounded-xl bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-[#FF6B2C]/20 transition cursor-pointer"
+              className="mt-1 px-6 py-2.5 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white font-bold text-xs shadow-lg shadow-[#FF6B2C]/20 transition cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              <span>Add Quick Plan</span>
+              Add Quick Plan
             </button>
           </div>
         ) : (
@@ -391,12 +386,9 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
               </div>
 
               <div className="px-5 pb-2 text-left">
-                <h2 className="text-[18px] font-bold text-white mb-1 font-sans">
+                <h2 className="text-[18px] font-bold text-white font-sans">
                   Create Quick Plan List
                 </h2>
-                <p className="text-[13px] text-zinc-400 font-sans">
-                  Group your setups into a dedicated list
-                </p>
               </div>
 
               <form onSubmit={handleCreateListSubmit} className="px-4 pt-2 space-y-4">
@@ -406,53 +398,32 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                     type="text"
                     value={newListName}
                     onChange={(e) => setNewListName(e.target.value)}
-                    placeholder="e.g. Football, Movies, Dining"
+                    placeholder="Enter list name"
                     autoFocus
                     maxLength={50}
-                    className="w-full px-4 py-3 rounded-xl bg-white/[0.06] border border-white/10 text-white placeholder-zinc-500 text-sm focus:outline-none focus:border-white/25 transition font-sans"
+                    className="w-full px-4 py-3 rounded-xl bg-white/[0.06] border border-[#FF6B2C] text-white placeholder-zinc-500 text-sm focus:outline-none transition font-sans"
                   />
                 </div>
 
-                {/* Suggestions */}
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-medium text-zinc-400 font-sans">
-                    Suggestions:
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {LIST_NAME_SUGGESTIONS.map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        onClick={() => setNewListName(suggestion)}
-                        className={`text-xs px-2.5 py-1 rounded-full border transition cursor-pointer font-sans ${
-                          newListName === suggestion
-                            ? "bg-[#FF6B2C]/20 border-[#FF6B2C] text-[#FF6B2C] font-semibold"
-                            : "bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25"
-                        }`}
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2.5 pt-1">
+                <div className="flex flex-col gap-1 pt-1">
                   <button
+                    id="create_list_submit_btn"
                     type="submit"
                     disabled={!newListName.trim() || isCreatingList}
                     style={{
                       width: "100%",
-                      height: 48,
+                      height: 40,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      background: "rgba(255, 255, 255, 0.12)",
-                      border: "1px solid rgba(255, 255, 255, 0.18)",
-                      borderRadius: 12,
+                      background: !newListName.trim() ? "rgba(255, 255, 255, 0.1)" : "#FF6B2C",
+                      border: "none",
+                      borderRadius: 9999,
                       color: "#FFFFFF",
                       fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
+                      fontWeight: 700,
+                      cursor: !newListName.trim() || isCreatingList ? "not-allowed" : "pointer",
+                      transition: "all 0.15s ease",
                     }}
                     className="active:scale-[0.98] transition-transform font-sans disabled:opacity-40 disabled:cursor-not-allowed"
                   >
@@ -460,6 +431,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                   </button>
 
                   <button
+                    id="create_list_cancel_btn"
                     type="button"
                     disabled={isCreatingList}
                     onClick={() => {
@@ -468,17 +440,15 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                     }}
                     style={{
                       width: "100%",
-                      height: 48,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "rgba(255, 255, 255, 0.06)",
+                      padding: "14px",
+                      background: "none",
                       border: "none",
                       borderRadius: 12,
-                      color: "#FFFFFF",
+                      color: "rgba(255, 255, 255, 0.4)",
                       fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
+                      fontWeight: 500,
+                      cursor: isCreatingList ? "default" : "pointer",
+                      textAlign: "center",
                     }}
                     className="active:scale-[0.98] transition-transform font-sans"
                   >

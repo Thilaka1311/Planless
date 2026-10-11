@@ -486,6 +486,18 @@ export interface PlansDetailsScreenProps {
   onOpenMenu?: () => void;
 }
 
+export function computeCreatePlanCtaPosition(closedScreenHeight: number): React.CSSProperties {
+  return {
+    position: 'fixed',
+    top: `${closedScreenHeight}px`,
+    transform: 'translateY(-100%)',
+    left: 0,
+    right: 0,
+    zIndex: 40,
+    pointerEvents: 'none',
+  };
+}
+
 export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   planId,
   plan,
@@ -552,6 +564,42 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const { showToast } = useToast();
   const livePlan = useLivePlan(planId || '');
   const selectedPlan = (createMode && plan) ? plan : livePlan;
+
+  // Track keyboard-closed screen height so Create Plan CTA stays anchored at the bottom without floating up when keyboard opens
+  const [closedScreenHeight, setClosedScreenHeight] = useState<number>(() =>
+    typeof window !== "undefined" ? window.innerHeight : 800
+  );
+  const prevInnerWidthRef = useRef<number>(
+    typeof window !== "undefined" ? window.innerWidth : 0
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateHeight = () => {
+      const activeEl = document.activeElement;
+      const isInputFocused =
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement ||
+        Boolean((activeEl as HTMLElement)?.isContentEditable);
+
+      const currentWidth = window.innerWidth;
+      const widthChanged = currentWidth !== prevInnerWidthRef.current;
+      prevInnerWidthRef.current = currentWidth;
+
+      // Only update closedScreenHeight when NO text field is focused (keyboard is closed)
+      // or when orientation changed (screen width changed).
+      if (widthChanged || !isInputFocused) {
+        if (window.innerHeight > 200) {
+          setClosedScreenHeight(window.innerHeight);
+        }
+      }
+    };
+
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+    return () => window.removeEventListener("resize", updateHeight);
+  }, []);
 
   // States
   const [isSavingLocation, setIsSavingLocation] = useState(false);
@@ -2267,6 +2315,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
     ? (!isTitleSet || !isLocationValid)
     : (!isTitleSet || !isDateSet || !isLocationValid || isRsvpExpired);
 
+  const handleCreatePlanClick = () => {
+    if (isSubmitting) return;
+    setHasAttemptedCreate(true);
+    if (isCreateDisabled) {
+      setValidationShakeKey((prev) => prev + 1);
+      return;
+    }
+    onSubmit?.();
+  };
+
   return (
     <motion.div
       id="home_plan_details"
@@ -2307,7 +2365,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             {/* Hero Header component */}
             <HeroHeader
               title={selectedPlan.title}
-              headerBadge={isQuickPlanMode ? "Quick Plan Review" : undefined}
               creatorName={isHost ? "You" : selectedPlan.creatorName}
               creatorAvatar={isHost ? userProfile.avatar : selectedPlan.creatorAvatar}
               hosts={allHosts}
@@ -2323,10 +2380,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                 createMode
                   ? undefined
                   : () => {
+                    const targetId = cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
                     if (onOpenChat) {
-                      onOpenChat(selectedPlan.id);
+                      onOpenChat(targetId);
                     } else {
-                      setSelectedChatPlanId(selectedPlan.id);
+                      setSelectedChatPlanId(targetId);
                     }
                   }
               }
@@ -2597,22 +2655,20 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             />
           )}
 
-          {/* Fixed Manage Participants action for host — floating icon + text only, tightly anchored above LiveActionButton / Create Plan button */}
-          {isHost && !isCancelled && (
+          {/* Fixed Manage Participants action for host in live mode — floating icon + text only */}
+          {!createMode && isHost && !isCancelled && (
             <div className="fixed bottom-[58px] left-6 right-6 z-40 flex items-center justify-center pointer-events-auto">
               <button
                 type="button"
                 id="host_manage_participants_btn"
                 onClick={
-                  createMode
-                    ? () => onEditParticipants?.()
-                    : isCompleted
-                      ? () => setShowAttendanceSheet(true)
-                      : hasPlanTimeEnded
-                        ? () => {
-                            showToast("Plan time is up. This plan has completed.", "info");
-                          }
-                        : () => setShowParticipantManagement(true)
+                  isCompleted
+                    ? () => setShowAttendanceSheet(true)
+                    : hasPlanTimeEnded
+                      ? () => {
+                          showToast("Plan time is up. This plan has completed.", "info");
+                        }
+                      : () => setShowParticipantManagement(true)
                 }
                 className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
               >
@@ -2662,41 +2718,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             </div>
           )}
 
-          {createMode ? (() => {
-            const handleCreatePlanClick = () => {
-              if (isSubmitting) return;
-              setHasAttemptedCreate(true);
-              if (isCreateDisabled) {
-                setValidationShakeKey((prev) => prev + 1);
-                return;
-              }
-              onSubmit?.();
-            };
-
-            return (
-              <div
-                style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
-                className="fixed bottom-0 left-0 right-0 px-6 pt-2 pb-4 bg-gradient-to-t from-black via-black/90 to-transparent z-40"
-              >
-                <button
-                  type="button"
-                  id="create-plan-submit-btn"
-                  disabled={isSubmitting}
-                  aria-disabled={isCreateDisabled}
-                  onClick={handleCreatePlanClick}
-                  style={{ borderRadius: 9999 }}
-                  className={`w-full py-3 font-sans font-bold text-[14.5px] rounded-full transition-all flex items-center justify-center gap-2 cursor-pointer ${isCreateDisabled || isSubmitting
-                      ? "bg-[#FF6B2C]/40 text-white/40 shadow-none cursor-not-allowed active:scale-100"
-                      : "bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white shadow-lg"
-                    }`}
-                >
-                  {isSubmitting
-                    ? (isQuickPlanMode ? "Saving Quick Plan…" : "Creating Plan…")
-                    : (isQuickPlanMode ? "Create Quick Plan" : "Create Plan")}
-                </button>
-              </div>
-            );
-          })() : (() => {
+          {!createMode && (() => {
             const showExclamation = Boolean(isHost && hasPlanTimeEnded && !isCancelled && !isCompleted);
 
             return (
@@ -2726,9 +2748,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
                                   ? () => setShowCancelRejoinRequestSheet(true)
                                   : undefined
                 }
-            />
-          );
-        })()}
+              />
+            );
+          })()}
           {hasUserEnteredDescription(selectedPlan) && (
             <div id="immersive-description-block" className="space-y-2 text-left bg-zinc-900/20 p-5 rounded-3xl border border-white/[0.02] select-text">
               <span className="text-[10px] font-sans font-bold tracking-[0.14em] text-zinc-500 uppercase">About</span>
@@ -2737,6 +2759,69 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           )}
         </div>
       </div>
+
+      {/* Region 2: Fixed CTA region in createMode (outside scroll container, anchored to keyboard-closed content area) */}
+      {createMode && (
+        <div
+          id="create-plan-cta-region"
+          style={computeCreatePlanCtaPosition(closedScreenHeight)}
+        >
+          {/* Fixed Manage Participants action for host in Create Mode — tightly anchored above Create Plan button */}
+          {isHost && !isCancelled && (
+            <div className="w-full px-6 mb-2 flex items-center justify-center pointer-events-auto">
+              <button
+                type="button"
+                id="host_manage_participants_btn"
+                onClick={() => onEditParticipants?.()}
+                className="py-1 px-3 bg-transparent hover:opacity-100 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 text-[12.5px] font-sans font-semibold text-white/80 cursor-pointer select-none"
+              >
+                <Users className="w-4 h-4 text-white/70" />
+                <span className="flex items-center gap-1.5">
+                  <span>Manage Participants</span>
+                  {hasPendingParticipantAction && (
+                    <span
+                      title="Pending participant request"
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: '#F59E0B',
+                        lineHeight: 1,
+                        fontFamily: 'Inter, sans-serif',
+                      }}
+                    >
+                      !
+                    </span>
+                  )}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Primary Create Plan Button */}
+          <div
+            style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
+            className="w-full px-6 pt-2 pb-4 bg-gradient-to-t from-black via-black/90 to-transparent pointer-events-auto"
+          >
+            <button
+              type="button"
+              id="create-plan-submit-btn"
+              disabled={isSubmitting}
+              aria-disabled={isCreateDisabled}
+              onClick={handleCreatePlanClick}
+              style={{ borderRadius: 9999 }}
+              className={`w-full py-3 font-sans font-bold text-[14.5px] rounded-full transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                isCreateDisabled || isSubmitting
+                  ? "bg-[#FF6B2C]/40 text-white/40 shadow-none cursor-not-allowed active:scale-100"
+                  : "bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] text-white shadow-lg"
+              }`}
+            >
+              {isSubmitting
+                ? (isQuickPlanMode ? "Saving Quick Plan…" : "Creating Plan…")
+                : (isQuickPlanMode ? "Create Quick Plan" : "Create Plan")}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Temporarily hide sticky ActionButtons
       <ActionButtons

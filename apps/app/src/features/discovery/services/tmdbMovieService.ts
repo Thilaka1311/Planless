@@ -24,19 +24,35 @@ export function getLanguageLabel(code: string | null | undefined): string {
   return TMDB_LANGUAGE_NAMES[lower] || code;
 }
 
+export const MIN_MOVIE_RELEASE_DATE = "2026-01-01";
+
 /**
- * Checks if a movie release date is within the past 6 months from the current date.
- * Future releases are also valid. Older than 6 months is excluded.
+ * Validates that a movie was released in 2026 or later.
+ * Excludes movies released before January 1, 2026, or with missing/invalid release dates.
  */
-export function isMovieWithinSixMonths(releaseDateStr?: string | null, referenceDate = new Date()): boolean {
-  if (!releaseDateStr) return false;
-  const releaseDate = new Date(releaseDateStr);
-  if (isNaN(releaseDate.getTime())) return false;
+export function isMovieReleased2026OrLater(releaseDateStr?: string | null): boolean {
+  if (!releaseDateStr || typeof releaseDateStr !== "string") return false;
+  const trimmed = releaseDateStr.trim();
+  if (!trimmed) return false;
 
-  const sixMonthsAgo = new Date(referenceDate);
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (match) {
+    const year = parseInt(match[1], 10);
+    if (year < 2026) return false;
+    return trimmed >= MIN_MOVIE_RELEASE_DATE;
+  }
 
-  return releaseDate >= sixMonthsAgo;
+  const parsed = new Date(trimmed);
+  if (isNaN(parsed.getTime())) return false;
+  if (parsed.getUTCFullYear() < 2026) return false;
+  return parsed >= new Date("2026-01-01T00:00:00Z");
+}
+
+/**
+ * Backward-compatible alias for existing callers/tests, enforcing 2026 or later.
+ */
+export function isMovieWithinSixMonths(releaseDateStr?: string | null, _referenceDate?: Date): boolean {
+  return isMovieReleased2026OrLater(releaseDateStr);
 }
 
 // Default movie fallback image from local assets
@@ -165,7 +181,7 @@ function setMemoryCache(key: string, data: { items: DiscoveryItem[]; totalPages:
   memoryCache.set(key, { ...data, timestamp: Date.now() });
 
   // Persist to localStorage for first page results to ensure instant zero-flash reload
-  if (typeof window !== "undefined" && window.localStorage && key.includes("_p1_")) {
+  if (typeof window !== "undefined" && window.localStorage && key.includes("_p1_") && data.items.length > 0) {
     try {
       window.localStorage.setItem(`planless_tmdb_${key}`, JSON.stringify(data));
     } catch {
@@ -184,10 +200,12 @@ export function getCachedMovieSection(key: string): DiscoveryItem[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed?.items) ? parsed.items : [];
-    return items.map((item: any) => ({
-      ...item,
-      location: "",
-    }));
+    return items
+      .filter((item: any) => isMovieReleased2026OrLater(item.release_date))
+      .map((item: any) => ({
+        ...item,
+        location: "",
+      }));
   } catch {
     return [];
   }
@@ -254,7 +272,7 @@ export async function fetchDiscoverMovies(
             lang: normalizedLang,
           },
         });
-        if (!error && data && Array.isArray(data.results)) {
+        if (!error && data && Array.isArray(data.results) && (data.results.length > 0 || normalizedLang !== "all")) {
           rawData = data;
         }
       } catch (edgeErr) {
@@ -262,7 +280,7 @@ export async function fetchDiscoverMovies(
       }
 
       // 2. Fallback: call local backend proxy (for local development without Edge Function)
-      if (!rawData || !Array.isArray(rawData.results)) {
+      if (!rawData || !Array.isArray(rawData.results) || (rawData.results.length === 0 && normalizedLang === "all")) {
         try {
           const queryParams = new URLSearchParams({
             type,
@@ -284,7 +302,7 @@ export async function fetchDiscoverMovies(
       }
 
       // 3. Direct TMDB fallback if proxy/edge function not reachable
-      if (!rawData || !Array.isArray(rawData.results)) {
+      if (!rawData || !Array.isArray(rawData.results) || (rawData.results.length === 0 && normalizedLang === "all")) {
         const token =
           (typeof import.meta !== "undefined" && import.meta.env?.VITE_TMDB_ACCESS_TOKEN) ||
           (typeof process !== "undefined" && (process.env?.VITE_TMDB_ACCESS_TOKEN || process.env?.TMDB_ACCESS_TOKEN));
@@ -335,6 +353,7 @@ export async function fetchDiscoverMovies(
                   sort_by: "popularity.desc",
                   include_adult: "false",
                   include_video: "false",
+                  "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
                 }),
                 { headers }
               )
@@ -352,6 +371,7 @@ export async function fetchDiscoverMovies(
                 sort_by: "popularity.desc",
                 include_adult: "false",
                 include_video: "false",
+                "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
               }),
               { headers }
             )
@@ -367,7 +387,7 @@ export async function fetchDiscoverMovies(
           if (normalizedLang !== "all") {
             for (const m of allRaw) {
               if (!m || !m.title || m.adult || m.video || seen.has(m.id)) continue;
-              if (!isMovieWithinSixMonths(m.release_date)) continue;
+              if (!isMovieReleased2026OrLater(m.release_date)) continue;
               if (m.original_language === normalizedLang) {
                 seen.add(m.id);
                 filtered.push(m);
@@ -378,7 +398,7 @@ export async function fetchDiscoverMovies(
 
             for (const m of allRaw) {
               if (!m || !m.title || m.adult || m.video || seen.has(m.id)) continue;
-              if (!isMovieWithinSixMonths(m.release_date)) continue;
+              if (!isMovieReleased2026OrLater(m.release_date)) continue;
               if (byLang[m.original_language]) {
                 seen.add(m.id);
                 byLang[m.original_language].push(m);
@@ -407,6 +427,7 @@ export async function fetchDiscoverMovies(
                 include_adult: "false",
                 include_video: "false",
                 with_genres: genre ? String(genre) : "",
+                "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
               }),
               { headers }
             ).then((r) => r.json());
@@ -422,6 +443,7 @@ export async function fetchDiscoverMovies(
                   include_adult: "false",
                   include_video: "false",
                   with_genres: genre ? String(genre) : "",
+                  "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
                 }),
                 { headers }
               )
@@ -444,6 +466,7 @@ export async function fetchDiscoverMovies(
                 include_adult: "false",
                 include_video: "false",
                 with_genres: genre ? String(genre) : "",
+                "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
               }),
               { headers }
             ).then((r) => r.json());
@@ -458,6 +481,7 @@ export async function fetchDiscoverMovies(
                   include_adult: "false",
                   include_video: "false",
                   with_genres: genre ? String(genre) : "",
+                  "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
                 }),
                 { headers }
               )
@@ -476,9 +500,10 @@ export async function fetchDiscoverMovies(
         return { items: [], totalPages: 0 };
       }
 
-      // Filter to strictly supported languages and non-adult/non-video
+      // Filter to strictly supported languages, 2026 or later, and non-adult/non-video
       const validMovies: TmdbMovie[] = rawData.results.filter((m: any) => {
         if (!m || !m.title || m.adult || m.video) return false;
+        if (!isMovieReleased2026OrLater(m.release_date)) return false;
         if (normalizedLang !== "all") {
           return m.original_language === normalizedLang;
         }
@@ -610,9 +635,10 @@ export async function searchMovies(
         return { items: [], totalPages: 0 };
       }
 
-      // Filter to strictly supported languages and non-adult/non-video
+      // Filter to strictly supported languages, 2026 or later, and non-adult/non-video
       const validMovies: TmdbMovie[] = rawData.results.filter((m: any) => {
         if (!m || !m.title || m.adult || m.video) return false;
+        if (!isMovieReleased2026OrLater(m.release_date)) return false;
         if (normalizedLang !== "all") {
           return m.original_language === normalizedLang;
         }

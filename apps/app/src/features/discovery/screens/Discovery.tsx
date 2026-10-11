@@ -1,37 +1,77 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { Search, MapPin, Sparkles, ChevronRight, ChevronDown, ChevronUp, Zap } from "lucide-react";
 import { getSectionsByCategory, getCachedSections, clearCachedSections } from "../services/discoveryService";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { ADMIN_CONFIGS, ContentConfig } from "../services/discoveryAdminService";
-import { AdminContextSheet } from "./AdminDiscovery";
-import { EditCard } from "../components/EditCard";
-import { DiscoveryCard, RestaurantCard, SportsCard, MovieCard } from "../components/DiscoveryCard";
-import { DiscoverySection } from "../components/DiscoverySection";
 import { ForYouSections } from "../components/ForYouSections";
-import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
-import { AdminPlaceEditSheet } from "../components/AdminPlaceEditSheet";
 import { subscribePlaceOverrides } from "../services/placeOverridesService";
-import { DiscoverSports } from "./DiscoverSports";
-import { DiscoverMovies } from "./DiscoverMovies";
-import { DiscoverDining } from "./DiscoverDining";
-import { DiscoverActivities } from "./DiscoverActivities";
-import { LocationSetter, DiscoveryLocation } from "./LocationSetter";
+import { BackToTopButton } from "../components/BackToTopButton";
+import type { DiscoveryLocation } from "./LocationSetter";
 import { useUserLocation } from "../hooks/useUserLocation";
 import moviesCategoryIcon from "../../../assets/categories/movies.png";
 import activitiesCategoryIcon from "../../../assets/categories/activity.png";
 import diningCategoryIcon from "../../../assets/categories/dining.png";
 import sportsCategoryIcon from "../../../assets/categories/sports.png";
 import { preloadImage } from "../../../shared/imaging/preloadImage";
-import { QuickPlansScreen } from "../../create/screens/QuickPlansScreen";
 import { QuickPlan } from "../../../core/types";
-import { MasterSearchScreen } from "./MasterSearchScreen";
 import {
   navigateToRoute,
   navigateBack,
   parseCurrentRoute,
   listenToNavigation,
+  useDismissibleOverlay,
 } from "../../navigation/appRouter";
+import { lazyWithRetry } from "../../../shared/utils/lazyWithRetry";
+
+// Code-split heavy sub-screens and modals for minimal initial bundle
+const DiscoverSports = lazyWithRetry(
+  () => import("./DiscoverSports").then((m) => ({ default: m.DiscoverSports })),
+  "DiscoverSports"
+);
+const DiscoverMovies = lazyWithRetry(
+  () => import("./DiscoverMovies").then((m) => ({ default: m.DiscoverMovies })),
+  "DiscoverMovies"
+);
+const DiscoverDining = lazyWithRetry(
+  () => import("./DiscoverDining").then((m) => ({ default: m.DiscoverDining })),
+  "DiscoverDining"
+);
+const DiscoverActivities = lazyWithRetry(
+  () => import("./DiscoverActivities").then((m) => ({ default: m.DiscoverActivities })),
+  "DiscoverActivities"
+);
+const QuickPlansScreen = lazyWithRetry(
+  () => import("../../create/screens/QuickPlansScreen").then((m) => ({ default: m.QuickPlansScreen })),
+  "QuickPlansScreen"
+);
+import { MasterSearchScreen } from "./MasterSearchScreen";
+const LocationSetter = lazyWithRetry(
+  () => import("./LocationSetter").then((m) => ({ default: m.LocationSetter })),
+  "LocationSetter"
+);
+const PlacePreviewSheet = lazyWithRetry(
+  () => import("../components/PlacePreviewSheet").then((m) => ({ default: m.PlacePreviewSheet })),
+  "PlacePreviewSheet"
+);
+const AdminPlaceEditSheet = lazyWithRetry(
+  () => import("../components/AdminPlaceEditSheet").then((m) => ({ default: m.AdminPlaceEditSheet })),
+  "AdminPlaceEditSheet"
+);
+const AdminContextSheet = lazyWithRetry(
+  () => import("./AdminDiscovery").then((m) => ({ default: m.AdminContextSheet })),
+  "AdminContextSheet"
+);
+const EditCard = lazyWithRetry(
+  () => import("../components/EditCard").then((m) => ({ default: m.EditCard })),
+  "EditCard"
+);
+
+const LazyOverlayFallback = (
+  <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+    <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
+  </div>
+);
 
 // Eagerly pre-warm static category icons so they are instantly in memory/GPU cache
 if (typeof window !== "undefined") {
@@ -115,6 +155,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     setDiscoveryLocation,
   } = useUserLocation();
   const [showLocationSetter, setShowLocationSetter] = useState(false);
+  useDismissibleOverlay(showLocationSetter, () => setShowLocationSetter(false), 'location-setter');
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<"all" | "sports" | "movies" | "dining" | "activities">("all");
@@ -150,7 +191,10 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     ) {
       return current.tab;
     }
-    if (current.tab === "create" && current.subScreen) {
+    if (
+      current.tab === "create" &&
+      (current.subScreen === "master-search" || current.subScreen === "quick-plans")
+    ) {
       return current.subScreen;
     }
     return null;
@@ -174,7 +218,11 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
       ) {
         setActiveSubScreen(route.tab);
       } else if (route.tab === "create") {
-        setActiveSubScreen(route.subScreen || null);
+        if (route.subScreen === "master-search" || route.subScreen === "quick-plans") {
+          setActiveSubScreen(route.subScreen);
+        } else {
+          setActiveSubScreen(null);
+        }
       } else if (
         route.tab === "home" ||
         route.tab === "plans" ||
@@ -296,22 +344,14 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
   };
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  const lastScrollTopRef = useRef(0);
-  const isNavVisibleRef = useRef(true);
+  const lastScrollTopRef = useRef<number>(0);
+  const isNavVisibleRef = useRef<boolean>(true);
 
-  // Scroll listener to toggle bottom nav visibility and back-to-top button
+  // Scroll listener to toggle bottom nav visibility
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const currentScrollTop = e.currentTarget.scrollTop;
     savedDiscoveryScrollTop = currentScrollTop;
     const delta = currentScrollTop - lastScrollTopRef.current;
-
-    // Toggle Back to top button at threshold (> 260px)
-    if (currentScrollTop > 260) {
-      setShowBackToTop(true);
-    } else {
-      setShowBackToTop(false);
-    }
 
     // Always show nav if at or near top
     if (currentScrollTop <= 30) {
@@ -333,21 +373,6 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     }
 
     lastScrollTopRef.current = currentScrollTop;
-  }, []);
-
-  const handleScrollToTop = useCallback(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-    }
-    savedDiscoveryScrollTop = 0;
-    setShowBackToTop(false);
-    if (!isNavVisibleRef.current) {
-      isNavVisibleRef.current = true;
-      window.dispatchEvent(new CustomEvent("planless_bottom_nav_visibility", { detail: { visible: true } }));
-    }
   }, []);
 
   // Restore saved scroll position when returning to Discovery
@@ -424,6 +449,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
             <button
               key={cat.id}
               type="button"
+              aria-label={cat.title}
               onClick={() => handleCategoryClick(cat.id)}
               className={`relative h-[86px] rounded-2xl border border-white/[0.08] bg-[#121216]/90 hover:bg-[#18181f] active:scale-[0.97] transition-all duration-200 cursor-pointer flex flex-col items-center justify-center p-1.5 group shadow-sm ${cat.glow}`}
             >
@@ -431,9 +457,13 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
               <div className="w-11 h-11 flex items-center justify-center shrink-0">
                 <img
                   src={cat.image}
-                  alt={cat.title}
+                  alt=""
+                  aria-hidden="true"
+                  width={44}
+                  height={44}
                   loading="eager"
-                  decoding="sync"
+                  decoding="async"
+                  style={{ aspectRatio: "1 / 1" }}
                   className="h-full w-auto max-w-none object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)] group-hover:scale-105 transition-transform duration-200 select-none pointer-events-none"
                 />
               </div>
@@ -448,51 +478,47 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
       </section>
 
       {/* ── FLOATING BACK-TO-TOP BUTTON ── */}
-      <button
-        type="button"
-        onClick={handleScrollToTop}
-        aria-label="Back to top"
-        className={`fixed top-[68px] left-1/2 -translate-x-1/2 z-30 w-8 h-8 rounded-full bg-[#18181b]/95 border border-white/10 text-white flex items-center justify-center shadow-lg backdrop-blur-md hover:bg-zinc-800 active:scale-95 transition-all duration-200 cursor-pointer ${
-          showBackToTop
-            ? "opacity-100 scale-100 pointer-events-auto"
-            : "opacity-0 scale-90 pointer-events-none"
-        }`}
-      >
-        <ChevronUp className="w-4 h-4 text-zinc-200" />
-      </button>
+      <BackToTopButton scrollContainerRef={scrollContainerRef} />
 
       {/* ── 3. DYNAMIC MULTI-SECTION DISCOVERY FEED ── */}
       {isLoading ? (
         <div className="space-y-7 pt-2">
-          {["Sports", "Movies", "Restaurants", "Activities"].map((catTitle) => (
-            <div key={catTitle} className="space-y-3">
-              <div className="px-6 flex items-center justify-between">
-                <div className="h-4 w-32 bg-white/[0.06] rounded-md animate-pulse" />
-              </div>
-              <div className="flex gap-3 overflow-x-auto no-scrollbar px-6 pb-2.5">
-                {[1, 2, 3, 4].map((i) => (
-                  <div
-                    key={i}
-                    style={{
-                      width: "220px",
-                      minWidth: "220px",
-                      maxWidth: "220px",
-                      height: "225px",
-                      minHeight: "225px",
-                    }}
-                    className="shrink-0 rounded-2xl bg-[#121216] border border-white/[0.06] overflow-hidden flex flex-col animate-pulse"
-                  >
-                    <div className="w-full h-[130px] bg-white/[0.04]" />
-                    <div className="p-3 flex flex-col justify-between flex-1 space-y-2">
-                      <div className="h-4 w-3/4 bg-white/[0.07] rounded" />
-                      <div className="h-3 w-1/2 bg-white/[0.04] rounded" />
-                      <div className="h-3 w-2/3 bg-white/[0.04] rounded" />
+          {["Sports", "Movies", "Restaurants", "Activities"].map((catTitle) => {
+            const isMovieCat = catTitle === "Movies";
+            return (
+              <div key={catTitle} className="space-y-3">
+                <div className="px-6 flex items-center justify-between">
+                  <div className="h-4 w-32 bg-white/[0.06] rounded-md animate-pulse" />
+                </div>
+                <div className="flex gap-3 overflow-x-auto no-scrollbar px-6 pb-2.5">
+                  {[1, 2, 3, 4, 5].slice(0, isMovieCat ? 5 : 4).map((i) => (
+                    <div
+                      key={i}
+                      style={
+                        isMovieCat
+                          ? { width: 130, minWidth: 130, height: 235 }
+                          : {
+                              width: "220px",
+                              minWidth: "220px",
+                              maxWidth: "220px",
+                              height: "225px",
+                              minHeight: "225px",
+                            }
+                      }
+                      className="shrink-0 rounded-2xl bg-[#121216] border border-white/[0.06] overflow-hidden flex flex-col animate-pulse"
+                    >
+                      <div className={isMovieCat ? "w-full aspect-[2/3] bg-white/[0.04]" : "w-full h-[130px] bg-white/[0.04]"} />
+                      <div className="p-3 flex flex-col justify-between flex-1 space-y-2">
+                        <div className="h-4 w-3/4 bg-white/[0.07] rounded" />
+                        <div className="h-3 w-1/2 bg-white/[0.04] rounded" />
+                        {!isMovieCat && <div className="h-3 w-2/3 bg-white/[0.04] rounded" />}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <ForYouSections
@@ -511,158 +537,175 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
 
       {/* ── ADMIN: PLACE EDIT SHEET ── */}
       {isAdmin && adminEditPlace && (
-        <AdminPlaceEditSheet
-          item={adminEditPlace}
-          userCoordinates={activeCoordinates}
-          onClose={() => setAdminEditPlace(null)}
-          onSaved={() => {
-            setAdminEditPlace(null);
-            refresh();
-          }}
-          onHidden={(hiddenPlaceId) => {
-            setAdminEditPlace(null);
-            setSections((prev) =>
-              prev.map((sec) => ({
-                ...sec,
-                items: sec.items.filter((i) => {
-                  const pId = i.place_id || (typeof i.id === "string" ? i.id.replace(/^place_/, "") : i.id);
-                  return pId !== hiddenPlaceId;
-                }),
-              }))
-            );
-            refresh();
-          }}
-        />
+        <Suspense fallback={null}>
+          <AdminPlaceEditSheet
+            item={adminEditPlace}
+            userCoordinates={activeCoordinates}
+            onClose={() => setAdminEditPlace(null)}
+            onSaved={() => {
+              setAdminEditPlace(null);
+              refresh();
+            }}
+            onHidden={(hiddenPlaceId) => {
+              setAdminEditPlace(null);
+              setSections((prev) =>
+                prev.map((sec) => ({
+                  ...sec,
+                  items: sec.items.filter((i) => {
+                    const pId = i.place_id || (typeof i.id === "string" ? i.id.replace(/^place_/, "") : i.id);
+                    return pId !== hiddenPlaceId;
+                  }),
+                }))
+              );
+              refresh();
+            }}
+          />
+        </Suspense>
       )}
 
       {/* ── PLACE PREVIEW SHEET ── */}
       {previewItem && (
-        <PlacePreviewSheet
-          item={previewItem}
-          userCoordinates={activeCoordinates}
-          onClose={() => setPreviewItem(null)}
-          onConfirmPlan={(item) => {
-            setPreviewItem(null);
-            onSelectDiscoveryItem(item);
-          }}
-        />
+        <Suspense fallback={null}>
+          <PlacePreviewSheet
+            item={previewItem}
+            userCoordinates={activeCoordinates}
+            onClose={() => setPreviewItem(null)}
+            onConfirmPlan={(item) => {
+              setPreviewItem(null);
+              onSelectDiscoveryItem(item);
+            }}
+          />
+        </Suspense>
       )}
-
 
       {/* ── ADMIN: CONTEXT ACTION SHEET ── */}
       {isAdmin && contextTarget && (
-        <AdminContextSheet
-          item={contextTarget.item}
-          config={contextTarget.config}
-          token={adminToken}
-          onClose={() => setContextTarget(null)}
-          onEdit={(item) => {
-            setEditTarget({ item, config: contextTarget.config });
-            setContextTarget(null);
-          }}
-          onDeleted={() => {
-            setContextTarget(null);
-            refresh();
-          }}
-        />
+        <Suspense fallback={null}>
+          <AdminContextSheet
+            item={contextTarget.item}
+            config={contextTarget.config}
+            token={adminToken}
+            onClose={() => setContextTarget(null)}
+            onEdit={(item) => {
+              setEditTarget({ item, config: contextTarget.config });
+              setContextTarget(null);
+            }}
+            onDeleted={() => {
+              setContextTarget(null);
+              refresh();
+            }}
+          />
+        </Suspense>
       )}
 
       {/* ── ADMIN: EDIT CARD SCREEN ── */}
       {isAdmin && editTarget && (
-        <EditCard
-          item={editTarget.item}
-          config={editTarget.config}
-          token={adminToken}
-          onClose={() => setEditTarget(null)}
-          onSaved={() => {
-            setEditTarget(null);
-            refresh();
-          }}
-        />
+        <Suspense fallback={null}>
+          <EditCard
+            item={editTarget.item}
+            config={editTarget.config}
+            token={adminToken}
+            onClose={() => setEditTarget(null)}
+            onSaved={() => {
+              setEditTarget(null);
+              refresh();
+            }}
+          />
+        </Suspense>
       )}
 
       {/* ── SUB-SCREEN OVERLAYS ── */}
       {activeSubScreen === "sports" && (
-        <div className="fixed inset-0 z-40 bg-black">
-          <DiscoverSports
-            sections={sections}
-            isAdmin={isAdmin}
-            onBack={() => handleSubScreenChange(null)}
-            onSelectDiscoveryItem={onSelectDiscoveryItem}
-            onLongPressAdmin={(item) => {
-              if (isAdmin) setAdminEditPlace(item);
-            }}
-            currentCity={displayCity}
-            currentLocality={displayLocality}
-            currentCoordinates={activeCoordinates}
-          />
-        </div>
+        <Suspense fallback={LazyOverlayFallback}>
+          <div className="fixed inset-0 z-40 bg-black">
+            <DiscoverSports
+              sections={sections}
+              isAdmin={isAdmin}
+              onBack={() => handleSubScreenChange(null)}
+              onSelectDiscoveryItem={onSelectDiscoveryItem}
+              onLongPressAdmin={(item) => {
+                if (isAdmin) setAdminEditPlace(item);
+              }}
+              currentCity={displayCity}
+              currentLocality={displayLocality}
+              currentCoordinates={activeCoordinates}
+            />
+          </div>
+        </Suspense>
       )}
 
       {activeSubScreen === "movies" && (
-        <div className="fixed inset-0 z-40 bg-black">
-          <DiscoverMovies
-            sections={sections}
-            isAdmin={isAdmin}
-            onBack={() => handleSubScreenChange(null)}
-            onSelectDiscoveryItem={onSelectDiscoveryItem}
-            currentCity={displayCity}
-            currentLocality={displayLocality}
-            currentCoordinates={activeCoordinates}
-          />
-        </div>
+        <Suspense fallback={LazyOverlayFallback}>
+          <div className="fixed inset-0 z-40 bg-black">
+            <DiscoverMovies
+              sections={sections}
+              isAdmin={isAdmin}
+              onBack={() => handleSubScreenChange(null)}
+              onSelectDiscoveryItem={onSelectDiscoveryItem}
+              currentCity={displayCity}
+              currentLocality={displayLocality}
+              currentCoordinates={activeCoordinates}
+            />
+          </div>
+        </Suspense>
       )}
 
       {activeSubScreen === "dining" && (
-        <div className="fixed inset-0 z-40 bg-black">
-          <DiscoverDining
-            sections={sections}
-            isAdmin={isAdmin}
-            onBack={() => handleSubScreenChange(null)}
-            onSelectDiscoveryItem={onSelectDiscoveryItem}
-            onLongPressAdmin={(item) => {
-              if (isAdmin) setAdminEditPlace(item);
-            }}
-            currentCity={displayCity}
-            currentLocality={displayLocality}
-            currentCoordinates={activeCoordinates}
-          />
-        </div>
+        <Suspense fallback={LazyOverlayFallback}>
+          <div className="fixed inset-0 z-40 bg-black">
+            <DiscoverDining
+              sections={sections}
+              isAdmin={isAdmin}
+              onBack={() => handleSubScreenChange(null)}
+              onSelectDiscoveryItem={onSelectDiscoveryItem}
+              onLongPressAdmin={(item) => {
+                if (isAdmin) setAdminEditPlace(item);
+              }}
+              currentCity={displayCity}
+              currentLocality={displayLocality}
+              currentCoordinates={activeCoordinates}
+            />
+          </div>
+        </Suspense>
       )}
 
       {activeSubScreen === "activities" && (
-        <div className="fixed inset-0 z-40 bg-black">
-          <DiscoverActivities
-            sections={sections}
-            isAdmin={isAdmin}
-            onBack={() => handleSubScreenChange(null)}
-            onSelectDiscoveryItem={onSelectDiscoveryItem}
-            onLongPressAdmin={(item) => {
-              if (isAdmin) setAdminEditPlace(item);
-            }}
-            currentCity={displayCity}
-            currentLocality={displayLocality}
-            currentCoordinates={activeCoordinates}
-          />
-        </div>
+        <Suspense fallback={LazyOverlayFallback}>
+          <div className="fixed inset-0 z-40 bg-black">
+            <DiscoverActivities
+              sections={sections}
+              isAdmin={isAdmin}
+              onBack={() => handleSubScreenChange(null)}
+              onSelectDiscoveryItem={onSelectDiscoveryItem}
+              onLongPressAdmin={(item) => {
+                if (isAdmin) setAdminEditPlace(item);
+              }}
+              currentCity={displayCity}
+              currentLocality={displayLocality}
+              currentCoordinates={activeCoordinates}
+            />
+          </div>
+        </Suspense>
       )}
 
       {/* ── DEDICATED QUICK PLANS SCREEN ── */}
       {activeSubScreen === "quick-plans" && (
-        <div className="fixed inset-0 z-50 bg-black">
-          <QuickPlansScreen
-            userId={resolvedUserId}
-            onBack={() => handleSubScreenChange(null)}
-            onSelectQuickPlan={(plan) => {
-              handleSubScreenChange(null);
-              onSelectQuickPlan?.(plan);
-            }}
-            onAddQuickPlan={(listId) => {
-              handleSubScreenChange(null);
-              onAddQuickPlan?.(listId);
-            }}
-          />
-        </div>
+        <Suspense fallback={LazyOverlayFallback}>
+          <div className="fixed inset-0 z-50 bg-black">
+            <QuickPlansScreen
+              userId={resolvedUserId}
+              onBack={() => handleSubScreenChange(null)}
+              onSelectQuickPlan={(plan) => {
+                handleSubScreenChange(null);
+                onSelectQuickPlan?.(plan);
+              }}
+              onAddQuickPlan={(listId) => {
+                handleSubScreenChange(null);
+                onAddQuickPlan?.(listId);
+              }}
+            />
+          </div>
+        </Suspense>
       )}
 
       {/* ── DEDICATED MASTER SEARCH SCREEN ── */}
@@ -679,17 +722,18 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
         </div>
       )}
 
-      {/* ── LOCATION SETTER OVERLAY ── */}
       {showLocationSetter && (
-        <div className="fixed inset-0 z-50 bg-black">
-          <LocationSetter
-            currentCity={displayCity}
-            currentLocality={displayLocality}
-            currentCoordinates={activeCoordinates}
-            onBack={() => setShowLocationSetter(false)}
-            onSelectLocation={handleLocationSelect}
-          />
-        </div>
+        <Suspense fallback={LazyOverlayFallback}>
+          <div className="fixed inset-0 z-50 bg-black">
+            <LocationSetter
+              currentCity={displayCity}
+              currentLocality={displayLocality}
+              currentCoordinates={activeCoordinates}
+              onBack={() => setShowLocationSetter(false)}
+              onSelectLocation={handleLocationSelect}
+            />
+          </div>
+        </Suspense>
       )}
 
     </div>

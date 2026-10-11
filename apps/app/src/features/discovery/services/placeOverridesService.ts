@@ -1,7 +1,6 @@
 import { supabase, SUPABASE_URL } from "../../../../lib/supabaseClient";
 import { DiscoveryItem } from "../../../core/types/discovery";
 import { RawCandidatePlace } from "../search/types/provider";
-import { searchDiscoveryItems } from "./discoveryQueries";
 
 export interface PlaceOverride {
   id?: string;
@@ -337,10 +336,11 @@ export function applyPlaceOverridesSync<T extends PlaceOverrideTarget>(items: T[
         updated.longitude = override.longitude_override;
       }
 
+      const placeId = override.place_id || item.place_id || (item as any).id || "";
       if (override.google_photo_reference) {
         updated.cover_image_url = `${photoBaseUrl}?action=photo&photo_reference=${encodeURIComponent(
           override.google_photo_reference
-        )}&maxwidth=800`;
+        )}&maxwidth=800${placeId ? `&place_id=${encodeURIComponent(placeId)}` : ""}`;
         (updated as any).google_photo_reference = override.google_photo_reference;
       } else if (override.image_path) {
         updated.cover_image_url = override.image_path;
@@ -464,7 +464,7 @@ export function mergeSportsPlacesWithOverrides<
     if (override.google_photo_reference) {
       updated.cover_image_url = `${photoBaseUrl}?action=photo&photo_reference=${encodeURIComponent(
         override.google_photo_reference
-      )}&maxwidth=800`;
+      )}&maxwidth=800&place_id=${encodeURIComponent(cleanId)}`;
       updated.google_photo_reference = override.google_photo_reference;
     } else if (override.image_path) {
       updated.cover_image_url = override.image_path;

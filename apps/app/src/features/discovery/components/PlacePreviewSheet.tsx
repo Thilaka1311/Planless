@@ -6,6 +6,7 @@ import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { resolveVenueRating, resolveVenueDistance } from "./DiscoveryCard";
 import { TMDB_LANGUAGE_NAMES } from "../services/tmdbMovieService";
 import { getPlanAreaName } from "../services/addressUtils";
+import { useDismissibleOverlay } from "../../navigation/appRouter";
 
 export interface PlacePreviewSheetProps {
   item: DiscoveryItem | null;
@@ -20,6 +21,7 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
   onConfirmPlan,
   userCoordinates,
 }) => {
+  useDismissibleOverlay(Boolean(item), onClose);
   const effectiveItem = item;
   if (!effectiveItem) return null;
 

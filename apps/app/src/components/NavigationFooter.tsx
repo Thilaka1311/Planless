@@ -145,7 +145,7 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
       <button
         id="nav_item_home"
         onClick={() => { setActiveTab("home"); }}
-        className={`flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer ${activeTab === "home" ? "text-[#ff8b66]" : "text-zinc-500 hover:text-zinc-300"}`}
+        className={`flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer ${activeTab === "home" ? "text-[#ff8b66]" : "text-zinc-400 hover:text-zinc-200"}`}
       >
         <div className="relative">
           <Home className="w-6 h-6" />
@@ -161,7 +161,7 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
       <button
         id="nav_item_plans"
         onClick={() => { setActiveTab("plans"); }}
-        className={`flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer ${activeTab === "plans" ? "text-[#ff8b66]" : "text-zinc-500 hover:text-zinc-300"}`}
+        className={`flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer ${activeTab === "plans" ? "text-[#ff8b66]" : "text-zinc-400 hover:text-zinc-200"}`}
       >
         <Calendar className="w-6 h-6" />
         <span className="text-[10.5px] font-sans tracking-wide mt-1 font-medium">Plans</span>
@@ -183,7 +183,7 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
       <button
         id="nav_item_chats"
         onClick={() => { setActiveTab("chats"); }}
-        className={`flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer ${activeTab === "chats" ? "text-[#ff8b66]" : "text-zinc-500 hover:text-zinc-300"}`}
+        className={`flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer ${activeTab === "chats" ? "text-[#ff8b66]" : "text-zinc-400 hover:text-zinc-200"}`}
       >
         <div className="relative">
           <MessageSquare className="w-6 h-6" />
@@ -199,7 +199,7 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
       <button
         id="nav_item_profile"
         onClick={() => { setActiveTab("profile"); }}
-        className={`flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer ${activeTab === "profile" ? "text-[#ff8b66]" : "text-zinc-500 hover:text-zinc-300"}`}
+        className={`flex flex-col items-center justify-center w-14 h-14 transition-all cursor-pointer ${activeTab === "profile" ? "text-[#ff8b66]" : "text-zinc-400 hover:text-zinc-200"}`}
       >
         <div className="relative">
           <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${

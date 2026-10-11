@@ -6,10 +6,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load .env files before exporting env config
-dotenv.config({ path: path.resolve(__dirname, "../../../../.env") });
-dotenv.config({ path: path.resolve(__dirname, "../../../../.env.local"), override: true });
+dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
+dotenv.config({ path: path.resolve(process.cwd(), "../../.env.local"), override: true });
+dotenv.config({ path: path.resolve(process.cwd(), ".env"), override: true });
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true });
 dotenv.config({ path: path.resolve(__dirname, "../../.env"), override: true });
 dotenv.config({ path: path.resolve(__dirname, "../../.env.local"), override: true });
+dotenv.config({ path: path.resolve(__dirname, "../../../../.env"), override: true });
+dotenv.config({ path: path.resolve(__dirname, "../../../../.env.local"), override: true });
 
 export interface BackendEnv {
   SUPABASE_URL: string;

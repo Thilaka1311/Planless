@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend, ParticipantTab } from './types';
 import { formatSkipReason, getParticipantRsvpDisplayStatus, isJoinedRsvpParticipant } from '../../../../lib/participantStatus';
+import { useDismissibleOverlay } from '../../navigation/appRouter';
 
 interface ParticipantActionSheetProps {
   selectedItem: Friend | null;
@@ -39,6 +40,7 @@ export const ParticipantActionSheet: React.FC<ParticipantActionSheetProps> = ({
   onRemoveParticipant,
   onLeavePlan,
 }) => {
+  useDismissibleOverlay(Boolean(selectedItem && sheetType), onClose);
   const isActionProcessingRef = useRef(false);
 
   if (!selectedItem || !sheetType) return null;

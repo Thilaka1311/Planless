@@ -1,24 +1,11 @@
 import { supabase } from "../../../../lib/supabaseClient";
 
 /**
- * Fetch active sections with nested active items, ordered by display_order.
+ * @deprecated Legacy database sections query.
+ * Discovery sections are now fetched via Google Places Edge Function.
  */
 export async function fetchActiveSectionsWithItems() {
-  const { data, error } = await (supabase as any)
-    .from("discovery_sections")
-    .select(`
-      *,
-      discovery_items (
-        *
-      )
-    `)
-    .eq("status", "ACTIVE")
-    .eq("discovery_items.status", "ACTIVE")
-    .order("display_order", { ascending: true })
-    .order("display_order", { foreignTable: "discovery_items", ascending: true });
-
-  if (error) throw error;
-  return data;
+  return [];
 }
 
 /**
@@ -83,9 +70,8 @@ export interface SearchDbItemsParams {
 }
 
 /**
- * Searches the entire discovery_items database table for matching places.
- * Queries across searchable fields: title, place_name, place_address, location, description, subcategory.
- * Respects category filtering (DINING, MOVIES, SPORTS, ACTIVITIES) without any geographic or local area restriction.
+ * Searches curated database places from discovery_place_overrides.
+ * Queries across name, address, description, and subcategory.
  */
 export async function searchDiscoveryItems(params: SearchDbItemsParams) {
   const { query, category = "ALL" } = params;
@@ -93,34 +79,54 @@ export async function searchDiscoveryItems(params: SearchDbItemsParams) {
   if (!trimmed) return [];
 
   let queryBuilder = (supabase as any)
-    .from("discovery_items")
+    .from("discovery_place_overrides")
     .select("*")
-    .eq("status", "ACTIVE");
+    .eq("is_deleted", false);
 
   if (category && category.toUpperCase() !== "ALL") {
     const cat = category.toUpperCase();
     if (cat === "ACTIVITIES") {
-      queryBuilder = queryBuilder.or("category.eq.ACTIVITIES,category.eq.CUSTOM");
+      queryBuilder = queryBuilder.or("category_override.eq.ACTIVITIES,category_override.eq.CUSTOM");
     } else {
-      queryBuilder = queryBuilder.eq("category", cat);
+      queryBuilder = queryBuilder.eq("category_override", cat);
     }
   }
 
-  // Multi-term search across title, place_name, place_address, location, description, subcategory
+  // Multi-term search across name_override, address_override, description_override, subcategory
   const terms = trimmed.split(/\s+/).filter(Boolean);
   for (const term of terms) {
     const clean = term.replace(/[%_,()]/g, "");
     if (!clean) continue;
     queryBuilder = queryBuilder.or(
-      `title.ilike.%${clean}%,place_name.ilike.%${clean}%,place_address.ilike.%${clean}%,location.ilike.%${clean}%,description.ilike.%${clean}%,subcategory.ilike.%${clean}%`
+      `name_override.ilike.%${clean}%,address_override.ilike.%${clean}%,description_override.ilike.%${clean}%,subcategory.ilike.%${clean}%`
     );
   }
 
-  const { data, error } = await queryBuilder.order("display_order", { ascending: true });
+  let promise = queryBuilder;
+  if (queryBuilder && typeof queryBuilder.order === "function") {
+    promise = queryBuilder.order("created_at", { ascending: false });
+  }
+  const { data, error } = await promise;
   if (error) {
     console.error("[discoveryQueries] searchDiscoveryItems error:", error);
-    throw error;
+    return [];
   }
-  return data || [];
+  return (data || []).map((d: any) => ({
+    place_id: d.place_id || d.id,
+    id: d.place_id || d.id,
+    title: d.name_override || d.title || "Place",
+    name: d.name_override || d.title || "Place",
+    category: d.category_override || d.category || "ALL",
+    subcategory: d.subcategory || "",
+    description: d.description_override || d.description || "",
+    latitude: d.latitude_override ?? d.latitude,
+    longitude: d.longitude_override ?? d.longitude,
+    place_address: d.address_override || d.place_address || d.location || "",
+    location: d.address_override || d.place_address || d.location || "",
+    rating: d.rating ?? 4.5,
+    user_ratings_total: d.user_ratings_total ?? 10,
+    cover_image_url: d.image_path || d.cover_image_url || null,
+    status: "ACTIVE",
+  }));
 }
 

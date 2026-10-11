@@ -12,6 +12,7 @@ import { HostInfo } from "./HeroHeader";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { usePlansStore } from "../state/PlansContext";
 import { normalizeStatus } from "../../../../lib/participantStatus";
+import { useDismissibleOverlay } from "../../navigation/appRouter";
 
 // Helper functions for date/time formatting inside EditDateTimeBottomSheet
 function formatDateFriendly(dateStr: string): string {
@@ -56,7 +57,8 @@ export interface CreatePlanActionsBottomSheetProps {
   planCategory?: string;
   planSubcategory?: string | null;
   onEditImage: () => void;
-  onAddToQuickPlan: () => void;
+  onAddToQuickPlan?: () => void;
+  showAddToQuickPlan?: boolean;
 }
 
 export const CreatePlanActionsBottomSheet: React.FC<CreatePlanActionsBottomSheetProps> = ({
@@ -68,7 +70,9 @@ export const CreatePlanActionsBottomSheet: React.FC<CreatePlanActionsBottomSheet
   planSubcategory,
   onEditImage,
   onAddToQuickPlan,
+  showAddToQuickPlan = true,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   return (
     <AnimatePresence>
       {isOpen && (
@@ -150,33 +154,35 @@ export const CreatePlanActionsBottomSheet: React.FC<CreatePlanActionsBottomSheet
                 <span>Edit plan image</span>
               </button>
 
-              <button
-                id="create-plan-action-add-quick-plan-btn"
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onAddToQuickPlan();
-                }}
-                style={{
-                  width: "100%",
-                  height: 48,
-                  padding: "0 16px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  background: "rgba(255, 255, 255, 0.06)",
-                  border: "none",
-                  borderRadius: 12,
-                  color: "#FFFFFF",
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
-              >
-                <Zap className="w-4 h-4 text-[#FF6B2C] shrink-0" />
-                <span>Add to quick plan</span>
-              </button>
+              {showAddToQuickPlan && onAddToQuickPlan && (
+                <button
+                  id="create-plan-action-add-quick-plan-btn"
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onAddToQuickPlan();
+                  }}
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    padding: "0 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    background: "rgba(255, 255, 255, 0.06)",
+                    border: "none",
+                    borderRadius: 12,
+                    color: "#FFFFFF",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <Zap className="w-4 h-4 text-[#FF6B2C] shrink-0" />
+                  <span>Add to quick plan</span>
+                </button>
+              )}
             </div>
           </motion.div>
         </>
@@ -211,6 +217,7 @@ export const DiscardPlanBottomSheet: React.FC<DiscardPlanBottomSheetProps> = ({
   onDiscard,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const resolvedTitle = plan?.title || planTitle || "Plan";
   const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
   const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
@@ -359,6 +366,7 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
   onConfirm,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const resolvedTitle = plan?.title || planTitle || "Plan";
   const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
   const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
@@ -524,6 +532,7 @@ export const RejoinPlanBottomSheet: React.FC<RejoinPlanBottomSheetProps> = ({
   onConfirm,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const resolvedTitle = plan?.title || planTitle || "Plan";
   const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
   const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
@@ -664,6 +673,7 @@ export const CancelRejoinRequestBottomSheet: React.FC<CancelRejoinRequestBottomS
   onConfirm,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const resolvedTitle = plan?.title || planTitle || "Plan";
   const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
   const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
@@ -809,6 +819,7 @@ export const MakeAnotherParticipantHostBottomSheet: React.FC<MakeAnotherParticip
   subtitle,
   confirmText,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -992,6 +1003,7 @@ export const JoinPlanConfirmationBottomSheet: React.FC<JoinPlanConfirmationBotto
   onConfirm,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const formattedCost = costText ? costText.replace(" / person", "").trim() : null;
 
   return (
@@ -1081,6 +1093,7 @@ export const SkipPlanConfirmationDialog: React.FC<SkipPlanConfirmationDialogProp
   onConfirm,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   return (
     <AnimatePresence>
       {isOpen && (
@@ -1175,6 +1188,7 @@ export const InvitedPlanActionsBottomSheet: React.FC<InvitedPlanActionsBottomShe
   onSkip,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const resolvedTitle = plan?.title || planTitle || "Plan";
   const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
   const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
@@ -1347,6 +1361,7 @@ export const CancelLeaveRequestBottomSheet: React.FC<CancelLeaveRequestBottomShe
   onConfirm,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const resolvedTitle = plan?.title || planTitle || "Plan";
   const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
   const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
@@ -1495,6 +1510,7 @@ export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
   onReopenPlan,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const { userProfile, activeUserId, activeUserUuid } = useProfileStore();
 
   const handleCancelClick = () => {
@@ -1820,6 +1836,7 @@ export const EarlyCompletePlanConfirmationBottomSheet: React.FC<EarlyCompletePla
   onConfirm,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const resolvedTitle = plan?.title || planTitle || "Plan";
   const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
   const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
@@ -1963,6 +1980,7 @@ export const RestorePlanBottomSheet: React.FC<RestorePlanBottomSheetProps> = ({
   onConfirm,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const resolvedTitle = plan?.title || planTitle || "Plan";
   const resolvedCover = plan?.coverImage || (plan as any)?.cover_image || planCoverImage;
   const resolvedPlanId = plan?.dbUuid || plan?.id || planId;
@@ -2260,6 +2278,7 @@ export const EditDateTimeBottomSheet: React.FC<EditDateTimeBottomSheetProps> = (
   existingTime,
   existingRSVPOption,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const [isRSVPExpanded, setIsRSVPExpanded] = useState(initialSection === 'rsvp');
   const [, setTick] = useState(0);
 
@@ -2682,6 +2701,7 @@ export const EditCostBottomSheet: React.FC<EditCostBottomSheetProps> = ({
   onSave,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const parsedInput = parseFloat(costInput);
   const isCostSet = costInput.trim() !== "" && !isNaN(parsedInput) && parsedInput > 0;
   const peopleLabel = capacity === 1 ? "1 person" : `${capacity} people`;
@@ -2860,6 +2880,7 @@ export const EditDetailsBottomSheet: React.FC<EditDetailsBottomSheetProps> = ({
   onSave,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   return (
     <AnimatePresence>
       {isOpen && (
@@ -2983,6 +3004,7 @@ export const PlanIsFullBottomSheet: React.FC<PlanIsFullBottomSheetProps> = ({
   onInviteToWaitlist,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   if (!isOpen) return null;
 
   const selectedCount = pickerSelectedFriends.length;
@@ -3154,6 +3176,7 @@ export const MoveToGoingCapacityBottomSheet: React.FC<MoveToGoingCapacityBottomS
   onSwapParticipant,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   if (!isOpen || !participant) return null;
 
   return (
@@ -3307,6 +3330,7 @@ export const MoveToWaitlistBottomSheet: React.FC<MoveToWaitlistBottomSheetProps>
   onCancelPlan,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   if (!isOpen || !participant) return null;
   const hasWaitlist = waitlistCount !== undefined ? waitlistCount > 0 : rawHasWaitlist;
   const canDecreaseCapacity = goingCount === undefined || goingCount > 2;
@@ -3497,6 +3521,7 @@ export const RemoveGoingParticipantBottomSheet: React.FC<RemoveGoingParticipantB
   onCancelPlan,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   if (!isOpen || !participant) return null;
   const hasWaitlist = waitlistCount !== undefined ? waitlistCount > 0 : !!rawHasWaitlist;
 
@@ -3668,6 +3693,7 @@ export const SwitchToAutomaticSelectionBottomSheet: React.FC<SwitchToAutomaticSe
   onConfirm,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -3855,6 +3881,7 @@ export const SwitchToAutomaticWarningBottomSheet: React.FC<SwitchToAutomaticWarn
   onReducePlanSize,
   onClose,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   if (!isOpen) return null;
 
   return (
@@ -3988,6 +4015,7 @@ export const GuidedCapacityAdjustmentBottomSheet: React.FC<GuidedCapacityAdjustm
   onClose,
   onBack,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds || []);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -4216,6 +4244,7 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
   planCategory: propPlanCategory,
   planSubcategory: propPlanSubcategory,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const { showToast } = useToast();
   const { plans } = usePlansStore();
   const activePlan = propPlan || findPlanBySlugOrId(plans, planId) || (plans || []).find((p: any) => (p.dbUuid || p.id) === planId);

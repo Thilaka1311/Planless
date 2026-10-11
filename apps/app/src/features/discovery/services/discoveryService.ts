@@ -137,10 +137,6 @@ export async function getSectionsByCategory(
             let loadedSections: DiscoverySection[] = [];
             if (data?.sections && Array.isArray(data.sections) && data.sections.length > 0) {
               loadedSections = data.sections as DiscoverySection[];
-            } else {
-              // Fallback to database queries
-              const rawSections = await queries.fetchActiveSectionsWithItems();
-              loadedSections = (rawSections || []).map(mapper.mapDbSectionToFrontend);
             }
 
             // Apply Planless strict relevance filter AND city boundary filter to every loaded section
@@ -180,63 +176,10 @@ export async function getSectionsByCategory(
             }
 
             sectionsCache.set(cacheKey, loadedSections);
-
-            // Pre-warm discovery card cover images in memory cache for instant render
-            if (typeof window !== "undefined") {
-              for (const sec of loadedSections) {
-                for (const item of (sec.items || []).slice(0, 4)) {
-                  if (item.cover_image_url) {
-                    preloadImage(item.cover_image_url);
-                  }
-                }
-              }
-            }
             return loadedSections;
           } catch (err: any) {
-            console.warn("[DiscoveryService] Places API failed, using database items:", err?.message || err);
-            try {
-              const rawSections = await queries.fetchActiveSectionsWithItems();
-              let fallbackSections = (rawSections || []).map(mapper.mapDbSectionToFrontend);
-              
-              // Apply Planless strict relevance filter to fallback items
-              fallbackSections = fallbackSections.map((sec) => ({
-                ...sec,
-                items: (sec.items || []).filter((item) =>
-                  isRelevantVenueForCategory(item, sec.category || "ALL")
-                ),
-              }));
-
-              // Apply place overrides and exclusion filtering to fallback items
-              for (const sec of fallbackSections) {
-                if (sec.items && sec.items.length > 0) {
-                  sec.items = await applyPlaceOverrides(sec.items);
-                }
-              }
-
-              if (
-                typeof coords?.latitude === "number" &&
-                !isNaN(coords.latitude) &&
-                typeof coords?.longitude === "number" &&
-                !isNaN(coords.longitude)
-              ) {
-                for (const sec of fallbackSections) {
-                  for (const item of sec.items || []) {
-                    const pLat = item.latitude != null ? Number(item.latitude) : (item as any).metadata?.latitude;
-                    const pLng = item.longitude != null ? Number(item.longitude) : (item as any).metadata?.longitude;
-                    if (typeof pLat === "number" && !isNaN(pLat) && typeof pLng === "number" && !isNaN(pLng)) {
-                      const distKm = calculateDistanceKm(coords.latitude, coords.longitude, pLat, pLng);
-                      (item as any).distance = formatDistanceKm(distKm);
-                      (item as any)._distanceKm = distKm;
-                    }
-                  }
-                }
-              }
-              sectionsCache.set(cacheKey, fallbackSections);
-              return fallbackSections;
-            } catch (dbErr) {
-              console.error("[DiscoveryService] Database fallback also failed:", dbErr);
-              return sectionsCache.get(cacheKey) || [];
-            }
+            console.warn("[DiscoveryService] Places API failed:", err?.message || err);
+            return sectionsCache.get(cacheKey) || [];
           } finally {
             inFlightRequest = null;
           }

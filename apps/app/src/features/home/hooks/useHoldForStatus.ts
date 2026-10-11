@@ -50,6 +50,7 @@ export function useHoldToAccept({
     isDraggingRef.current = false;
     isHoldTriggeredRef.current = false;
     wasHoldActive.current = false;
+    isSubmittingRef.current = false;
     if (holdDelayTimeoutRef.current) {
       clearTimeout(holdDelayTimeoutRef.current);
       holdDelayTimeoutRef.current = null;
@@ -70,6 +71,7 @@ export function useHoldToAccept({
   const animationFrameRef = useRef<number | null>(null);
   const isHoldTriggeredRef = useRef<boolean>(false);
   const wasHoldActive = useRef<boolean>(false);
+  const isSubmittingRef = useRef<boolean>(false);
 
   const holdDelayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerDownTimeRef = useRef<number>(0);
@@ -88,9 +90,20 @@ export function useHoldToAccept({
 
     if (e.pointerType === "mouse" && e.button !== 0) return;
 
-    // Do not start hold if target is inside an interactive/no-hold element
+    if (isSuccess || isJoined || isWaitlisted || isSubmittingRef.current) return;
+
+    // Do not start hold if target is inside an excluded control (back button, menu, You're Invited badge, inputs)
     const target = e.target as HTMLElement;
-    if (target && (target.closest('.no-hold') || target.closest('button') || target.closest('input') || target.closest('a'))) {
+    if (
+      target &&
+      (target.closest(".no-hold") ||
+        target.closest("#immersive-plan-back-btn") ||
+        target.closest("#immersive-plan-overflow-btn") ||
+        target.closest("#immersive-plan-settings-btn") ||
+        target.closest("[data-no-hold]") ||
+        target.closest("input") ||
+        target.closest("textarea"))
+    ) {
       return;
     }
 
@@ -178,6 +191,8 @@ export function useHoldToAccept({
               }, 2000);
             }
           } else {
+            if (isSubmittingRef.current) return;
+            isSubmittingRef.current = true;
             setSuccessMode("join");
             setIsSuccess(true);
             setShowPaymentSuccess(plan);
@@ -207,9 +222,13 @@ export function useHoldToAccept({
             }, 2000);
 
             // Execute DB join asynchronously in background without blocking visual confirmation overlay
-            Promise.resolve(handleToggleJoin(plan)).catch((err) => {
-              console.error("[useHoldToAccept] Async Join error:", err);
-            });
+            Promise.resolve(handleToggleJoin(plan))
+              .catch((err) => {
+                console.error("[useHoldToAccept] Async Join error:", err);
+              })
+              .finally(() => {
+                isSubmittingRef.current = false;
+              });
           }
 
           setTimeout(() => {

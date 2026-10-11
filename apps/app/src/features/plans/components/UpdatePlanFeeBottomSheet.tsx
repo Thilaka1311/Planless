@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowLeft, Split, Merge } from 'lucide-react';
 import { DiscoveryImages } from '../../../IMGfromDB/PlanImages';
+import { useDismissibleOverlay } from '../../navigation/appRouter';
 
 export interface UpdatePlanFeeBottomSheetProps {
   isOpen: boolean;
@@ -31,6 +32,7 @@ export const UpdatePlanFeeBottomSheet: React.FC<UpdatePlanFeeBottomSheetProps> =
   onBack,
   onClose,
 }) => {
+  useDismissibleOverlay(Boolean(isOpen && targetCapacity !== null), onClose);
   if (!isOpen || targetCapacity === null) return null;
 
   const planFeeCurrentTotal = currentTotalCost;

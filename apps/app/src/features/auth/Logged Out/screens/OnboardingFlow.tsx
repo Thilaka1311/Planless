@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowLeft, HelpCircle, User } from "lucide-react";
 import { UserProfile } from "../../../../core/types";
 import defaultAvatar from "../../../../assets/default_avatar.webp";
 import { trackEvent } from "../../../../../lib/analytics";
@@ -33,6 +32,34 @@ export type OnboardingStep = "ENTRY" | "LANDING" | "EMAIL_INPUT" | "OTP_INPUT" |
 
 export const ONBOARDING_SCREEN_KEY = "planless_onboarding_screen";
 export type PersistedOnboardingScreen = "planless" | "complicated" | "solution" | "create_plan" | "join_plan" | "login";
+
+export const MAX_NAME_LENGTH = 30;
+export const MAX_ABOUT_LENGTH = 140;
+export const MAX_BIO_LENGTH = MAX_ABOUT_LENGTH;
+
+export function validateProfileName(name: string): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return "Name is required";
+  }
+  if (name.length > MAX_NAME_LENGTH) {
+    return `Name must be ${MAX_NAME_LENGTH} characters or fewer`;
+  }
+  return null;
+}
+
+export function validateProfileAbout(about: string): string | null {
+  const trimmed = about.trim();
+  if (!trimmed) {
+    return "About is required";
+  }
+  if (about.length > MAX_ABOUT_LENGTH) {
+    return `About must be ${MAX_ABOUT_LENGTH} characters or fewer`;
+  }
+  return null;
+}
+
+export const validateProfileBio = validateProfileAbout;
 
 function getInitialOnboardingState(initialStep: OnboardingStep): {
   step: OnboardingStep;
@@ -79,6 +106,21 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
   const [tempUserId, setTempUserId] = useState<string | null>(existingProfile?.dbUuid || null);
   const [tempPublicId, setTempPublicId] = useState<string | null>(existingProfile?.user_id || null);
   const [sessionToken, setSessionToken] = useState<string | null>(existingProfile?.token || null);
+  const [nameTouched, setNameTouched] = useState(false);
+  const [bioTouched, setBioTouched] = useState(false);
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+
+  const nameValidationError = validateProfileName(profileName);
+  const bioValidationError = validateProfileBio(bio);
+
+  const isNameValid = nameValidationError === null;
+  const isBioValid = bioValidationError === null;
+  const isFormValid = isNameValid && isBioValid;
+
+  const showNameError = Boolean((nameTouched || hasAttemptedSubmit) && nameValidationError);
+  const showBioError = Boolean(
+    (bioTouched || hasAttemptedSubmit || (nameTouched && isNameValid)) && bioValidationError
+  );
 
   const { uploading: uploadImageInProgress, uploadError, uploadImage } = useProfileUpload();
 
@@ -320,8 +362,18 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
   // Handle Profile Submission (complete the profile details)
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profileName.trim()) {
-      setErrorMessage("Please enter your name");
+    setHasAttemptedSubmit(true);
+    setNameTouched(true);
+    setBioTouched(true);
+
+    const nameErr = validateProfileName(profileName);
+    if (nameErr) {
+      setErrorMessage(nameErr);
+      return;
+    }
+    const bioErr = validateProfileBio(bio);
+    if (bioErr) {
+      setErrorMessage(bioErr);
       return;
     }
     if (!tempUserId) {
@@ -330,6 +382,9 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
     }
     if (uploadImageInProgress) {
       setErrorMessage("Please wait for your profile photo to finish uploading.");
+      return;
+    }
+    if (checkingUser) {
       return;
     }
 
@@ -419,13 +474,11 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
       <div
         id="onboarding_main"
         className={`flex-1 flex flex-col z-10 w-full ${
-          step === "EMAIL_INPUT" || step === "OTP_INPUT"
-            ? "justify-start items-center w-full min-h-0 overflow-hidden select-none"
+          step === "EMAIL_INPUT" || step === "OTP_INPUT" || step === "PROFILE_SETUP"
+            ? "justify-start items-center w-full min-h-0 overflow-hidden"
             : step === "LANDING" || step === "ENTRY"
               ? "justify-between w-full min-h-0 overflow-hidden"
-              : step === "PROFILE_SETUP"
-                ? "justify-center my-auto max-w-sm mx-auto py-4 sm:py-6 p-6 md:p-8"
-                : "justify-start pt-8 sm:pt-12 md:pt-16 max-w-sm mx-auto px-6 sm:px-8 pb-8 overflow-y-auto"
+              : "justify-start pt-8 sm:pt-12 md:pt-16 max-w-sm mx-auto px-6 sm:px-8 pb-8 overflow-y-auto"
         }`}
       >
 
@@ -500,101 +553,141 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
-            className="w-full h-full"
+            className="w-full h-full flex flex-col justify-between"
           >
-            <div id="step_profile" className="flex flex-col items-center justify-between h-full py-2 space-y-6 text-left">
-
-              {/* Circle Photo Selector */}
-              <div className="relative flex flex-col items-center justify-center select-none">
-                <div
-                  onClick={() => !uploadImageInProgress && document.getElementById("profile_avatar_upload_input")?.click()}
-                  className={`w-28 h-28 rounded-full border border-white/[0.08] bg-zinc-950 p-[3px] shadow-2xl relative transition ${uploadImageInProgress ? "opacity-70 cursor-wait" : "cursor-pointer active:scale-95 hover:border-white/20"}`}
-                >
-                  <div className="w-full h-full bg-[#111111] rounded-full overflow-hidden flex items-center justify-center relative">
-                    {(localPreviewUrl || avatar) ? (
+            <form
+              id="step_profile"
+              onSubmit={handleProfileSubmit}
+              noValidate
+              className="w-full h-full flex flex-col justify-between max-w-sm mx-auto px-6 pt-1 pb-[max(1rem,env(safe-area-inset-bottom))]"
+            >
+              {/* Upper Section: Avatar, Heading, Form Inputs (Cohesively grouped and moved upward) */}
+              <div className="flex-1 w-full min-h-0 overflow-y-auto no-scrollbar flex flex-col items-center pt-1">
+                {/* Circle Photo Selector */}
+                <div className="relative flex flex-col items-center justify-center select-none shrink-0">
+                  <div
+                    onClick={() => !uploadImageInProgress && document.getElementById("profile_avatar_upload_input")?.click()}
+                    className={`w-28 h-28 rounded-full border border-white/[0.08] bg-zinc-950 p-[3px] shadow-2xl relative transition ${uploadImageInProgress ? "opacity-70 cursor-wait" : "cursor-pointer active:scale-95 hover:border-white/20"}`}
+                  >
+                    <div className="w-full h-full bg-[#111111] rounded-full overflow-hidden flex items-center justify-center relative">
                       <img
-                        src={localPreviewUrl || resolveImage(avatar, ImageType.Avatar)}
+                        id="profile_avatar_image"
+                        src={localPreviewUrl || (avatar ? resolveImage(avatar, ImageType.Avatar) : defaultAvatar)}
                         className="w-full h-full object-cover rounded-full transition-opacity duration-300"
-                        alt="Avatar Preview"
+                        alt="Profile Photo"
                       />
-                    ) : (
-                      <User className="w-10 h-10 text-zinc-650" />
-                    )}
-                    {uploadImageInProgress && (
-                      <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
-                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      {uploadImageInProgress && (
+                        <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        </div>
+                      )}
+                    </div>
+
+                    {!uploadImageInProgress && (
+                      <div className="absolute bottom-1.5 right-1.5 w-6 h-6 bg-white rounded-full flex items-center justify-center border-2 border-[#000000] shadow cursor-pointer">
+                        <span className="text-black text-xs font-bold leading-none">+</span>
                       </div>
                     )}
                   </div>
 
-                  {!uploadImageInProgress && (
-                    <div className="absolute bottom-1.5 right-1.5 w-6 h-6 bg-white rounded-full flex items-center justify-center border-2 border-[#000000] shadow cursor-pointer">
-                      <span className="text-black text-xs font-bold leading-none">+</span>
-                    </div>
+                  <input
+                    id="profile_avatar_upload_input"
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  {uploadError && (
+                    <p className="text-xs text-red-500 mt-2 text-center">{uploadError}</p>
                   )}
                 </div>
 
-                <input
-                  id="profile_avatar_upload_input"
-                  type="file"
-                  accept="image/jpeg,image/jpg,image/png,image/webp"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-                {uploadError && (
-                  <p className="text-xs text-red-500 mt-2 text-center">{uploadError}</p>
-                )}
-              </div>
+                {/* Heading: Set Up Your Profile */}
+                <div className="text-center mt-3.5 mb-4 shrink-0">
+                  <h2 className="text-[26px] font-sans font-bold text-white tracking-tight leading-tight">
+                    Set Up Your Profile
+                  </h2>
+                </div>
 
-              {/* Title & Subtitle */}
-              <div className="text-center space-y-1.5">
-                <h2 className="text-[26px] font-sans font-bold text-white tracking-tight leading-tight">
-                  Set up your profile
-                </h2>
-                <p className="text-zinc-400 text-xs">
-                  This is how people will see you in plans
-                </p>
-              </div>
+                {/* Inputs & Form Fields */}
+                <div className="w-full space-y-3 shrink-0">
+                  <div>
+                    <input
+                      id="profile_name_input"
+                      type="text"
+                      value={profileName}
+                      onChange={(e) => {
+                        setProfileName(e.target.value);
+                        setNameTouched(true);
+                      }}
+                      onBlur={() => setNameTouched(true)}
+                      placeholder="Enter your name"
+                      aria-label="Name"
+                      className={`w-full bg-[#111111] border ${
+                        showNameError
+                          ? "border-red-500/70 focus:border-red-500"
+                          : "border-white/[0.08] focus:border-[#FFFFFF]/30"
+                      } text-white rounded-xl py-3.5 px-4 text-sm text-left focus:outline-none transition`}
+                    />
+                    {showNameError && (
+                      <p
+                        id="profile_name_error"
+                        className="text-xs text-red-500 mt-1.5 px-1 text-left"
+                      >
+                        {nameValidationError}
+                      </p>
+                    )}
+                  </div>
 
-              {/* Inputs & Form */}
-              <form onSubmit={handleProfileSubmit} className="w-full space-y-4 pt-2">
-                <div className="space-y-3">
-                  <input
-                    id="profile_name_input"
-                    type="text"
-                    value={profileName}
-                    onChange={(e) => setProfileName(e.target.value)}
-                    placeholder="Enter your name"
-                    className="w-full bg-[#111111] border border-white/[0.08] focus:border-[#FFFFFF]/30 text-white rounded-xl py-3.5 px-4 text-sm text-left focus:outline-none transition"
-                    required
-                  />
-
-                  <input
-                    id="profile_bio_input"
-                    type="text"
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
-                    placeholder="Bio (e.g. Always spontaneous)"
-                    className="w-full bg-[#111111] border border-white/[0.08] focus:border-[#FFFFFF]/30 text-white rounded-xl py-3.5 px-4 text-sm text-left focus:outline-none transition"
-                  />
+                  <div>
+                    <input
+                      id="profile_about_input"
+                      name="about"
+                      type="text"
+                      value={bio}
+                      onChange={(e) => {
+                        setBio(e.target.value);
+                        setBioTouched(true);
+                      }}
+                      onBlur={() => setBioTouched(true)}
+                      placeholder="Enter About"
+                      aria-label="About"
+                      className={`w-full bg-[#111111] border ${
+                        showBioError
+                          ? "border-red-500/70 focus:border-red-500"
+                          : "border-white/[0.08] focus:border-[#FFFFFF]/30"
+                      } text-white rounded-xl py-3.5 px-4 text-sm text-left focus:outline-none transition`}
+                    />
+                    {showBioError && (
+                      <p
+                        id="profile_about_error"
+                        className="text-xs text-red-500 mt-1.5 px-1 text-left"
+                      >
+                        {bioValidationError}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {errorMessage && (
-                  <p className="text-xs text-red-500 text-center mt-2">{errorMessage}</p>
+                  <p id="profile_form_error" className="text-xs text-red-500 text-center mt-2 shrink-0">
+                    {errorMessage}
+                  </p>
                 )}
+              </div>
 
-                <div className="pt-8">
-                  <button
-                    id="complete_onboarding_btn"
-                    type="submit"
-                    disabled={checkingUser}
-                    className="w-full py-3.5 px-6 rounded-xl bg-white hover:bg-zinc-150 text-black font-semibold text-xs tracking-wider uppercase transition active:scale-[0.99] text-center cursor-pointer disabled:opacity-50"
-                  >
-                    {checkingUser ? "Saving..." : "Continue"}
-                  </button>
-                </div>
-              </form>
-            </div>
+              {/* Bottom Section: Primary CTA anchored at bottom above safe-area inset */}
+              <div className="w-full shrink-0 pt-3">
+                <button
+                  id="complete_onboarding_btn"
+                  type="submit"
+                  disabled={!isFormValid || checkingUser || uploadImageInProgress}
+                  className="w-full py-3.5 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-semibold text-sm tracking-wide transition active:scale-[0.99] text-center cursor-pointer shadow-md shadow-[#FF6B2C]/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 disabled:shadow-none flex items-center justify-center"
+                >
+                  {checkingUser ? "Creating Profile..." : "Create Profile"}
+                </button>
+              </div>
+            </form>
           </motion.div>
         )}
 

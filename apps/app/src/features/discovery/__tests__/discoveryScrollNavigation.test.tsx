@@ -81,10 +81,12 @@ describe("Discovery Scroll Navigation", () => {
       />
     );
 
-    // Back to top button rendered with aria-label and fixed centered classes
+    // Back to top button rendered with aria-label, text, and fixed centered classes
     expect(html).toContain('aria-label="Back to top"');
     expect(html).toContain("fixed top-[68px] left-1/2 -translate-x-1/2 z-30");
+    expect(html).toContain("Back to top");
     // Initially hidden / opacity-0 at the top
-    expect(html).toContain("opacity-0 scale-90 pointer-events-none");
+    expect(html).toContain("opacity-0");
+    expect(html).toContain("pointer-events-none");
   });
 });

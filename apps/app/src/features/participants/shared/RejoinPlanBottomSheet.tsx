@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { UserAvatar } from '../../../IMGfromDB/UserAvatar';
 import { Friend } from './types';
+import { useDismissibleOverlay } from '../../navigation/appRouter';
 
 interface RejoinPlanBottomSheetProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export const RejoinPlanBottomSheet: React.FC<RejoinPlanBottomSheetProps> = ({
   onRemoveFromPlan,
   onClose,
 }) => {
+  useDismissibleOverlay(Boolean(isOpen && participant), onClose);
   const isProcessingRef = useRef(false);
 
   if (!isOpen || !participant) return null;

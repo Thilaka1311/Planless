@@ -108,7 +108,7 @@ export const DiscoverySection = React.memo<DiscoverySectionProps>(({
         {isLoadingMore && (
           <div className="shrink-0 w-36 h-48 rounded-2xl bg-zinc-900/40 border border-white/[0.06] flex flex-col items-center justify-center gap-2 snap-start">
             <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
-            <span className="text-[10px] text-zinc-500 font-medium">Loading more...</span>
+            <span className="text-[10px] text-zinc-400 font-medium">Loading more...</span>
           </div>
         )}
       </div>

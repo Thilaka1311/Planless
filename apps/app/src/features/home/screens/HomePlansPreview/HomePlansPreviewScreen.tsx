@@ -280,6 +280,16 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
   const isFull = ctaState.isWaitlistTarget;
 
+  const isInvitedUser = useMemo(() => {
+    if (isHost || isCancelled || isCompleted || isParticipant || alreadySkipped || isWaitlist) {
+      return false;
+    }
+    if (currentStatus === "JOINED" || currentStatus === "WAITLISTED" || currentStatus === "SKIPPED") {
+      return false;
+    }
+    return true;
+  }, [isHost, isCancelled, isCompleted, isParticipant, alreadySkipped, isWaitlist, currentStatus]);
+
   const isDeadlinePassed = useMemo(() => {
     if (!selectedPlan?.response_deadline_at) return false;
     return new Date(selectedPlan.response_deadline_at).getTime() <= Date.now();
@@ -547,9 +557,24 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       exit={{ opacity: 0, y: 15 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
       className="fixed inset-0 bg-[#050505] z-[60] flex flex-col h-full overflow-hidden text-left select-none"
+      onPointerDown={isInvitedUser ? startHolding : undefined}
+      onPointerMove={isInvitedUser ? handlePointerMove : undefined}
+      onPointerUp={isInvitedUser ? stopHolding : undefined}
+      onPointerLeave={isInvitedUser ? cancelHolding : undefined}
+      onPointerCancel={isInvitedUser ? cancelHolding : undefined}
+      onClickCapture={isInvitedUser ? (e) => {
+        const target = e.target as HTMLElement;
+        if (target && (target.closest('.no-hold') || target.closest('button') || target.closest('input') || target.closest('a'))) {
+          return;
+        }
+        if (wasHoldActive.current) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      } : undefined}
     >
       {/* 1. FIXED TOP CONTENT */}
-      <div id="immersive-plan-hero-wrapper" className="w-full flex-shrink-0 relative z-20 pb-[78px] no-hold">
+      <div id="immersive-plan-hero-wrapper" className="w-full flex-shrink-0 relative z-20 pb-[78px]">
         <div
           id="immersive-plan-hero-container"
           className="relative w-full h-[280px] flex flex-col justify-end overflow-visible flex-shrink-0 rounded-b-[2.5rem] border-b border-white/10"
@@ -577,10 +602,11 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
             onClose={onClose}
             isHost={isHost && !isCancelled && !isCompleted}
             onOpenChat={() => {
+              const targetId = cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
               if (onOpenChat) {
-                onOpenChat(selectedPlan.id);
+                onOpenChat(targetId);
               } else {
-                setSelectedChatPlanId(selectedPlan.id);
+                setSelectedChatPlanId(targetId);
               }
             }}
             onOpenSettings={
@@ -660,21 +686,6 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       {/* 2. SCROLLABLE PARTICIPANT SECTION ONLY */}
       <div
         id="immersive-plan-scroll-content"
-        onPointerDown={startHolding}
-        onPointerMove={handlePointerMove}
-        onPointerUp={stopHolding}
-        onPointerLeave={cancelHolding}
-        onPointerCancel={cancelHolding}
-        onClickCapture={(e) => {
-          const target = e.target as HTMLElement;
-          if (target && (target.closest('.no-hold') || target.closest('button') || target.closest('input') || target.closest('a'))) {
-            return;
-          }
-          if (wasHoldActive.current) {
-            e.preventDefault();
-            e.stopPropagation();
-          }
-        }}
         className="px-6 flex-1 min-h-0 flex flex-col overflow-hidden pb-20"
       >
         {selectedPlan && (

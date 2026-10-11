@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { Minus, Plus, Users, UserPlus } from "lucide-react";
 import { useToast } from "../../../shared/contexts/ToastContext";
+import { useDismissibleOverlay } from "../../navigation/appRouter";
 
 export interface PlanSizeBottomsheetProps {
   isOpen: boolean;
@@ -41,6 +42,7 @@ export const PlanSizeBottomsheet: React.FC<PlanSizeBottomsheetProps> = ({
   onClose,
   onAddParticipants,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const { showToast } = useToast();
   const isInitialNoLimit = capacity === null || capacity === undefined;
   const effectiveMaxCapacity =
