@@ -1,7 +1,6 @@
 import { getGoogleApiKey } from "../shared/google.ts";
 
-const GOOGLE_NEARBY_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
-const GOOGLE_TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json";
+const GOOGLE_PLACES_NEW_SEARCH_NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby";
 const GOOGLE_PLACES_NEW_SEARCH_TEXT_URL = "https://places.googleapis.com/v1/places:searchText";
 
 function cleanAttributionHtml(html: string): string {
@@ -509,7 +508,7 @@ async function fetchPlacesSearchNew(
 
     if (!res.ok) {
       console.warn("[discoveryPlaces] Places API New search non-ok status:", res.status);
-      return fetchTextSearchQuery(apiKey, query, lat, lng, radius, pageToken);
+      return { results: [], nextPageToken: null };
     }
 
     const data = await res.json();
@@ -550,8 +549,8 @@ async function fetchPlacesSearchNew(
       nextPageToken: data.nextPageToken || null,
     };
   } catch (err) {
-    console.warn("[discoveryPlaces] Places API New search error, falling back to legacy:", err);
-    return fetchTextSearchQuery(apiKey, query, lat, lng, radius, pageToken);
+    console.warn("[discoveryPlaces] Places API New search error:", err);
+    return { results: [], nextPageToken: null };
   }
 }
 
@@ -613,52 +612,87 @@ async function fetchPlacesSearchWithPagination(
   };
 }
 
-async function fetchTextSearchQuery(
+async function fetchNearbyPlacesNew(
   apiKey: string,
-  query: string,
-  lat?: number,
-  lng?: number,
-  radius?: number,
-  pageToken?: string
-): Promise<{ results: any[]; nextPageToken?: string | null }> {
+  lat: number,
+  lng: number,
+  radius: number,
+  includedTypes?: string[],
+  maxResultCount = 20
+): Promise<{ results: any[] }> {
   try {
-    const params = new URLSearchParams({
-      key: apiKey,
-      language: "en",
+    const headers = {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask":
+        "places.id,places.displayName,places.formattedAddress,places.shortFormattedAddress,places.location,places.rating,places.userRatingCount,places.types,places.primaryType,places.primaryTypeDisplayName,places.photos,places.addressComponents",
+    };
+
+    // Enforce 100m <= radius <= 50,000m (Places API New ceiling)
+    const safeRadius = Math.min(Math.max(radius || DEFAULT_RADIUS_METERS, 100), 50000.0);
+
+    const body: any = {
+      maxResultCount: Math.min(Math.max(maxResultCount, 1), 20),
+      locationRestriction: {
+        circle: {
+          center: { latitude: lat, longitude: lng },
+          radius: safeRadius,
+        },
+      },
+      rankPreference: "DISTANCE",
+    };
+
+    if (Array.isArray(includedTypes) && includedTypes.length > 0) {
+      body.includedTypes = includedTypes;
+    }
+
+    const res = await fetch(GOOGLE_PLACES_NEW_SEARCH_NEARBY_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
     });
 
-    if (pageToken) {
-      params.append("pagetoken", pageToken);
-    } else {
-      params.append("query", query);
-      if (typeof lat === "number" && typeof lng === "number") {
-        params.append("location", `${lat},${lng}`);
-        params.append("radius", String(radius || DEFAULT_RADIUS_METERS));
-      }
+    if (!res.ok) {
+      console.warn("[discoveryPlaces] Places API New Nearby Search non-ok status:", res.status);
+      return { results: [] };
     }
 
-    let res = await fetch(`${GOOGLE_TEXT_SEARCH_URL}?${params.toString()}`);
-    if (!res.ok) return { results: [] };
-    let data = await res.json();
+    const data = await res.json();
+    const rawPlaces = Array.isArray(data.places) ? data.places : [];
 
-    // If Google returns INVALID_REQUEST when a pageToken was just issued, wait 2s and retry once
-    if (pageToken && data.status === "INVALID_REQUEST") {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      res = await fetch(`${GOOGLE_TEXT_SEARCH_URL}?${params.toString()}`);
-      if (res.ok) {
-        data = await res.json();
-      }
-    }
+    const results = rawPlaces.map((p: any) => ({
+      place_id: p.id,
+      id: p.id,
+      name: p.displayName?.text || "",
+      formatted_address: p.formattedAddress || p.shortFormattedAddress || "",
+      vicinity: p.shortFormattedAddress || p.formattedAddress || "",
+      geometry: {
+        location: {
+          lat: p.location?.latitude,
+          lng: p.location?.longitude,
+        },
+      },
+      latitude: p.location?.latitude,
+      longitude: p.location?.longitude,
+      rating: p.rating,
+      user_ratings_total: p.userRatingCount,
+      types: Array.isArray(p.types) ? p.types : [],
+      primary_type: p.primaryType || null,
+      primary_type_display_name: p.primaryTypeDisplayName?.text || null,
+      photos: Array.isArray(p.photos) ? p.photos : [],
+      address_components: Array.isArray(p.addressComponents)
+        ? p.addressComponents.map((c: any) => ({
+            long_name: c.longText || c.shortText || "",
+            short_name: c.shortText || c.longText || "",
+            types: Array.isArray(c.types) ? c.types : [],
+          }))
+        : [],
+      _raw: p,
+    }));
 
-    if (data.status === "OK" || data.status === "ZERO_RESULTS") {
-      return {
-        results: data.results || [],
-        nextPageToken: data.next_page_token || null,
-      };
-    }
-    return { results: [] };
+    return { results };
   } catch (err) {
-    console.error("[discoveryPlaces] Text search failed:", query, err);
+    console.error("[discoveryPlaces] Places API New Nearby Search failed:", err);
     return { results: [] };
   }
 }
@@ -669,51 +703,11 @@ async function fetchNearbyQuery(
   lng: number,
   radius: number,
   query: SearchQueryDef,
-  pageToken?: string
+  _pageToken?: string
 ): Promise<{ results: any[]; nextPageToken?: string | null }> {
-  try {
-    const params = new URLSearchParams({
-      key: apiKey,
-      language: "en",
-    });
-
-    if (pageToken) {
-      params.append("pagetoken", pageToken);
-    } else {
-      params.append("location", `${lat},${lng}`);
-      params.append("radius", String(radius));
-      if (query.type) {
-        params.append("type", query.type);
-      }
-      if (query.keyword) {
-        params.append("keyword", query.keyword);
-      }
-    }
-
-    let res = await fetch(`${GOOGLE_NEARBY_URL}?${params.toString()}`);
-    if (!res.ok) return { results: [] };
-    let data = await res.json();
-
-    // If Google returns INVALID_REQUEST when a pageToken was just issued, wait 2s and retry once
-    if (pageToken && data.status === "INVALID_REQUEST") {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      res = await fetch(`${GOOGLE_NEARBY_URL}?${params.toString()}`);
-      if (res.ok) {
-        data = await res.json();
-      }
-    }
-
-    if (data.status === "OK" || data.status === "ZERO_RESULTS") {
-      return {
-        results: data.results || [],
-        nextPageToken: data.next_page_token || null,
-      };
-    }
-    return { results: [] };
-  } catch (err) {
-    console.error("[discoveryPlaces] Query failed:", query, err);
-    return { results: [] };
-  }
+  const types = query.type ? [query.type] : undefined;
+  const { results } = await fetchNearbyPlacesNew(apiKey, lat, lng, radius, types);
+  return { results, nextPageToken: null };
 }
 
 function calculateHaversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -1016,16 +1010,18 @@ async function enrichMultiSportPhotos(apiKey: string, places: any[]): Promise<vo
   await Promise.all(
     targets.map(async (p) => {
       try {
-        const params = new URLSearchParams({
-          place_id: p.place_id,
-          fields: "photos",
-          key: apiKey,
+        const cleanId = p.place_id?.startsWith("places/") ? p.place_id.replace(/^places\//, "") : p.place_id;
+        const res = await fetch(`https://places.googleapis.com/v1/places/${cleanId}`, {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": apiKey,
+            "X-Goog-FieldMask": "photos",
+          },
         });
-        const res = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${params.toString()}`);
         if (!res.ok) return;
         const data = await res.json();
-        if (Array.isArray(data?.result?.photos) && data.result.photos.length > 0) {
-          p.photos = data.result.photos;
+        if (Array.isArray(data?.photos) && data.photos.length > 0) {
+          p.photos = data.photos;
         }
       } catch (err) {
         console.warn(`[discoveryPlaces] Photo enrichment failed for ${p.place_id}:`, err);
@@ -1310,6 +1306,63 @@ export async function handleDiscoveryPlaces(
     return { sections: [], items: [], nextPageToken: null };
   }
 
+  // ── 0. DIRECT NEARBY PLACES MODE (Places API New searchNearby) ──
+  if (body?.action === "nearby-places" || (body?.endpoint === "nearby" && queriesList.length === 0)) {
+    let types: string[] | undefined = undefined;
+    if (Array.isArray(body?.includedTypes) && body.includedTypes.length > 0) {
+      types = body.includedTypes;
+    } else if (typeof body?.type === "string" && body.type.trim()) {
+      types = [body.type.trim()];
+    } else if (requestedCategory === "SPORTS") {
+      types = ["athletic_field", "fitness_center", "sports_complex", "stadium"];
+    } else if (requestedCategory === "DINING") {
+      types = ["restaurant", "cafe", "bar", "bakery"];
+    } else if (requestedCategory === "ACTIVITIES") {
+      types = ["bowling_alley", "amusement_park", "tourist_attraction"];
+    }
+
+    const { results } = await fetchNearbyPlacesNew(
+      apiKey,
+      lat,
+      lng,
+      radius,
+      types,
+      typeof body?.maxResultCount === "number" ? body.maxResultCount : 20
+    );
+
+    const items = normalizePlaces(
+      results,
+      requestedCategory as any,
+      photoBaseUrl,
+      lat,
+      lng,
+      true,
+      targetCity,
+      cityBounds
+    );
+
+    const sectionCategory = requestedCategory === "ALL" ? "DINING" : requestedCategory;
+    const section: PlaceSection = {
+      id: `places_${sectionCategory.toLowerCase()}_nearby`,
+      public_id: `places_${sectionCategory.toLowerCase()}_nearby`,
+      category: sectionCategory as any,
+      title: "Nearby Places",
+      description: `Nearby ${sectionCategory.toLowerCase()} places`,
+      display_order: 1,
+      status: "ACTIVE",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      items,
+    };
+
+    return {
+      sections: [section],
+      items,
+      rawPlaces: results,
+      nextPageToken: null,
+    };
+  }
+
   // ── 1. SEARCH MODE (Direct Places Search by query keyword(s) & location context) ──
   if (queriesList.length > 0) {
     let combinedResults: any[] = [];
@@ -1386,19 +1439,22 @@ export async function handleDiscoveryPlaces(
         { query: "cricket ground box nets", sport: "cricket" },
       ];
 
-      const queryResults = await Promise.all(
-        sportsQueries.map(async ({ query, sport }) => {
-          const res = await fetchPlacesSearchNew(apiKey, query, lat, lng, radius, undefined, cityBounds);
-          if (sport) {
-            for (const p of res.results) {
-              if (!p._supportedSports) p._supportedSports = [];
-              if (!p._supportedSports.includes(sport)) p._supportedSports.push(sport);
+      const [queryResults, nearbySports] = await Promise.all([
+        Promise.all(
+          sportsQueries.map(async ({ query, sport }) => {
+            const res = await fetchPlacesSearchNew(apiKey, query, lat, lng, radius, undefined, cityBounds);
+            if (sport) {
+              for (const p of res.results) {
+                if (!p._supportedSports) p._supportedSports = [];
+                if (!p._supportedSports.includes(sport)) p._supportedSports.push(sport);
+              }
             }
-          }
-          return res.results;
-        })
-      );
-      const sportsRaw = queryResults.flat();
+            return res.results;
+          })
+        ),
+        fetchNearbyPlacesNew(apiKey, lat, lng, radius, ["athletic_field", "fitness_center", "sports_complex", "stadium"]),
+      ]);
+      const sportsRaw = queryResults.flat().concat(nearbySports.results);
 
       await enrichMultiSportPhotos(apiKey, sportsRaw);
 
@@ -1445,11 +1501,16 @@ export async function handleDiscoveryPlaces(
         { query: "burger pizza fast food roll", includedType: "fast_food_restaurant" },
       ];
 
-      const diningRaw = (await Promise.all(
-        diningQueries.map(({ query, includedType }) =>
-          fetchPlacesSearchNew(apiKey, query, lat, lng, radius, undefined, cityBounds, includedType)
-        )
-      )).flatMap((r) => r.results);
+      const [textDiningResults, nearbyDining] = await Promise.all([
+        Promise.all(
+          diningQueries.map(({ query, includedType }) =>
+            fetchPlacesSearchNew(apiKey, query, lat, lng, radius, undefined, cityBounds, includedType)
+          )
+        ),
+        fetchNearbyPlacesNew(apiKey, lat, lng, radius, ["restaurant", "cafe", "bar", "bakery"]),
+      ]);
+
+      const diningRaw = textDiningResults.flatMap((r) => r.results).concat(nearbyDining.results);
 
       const diningItems = normalizePlaces(diningRaw, "DINING", photoBaseUrl, lat, lng, true, targetCity, cityBounds);
 
@@ -1498,9 +1559,14 @@ export async function handleDiscoveryPlaces(
         "bouldering climbing gym",
       ];
 
-      const activityRaw = (await Promise.all(
-        activityQueries.map((q) => fetchPlacesSearchNew(apiKey, q, lat, lng, radius, undefined, cityBounds))
-      )).flatMap((r) => r.results);
+      const [textActivityResults, nearbyActivities] = await Promise.all([
+        Promise.all(
+          activityQueries.map((q) => fetchPlacesSearchNew(apiKey, q, lat, lng, radius, undefined, cityBounds))
+        ),
+        fetchNearbyPlacesNew(apiKey, lat, lng, radius, ["bowling_alley", "amusement_park", "tourist_attraction"]),
+      ]);
+
+      const activityRaw = textActivityResults.flatMap((r) => r.results).concat(nearbyActivities.results);
 
       const activityItems = normalizePlaces(activityRaw, "ACTIVITIES", photoBaseUrl, lat, lng, true, targetCity, cityBounds);
 
