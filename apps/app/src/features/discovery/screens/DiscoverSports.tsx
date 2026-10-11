@@ -21,10 +21,13 @@ import {
   applyPlaceOverridesSync,
 } from "../services/placeOverridesService";
 import { useSportsStream } from "../hooks/useSportsStream";
+import { EndOfFeedIndicator } from "../components/EndOfFeedIndicator";
+import { useDiscoverySeenTracker } from "../hooks/useDiscoverySeenTracker";
+import { BackToTopButton } from "../components/BackToTopButton";
 
 interface DiscoverSportsProps {
-  sections: DiscoverySectionType[];
-  isAdmin: boolean;
+  sections?: DiscoverySectionType[];
+  isAdmin?: boolean;
   onBack: () => void;
   onSelectDiscoveryItem: (item: DiscoveryItem) => void;
   onLongPressAdmin?: (item: DiscoveryItem, config: any) => void;
@@ -137,7 +140,7 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
 
   // Preloaded sports items from Discovery sections (used as lean starting seed if available)
   const rawSectionSportsItems = useMemo(() => {
-    return sections
+    return (sections || [])
       .filter((s) => s.category?.toUpperCase() === "SPORTS")
       .flatMap((s) => s.items || []);
   }, [sections]);
@@ -221,6 +224,8 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
     searchCoordinates: activeSearchCoordinates,
     resolvedLocationName,
     isLoadingMore: isSearchLoadingMore,
+    hasMore: hasMoreSearch,
+    searchError,
     sentinelRef: searchSentinelRef,
   } = usePlanlessSearch({
     category: "SPORTS",
@@ -278,6 +283,21 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
     ];
   }, [isSearching, searchPlaces, resolvedLocationName, searchQuery]);
 
+  const renderedSportsItemIds = useMemo(() => {
+    if (isSearching) {
+      return searchPlaces.map((it) => (it.place_id || it.id) as string).filter(Boolean);
+    }
+    return streamSections.flatMap((s) =>
+      s.items.map((it) => (it.place_id || it.id) as string).filter(Boolean)
+    );
+  }, [isSearching, searchPlaces, streamSections]);
+
+  useDiscoverySeenTracker({
+    category: "sports",
+    containerRef: scrollContainerRef,
+    itemIds: renderedSportsItemIds,
+  });
+
   return (
     <div
       ref={scrollContainerRef}
@@ -288,6 +308,8 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
         overflowAnchor: "none",
       }}
     >
+      <BackToTopButton scrollContainerRef={scrollContainerRef} />
+
       {/* ── 1. HEADER BAR ── */}
       <div className="w-full shrink-0 px-5 pt-3.5 pb-2 flex items-center justify-between bg-black border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
@@ -351,12 +373,17 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
               ))}
 
               {/* Endless Scroll Sentinel for search */}
-              <div ref={searchSentinelRef} className="h-6 w-full pointer-events-none" />
+              {hasMoreSearch && (
+                <div ref={searchSentinelRef} className="h-6 w-full pointer-events-none" />
+              )}
               {isSearchLoadingMore && (
                 <div className="flex items-center justify-center py-6 gap-2 text-zinc-400">
                   <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
                   <span className="text-xs font-medium">Finding more venues nearby...</span>
                 </div>
+              )}
+              {!hasMoreSearch && !isSearchLoadingMore && !isSearchLoading && !searchError && searchPlaces.length > 0 && (
+                <EndOfFeedIndicator className="w-full" />
               )}
             </div>
           ) : (
@@ -397,6 +424,9 @@ export const DiscoverSports: React.FC<DiscoverSportsProps> = ({
                 <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
                 <span className="text-xs font-medium">Loading more sports venues...</span>
               </div>
+            )}
+            {!hasMoreStream && !isStreamLoadingMore && !isStreamLoading && streamSections.length > 0 && (
+              <EndOfFeedIndicator className="w-full" />
             )}
           </div>
         ) : isStreamLoading ? (

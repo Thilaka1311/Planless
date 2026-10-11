@@ -282,5 +282,74 @@ describe("QuickPlansScreen Dedicated Screen", () => {
     expect(content).toContain('background: "none"');
     expect(content).toContain('border: "none"');
   });
+
+  it("verifies Create Quick Plan List bottom sheet styling matches Option 5 Native Planless design", () => {
+    const filePath = require("path").resolve(__dirname, "../screens/QuickPlansScreen.tsx");
+    const content = require("fs").readFileSync(filePath, "utf-8");
+
+    // Title kept, helper text and suggestions removed
+    expect(content).toContain("Create Quick Plan List");
+    expect(content).not.toContain("Group your setups into a dedicated list");
+    expect(content).not.toContain("Suggestions:");
+
+    // Input has orange border and placeholder 'Enter list name'
+    expect(content).toContain('id="new-list-name-input"');
+    expect(content).toContain('placeholder="Enter list name"');
+    expect(content).toContain('border-[#FF6B2C]');
+
+    // Primary action button is pill with #FF6B2C and label 'Create List'
+    expect(content).toContain('id="create_list_submit_btn"');
+    expect(content).toContain('borderRadius: 9999');
+    expect(content).toContain('#FF6B2C');
+    expect(content).toContain('height: 40');
+    expect(content).toContain('Create List');
+
+    // Cancel button is text-only secondary action
+    expect(content).toContain('id="create_list_cancel_btn"');
+    expect(content).toContain('color: "rgba(255, 255, 255, 0.4)"');
+    expect(content).toContain('background: "none"');
+    expect(content).toContain('border: "none"');
+  });
+
+  it("renders refined Quick Plan list empty state when an active list has 0 plans", async () => {
+    const mockLists: QuickPlanList[] = [
+      {
+        id: "list-empty",
+        creator_id: "user-1",
+        name: "Weekend Squad",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        quick_plans_count: 0,
+      },
+    ];
+
+    vi.spyOn(quickPlanService, "getCachedQuickPlanLists").mockReturnValue(mockLists);
+    vi.spyOn(quickPlanService, "getCachedQuickPlans").mockReturnValue([]);
+
+    const { QuickPlansScreen } = await import("../screens/QuickPlansScreen");
+    const html = renderToString(
+      <QuickPlansScreen
+        userId="user-1"
+        initialListId="list-empty"
+        onBack={vi.fn()}
+        onSelectQuickPlan={vi.fn()}
+        onAddQuickPlan={vi.fn()}
+      />
+    );
+
+    // List title and heading present
+    expect(html).toContain("Weekend Squad");
+    expect(html).toContain("No Quick Plans in this list yet.");
+
+    // Helper text completely removed
+    expect(html).not.toContain("Save a favorite setup");
+
+    // White icon with no orange background / border container
+    expect(html).toContain("text-white fill-white");
+
+    // Pill-shaped CTA button without plus icon
+    expect(html).toContain("Add Quick Plan");
+    expect(html).toContain("rounded-full");
+  });
 });
 

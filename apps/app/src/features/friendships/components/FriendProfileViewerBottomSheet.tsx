@@ -5,6 +5,7 @@ import { UserMinus, UserPlus, UserCheck, Users, X } from "lucide-react";
 import { supabase } from "../../../../lib/supabaseClient";
 import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { useFriendshipStore } from "../state/FriendshipContext";
+import { useDismissibleOverlay } from "../../navigation/appRouter";
 
 interface FriendProfileViewerBottomSheetProps {
   friendUserId: string | null;
@@ -26,6 +27,7 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
   onClose,
   source,
 }) => {
+  useDismissibleOverlay(Boolean(friendUserId), onClose);
   const {
     friends,
     incomingRequests,

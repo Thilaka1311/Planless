@@ -344,6 +344,7 @@ export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
 
   return (
     <div
+      data-discovery-item-id={item.place_id || item.id}
       {...(shouldEnableAdminHold ? longPress : { onClick: onTap })}
       draggable={false}
       onDragStart={(e) => e.preventDefault()}

@@ -6,12 +6,14 @@ import { ADMIN_CONFIGS, ContentConfig } from "../services/discoveryAdminService"
 import {
   getCachedMovieSection,
   fetchDiscoverMovies,
+  isMovieReleased2026OrLater,
   isMovieWithinSixMonths,
 } from "../services/tmdbMovieService";
 import { MoviePortraitCard } from "../screens/DiscoverMovies";
 import { usePlanlessSearch } from "../search";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { useDiscoveryStream } from "../hooks/useDiscoveryStream";
+import { EndOfFeedIndicator } from "./EndOfFeedIndicator";
 
 export interface ForYouSectionsProps {
   sections: DiscoverySectionType[];
@@ -157,12 +159,13 @@ export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStrea
           m.category === "MOVIES" &&
           (m.movie_id || String(m.id || "").startsWith("tmdb-")) &&
           !String(m.id || "").startsWith("place_") &&
-          !(m as any).place_id
+          !(m as any).place_id &&
+          isMovieReleased2026OrLater(m.release_date)
       );
       if (validMovies.length > 0) return validMovies;
     }
     return getCachedMovieSection(NOW_PLAYING_KEY).filter((m) =>
-      isMovieWithinSixMonths(m.release_date)
+      isMovieReleased2026OrLater(m.release_date)
     );
   });
 
@@ -173,7 +176,8 @@ export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStrea
           m.category === "MOVIES" &&
           (m.movie_id || String(m.id || "").startsWith("tmdb-")) &&
           !String(m.id || "").startsWith("place_") &&
-          !(m as any).place_id
+          !(m as any).place_id &&
+          isMovieReleased2026OrLater(m.release_date)
       );
       if (validMovies.length > 0) return false;
     }
@@ -202,7 +206,8 @@ export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStrea
           m.category === "MOVIES" &&
           (m.movie_id || String(m.id || "").startsWith("tmdb-")) &&
           !String(m.id || "").startsWith("place_") &&
-          !(m as any).place_id
+          !(m as any).place_id &&
+          isMovieReleased2026OrLater(m.release_date)
       );
       if (validMovies.length > 0) {
         validMovies.forEach((m) => {
@@ -226,7 +231,7 @@ export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStrea
       try {
         const res = await fetchDiscoverMovies("now_playing", 1, undefined, "all");
         if (!active) return;
-        const valid = (res.items || []).filter((m) => isMovieWithinSixMonths(m.release_date));
+        const valid = (res.items || []).filter((m) => isMovieReleased2026OrLater(m.release_date));
         valid.forEach((m) => {
           const key = m.id || m.public_id || (m as any).movie_id;
           if (key) seenIdsRef.current.add(key);
@@ -254,24 +259,34 @@ export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStrea
     if (isLoadingMore || !hasMore || pageRef.current >= totalPagesRef.current) return;
     setIsLoadingMore(true);
     try {
-      const nextPage = pageRef.current + 1;
-      const res = await fetchDiscoverMovies("now_playing", nextPage, undefined, "all");
-      const valid = (res.items || []).filter((m) => isMovieWithinSixMonths(m.release_date));
-      const newItems: DiscoveryItem[] = [];
-      valid.forEach((m) => {
-        const key = m.id || m.public_id || (m as any).movie_id;
-        if (key && !seenIdsRef.current.has(key)) {
-          seenIdsRef.current.add(key);
-          newItems.push(m);
-        }
-      });
-      pageRef.current = nextPage;
-      totalPagesRef.current = res.totalPages || 5;
-      if (nextPage >= totalPagesRef.current) {
+      let currentPage = pageRef.current;
+      const totalPages = totalPagesRef.current;
+      const collectedItems: DiscoveryItem[] = [];
+      const MAX_LOOKAHEAD_PAGES = 3;
+      let pagesChecked = 0;
+
+      while (currentPage < totalPages && pagesChecked < MAX_LOOKAHEAD_PAGES && collectedItems.length === 0) {
+        currentPage += 1;
+        pagesChecked += 1;
+        const res = await fetchDiscoverMovies("now_playing", currentPage, undefined, "all");
+        const valid = (res.items || []).filter((m) => isMovieReleased2026OrLater(m.release_date));
+        if (res.totalPages) totalPagesRef.current = res.totalPages;
+
+        valid.forEach((m) => {
+          const key = m.id || m.public_id || (m as any).movie_id;
+          if (key && !seenIdsRef.current.has(key)) {
+            seenIdsRef.current.add(key);
+            collectedItems.push(m);
+          }
+        });
+      }
+
+      pageRef.current = currentPage;
+      if (currentPage >= totalPagesRef.current) {
         setHasMore(false);
       }
-      if (newItems.length > 0) {
-        setMovies((prev) => [...prev, ...newItems]);
+      if (collectedItems.length > 0) {
+        setMovies((prev) => [...prev, ...collectedItems]);
       }
     } catch (err) {
       console.warn("[ForYouSections] Failed loading more movies:", err);
@@ -578,6 +593,9 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
           <DiscoverySection key={sec.id} id={sec.id} title={sec.title} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
             onLongPressAdmin={onLongPressAdmin ? (item) => onLongPressAdmin(item, (sec.adminConfig || ADMIN_CONFIGS.dining) as any) : undefined} />
         ))}
+        {!diningStream.hasMore && !diningStream.isLoadingMore && !diningStream.isLoadingInitial && diningItems.length > 0 && (
+          <EndOfFeedIndicator className="w-full" />
+        )}
       </div>
     );
   }
@@ -595,6 +613,9 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
           <DiscoverySection key={sec.id} id={sec.id} title={sec.title} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
             onLongPressAdmin={onLongPressAdmin ? (item) => onLongPressAdmin(item, (sec.adminConfig || ADMIN_CONFIGS.turfs) as any) : undefined} />
         ))}
+        {!sportsStream.hasMore && !sportsStream.isLoadingMore && !sportsStream.isLoadingInitial && sportsItems.length > 0 && (
+          <EndOfFeedIndicator className="w-full" />
+        )}
       </div>
     );
   }
@@ -612,6 +633,9 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
           <DiscoverySection key={sec.id} id={sec.id} title={sec.title} items={sec.items} colorAccent={sec.colorAccent} userCoordinates={userCoordinates} isAdmin={isAdmin} onSelectItem={onSelectItem}
             onLongPressAdmin={onLongPressAdmin ? (item) => onLongPressAdmin(item, (sec.adminConfig || ADMIN_CONFIGS.activities) as any) : undefined} />
         ))}
+        {!activitiesStream.hasMore && !activitiesStream.isLoadingMore && !activitiesStream.isLoadingInitial && activitiesItems.length > 0 && (
+          <EndOfFeedIndicator className="w-full" />
+        )}
       </div>
     );
   }
@@ -876,6 +900,22 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
           (activitiesStream.hasMore && !activitiesStream.isLoadingMore)
         }
       />
+
+      {!sportsStream.hasMore &&
+        !sportsStream.isLoadingMore &&
+        !sportsStream.isLoadingInitial &&
+        !moviesStream.hasMore &&
+        !moviesStream.isLoadingMore &&
+        !moviesStream.isLoadingInitial &&
+        !diningStream.hasMore &&
+        !diningStream.isLoadingMore &&
+        !diningStream.isLoadingInitial &&
+        !activitiesStream.hasMore &&
+        !activitiesStream.isLoadingMore &&
+        !activitiesStream.isLoadingInitial &&
+        interleavedSections.length > 0 && (
+          <EndOfFeedIndicator className="w-full" />
+        )}
     </div>
   );
 };

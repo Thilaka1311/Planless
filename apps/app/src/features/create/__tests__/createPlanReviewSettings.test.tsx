@@ -37,6 +37,30 @@ describe("Create Plan Review Screen Settings & Actions", () => {
     expect(html).not.toContain("Duplicate");
   });
 
+  it("renders CreatePlanActionsBottomSheet on Quick Plan Review (showAddToQuickPlan=false) with only Edit plan image", () => {
+    const html = renderToString(
+      <CreatePlanActionsBottomSheet
+        isOpen={true}
+        onClose={vi.fn()}
+        planTitle="Friday Night Football"
+        planCoverImage="https://example.com/football.jpg"
+        planCategory="sports"
+        planSubcategory="football"
+        onEditImage={vi.fn()}
+        onAddToQuickPlan={vi.fn()}
+        showAddToQuickPlan={false}
+      />
+    );
+
+    // Plan identity
+    expect(html).toContain("Friday Night Football");
+    expect(html).toContain("Plan Actions");
+
+    // Only Edit plan image, NO Add to quick plan
+    expect(html).toContain("Edit plan image");
+    expect(html).not.toContain("Add to quick plan");
+  });
+
   it("renders SelectQuickPlanListBottomSheet with list choices and custom lists", () => {
     const mockLists = [
       {

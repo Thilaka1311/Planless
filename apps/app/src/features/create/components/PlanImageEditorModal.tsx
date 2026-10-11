@@ -9,6 +9,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ChevronLeft, ZoomIn, ZoomOut, Check } from "lucide-react";
 import { resolveImage, ImageType } from "../../../shared/imaging/imageResolver";
+import { useDismissibleOverlay } from "../../navigation/appRouter";
 
 export type CropShape = 'portrait' | 'circle';
 
@@ -74,6 +75,7 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
   initialTranslateY,
   onSave,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const isCircle = cropShape === 'circle';
 
   const [imageElement, setImageElement] = useState<HTMLImageElement | null>(null);

@@ -527,40 +527,6 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "memories" },
-        (payload: any) => {
-          const { eventType, new: newRec, old: oldRec } = payload;
-
-          if (eventType === "INSERT" || eventType === "UPDATE") {
-            const memoryId = newRec.id;
-            const planId = newRec.plan_id;
-
-            const isOurPlan = planId && dbPlansRef.current.some(p => p.id === planId || p.plan_id === planId);
-            if (!isOurPlan) return;
-
-            setDbMemories(prev => {
-              const matchIndex = prev.findIndex(m => m.id === memoryId);
-              if (matchIndex > -1) {
-                const updated = [...prev];
-                updated[matchIndex] = newRec;
-                return updated;
-              } else {
-                return [...prev, newRec];
-              }
-            });
-          } else if (eventType === "DELETE") {
-            const memoryId = oldRec.id;
-
-            setDbMemories(prev => {
-              const exists = prev.some(m => m.id === memoryId);
-              if (!exists) return prev;
-              return prev.filter(m => m.id !== memoryId);
-            });
-          }
-        }
-      )
       .subscribe((status) => {
         lastStatusRef.current = status;
       });

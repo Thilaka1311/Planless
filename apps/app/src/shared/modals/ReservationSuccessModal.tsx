@@ -2,6 +2,7 @@ import React from "react";
 import { AnimatePresence } from "motion/react";
 import { PlanConfirmedOverlay } from "../../features/plans/components/PlanConfirmedOverlay";
 import { useLivePlan } from "../../features/plans/hooks/useLivePlan";
+import { useDismissibleOverlay } from "../../features/navigation/appRouter";
 
 interface ReservationSuccessModalProps {
   planId: string | null;
@@ -23,6 +24,7 @@ export default function ReservationSuccessModal({
   setSelectedPlanId,
 }: ReservationSuccessModalProps) {
   const livePlan = useLivePlan(planId);
+  useDismissibleOverlay(Boolean(planId && livePlan), onClose);
 
   React.useEffect(() => {
     

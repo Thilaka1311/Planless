@@ -56,6 +56,18 @@ export interface EmailVerificationProps {
   className?: string;
 }
 
+export function computeOtpCtaPosition(closedScreenHeight: number): React.CSSProperties {
+  return {
+    position: 'fixed',
+    top: `${closedScreenHeight}px`,
+    transform: 'translateY(-100%)',
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    pointerEvents: 'none',
+  };
+}
+
 export function EmailVerification({
   onComplete,
   onProfileSetup,
@@ -107,105 +119,41 @@ export function EmailVerification({
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
   const isNavigatingRef = useRef(false);
 
-  // Accurate Virtual Keyboard & Focus Tracking
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [keyboardInset, setKeyboardInset] = useState(0);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const [isOtpFocused, setIsOtpFocused] = useState(false);
-  const [isEmailFocused, setIsEmailFocused] = useState(false);
-  const initialHeightRef = useRef<number>(
+  // Track keyboard-closed screen height so OTP Verify CTA remains anchored at screen bottom
+  const [closedScreenHeight, setClosedScreenHeight] = useState<number>(() =>
     typeof window !== "undefined" ? window.innerHeight : 800
   );
-
-  // Stable unconstrained container height tracking so virtual keyboard does NOT shrink or reposition screen content
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [stableHeight, setStableHeight] = useState<number | null>(null);
-
-  // Single authoritative source of truth for above-keyboard button existence
-  const showAboveKeyboardButton = keyboardOpen && isOtpComplete;
+  const prevInnerWidthRef = useRef<number>(
+    typeof window !== "undefined" ? window.innerWidth : 0
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const measureStableHeight = () => {
-      const isAnyInputFocused = isOtpFocused || isEmailFocused;
-      if (!isAnyInputFocused && !keyboardOpen && containerRef.current) {
-        const h = containerRef.current.clientHeight;
-        if (h > 200) {
-          setStableHeight(h);
+    const updateHeight = () => {
+      const activeEl = document.activeElement;
+      const isInputFocused =
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement ||
+        Boolean((activeEl as HTMLElement)?.isContentEditable);
+
+      const currentWidth = window.innerWidth;
+      const widthChanged = currentWidth !== prevInnerWidthRef.current;
+      prevInnerWidthRef.current = currentWidth;
+
+      // Only update closedScreenHeight when NO text field is focused (keyboard is closed)
+      // or when orientation changed (screen width changed).
+      if (widthChanged || !isInputFocused) {
+        if (window.innerHeight > 200) {
+          setClosedScreenHeight(window.innerHeight);
         }
       }
     };
 
-    measureStableHeight();
-    const t = setTimeout(measureStableHeight, 100);
-
-    window.addEventListener("resize", measureStableHeight);
-    return () => {
-      clearTimeout(t);
-      window.removeEventListener("resize", measureStableHeight);
-    };
-  }, [isOtpFocused, isEmailFocused, keyboardOpen]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const updateKeyboardState = () => {
-      if (window.scrollY !== 0) {
-        window.scrollTo(0, 0);
-      }
-
-      const vv = window.visualViewport;
-      const isMobile =
-        "ontouchstart" in window ||
-        navigator.maxTouchPoints > 0 ||
-        window.innerWidth <= 768;
-
-      const isAnyInputFocused = isOtpFocused || isEmailFocused;
-
-      if (!isAnyInputFocused) {
-        initialHeightRef.current = Math.max(initialHeightRef.current, window.innerHeight);
-      }
-
-      let detectedKbHeight = 0;
-      let detectedKbInset = 0;
-      let isKbActive = false;
-
-      if (vv) {
-        const fullHeight = initialHeightRef.current;
-        const currentHeight = vv.height;
-        const diffFromFull = fullHeight - currentHeight;
-        const diffFromInner = window.innerHeight - (vv.height + (vv.offsetTop || 0));
-
-        detectedKbHeight = Math.max(diffFromFull, diffFromInner);
-
-        if (detectedKbHeight > 120 && isAnyInputFocused) {
-          isKbActive = true;
-          detectedKbInset = Math.max(0, diffFromInner);
-        }
-      }
-
-      setKeyboardHeight(detectedKbHeight);
-      setKeyboardInset(detectedKbInset);
-      setKeyboardOpen(isKbActive);
-    };
-
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener("resize", updateKeyboardState);
-      window.visualViewport.addEventListener("scroll", updateKeyboardState);
-    }
-    window.addEventListener("resize", updateKeyboardState);
-
-    updateKeyboardState();
-
-    return () => {
-      if (window.visualViewport) {
-        window.visualViewport.removeEventListener("resize", updateKeyboardState);
-        window.visualViewport.removeEventListener("scroll", updateKeyboardState);
-      }
-      window.removeEventListener("resize", updateKeyboardState);
-    };
-  }, [isOtpFocused, isEmailFocused]);
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+    return () => window.removeEventListener("resize", updateHeight);
+  }, []);
 
   // Preload cups illustration
   useEffect(() => {
@@ -457,17 +405,9 @@ export function EmailVerification({
 
   const handleOtpBoxFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     e.target.select();
-    setIsOtpFocused(true);
   };
 
   const handleOtpBoxBlur = () => {
-    requestAnimationFrame(() => {
-      const active = document.activeElement;
-      const stillInOtp = otpBoxRefs.current.some((ref) => ref === active);
-      if (!stillInOtp) {
-        setIsOtpFocused(false);
-      }
-    });
   };
 
   // Handle Resend OTP
@@ -636,16 +576,7 @@ export function EmailVerification({
 
   return (
     <div
-      ref={containerRef}
-      style={
-        keyboardOpen && stableHeight
-          ? {
-              height: `${stableHeight}px`,
-              minHeight: `${stableHeight}px`,
-            }
-          : undefined
-      }
-      className={`w-full h-full flex flex-col justify-between ${className}`}
+      className={`w-full h-full flex flex-col ${className}`}
     >
       {/* 1. EMAIL INPUT VIEW */}
       {subStep === "EMAIL" && (
@@ -700,8 +631,6 @@ export function EmailVerification({
                     autoComplete="email"
                     autoCapitalize="none"
                     spellCheck={false}
-                    onFocus={() => setIsEmailFocused(true)}
-                    onBlur={() => setIsEmailFocused(false)}
                     className={`w-full h-[52px] bg-[#141416] rounded-[15px] px-4 sm:px-[18px] text-[15.5px] sm:text-base text-white placeholder-zinc-500 focus:outline-none transition-colors duration-150 border ${
                       errorMessage
                         ? "border-red-500 focus:border-red-500"
@@ -749,122 +678,121 @@ export function EmailVerification({
 
       {/* 2. OTP VERIFICATION VIEW */}
       {subStep === "OTP" && (
-        <motion.div
-          key="otp_input_step"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
-          className="w-full h-full flex flex-col justify-between"
+        <form
+          id="step_otp_form"
+          onSubmit={handleOtpVerify}
+          noValidate
+          className="w-full h-full flex flex-col relative select-none"
         >
-          <form
-            id="step_otp_form"
-            onSubmit={handleOtpVerify}
-            noValidate
-            className="w-full h-full flex flex-col justify-between items-center select-none overflow-hidden"
+          {/* Region 1: Main Content (Scrollable so inputs remain visible if needed) */}
+          <motion.div
+            key="otp_input_content"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+            id="otp_main_content"
+            className="flex-1 w-full min-h-0 overflow-y-auto no-scrollbar px-4 sm:px-6 md:px-8 pt-4 xs:pt-6 sm:pt-8 pb-36 flex flex-col items-center select-text"
           >
-            {/* Top / Main Authentication Section: Fixed / Stable layout */}
-            <div className="w-full px-4 sm:px-6 md:px-8 pt-4 xs:pt-6 sm:pt-8 flex flex-col items-center select-text">
-              {/* Centered Planless Hero Symbol */}
-              <div className="flex justify-center items-center select-none pointer-events-none mb-6 sm:mb-7">
-                <img
-                  src={planlessLogo}
-                  alt="Planless"
-                  loading="eager"
-                  decoding="sync"
-                  className="w-[70px] h-[70px] sm:w-[76px] sm:h-[76px] object-contain"
-                />
+            {/* Centered Planless Hero Symbol */}
+            <div className="flex justify-center items-center select-none pointer-events-none mb-6 sm:mb-7 shrink-0">
+              <img
+                src={planlessLogo}
+                alt="Planless"
+                loading="eager"
+                decoding="sync"
+                className="w-[70px] h-[70px] sm:w-[76px] sm:h-[76px] object-contain"
+              />
+            </div>
+
+            {/* Main heading and input content group */}
+            <div className="w-full space-y-5 sm:space-y-6 shrink-0">
+              {/* Heading & Subtext */}
+              <div className="space-y-1 sm:space-y-1.5 text-center select-none">
+                <h2 className="text-[18px] xs:text-[20px] sm:text-[22px] md:text-[24px] font-sans font-bold tracking-tight text-white leading-[1.25] text-center">
+                  Verify your email
+                </h2>
+                <p className="text-[13.5px] sm:text-[14.5px] text-zinc-400 font-normal leading-normal text-center">
+                  Enter the 6-digit code sent to
+                </p>
+                <div className="flex items-center justify-center gap-2 pt-0.5">
+                  <span className="text-[13.5px] sm:text-[14.5px] font-semibold text-white select-text">
+                    {activeOtpEmail || email}
+                  </span>
+                  <button
+                    type="button"
+                    id="otp_edit_email_btn"
+                    onClick={() => {
+                      setErrorMessage("");
+                      if (document.activeElement instanceof HTMLElement) {
+                        document.activeElement.blur();
+                      }
+                      if (!email && activeOtpEmail) {
+                        setEmail(activeOtpEmail);
+                      }
+                      setSubStep("EMAIL");
+                    }}
+                    className="text-[13px] sm:text-[13.5px] font-normal text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer underline underline-offset-2"
+                  >
+                    edit
+                  </button>
+                </div>
               </div>
 
-              {/* Main heading and input content group */}
-              <div className="w-full space-y-5 sm:space-y-6">
-                {/* Heading & Subtext */}
-                <div className="space-y-1 sm:space-y-1.5 text-center select-none">
-                  <h2 className="text-[18px] xs:text-[20px] sm:text-[22px] md:text-[24px] font-sans font-bold tracking-tight text-white leading-[1.25] text-center">
-                    Verify your email
-                  </h2>
-                  <p className="text-[13.5px] sm:text-[14.5px] text-zinc-400 font-normal leading-normal text-center">
-                    Enter the 6-digit code sent to
-                  </p>
-                  <div className="flex items-center justify-center gap-2 pt-0.5">
-                    <span className="text-[13.5px] sm:text-[14.5px] font-semibold text-white select-text">
-                      {activeOtpEmail || email}
-                    </span>
-                    <button
-                      type="button"
-                      id="otp_edit_email_btn"
-                      onClick={() => {
-                        setErrorMessage("");
-                        if (document.activeElement instanceof HTMLElement) {
-                          document.activeElement.blur();
-                        }
-                        setIsOtpFocused(false);
-                        if (!email && activeOtpEmail) {
-                          setEmail(activeOtpEmail);
-                        }
-                        setSubStep("EMAIL");
+              {/* OTP 6 Individual Digit Boxes & Inline Error */}
+              <div className="w-full">
+                <div className="w-full max-w-[340px] xs:max-w-[360px] mx-auto flex items-center justify-between gap-2 xs:gap-2.5 sm:gap-3">
+                  {otpDigits.map((digit, index) => (
+                    <input
+                      key={index}
+                      ref={(el) => {
+                        otpBoxRefs.current[index] = el;
                       }}
-                      className="text-[13px] sm:text-[13.5px] font-normal text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer underline underline-offset-2"
-                    >
-                      edit
-                    </button>
-                  </div>
+                      id={`otp_box_${index}`}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete={index === 0 ? "one-time-code" : "off"}
+                      value={digit}
+                      autoFocus={index === 0}
+                      onChange={(e) => handleOtpBoxChange(index, e)}
+                      onKeyDown={(e) => handleOtpBoxKeyDown(index, e)}
+                      onPaste={handleOtpBoxPaste}
+                      onFocus={handleOtpBoxFocus}
+                      onBlur={handleOtpBoxBlur}
+                      spellCheck={false}
+                      className={`flex-1 min-w-0 max-w-[48px] xs:max-w-[52px] aspect-square bg-[#141416] rounded-[14px] sm:rounded-[15px] text-[20px] sm:text-[22px] font-semibold text-center text-white focus:outline-none transition-colors duration-150 border caret-[#FF6B2C] select-text ${
+                        errorMessage
+                          ? "border-red-500 focus:border-red-500"
+                          : "border-white/[0.09] hover:border-white/[0.16] focus:border-white"
+                      }`}
+                    />
+                  ))}
                 </div>
 
-                {/* OTP 6 Individual Digit Boxes & Inline Error */}
-                <div className="w-full">
-                  <div className="w-full max-w-[340px] xs:max-w-[360px] mx-auto flex items-center justify-between gap-2 xs:gap-2.5 sm:gap-3">
-                    {otpDigits.map((digit, index) => (
-                      <input
-                        key={index}
-                        ref={(el) => {
-                          otpBoxRefs.current[index] = el;
-                        }}
-                        id={`otp_box_${index}`}
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        autoComplete={index === 0 ? "one-time-code" : "off"}
-                        value={digit}
-                        autoFocus={index === 0}
-                        onChange={(e) => handleOtpBoxChange(index, e)}
-                        onKeyDown={(e) => handleOtpBoxKeyDown(index, e)}
-                        onPaste={handleOtpBoxPaste}
-                        onFocus={(e) => {
-                          handleOtpBoxFocus(e);
-                        }}
-                        onBlur={handleOtpBoxBlur}
-                        spellCheck={false}
-                        className={`flex-1 min-w-0 max-w-[48px] xs:max-w-[52px] aspect-square bg-[#141416] rounded-[14px] sm:rounded-[15px] text-[20px] sm:text-[22px] font-semibold text-center text-white focus:outline-none transition-colors duration-150 border caret-[#FF6B2C] select-text ${
-                          errorMessage
-                            ? "border-red-500 focus:border-red-500"
-                            : "border-white/[0.09] hover:border-white/[0.16] focus:border-white"
-                        }`}
-                      />
-                    ))}
-                  </div>
-
-                  <div className="min-h-[22px] pt-1.5 pl-1 text-center">
-                    {errorMessage && (
-                      <p className="text-[13px] text-red-500 font-sans leading-tight text-center">
-                        {errorMessage}
-                      </p>
-                    )}
-                  </div>
+                <div className="min-h-[22px] pt-1.5 pl-1 text-center">
+                  {errorMessage && (
+                    <p className="text-[13px] text-red-500 font-sans leading-tight text-center">
+                      {errorMessage}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
+          </motion.div>
 
-            {/* STATE A: Normal Resting Bottom Section */}
+          {/* Region 2: Fixed CTA region permanently anchored to keyboard-closed screen bottom */}
+          <div
+            id="otp_cta_region"
+            style={computeOtpCtaPosition(closedScreenHeight)}
+          >
             <div
-              className={`w-full shrink-0 pb-[max(1.5rem,env(safe-area-inset-bottom))] px-4 sm:px-6 md:px-8 transition-opacity duration-150 ${
-                showAboveKeyboardButton ? "invisible pointer-events-none" : "visible pointer-events-auto"
-              }`}
+              style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
+              className="w-full px-4 sm:px-6 md:px-8 pointer-events-auto"
             >
               <button
                 id="otp_verify_btn"
                 type="submit"
                 disabled={checkingUser || !isOtpComplete}
-                tabIndex={keyboardOpen ? -1 : 0}
                 className="w-full py-3 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-semibold text-[14px] xs:text-[14.5px] sm:text-[15px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center shadow-md shadow-[#FF6B2C]/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center"
               >
                 {checkingUser ? "Verifying..." : "Verify"}
@@ -879,7 +807,6 @@ export function EmailVerification({
                     id="otp_resend_code_btn"
                     onClick={handleResendOtp}
                     disabled={checkingUser || resendCooldown > 0}
-                    tabIndex={keyboardOpen ? -1 : 0}
                     className="underline underline-offset-2 cursor-pointer text-white hover:text-zinc-300 font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : "Resend code"}
@@ -887,27 +814,8 @@ export function EmailVerification({
                 </p>
               </div>
             </div>
-
-            {/* STATE B: Keyboard-Aware Button Overlay (Mounted ONLY when keyboard is OPEN and OTP has EXACTLY 6 digits) */}
-            {showAboveKeyboardButton && (
-              <div
-                style={{
-                  bottom: `${keyboardInset + 14}px`,
-                }}
-                className="fixed left-0 right-0 z-30 px-4 sm:px-6 md:px-8 flex justify-center pointer-events-auto"
-              >
-                <button
-                  id="otp_verify_btn_above_kb"
-                  type="submit"
-                  disabled={checkingUser}
-                  className="w-full py-3 px-6 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:bg-[#E55A1F] text-white font-semibold text-[14px] xs:text-[14.5px] sm:text-[15px] tracking-wide transition active:scale-[0.99] cursor-pointer text-center shadow-lg shadow-[#FF6B2C]/30 flex items-center justify-center"
-                >
-                  {checkingUser ? "Verifying..." : "Verify"}
-                </button>
-              </div>
-            )}
-          </form>
-        </motion.div>
+          </div>
+        </form>
       )}
     </div>
   );

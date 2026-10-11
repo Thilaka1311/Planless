@@ -474,6 +474,7 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
         planSubcategory={selectedSubcategory}
         onEditImage={handlePickCoverImage}
         onAddToQuickPlan={() => setIsSelectListOpen(true)}
+        showAddToQuickPlan={!isQuickPlanMode}
       />
 
       {/* Select Quick Plan List Destination Bottom Sheet */}

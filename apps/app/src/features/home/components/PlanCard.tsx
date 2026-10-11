@@ -99,11 +99,12 @@ function RespondByBadge({ deadline, onClick }: { deadline: string | null | undef
 
 // ─── Popover helpers ──────────────────────────────────────────────────────────
 
-function getCategoryPopoverContent(plan: any): { title: string } {
-  const cat = (plan.category || '').toLowerCase();
+export function getCategoryPopoverContent(plan: any): { title: string } {
+  const cat = (plan.category || '').toLowerCase().trim();
   if (cat === 'movies' || cat === 'cinema') return { title: 'Movie' };
   if (cat === 'dining' || cat === 'restaurants' || cat === 'restaurant' || cat === 'cafe') return { title: 'Dining' };
   if (cat === 'sports' || cat === 'football' || cat === 'badminton') return { title: 'Sports' };
+  if (cat === 'activities' || cat === 'activity' || cat === 'recreation') return { title: 'Activity' };
   return { title: 'Custom' };
 }
 

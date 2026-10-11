@@ -24,6 +24,7 @@ import { HomeHeader } from "./components/HomeHeader";
 
 import { useLivePlan } from "./features/plans/hooks/useLivePlan";
 import { getPlanSlug, findPlanBySlugOrId } from "./features/plans/utils/planSlugUtils";
+import { cleanPlanId } from "./features/plans/utils/planUtils";
 import { SearchYourPlansScreen } from "./features/plans/screens/PlansScreen/SearchYourPlansScreen";
 import { HostedPlansScreen } from "./features/plans/screens/PlansScreen/HostedPlansScreen";
 import { PastPlans } from "./features/profile/screens/PastPlans";
@@ -32,7 +33,9 @@ import { useUnreadChatsCount } from "./features/chats/hooks/useUnreadChatsCount"
 import {
   parseCurrentRoute,
   navigateToRoute,
+  navigateBack,
   listenToNavigation,
+  useDismissibleOverlay,
   AppTab,
   AppRoute,
 } from "./features/navigation/appRouter";
@@ -141,7 +144,14 @@ export default function MainApp({
 
   const handleTabChange = React.useCallback((tab: AppTab) => {
     setChildrenWantBottomNavHidden(false);
+    setSelectedPlanId(null);
+    setSelectedChatPlanId(null);
+    setShowFriendsScreen(false);
+    setShowHostedPlansScreen(false);
+    setShowPastPlansScreen(false);
+    setShowPlansSearchScreen(false);
     setActiveTab(tab);
+    navigateToRoute({ tab }, { replace: true });
     setCurrentRoute(parseCurrentRoute());
   }, []);
 
@@ -160,7 +170,12 @@ export default function MainApp({
     const isInitial = isFirstRouteSync.current;
     isFirstRouteSync.current = false;
 
-    if (selectedPlanId) {
+    if (selectedPlanId && selectedChatPlanId) {
+      localStorage.setItem("planless_selected_plan_id", selectedPlanId);
+      const matchedPlan = findPlanBySlugOrId(plans, selectedPlanId);
+      const routePlanParam = matchedPlan ? (matchedPlan.slug || getPlanSlug(matchedPlan, plans)) : selectedPlanId;
+      navigateToRoute({ tab: "plans", selectedPlanId: routePlanParam, selectedChatPlanId: routePlanParam }, { replace: isInitial });
+    } else if (selectedPlanId) {
       localStorage.setItem("planless_selected_plan_id", selectedPlanId);
       // Resolve readable slug from plan if available
       const matchedPlan = findPlanBySlugOrId(plans, selectedPlanId);
@@ -193,7 +208,7 @@ export default function MainApp({
       if (isInitial && (initialRoute.inviteToken || pendingInviteToken)) {
         return;
       }
-      navigateToRoute({ tab: activeTab }, { replace: isInitial });
+      navigateToRoute({ tab: activeTab }, { replace: true });
     }
   }, [activeTab, selectedPlanId, selectedChatPlanId, plans, initialRoute.inviteToken, pendingInviteToken]);
 
@@ -218,20 +233,20 @@ export default function MainApp({
         setActiveTab(route.tab);
       }
 
+      // Synchronize sub-screens with route
+      setShowFriendsScreen(route.subScreen === "friends");
+      setShowHostedPlansScreen(route.subScreen === "hosted-plans");
+      setShowPastPlansScreen(route.subScreen === "past-plans");
+      setShowPlansSearchScreen(route.subScreen === "search-plans");
+
       // Synchronize selectedPlanId with route
-      if (route.tab === "plans" || route.tab === "home") {
-        const targetPlanId = route.selectedPlanId || null;
-        if (targetPlanId !== selectedPlanIdRef.current) {
-          setSelectedPlanId(targetPlanId);
-        }
-      } else if (selectedPlanSourceRef.current === "list") {
-        if (selectedPlanIdRef.current) {
-          setSelectedPlanId(null);
-        }
+      const targetPlanId = route.selectedPlanId || null;
+      if (targetPlanId !== selectedPlanIdRef.current) {
+        setSelectedPlanId(targetPlanId);
       }
 
       // Synchronize selectedChatPlanId with route
-      const targetChatId = route.tab === "chats" ? (route.selectedChatPlanId || null) : null;
+      const targetChatId = route.selectedChatPlanId || null;
       if (targetChatId !== selectedChatPlanIdRef.current) {
         setSelectedChatPlanId(targetChatId);
       }
@@ -255,7 +270,7 @@ export default function MainApp({
       // If returning to a main/root route, reset childrenWantBottomNavHidden immediately
       const isRoot =
         route.tab === "home" ||
-        (route.tab === "plans" && !route.selectedPlanId) ||
+        (route.tab === "plans" && !route.selectedPlanId && !route.subScreen) ||
         (route.tab === "chats" && !route.selectedChatPlanId) ||
         (route.tab === "create" && (!route.createPhase || route.createPhase === "category") && !route.discoveryCategory && !route.subScreen) ||
         route.tab === "profile";
@@ -361,14 +376,16 @@ export default function MainApp({
   const [showLeftSuccessId, setShowLeftSuccessId] = useState<string | null>(null);
   const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
   const [plansFilter, setPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted'>('JOINED');
-  const [showHostedPlansScreen, setShowHostedPlansScreen] = useState(false);
-  const [showPastPlansScreen, setShowPastPlansScreen] = useState(false);
+  const [showHostedPlansScreen, setShowHostedPlansScreen] = useState(() => initialRoute.subScreen === "hosted-plans");
+  const [showPastPlansScreen, setShowPastPlansScreen] = useState(() => initialRoute.subScreen === "past-plans");
   const [pastPlansOrigin, setPastPlansOrigin] = useState<"profile" | "hosted">("profile");
-  const [showPlansSearchScreen, setShowPlansSearchScreen] = useState(false);
+  const [showPlansSearchScreen, setShowPlansSearchScreen] = useState(() => initialRoute.subScreen === "search-plans");
   const [plansSearchOrigin, setPlansSearchOrigin] = useState<"plans" | "hosted">("plans");
-  const [showFriendsScreen, setShowFriendsScreen] = useState(false);
+  const [showFriendsScreen, setShowFriendsScreen] = useState(() => initialRoute.subScreen === "friends");
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
+
+  useDismissibleOverlay(showCancelConfirmation, () => setShowCancelConfirmation(false), "cancel-confirmation");
 
   // Track the origin context when entering a plan chat
   const [chatOriginContext, setChatOriginContext] = useState<{
@@ -380,20 +397,20 @@ export default function MainApp({
 
   // Reset sub-screens when changing tabs
   React.useEffect(() => {
-    if (activeTab !== "profile") {
+    if (activeTab !== "profile" && currentRoute.subScreen !== "friends") {
       setShowFriendsScreen(false);
     }
-    if (activeTab !== "plans" && activeTab !== "profile") {
+    if (activeTab !== "plans" && activeTab !== "profile" && currentRoute.subScreen !== "past-plans") {
       setShowPastPlansScreen(false);
     }
     if (activeTab !== "plans") {
-      setShowHostedPlansScreen(false);
-      setShowPlansSearchScreen(false);
+      if (currentRoute.subScreen !== "hosted-plans") setShowHostedPlansScreen(false);
+      if (currentRoute.subScreen !== "search-plans") setShowPlansSearchScreen(false);
     }
-    if (activeTab !== "chats" && !chatOriginContext) {
+    if (activeTab !== "chats" && !chatOriginContext && !currentRoute.selectedChatPlanId) {
       setSelectedChatPlanId(null);
     }
-  }, [activeTab, chatOriginContext]);
+  }, [activeTab, chatOriginContext, currentRoute]);
 
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
 
@@ -712,7 +729,10 @@ export default function MainApp({
               setActiveTab={handleTabChange}
               pendingMemoryCount={pendingMemoryCount}
               showFriendsIcon={true}
-              onToggleFriends={() => setShowFriendsScreen(true)}
+              onToggleFriends={() => {
+                navigateToRoute({ tab: activeTab, subScreen: "friends" });
+                setShowFriendsScreen(true);
+              }}
             />
           </motion.div>
         )}
@@ -732,10 +752,18 @@ export default function MainApp({
               showSearch={true}
               onToggleSearch={() => {
                 setPlansSearchOrigin("plans");
+                navigateToRoute({ tab: "plans", subScreen: "search-plans" });
                 setShowPlansSearchScreen(true);
               }}
               showHostedIcon={true}
-              onToggleHosted={() => setShowHostedPlansScreen(prev => !prev)}
+              onToggleHosted={() => {
+                if (showHostedPlansScreen) {
+                  navigateBack({ tab: "plans" });
+                } else {
+                  navigateToRoute({ tab: "plans", subScreen: "hosted-plans" });
+                  setShowHostedPlansScreen(true);
+                }
+              }}
               isHostedActive={showHostedPlansScreen}
               title={showHostedPlansScreen ? "Hosted Plans" : "Plans"}
               hideNotificationsIcon={true}
@@ -848,9 +876,13 @@ export default function MainApp({
                 onToggleBottomNav={setChildrenWantBottomNavHidden}
                 onOpenPastPlans={() => {
                   setPastPlansOrigin("profile");
+                  navigateToRoute({ tab: "profile", subScreen: "past-plans" });
                   setShowPastPlansScreen(true);
                 }}
-                onOpenFriends={() => setShowFriendsScreen(true)}
+                onOpenFriends={() => {
+                  navigateToRoute({ tab: "profile", subScreen: "friends" });
+                  setShowFriendsScreen(true);
+                }}
                 setSelectedPlanSource={setSelectedPlanSource}
               />
             )}
@@ -873,52 +905,35 @@ export default function MainApp({
               planId={selectedPlanId}
               activeTab={selectedPlanSource === "chat" ? "chat" : activeTab}
               onClose={() => {
-                setSelectedPlanId(null);
-                setCurrentRoute({ tab: activeTab, selectedPlanId: null });
-                localStorage.removeItem("planless_selected_plan_id");
-                if (selectedPlanSource === "past_plans" || selectedPlanSource === "past") {
-                  setShowPastPlansScreen(true);
-                  setSelectedPlanSource("list");
-                } else if (selectedPlanSource === "hosted") {
-                  setShowHostedPlansScreen(true);
-                  setSelectedPlanSource("list");
-                } else if (selectedPlanSource === "search") {
-                  setShowPlansSearchScreen(true);
-                  setSelectedPlanSource("list");
-                } else if (selectedPlanSource === "chat" && selectedChatPlanId) {
-                  // Stay in same Plan Chat screen when returning from Plan Preview
-                  setSelectedPlanSource("list");
-                } else {
-                  setSelectedPlanSource("list");
-                  navigateToRoute({ tab: activeTab }, { replace: true });
-                }
+                navigateBack({ tab: activeTab });
               }}
               userProfile={userProfile}
               activeUserId={activeUserId}
-              onOpenChat={
-                selectedPlanSource === "chat"
-                  ? () => {
-                      setSelectedPlanId(null);
-                      setCurrentRoute({ tab: "chats", selectedChatPlanId });
-                      localStorage.removeItem("planless_selected_plan_id");
-                    }
-                  : undefined
-              }
+              onOpenChat={(planId) => {
+                const rawId = planId || selectedPlanId || "";
+                const targetPlanId = cleanPlanId(rawId);
+                if (!targetPlanId) return;
+                setChatOriginContext({
+                  type: "plan",
+                  planId: targetPlanId,
+                  planSource: selectedPlanSource,
+                  previousTab: activeTab,
+                });
+                setSelectedChatPlanId(targetPlanId);
+                navigateToRoute({ tab: "plans", selectedPlanId: targetPlanId, selectedChatPlanId: targetPlanId });
+              }}
               setShowPaymentSuccess={setShowPaymentSuccessId}
               setShowWaitlistSuccess={setShowWaitlistSuccessId}
               setShowLeftSuccess={setShowLeftSuccessId}
               onLeavePlan={() => {
                 setSelectedPlanId(null);
-                setCurrentRoute({ tab: activeTab, selectedPlanId: null });
                 localStorage.removeItem("planless_selected_plan_id");
-                navigateToRoute({ tab: activeTab }, { replace: true });
+                navigateBack({ tab: activeTab });
               }}
               onPlanCancelled={() => {
                 setSelectedPlanId(null);
-                setCurrentRoute({ tab: activeTab, selectedPlanId: null });
                 localStorage.removeItem("planless_selected_plan_id");
                 setShowCancelConfirmation(true);
-                navigateToRoute({ tab: activeTab }, { replace: true });
               }}
             />
           </motion.div>
@@ -936,7 +951,7 @@ export default function MainApp({
             exit="exit"
             className="fixed inset-0 z-50 bg-[#000000] flex flex-col"
           >
-            <FriendshipsScreen onBack={() => setShowFriendsScreen(false)} />
+            <FriendshipsScreen onBack={() => navigateBack({ tab: activeTab })} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -953,16 +968,11 @@ export default function MainApp({
             className="fixed inset-0 z-50 bg-[#050505] flex flex-col"
           >
             <SearchYourPlansScreen
-              onBack={() => {
-                setShowPlansSearchScreen(false);
-                if (plansSearchOrigin === "hosted") {
-                  setShowHostedPlansScreen(true);
-                }
-              }}
+              onBack={() => navigateBack({ tab: "plans" })}
               setSelectedPlanId={(id) => {
                 setSelectedPlanSource("search");
                 setSelectedPlanId(id);
-                setShowPlansSearchScreen(false);
+                navigateToRoute({ tab: "plans", selectedPlanId: id });
               }}
             />
           </motion.div>
@@ -981,16 +991,11 @@ export default function MainApp({
             className="fixed inset-0 z-50 bg-[#050505] flex flex-col"
           >
             <PastPlans
-              onBack={() => {
-                setShowPastPlansScreen(false);
-                if (pastPlansOrigin === "hosted") {
-                  setShowHostedPlansScreen(true);
-                }
-              }}
+              onBack={() => navigateBack({ tab: activeTab })}
               setSelectedPlanId={(id) => {
                 setSelectedPlanSource("past_plans");
                 setSelectedPlanId(id);
-                setShowPastPlansScreen(false);
+                navigateToRoute({ tab: "plans", selectedPlanId: id });
               }}
             />
           </motion.div>
@@ -1009,20 +1014,20 @@ export default function MainApp({
             className="fixed inset-0 z-50 bg-[#050505] flex flex-col"
           >
             <HostedPlansScreen
-              onBack={() => setShowHostedPlansScreen(false)}
+              onBack={() => navigateBack({ tab: "plans" })}
               setSelectedPlanId={(id) => {
                 setSelectedPlanSource("hosted");
                 setSelectedPlanId(id);
-                setShowHostedPlansScreen(false);
+                navigateToRoute({ tab: "plans", selectedPlanId: id });
               }}
               onTogglePast={() => {
                 setPastPlansOrigin("hosted");
-                setShowHostedPlansScreen(false);
+                navigateToRoute({ tab: "plans", subScreen: "past-plans" });
                 setShowPastPlansScreen(true);
               }}
               onToggleSearch={() => {
                 setPlansSearchOrigin("hosted");
-                setShowHostedPlansScreen(false);
+                navigateToRoute({ tab: "plans", subScreen: "search-plans" });
                 setShowPlansSearchScreen(true);
               }}
               onNavigateToCreate={() => {
@@ -1043,33 +1048,30 @@ export default function MainApp({
             initial="initial"
             animate="animate"
             exit="exit"
-            className="fixed inset-0 z-50 overflow-hidden bg-[#050505]"
+            className="fixed inset-0 z-[70] overflow-hidden bg-[#050505]"
           >
             <React.Suspense fallback={ScreenLoadingFallback}>
               <PlanChatScreen
                 planId={selectedChatPlanId}
                 onBack={() => {
-                  if (chatOriginContext?.type === "plan") {
-                    const { planId, planSource, previousTab } = chatOriginContext;
-                    setSelectedChatPlanId(null);
-                    setChatOriginContext(null);
-                    if (previousTab && previousTab !== activeTab) {
-                      setActiveTab(previousTab);
-                    }
-                    setSelectedPlanSource(planSource || "list");
-                    if (planId) {
-                      setSelectedPlanId(planId);
-                    }
+                  setSelectedChatPlanId(null);
+                  if (chatOriginContext?.type === "plan" && chatOriginContext.planId) {
+                    navigateBack({
+                      tab: chatOriginContext.previousTab || activeTab,
+                      selectedPlanId: chatOriginContext.planId,
+                    });
                   } else {
-                    setSelectedChatPlanId(null);
-                    setChatOriginContext(null);
-                    navigateToRoute({ tab: "chats" });
+                    navigateBack({ tab: chatOriginContext?.previousTab || activeTab });
                   }
                 }}
                 onOpenPlanDetails={() => {
                   const planId = selectedChatPlanId;
-                  setSelectedPlanSource("chat");
-                  setSelectedPlanId(planId);
+                  if (planId) {
+                    setSelectedPlanSource("chat");
+                    setSelectedPlanId(planId);
+                    setSelectedChatPlanId(null);
+                    navigateToRoute({ tab: "plans", selectedPlanId: planId });
+                  }
                 }}
               />
             </React.Suspense>

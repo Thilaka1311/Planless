@@ -17,12 +17,15 @@ import {
 import { useDiscoveryStream } from "../hooks/useDiscoveryStream";
 import { DiscoveryFeedSkeleton } from "../components/DiscoveryFeedSkeleton";
 import { ADMIN_CONFIGS } from "../services/discoveryAdminService";
+import { EndOfFeedIndicator } from "../components/EndOfFeedIndicator";
+import { useDiscoverySeenTracker } from "../hooks/useDiscoverySeenTracker";
+import { BackToTopButton } from "../components/BackToTopButton";
 
 export type { ActivityCategoryId } from "../services/activitiesRelevance";
 
 interface DiscoverActivitiesProps {
-  sections: DiscoverySectionType[];
-  isAdmin: boolean;
+  sections?: DiscoverySectionType[];
+  isAdmin?: boolean;
   onBack: () => void;
   onSelectDiscoveryItem: (item: DiscoveryItem) => void;
   onLongPressAdmin?: (item: DiscoveryItem, config: any) => void;
@@ -68,7 +71,7 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
 
   // Preloaded activities items from Discovery sections (used as starting seed if available)
   const rawSectionActivityItems = useMemo(() => {
-    return sections
+    return (sections || [])
       .filter((s) => s.category?.toUpperCase() === "ACTIVITIES")
       .flatMap((s) => s.items || []);
   }, [sections]);
@@ -153,6 +156,8 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
     searchCoordinates: activeSearchCoordinates,
     resolvedLocationName,
     isLoadingMore: isSearchLoadingMore,
+    hasMore: hasMoreSearch,
+    searchError,
     sentinelRef: searchSentinelRef,
   } = usePlanlessSearch({
     category: "ACTIVITIES",
@@ -210,6 +215,21 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
     ];
   }, [isSearching, searchPlaces, resolvedLocationName, searchQuery]);
 
+  const renderedActivityItemIds = useMemo(() => {
+    if (isSearching) {
+      return searchPlaces.map((it) => (it.place_id || it.id) as string).filter(Boolean);
+    }
+    return streamSections.flatMap((s) =>
+      s.items.map((it) => (it.place_id || it.id) as string).filter(Boolean)
+    );
+  }, [isSearching, searchPlaces, streamSections]);
+
+  useDiscoverySeenTracker({
+    category: "activities",
+    containerRef: scrollContainerRef,
+    itemIds: renderedActivityItemIds,
+  });
+
   return (
     <div
       ref={scrollContainerRef}
@@ -220,6 +240,8 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
         overflowAnchor: "none",
       }}
     >
+      <BackToTopButton scrollContainerRef={scrollContainerRef} />
+
       {/* ── 1. HEADER BAR ── */}
       <div className="w-full shrink-0 px-5 pt-3.5 pb-2 flex items-center justify-between bg-black border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
@@ -283,12 +305,17 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
               ))}
 
               {/* Endless Scroll Sentinel for search */}
-              <div ref={searchSentinelRef} className="h-6 w-full pointer-events-none" />
+              {hasMoreSearch && (
+                <div ref={searchSentinelRef} className="h-6 w-full pointer-events-none" />
+              )}
               {isSearchLoadingMore && (
                 <div className="flex items-center justify-center py-6 gap-2 text-zinc-400">
                   <Loader2 className="w-4 h-4 animate-spin text-pink-500" />
                   <span className="text-xs font-medium">Finding more activities nearby...</span>
                 </div>
+              )}
+              {!hasMoreSearch && !isSearchLoadingMore && !isSearchLoading && !searchError && searchPlaces.length > 0 && (
+                <EndOfFeedIndicator className="w-full" />
               )}
             </div>
           ) : (
@@ -329,6 +356,9 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
                 <Loader2 className="w-4 h-4 animate-spin text-pink-500" />
                 <span className="text-xs font-medium">Loading more activities...</span>
               </div>
+            )}
+            {!hasMoreStream && !isStreamLoadingMore && !isStreamLoading && streamSections.length > 0 && (
+              <EndOfFeedIndicator className="w-full" />
             )}
           </div>
         ) : isStreamLoading ? (

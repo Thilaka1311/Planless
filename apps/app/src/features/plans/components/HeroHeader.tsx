@@ -1,7 +1,6 @@
 import React from "react";
 import { ArrowLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle, Share2, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 
 interface OverflowMenuItem {
@@ -97,6 +96,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   const [tempTitle, setTempTitle] = React.useState(title);
   const titleInputRef = React.useRef<HTMLInputElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
+  const isNavigatingToChatRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!isEditingTitle) {
@@ -188,7 +188,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
               id="immersive-plan-back-btn"
               type="button"
               onClick={(e) => { e.stopPropagation(); onClose(); }}
-              className="p-2 -ml-2 flex items-center justify-center text-white active:scale-95 transition-transform cursor-pointer flex-shrink-0 drop-shadow-md"
+              className="p-2 -ml-2 flex items-center justify-center text-white active:scale-95 transition-transform cursor-pointer flex-shrink-0 drop-shadow-md no-hold"
               style={{ minWidth: "44px", minHeight: "44px" }}
             >
               <ArrowLeft className="w-6 h-6" />
@@ -232,7 +232,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                       onOpenSettings();
                     }
                   }}
-                  className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0"
+                  className="p-2 flex items-center justify-center text-white/80 hover:text-white active:scale-95 transition-all cursor-pointer flex-shrink-0 no-hold"
                   style={{ minWidth: "40px", minHeight: "40px" }}
                   title="Plan Menu"
                 >
@@ -281,11 +281,6 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
     );
   }
 
-  const visibleHostAvatars = React.useMemo(() => {
-    return hostList.slice(0, 4);
-  }, [hostList]);
-
-  const remainingHostCount = Math.max(0, hostList.length - 4);
 
   return (
     <div
@@ -298,13 +293,13 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           id="immersive-plan-back-btn"
           type="button"
           onClick={onClose}
-          className="absolute left-4 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-white active:scale-95 transition-transform cursor-pointer pointer-events-auto"
+          className="absolute left-4 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-white active:scale-95 transition-transform cursor-pointer pointer-events-auto no-hold"
         >
           {isCloseIcon ? <X className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
         </button>
 
         {/* Right action buttons — Contextual Popup Menu */}
-        <div ref={menuRef} className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto">
+        <div ref={menuRef} className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-auto no-hold">
           {(onOpenMenu || onOpenChat || onOpenSettings || onSharePlanLink || showOverflow) && (
             <div className="relative">
               <button
@@ -318,7 +313,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                     setMenuOpen((prev) => !prev);
                   }
                 }}
-                className="w-9 h-9 flex items-center justify-center text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer"
+                className="w-9 h-9 flex items-center justify-center text-white/90 hover:text-white active:scale-95 transition-all cursor-pointer no-hold"
                 title="Plan Menu"
               >
                 <MoreVertical className="w-5 h-5" />
@@ -334,15 +329,20 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                     exit={{ opacity: 0, scale: 0.92, y: -6 }}
                     transition={{ duration: 0.15, ease: "easeOut" }}
                     onClick={(e) => e.stopPropagation()}
-                    className="absolute top-full right-0 mt-2 min-w-[170px] bg-[#121216]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-1.5 z-[100] flex flex-col space-y-0.5 text-left select-none"
+                    className="absolute top-full right-0 mt-2 min-w-[170px] bg-[#121216]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-1.5 z-[100] flex flex-col space-y-0.5 text-left select-none no-hold"
                   >
                     {/* 1. Chat */}
                     {onOpenChat && (
                       <button
                         type="button"
                         onClick={() => {
+                          if (isNavigatingToChatRef.current) return;
+                          isNavigatingToChatRef.current = true;
                           setMenuOpen(false);
                           onOpenChat();
+                          setTimeout(() => {
+                            isNavigatingToChatRef.current = false;
+                          }, 500);
                         }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.08] active:bg-white/[0.14] transition-colors text-left group cursor-pointer"
                       >
@@ -469,31 +469,9 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           )}
         </div>
 
-        {/* Centered Hosted By with Overlapping Avatars (Plan Details Mode) */}
+        {/* Centered Hosted By directly below Plan title (Plan Details Mode) */}
         {!hideHostAttribution && (
           <div className="w-full flex flex-col items-center mt-1 select-none min-w-0">
-            {/* Centered Overlapping Host Avatars directly below Plan title */}
-            <div className="flex items-center justify-center -space-x-1.5 flex-shrink-0 mb-1">
-              {visibleHostAvatars.map((h, idx) => (
-                <UserAvatar
-                  key={h.id || idx}
-                  src={h.avatar}
-                  alt={h.name || "Host"}
-                  size="w-5 h-5"
-                  className="border border-black/80 rounded-full relative"
-                  style={{ zIndex: visibleHostAvatars.length - idx }}
-                />
-              ))}
-              {remainingHostCount > 0 && (
-                <div
-                  className="w-5 h-5 rounded-full bg-zinc-800 border border-black/80 flex items-center justify-center text-[9px] text-zinc-300 font-bold leading-none shrink-0 relative"
-                  style={{ zIndex: 0 }}
-                >
-                  +{remainingHostCount}
-                </div>
-              )}
-            </div>
-
             {/* Cleanly Truncated Single-Line Host Attribution Text */}
             <div className="w-full max-w-full px-14 flex items-center justify-center min-w-0">
               <span

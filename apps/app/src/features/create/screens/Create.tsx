@@ -69,7 +69,10 @@ export const CreatePlanScreen = ({
     ) {
       return initialRoute.tab;
     }
-    if (initialRoute.tab === "create" && initialRoute.subScreen) {
+    if (
+      initialRoute.tab === "create" &&
+      (initialRoute.subScreen === "master-search" || initialRoute.subScreen === "quick-plans")
+    ) {
       return initialRoute.subScreen;
     }
     return null;
@@ -112,7 +115,11 @@ export const CreatePlanScreen = ({
           setCreatePhase(route.createPhase);
         } else if (!route.createPhase || route.createPhase === 'category') {
           setCreatePhase('category');
-          setLastSubScreen(route.subScreen || null);
+          if (route.subScreen === "master-search" || route.subScreen === "quick-plans") {
+            setLastSubScreen(route.subScreen);
+          } else {
+            setLastSubScreen(null);
+          }
         }
       } else if (
         route.tab === "sports" ||

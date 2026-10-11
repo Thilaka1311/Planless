@@ -1,5 +1,5 @@
 import React from "react";
-import { Trophy, Utensils, Film, Sparkles, CalendarDays } from "lucide-react";
+import { Trophy, Utensils, Film, Sparkles, CalendarDays, Gamepad2 } from "lucide-react";
 
 export type PlanCategoryType = "sports" | "dining" | "movies" | "activities" | "custom" | string;
 
@@ -42,8 +42,8 @@ export const CATEGORY_THEMES: Record<string, CategoryTheme> = {
     glowColor: "rgba(139, 92, 246, 0.3)",
   },
   activities: {
-    label: "Activities",
-    icon: Sparkles,
+    label: "Activity",
+    icon: Gamepad2,
     color: "#EC4899", // pink
     textColorClass: "text-[#EC4899]",
     bgColorClass: "bg-[#EC4899]/15",

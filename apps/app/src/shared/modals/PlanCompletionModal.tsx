@@ -4,6 +4,7 @@ import { X, Trophy, Camera, Check, Award, ArrowRight, ArrowLeft, Star } from "lu
 import { Plan, UserProfile } from "../../core/types";
 import { usePlansStore } from "../../features/plans/state/PlansContext";
 import { useProfileStore } from "../../features/profile/state/ProfileContext";
+import { useDismissibleOverlay } from "../../features/navigation/appRouter";
 import { supabase } from "../../../lib/supabaseClient";
 
 interface PlanCompletionModalProps {
@@ -14,6 +15,7 @@ interface PlanCompletionModalProps {
 }
 
 export default function PlanCompletionModal({ plan, onClose, onPublish, activeUserId }: PlanCompletionModalProps) {
+  useDismissibleOverlay(Boolean(plan), onClose);
   const { submitStats, submitMvp, completePlan } = usePlansStore();
   const { dbUsers } = useProfileStore();
 
@@ -77,15 +79,16 @@ export default function PlanCompletionModal({ plan, onClose, onPublish, activeUs
         editable_until
       };
 
-      const { data: savedMemRow, error: memErr } = await (supabase as any)
-        .from("memories")
-        .insert(memoryRecord)
-        .select()
-        .single();
-      if (memErr) {
-        throw new Error("Failed to save memory record");
-      }
-      const memoryId = savedMemRow?.id || memoryUuid;
+      // memories table does not exist: bypass DB write
+      // const { data: savedMemRow, error: memErr } = await (supabase as any)
+      //   .from("memories")
+      //   .insert(memoryRecord)
+      //   .select()
+      //   .single();
+      // if (memErr) {
+      //   throw new Error("Failed to save memory record");
+      // }
+      const memoryId = memoryUuid;
 
       // 2. Create memory_results record
       const resultRecord: any = {

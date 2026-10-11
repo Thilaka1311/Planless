@@ -12,7 +12,7 @@ router.get("/fetch-all", authMiddleware, async (req: AuthenticatedRequest, res) 
       res.json({
         configured: false,
         tables_missing: true,
-        missing_tables: ["users", "plans", "plan_participants", "transactions", "memories", "plan_outcomes", "friendships"],
+        missing_tables: ["users", "plans", "plan_participants", "transactions", "plan_outcomes", "friendships"],
         data: null
       });
       return;
@@ -26,7 +26,6 @@ router.get("/fetch-all", authMiddleware, async (req: AuthenticatedRequest, res) 
       "plans",
       "plan_participants",
       "wallet_expenses",
-      "memories",
       "friendships"
     ];
 
@@ -454,67 +453,7 @@ router.post("/upsert", authMiddleware, async (req: AuthenticatedRequest, res) =>
     // the row doesn't exist yet.
     let data, error;
 
-    if (table === "memories") {
-      const results: any[] = [];
-      for (const rec of records) {
-        if (rec.plan_id) {
-          // Check if memory already exists for this plan_id
-          const { data: existing } = await client
-            .from("memories")
-            .select("*")
-            .eq("plan_id", rec.plan_id);
-          
-          if (existing && existing.length > 0) {
-            // Check locking: locked_at set or past editable_until
-            const isLocked = existing[0].locked_at || (existing[0].editable_until && new Date(existing[0].editable_until).getTime() < Date.now());
-            if (isLocked) {
-              res.status(403).json({ error: "Forbidden. Memory is locked and cannot be modified." });
-              return;
-            }
-
-            // Keep the existing database ID to preserve foreign key references
-            const updatePayload = { ...rec, id: existing[0].id };
-            const { data: d, error: e } = await client
-              .from("memories")
-              .update(updatePayload)
-              .eq("id", existing[0].id)
-              .select("*");
-            if (e) { error = e; break; }
-            if (d) results.push(...d);
-          } else {
-            // Insert new memory row
-            const { data: d, error: e } = await client
-              .from("memories")
-              .insert([rec])
-              .select("*");
-            if (e) { error = e; break; }
-            if (d) results.push(...d);
-          }
-        } else if (rec.id) {
-          // Update by id (e.g. host saving football/badminton score)
-          const { data: existing } = await client
-            .from("memories")
-            .select("*")
-            .eq("id", rec.id);
-          if (existing && existing.length > 0) {
-            const isLocked = existing[0].locked_at || (existing[0].editable_until && new Date(existing[0].editable_until).getTime() < Date.now());
-            if (isLocked) {
-              res.status(403).json({ error: "Forbidden. Memory is locked and cannot be modified." });
-              return;
-            }
-          }
-
-          const { data: d, error: e } = await client
-            .from("memories")
-            .update(rec)
-            .eq("id", rec.id)
-            .select("*");
-          if (e) { error = e; break; }
-          if (d) results.push(...d);
-        }
-      }
-      data = results;
-    } else if (table === "memory_results" || table === "plan_outcomes" || table === "notifications") {
+    if (table === "memories" || table === "memory_results" || table === "plan_outcomes" || table === "notifications") {
       // Tables dropped from Supabase database; return empty success response
       data = [];
     } else if (table === "users") {

@@ -9,6 +9,7 @@ import { adminUploadImage, SUBCATEGORY_MAP } from "../services/discoveryAdminSer
 import { LocationAutocompleteInput } from "../../../shared/components/LocationAutocompleteInput";
 import { extractCleanPlaceId, classifyVenueCategory } from "../services/venueRelevance";
 import { getSupportedSports, extractSportsList, scoreSportsVenueRelevance, SportCategoryId } from "../services/sportsRelevance";
+import { useDismissibleOverlay } from "../../navigation/appRouter";
 
 export const AVAILABLE_SPORTS = [
   "Football",
@@ -126,6 +127,7 @@ export const AdminPlaceEditSheet: React.FC<AdminPlaceEditSheetProps> = ({
   onSaved,
   onHidden,
 }) => {
+  useDismissibleOverlay(Boolean(item), onClose);
   if (!item) return null;
 
   const rawPlaceId = extractCleanPlaceId(item) || item.place_id || (typeof item.id === "string" ? item.id.split("::")[0].replace(/^place_/, "") : item.id) || "";

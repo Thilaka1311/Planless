@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { X, Zap, Plus, FolderPlus, ArrowLeft, Check } from "lucide-react";
 import { QuickPlanList, QuickPlan } from "../../../core/types";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
+import { useDismissibleOverlay } from "../../navigation/appRouter";
 
 export interface SelectQuickPlanListBottomSheetProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export const SelectQuickPlanListBottomSheet: React.FC<SelectQuickPlanListBottomS
   onCreateAndSelectList,
   isSaving = false,
 }) => {
+  useDismissibleOverlay(isOpen, onClose);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [newListName, setNewListName] = useState("");
 

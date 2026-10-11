@@ -58,19 +58,25 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     return match?.id || rawSenderId;
   }, [rawSenderId, dbUsers]);
   const senderUuid = currentUserId;
+  const cleanId = planId ? cleanPlanId(planId) : "";
   const plan = useMemo(() => {
-    return findPlanBySlugOrId(plans, planId) || plans.find((p) => p.id === planId || p.dbUuid === planId);
-  }, [plans, planId]);
+    return (
+      findPlanBySlugOrId(plans, cleanId) ||
+      findPlanBySlugOrId(plans, planId) ||
+      plans.find((p) => p.id === cleanId || p.dbUuid === cleanId || p.id === planId)
+    );
+  }, [plans, planId, cleanId]);
   const isPlanCompleted = String(plan?.status || "").toUpperCase() === "COMPLETED";
 
   // Resolved target database UUID for plan (must be a valid UUID)
   const targetPlanUuid = useMemo(() => {
     if (plan?.dbUuid) return plan.dbUuid;
-    if (planId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(planId)) {
-      return planId;
+    const candidate = cleanId || planId;
+    if (candidate && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate)) {
+      return candidate;
     }
-    return plan?.id || planId;
-  }, [plan, planId]);
+    return plan?.id || candidate;
+  }, [plan, planId, cleanId]);
 
   // Centralized persistent in-memory chat cache hook
   const {
@@ -190,6 +196,32 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     setReplaceTargetUserId(targetUserId);
     goToPage(0); // Switch to participants page where replacement selection happens
   }, [goToPage]);
+
+  // ── Header Height Measurement (Ensures Participants & Chat tabs start below header) ──
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState<number>(0);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const h = el.offsetHeight;
+      if (h > 0) {
+        setHeaderHeight(h);
+      }
+    };
+
+    measure();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => {
+        measure();
+      });
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+  }, [plan?.id, plan?.title, currentPage]);
 
   // ── Track Previous Read Position & Dynamic In-Chat Unread Divider ──
   // Cache-first: initialize unreadDivider synchronously from getCachedUnreadInfo
@@ -944,6 +976,27 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     }
   };
 
+  if (!plan) {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col items-center justify-center p-6 text-center select-none font-sans">
+        <div className="w-12 h-12 rounded-full bg-zinc-900 border border-white/10 flex items-center justify-center text-zinc-400 mb-4">
+          <MessageSquare className="w-6 h-6" />
+        </div>
+        <h2 className="text-white text-lg font-semibold mb-2">Unable to open chat</h2>
+        <p className="text-zinc-400 text-sm max-w-xs mb-6">
+          We couldn't find the plan details for this conversation.
+        </p>
+        <button
+          type="button"
+          onClick={onBack}
+          className="px-5 py-2.5 rounded-full bg-[#FF6B2C] text-white text-sm font-semibold hover:bg-[#FF5A1F] active:scale-95 transition cursor-pointer"
+        >
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -958,7 +1011,10 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
     >
       {/* 1. INDEPENDENT FIXED HERO HEADER OVERLAY — Completely isolated from pager flex/resize */}
       {plan && (
-        <div className={`absolute top-0 left-0 right-0 z-50 ${isAnySheetOpen ? "pointer-events-none select-none" : "pointer-events-auto"}`}>
+        <div
+          ref={headerRef}
+          className={`absolute top-0 left-0 right-0 z-50 ${isAnySheetOpen ? "pointer-events-none select-none" : "pointer-events-auto"}`}
+        >
           <HeroHeader
             title={plan.title}
             creatorName={isHost ? "You" : plan.creatorName}
@@ -989,8 +1045,11 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
       {/* 2. DEDICATED RESIZABLE PAGER CONTAINER — Only this area resizes when keyboard opens */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden relative w-full touch-pan-y select-none pt-[calc(96px+env(safe-area-inset-top,0px))]"
-        style={{ touchAction: isAnySheetOpen ? "none" : "pan-y" }}
+        className="flex-1 overflow-hidden relative w-full touch-pan-y select-none"
+        style={{
+          paddingTop: headerHeight > 0 ? `${headerHeight}px` : "calc(116px + env(safe-area-inset-top, 0px))",
+          touchAction: isAnySheetOpen ? "none" : "pan-y",
+        }}
       >
         <motion.div
           {...pagerProps}

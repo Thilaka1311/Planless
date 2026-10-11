@@ -16,6 +16,7 @@ import { DiscoverSports } from "./DiscoverSports";
 import { DiscoverMovies } from "./DiscoverMovies";
 import { DiscoverDining } from "./DiscoverDining";
 import { DiscoverActivities } from "./DiscoverActivities";
+import { BackToTopButton } from "../components/BackToTopButton";
 import { LocationSetter, DiscoveryLocation } from "./LocationSetter";
 import { useUserLocation } from "../hooks/useUserLocation";
 import moviesCategoryIcon from "../../../assets/categories/movies.png";
@@ -31,6 +32,7 @@ import {
   navigateBack,
   parseCurrentRoute,
   listenToNavigation,
+  useDismissibleOverlay,
 } from "../../navigation/appRouter";
 
 // Eagerly pre-warm static category icons so they are instantly in memory/GPU cache
@@ -115,6 +117,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     setDiscoveryLocation,
   } = useUserLocation();
   const [showLocationSetter, setShowLocationSetter] = useState(false);
+  useDismissibleOverlay(showLocationSetter, () => setShowLocationSetter(false), 'location-setter');
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<"all" | "sports" | "movies" | "dining" | "activities">("all");
@@ -150,7 +153,10 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     ) {
       return current.tab;
     }
-    if (current.tab === "create" && current.subScreen) {
+    if (
+      current.tab === "create" &&
+      (current.subScreen === "master-search" || current.subScreen === "quick-plans")
+    ) {
       return current.subScreen;
     }
     return null;
@@ -174,7 +180,11 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
       ) {
         setActiveSubScreen(route.tab);
       } else if (route.tab === "create") {
-        setActiveSubScreen(route.subScreen || null);
+        if (route.subScreen === "master-search" || route.subScreen === "quick-plans") {
+          setActiveSubScreen(route.subScreen);
+        } else {
+          setActiveSubScreen(null);
+        }
       } else if (
         route.tab === "home" ||
         route.tab === "plans" ||
@@ -296,22 +306,14 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
   };
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  const lastScrollTopRef = useRef(0);
-  const isNavVisibleRef = useRef(true);
+  const lastScrollTopRef = useRef<number>(0);
+  const isNavVisibleRef = useRef<boolean>(true);
 
-  // Scroll listener to toggle bottom nav visibility and back-to-top button
+  // Scroll listener to toggle bottom nav visibility
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const currentScrollTop = e.currentTarget.scrollTop;
     savedDiscoveryScrollTop = currentScrollTop;
     const delta = currentScrollTop - lastScrollTopRef.current;
-
-    // Toggle Back to top button at threshold (> 260px)
-    if (currentScrollTop > 260) {
-      setShowBackToTop(true);
-    } else {
-      setShowBackToTop(false);
-    }
 
     // Always show nav if at or near top
     if (currentScrollTop <= 30) {
@@ -333,21 +335,6 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     }
 
     lastScrollTopRef.current = currentScrollTop;
-  }, []);
-
-  const handleScrollToTop = useCallback(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-    }
-    savedDiscoveryScrollTop = 0;
-    setShowBackToTop(false);
-    if (!isNavVisibleRef.current) {
-      isNavVisibleRef.current = true;
-      window.dispatchEvent(new CustomEvent("planless_bottom_nav_visibility", { detail: { visible: true } }));
-    }
   }, []);
 
   // Restore saved scroll position when returning to Discovery
@@ -448,18 +435,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
       </section>
 
       {/* ── FLOATING BACK-TO-TOP BUTTON ── */}
-      <button
-        type="button"
-        onClick={handleScrollToTop}
-        aria-label="Back to top"
-        className={`fixed top-[68px] left-1/2 -translate-x-1/2 z-30 w-8 h-8 rounded-full bg-[#18181b]/95 border border-white/10 text-white flex items-center justify-center shadow-lg backdrop-blur-md hover:bg-zinc-800 active:scale-95 transition-all duration-200 cursor-pointer ${
-          showBackToTop
-            ? "opacity-100 scale-100 pointer-events-auto"
-            : "opacity-0 scale-90 pointer-events-none"
-        }`}
-      >
-        <ChevronUp className="w-4 h-4 text-zinc-200" />
-      </button>
+      <BackToTopButton scrollContainerRef={scrollContainerRef} />
 
       {/* ── 3. DYNAMIC MULTI-SECTION DISCOVERY FEED ── */}
       {isLoading ? (

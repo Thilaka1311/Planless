@@ -1,6 +1,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { useLivePlan } from "../../features/plans/hooks/useLivePlan";
+import { useDismissibleOverlay } from "../../features/navigation/appRouter";
 
 interface PaymentConfirmationModalProps {
   paymentConfirmationPlanId: string | null;
@@ -19,6 +20,7 @@ export default function PaymentConfirmationModal({
   setSelectedPlanId,
   setShowPaymentSuccessId
 }: PaymentConfirmationModalProps) {
+  useDismissibleOverlay(Boolean(paymentConfirmationPlanId), onClose);
   const livePlan = useLivePlan(paymentConfirmationPlanId);
 
   React.useEffect(() => {

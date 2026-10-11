@@ -1,6 +1,7 @@
 import React from "react";
 import { NotificationItem } from "../../core/types";
 import { NotificationMeta } from "../../../lib/mappers";
+import { useDismissibleOverlay } from "../../features/navigation/appRouter";
 
 interface CompletedMemoryItem {
   memory: any;
@@ -29,6 +30,7 @@ export default function NotificationsTrayModal({
   completedMemories,
   onSelectMemoryPlan
 }: NotificationsTrayModalProps) {
+  useDismissibleOverlay(isOpen, onClose);
   if (!isOpen) return null;
 
   return (

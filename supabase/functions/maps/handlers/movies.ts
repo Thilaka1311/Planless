@@ -14,19 +14,35 @@ export const TMDB_LANGUAGE_NAMES: Record<string, string> = {
   te: "Telugu",
 };
 
+export const MIN_MOVIE_RELEASE_DATE = "2026-01-01";
+
 /**
- * Checks if a movie release date is within the past 6 months from the current date.
- * Future releases are also valid. Older than 6 months is excluded.
+ * Validates that a movie was released in 2026 or later.
+ * Excludes movies released before January 1, 2026, or with missing/invalid release dates.
  */
-export function isMovieWithinSixMonths(releaseDateStr?: string | null, referenceDate = new Date()): boolean {
-  if (!releaseDateStr) return false;
-  const releaseDate = new Date(releaseDateStr);
-  if (isNaN(releaseDate.getTime())) return false;
+export function isMovieReleased2026OrLater(releaseDateStr?: string | null): boolean {
+  if (!releaseDateStr || typeof releaseDateStr !== "string") return false;
+  const trimmed = releaseDateStr.trim();
+  if (!trimmed) return false;
 
-  const sixMonthsAgo = new Date(referenceDate);
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (match) {
+    const year = parseInt(match[1], 10);
+    if (year < 2026) return false;
+    return trimmed >= MIN_MOVIE_RELEASE_DATE;
+  }
 
-  return releaseDate >= sixMonthsAgo;
+  const parsed = new Date(trimmed);
+  if (isNaN(parsed.getTime())) return false;
+  if (parsed.getUTCFullYear() < 2026) return false;
+  return parsed >= new Date("2026-01-01T00:00:00Z");
+}
+
+/**
+ * Backward-compatible alias for existing callers, enforcing 2026 or later.
+ */
+export function isMovieWithinSixMonths(releaseDateStr?: string | null, _referenceDate?: Date): boolean {
+  return isMovieReleased2026OrLater(releaseDateStr);
 }
 
 // In-memory cache for server-side response deduplication (TTL: 15 minutes)
@@ -48,11 +64,44 @@ function setCached(key: string, data: any, ttl = CACHE_TTL_MS): void {
 }
 
 /**
+ * Resolves TMDB credentials from environment variables or local .env fallback.
+ */
+function getTmdbCredentials(): { token?: string; apiKey?: string } {
+  let token = Deno.env.get("TMDB_ACCESS_TOKEN");
+  let apiKey = Deno.env.get("TMDB_API_KEY");
+
+  if (!token && !apiKey) {
+    const candidatePaths = [
+      new URL("../.env", import.meta.url),
+      new URL("../../.env", import.meta.url),
+    ];
+    for (const p of candidatePaths) {
+      try {
+        const text = Deno.readTextFileSync(p);
+        for (const line of text.split("\n")) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("#")) continue;
+          if (trimmed.startsWith("TMDB_ACCESS_TOKEN=") && !token) {
+            token = trimmed.slice("TMDB_ACCESS_TOKEN=".length).trim().replace(/^["']|["']$/g, "");
+          }
+          if (trimmed.startsWith("TMDB_API_KEY=") && !apiKey) {
+            apiKey = trimmed.slice("TMDB_API_KEY=".length).trim().replace(/^["']|["']$/g, "");
+          }
+        }
+      } catch {
+        // Fallback silently if files cannot be read (e.g. hosted environment)
+      }
+    }
+  }
+
+  return { token, apiKey };
+}
+
+/**
  * Helper to fetch from TMDB API with Bearer token authentication or API key fallback.
  */
 async function fetchFromTmdb(endpoint: string, searchParams: Record<string, string | number | undefined> = {}) {
-  const token = Deno.env.get("TMDB_ACCESS_TOKEN");
-  const apiKey = Deno.env.get("TMDB_API_KEY");
+  const { token, apiKey } = getTmdbCredentials();
 
   if (!token && !apiKey) {
     throw new Error("TMDB credentials not configured on server (TMDB_ACCESS_TOKEN or TMDB_API_KEY).");
@@ -156,7 +205,7 @@ async function handleMoviesDiscover(body: any): Promise<any> {
     if (lang !== "all") {
       for (const m of npRaw) {
         if (!m || !m.title || m.adult || m.video || seen.has(m.id)) continue;
-        if (!isMovieWithinSixMonths(m.release_date)) continue;
+        if (!isMovieReleased2026OrLater(m.release_date)) continue;
         if (m.original_language === lang) {
           seen.add(m.id);
           candidates.push(m);
@@ -166,13 +215,17 @@ async function handleMoviesDiscover(body: any): Promise<any> {
       const byLang: Record<string, any[]> = { hi: [], ta: [], te: [], kn: [], en: [] };
       for (const m of npRaw) {
         if (!m || !m.title || m.adult || m.video || seen.has(m.id)) continue;
-        if (!isMovieWithinSixMonths(m.release_date)) continue;
+        if (!isMovieReleased2026OrLater(m.release_date)) continue;
         if (byLang[m.original_language]) {
           seen.add(m.id);
           byLang[m.original_language].push(m);
         }
       }
       candidates = interleaveLanguageResults([byLang.hi, byLang.ta, byLang.te, byLang.kn, byLang.en]);
+    }
+
+    if (page === 1 && npRaw.length === 0) {
+      throw new Error("TMDB failed to retrieve movie discovery results.");
     }
 
     finalResults = candidates;
@@ -190,7 +243,7 @@ async function handleMoviesDiscover(body: any): Promise<any> {
         with_genres: genre,
       });
       finalResults = (data.results || []).filter(
-        (m: any) => m && m.title && !m.adult && !m.video
+        (m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date)
       );
       totalPages = data.total_pages || 1;
     } else {
@@ -204,8 +257,9 @@ async function handleMoviesDiscover(body: any): Promise<any> {
           include_adult: "false",
           include_video: "false",
           with_genres: genre,
+          "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
         })
-          .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video))
+          .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date)))
           .catch(() => [])
       );
 
@@ -223,9 +277,10 @@ async function handleMoviesDiscover(body: any): Promise<any> {
         include_adult: "false",
         include_video: "false",
         with_genres: genre,
+        "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
       });
       finalResults = (data.results || []).filter(
-        (m: any) => m && m.title && !m.adult && !m.video
+        (m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date)
       );
       totalPages = data.total_pages || 1;
     } else {
@@ -238,8 +293,9 @@ async function handleMoviesDiscover(body: any): Promise<any> {
           include_adult: "false",
           include_video: "false",
           with_genres: genre,
+          "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
         })
-          .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video))
+          .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date)))
           .catch(() => [])
       );
 
@@ -286,7 +342,7 @@ async function handleMoviesSearch(body: any): Promise<any> {
   });
 
   let results = (rawData.results || []).filter(
-    (m: any) => m && m.title && !m.adult && !m.video
+    (m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date)
   );
 
   if (lang !== "all") {
@@ -349,6 +405,11 @@ async function handleMovieGenres(): Promise<any> {
  * Main dispatcher for all movie-related actions
  */
 export async function handleMovies(body: any): Promise<any> {
+  const { token, apiKey } = getTmdbCredentials();
+  if (!token && !apiKey) {
+    throw new Error("TMDB credentials not configured on server (TMDB_ACCESS_TOKEN or TMDB_API_KEY).");
+  }
+
   const action = body.action || body.subaction;
 
   if (action === "movies-discover" || action === "discover") {

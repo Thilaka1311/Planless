@@ -1,4 +1,5 @@
 import React from "react";
+import { useDismissibleOverlay } from "../../features/navigation/appRouter";
 
 interface DepositCashModalProps {
   isOpen: boolean;
@@ -15,6 +16,8 @@ export default function DepositCashModal({
   setDepositAmount,
   handleDepositMoney
 }: DepositCashModalProps) {
+  useDismissibleOverlay(isOpen, onClose);
+
   if (!isOpen) return null;
 
   return (
