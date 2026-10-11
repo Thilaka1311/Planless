@@ -73,9 +73,7 @@ export function extractOwnerPhotos(
     }
 
     if (isOwnerAuthor(venueName, author)) {
-      const ref = ph.name?.includes("/photos/")
-        ? ph.name.split("/photos/")[1]
-        : ph.photo_reference || ph.name || "";
+      const ref = ph.name || ph.photo_reference || "";
       if (ref) {
         ownerPhotos.push({ photoReference: ref, authorName: author });
       }
@@ -1157,12 +1155,12 @@ function normalizePlaces(
     const photoRef = primaryOwnerPhoto ? primaryOwnerPhoto.photoReference : null;
     const ownerPhotoRefs = ownerPhotos.map((ph) => ph.photoReference);
 
+    const placeId = place.place_id || place.id;
     let coverUrl = photoRef
-      ? `${photoBaseUrl}?action=photo&photo_reference=${encodeURIComponent(photoRef)}&maxwidth=800`
+      ? `${photoBaseUrl}?action=photo&photo_reference=${encodeURIComponent(photoRef)}&maxwidth=800${placeId ? `&place_id=${encodeURIComponent(placeId)}` : ""}`
       : null;
 
     const locText = place.vicinity || place.formatted_address || "Nearby";
-    const placeId = place.place_id || place.id;
     const placeName = place.name || "Unnamed Place";
     
     // Derive categories directly from Google types

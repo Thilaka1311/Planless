@@ -227,7 +227,7 @@ export async function fetchProgressiveDiscoveryBatch(
       if (override.google_photo_reference) {
         merged.cover_image_url = `${photoBaseUrl}?action=photo&photo_reference=${encodeURIComponent(
           override.google_photo_reference
-        )}&maxwidth=800`;
+        )}&maxwidth=800&place_id=${encodeURIComponent(cleanId)}`;
         merged.google_photo_reference = override.google_photo_reference;
       } else if (override.image_path) {
         merged.cover_image_url = override.image_path;

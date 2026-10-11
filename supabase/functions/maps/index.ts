@@ -25,13 +25,14 @@ Deno.serve(async (req: Request) => {
       if (action === "photo" || action === "place-photo") {
         const photoRef = url.searchParams.get("photo_reference") || url.searchParams.get("photoreference");
         const maxWidth = url.searchParams.get("maxwidth") || "800";
+        const placeId = url.searchParams.get("place_id") || url.searchParams.get("placeid");
         if (!photoRef) {
           return new Response(JSON.stringify({ error: "Missing photo_reference query parameter" }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        return await handlePlacePhoto(photoRef, maxWidth);
+        return await handlePlacePhoto(photoRef, maxWidth, placeId || undefined);
       }
 
       return new Response(JSON.stringify({ error: "Invalid GET request" }), {
@@ -62,10 +63,11 @@ Deno.serve(async (req: Request) => {
     } else if (action === "photo" || action === "place-photo") {
       const photoRef = body?.photo_reference || body?.photoreference;
       const maxWidth = body?.maxwidth || "800";
+      const placeId = body?.place_id || body?.placeid;
       if (!photoRef) {
         throw new Error("Missing 'photo_reference' parameter.");
       }
-      return await handlePlacePhoto(photoRef, maxWidth);
+      return await handlePlacePhoto(photoRef, maxWidth, placeId);
     } else if (
       action === "movies-discover" ||
       action === "movies-search" ||
