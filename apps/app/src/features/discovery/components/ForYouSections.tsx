@@ -9,7 +9,7 @@ import {
   isMovieReleased2026OrLater,
   isMovieWithinSixMonths,
 } from "../services/tmdbMovieService";
-import { MoviePortraitCard } from "../screens/DiscoverMovies";
+import { MoviePortraitCard } from "./MoviePortraitCard";
 import { usePlanlessSearch } from "../search";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { useDiscoveryStream } from "../hooks/useDiscoveryStream";
@@ -131,7 +131,7 @@ export const MovieRailSection: React.FC<MovieRailProps> = ({
             className="shrink-0 aspect-[2/3] rounded-2xl bg-[#121216] border border-white/[0.06] flex flex-col items-center justify-center gap-2 snap-start"
           >
             <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
-            <span className="text-[10px] text-zinc-500 font-medium">Loading...</span>
+            <span className="text-[10px] text-zinc-400 font-medium">Loading...</span>
           </div>
         )}
       </div>

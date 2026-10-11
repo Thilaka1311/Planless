@@ -4,9 +4,15 @@ import { fileURLToPath } from "url";
 // ESM-compatible __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Load .env from the monorepo root (3 levels up from apps/app/backend/)
+// Load .env from monorepo root whether run directly via tsx (from apps/app/backend) or via dist/server.mjs (from apps/app/dist)
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 dotenv.config({ path: path.resolve(__dirname, "../../../.env.local"), override: true });
+dotenv.config({ path: path.resolve(__dirname, "../../.env"), override: true });
+dotenv.config({ path: path.resolve(__dirname, "../../.env.local"), override: true });
+dotenv.config({ path: path.resolve(process.cwd(), "../../.env"), override: true });
+dotenv.config({ path: path.resolve(process.cwd(), "../../.env.local"), override: true });
+dotenv.config({ path: path.resolve(process.cwd(), ".env"), override: true });
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true });
 // Also attempt apps/app/.env and .env.local as local overrides
 dotenv.config({ path: path.resolve(__dirname, "../.env"), override: true });
 dotenv.config({ path: path.resolve(__dirname, "../.env.local"), override: true });
@@ -242,6 +248,19 @@ async function startServer() {
           } else if (filePath.includes("/assets/")) {
             // Hashed assets can be safely cached long-term
             res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          } else if (
+            filePath.endsWith(".ico") ||
+            filePath.endsWith(".png") ||
+            filePath.endsWith(".jpg") ||
+            filePath.endsWith(".jpeg") ||
+            filePath.endsWith(".webp") ||
+            filePath.endsWith(".svg") ||
+            filePath.endsWith(".woff2") ||
+            filePath.endsWith(".otf") ||
+            filePath.endsWith(".ttf")
+          ) {
+            // Standard cache policy for non-hashed static icons and media
+            res.setHeader("Cache-Control", "public, max-age=86400");
           }
         },
       })

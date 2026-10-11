@@ -10,15 +10,44 @@ import { formatDateTimeStandard } from "../../../shared/components/NativeDateTim
 
 // Sub-components
 import { BrowseExperiencesStep, DiscoverySubScreen } from "../../discovery/screens/Discovery";
-import { CreateCategoryScreen } from "./CreateCategoryScreen";
-import { CreatePlanReview } from "./CreatePlanReview";
-import { WhenIsPlanScreen } from "./WhenIsPlanScreen";
-import { WhoIsComingScreen } from "./WhoIsComingScreen";
-import { WhoIsActuallyComing } from "./WhoIsActuallyComing";
 import { DiscardPlanBottomSheet } from "../../plans/components/BottomSheets";
-import { CreatePlanConfirmation } from "../components/CreatePlanConfirmation";
-import { FriendshipsScreen } from "../../friendships/screens/FriendshipsScreen";
 import { QuickPlan } from "../../../core/types";
+import { lazyWithRetry } from "../../../shared/utils/lazyWithRetry";
+
+const CreateCategoryScreen = lazyWithRetry(
+  () => import("./CreateCategoryScreen").then((m) => ({ default: m.CreateCategoryScreen })),
+  "CreateCategoryScreen"
+);
+const CreatePlanReview = lazyWithRetry(
+  () => import("./CreatePlanReview").then((m) => ({ default: m.CreatePlanReview })),
+  "CreatePlanReview"
+);
+const WhenIsPlanScreen = lazyWithRetry(
+  () => import("./WhenIsPlanScreen").then((m) => ({ default: m.WhenIsPlanScreen })),
+  "WhenIsPlanScreen"
+);
+const WhoIsComingScreen = lazyWithRetry(
+  () => import("./WhoIsComingScreen").then((m) => ({ default: m.WhoIsComingScreen })),
+  "WhoIsComingScreen"
+);
+const WhoIsActuallyComing = lazyWithRetry(
+  () => import("./WhoIsActuallyComing").then((m) => ({ default: m.WhoIsActuallyComing })),
+  "WhoIsActuallyComing"
+);
+const CreatePlanConfirmation = lazyWithRetry(
+  () => import("../components/CreatePlanConfirmation").then((m) => ({ default: m.CreatePlanConfirmation })),
+  "CreatePlanConfirmation"
+);
+const FriendshipsScreen = lazyWithRetry(
+  () => import("../../friendships/screens/FriendshipsScreen").then((m) => ({ default: m.FriendshipsScreen })),
+  "FriendshipsScreen"
+);
+
+const ScreenLoadingFallback = (
+  <div className="w-full h-full flex items-center justify-center bg-[#050505]">
+    <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
+  </div>
+);
 import { createQuickPlan } from "../services/quickPlanService";
 
 import defaultPlanCover from "../../../assets/planimagedefault.webp";
@@ -464,96 +493,104 @@ export const CreatePlanScreen = ({
   // WHEN PHASE
   if (createPhase === 'when') {
     return (
-      <WhenIsPlanScreen
-        form={form}
-        coverImage={form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory)}
-        title={form.localTitle || "New Activity"}
-        onBack={() => {
-          if (cameFromReview) {
-            transitionToPhase('review');
-          } else {
-            handleResetAll();
-          }
-        }}
-        onContinue={() => {
-          if (cameFromReview) {
-            setCameFromReview(false);
-            transitionToPhase('review');
-          } else {
-            transitionToPhase('who');
-          }
-        }}
-        selectedCategory={selectedCategory}
-        selectedSubcategory={selectedSubcategory}
-      />
+      <React.Suspense fallback={ScreenLoadingFallback}>
+        <WhenIsPlanScreen
+          form={form}
+          coverImage={form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory)}
+          title={form.localTitle || "New Activity"}
+          onBack={() => {
+            if (cameFromReview) {
+              transitionToPhase('review');
+            } else {
+              handleResetAll();
+            }
+          }}
+          onContinue={() => {
+            if (cameFromReview) {
+              setCameFromReview(false);
+              transitionToPhase('review');
+            } else {
+              transitionToPhase('who');
+            }
+          }}
+          selectedCategory={selectedCategory}
+          selectedSubcategory={selectedSubcategory}
+        />
+      </React.Suspense>
     );
   }
 
   // QUICK PLAN CATEGORY SELECTION (STEP 1)
   if (isQuickPlanCategorySelect) {
     return (
-      <CreateCategoryScreen
-        userProfile={form.userProfile}
-        setActiveTab={setActiveTab}
-        onSelectCategory={(category) => {
-          setSelectedCategory(category);
-          setIsQuickPlanCategorySelect(false);
-          if (category === "custom") {
-            form.resetForm();
-            form.setLocalTitle("");
-            form.setLocalLocation("");
-            form.setCustomCoverImage(null, null);
-            form.setCostAmount(0);
-            form.setIsCostManuallySet(false);
-            form.setIsDateManuallySet(false);
-            form.setTotalCapacity(undefined);
-            transitionToPhase('who');
-          } else {
-            setLastSubScreen(category as any);
-            setCreatePhase('category');
-          }
-        }}
-      />
+      <React.Suspense fallback={ScreenLoadingFallback}>
+        <CreateCategoryScreen
+          userProfile={form.userProfile}
+          setActiveTab={setActiveTab}
+          onSelectCategory={(category) => {
+            setSelectedCategory(category);
+            setIsQuickPlanCategorySelect(false);
+            if (category === "custom") {
+              form.resetForm();
+              form.setLocalTitle("");
+              form.setLocalLocation("");
+              form.setCustomCoverImage(null, null);
+              form.setCostAmount(0);
+              form.setIsCostManuallySet(false);
+              form.setIsDateManuallySet(false);
+              form.setTotalCapacity(undefined);
+              transitionToPhase('who');
+            } else {
+              setLastSubScreen(category as any);
+              setCreatePhase('category');
+            }
+          }}
+        />
+      </React.Suspense>
     );
   }
 
   // WHO PHASE
   if (createPhase === 'who') {
     return (
-      <WhoIsComingScreen
-        form={form}
-        onBack={() => {
-          if (returnToWhoActually) {
+      <React.Suspense fallback={ScreenLoadingFallback}>
+        <WhoIsComingScreen
+          form={form}
+          onBack={() => {
+            if (returnToWhoActually) {
+              setReturnToWhoActually(false);
+              transitionToPhase('who-actually');
+            } else if (cameFromReview) {
+              setCameFromReview(false);
+              transitionToPhase('review');
+            } else if (isQuickPlanFlow) {
+              setIsQuickPlanCategorySelect(true);
+            } else {
+              handleResetAll();
+            }
+          }}
+          onContinue={() => {
             setReturnToWhoActually(false);
-            transitionToPhase('who-actually');
-          } else if (cameFromReview) {
             setCameFromReview(false);
             transitionToPhase('review');
-          } else if (isQuickPlanFlow) {
-            setIsQuickPlanCategorySelect(true);
-          } else {
-            handleResetAll();
-          }
-        }}
-        onContinue={() => {
-          setReturnToWhoActually(false);
-          setCameFromReview(false);
-          transitionToPhase('review');
-        }}
-        onNavigateToDiscoverFriends={() => transitionToPhase('discover-friends')}
-        selectedCategory={selectedCategory}
-        selectedSubcategory={selectedSubcategory}
-      />
+          }}
+          onNavigateToDiscoverFriends={() => transitionToPhase('discover-friends')}
+          selectedCategory={selectedCategory}
+          selectedSubcategory={selectedSubcategory}
+        />
+      </React.Suspense>
     );
   }
 
   // DISCOVER FRIENDS PHASE
   if (createPhase === 'discover-friends') {
     return (
-      <FriendshipsScreen
-        onBack={() => transitionToPhase('who')}
-        initialScreen="discover"
-      />
+      <React.Suspense fallback={ScreenLoadingFallback}>
+        <FriendshipsScreen
+          onBack={() => transitionToPhase('who')}
+          initialScreen="discover"
+        />
+      </React.Suspense>
     );
   }
 
@@ -566,25 +603,27 @@ export const CreatePlanScreen = ({
       return null;
     }
     return (
-      <WhoIsActuallyComing
-        form={form}
-        selectedCategory={selectedCategory}
-        onBack={() => {
-          setCameFromReview(false);
-          transitionToPhase('review');
-        }}
-        onContinue={() => {
-          setCameFromReview(false);
-          transitionToPhase('review');
-        }}
-        onAddFriends={() => {
-          setReturnToWhoActually(true);
-          setReturnToPlanSizeSheet(true);
-          transitionToPhase('who');
-        }}
-        initialOpenPlanSizeSheet={returnToPlanSizeSheet}
-        onPlanSizeSheetDismissed={() => setReturnToPlanSizeSheet(false)}
-      />
+      <React.Suspense fallback={ScreenLoadingFallback}>
+        <WhoIsActuallyComing
+          form={form}
+          selectedCategory={selectedCategory}
+          onBack={() => {
+            setCameFromReview(false);
+            transitionToPhase('review');
+          }}
+          onContinue={() => {
+            setCameFromReview(false);
+            transitionToPhase('review');
+          }}
+          onAddFriends={() => {
+            setReturnToWhoActually(true);
+            setReturnToPlanSizeSheet(true);
+            transitionToPhase('who');
+          }}
+          initialOpenPlanSizeSheet={returnToPlanSizeSheet}
+          onPlanSizeSheetDismissed={() => setReturnToPlanSizeSheet(false)}
+        />
+      </React.Suspense>
     );
   }
 
@@ -592,33 +631,35 @@ export const CreatePlanScreen = ({
   if (createPhase === 'review') {
     return (
       <div className="flex-1 flex flex-col relative h-full bg-[#050505] overflow-hidden text-left">
-        <CreatePlanReview
-          form={form}
-          selectedCategory={selectedCategory}
-          selectedSubcategory={selectedSubcategory}
-          isQuickPlanMode={isQuickPlanFlow}
-          onExit={() => setShowCancelConfirm(true)}
-          onBack={() => setShowCancelConfirm(true)}
-          onEditDate={() => {
-            setCameFromReview(true);
-            transitionToPhase('when');
-          }}
-          onEditParticipants={() => {
-            setCameFromReview(true);
-            if (friends.length === 0) {
+        <React.Suspense fallback={ScreenLoadingFallback}>
+          <CreatePlanReview
+            form={form}
+            selectedCategory={selectedCategory}
+            selectedSubcategory={selectedSubcategory}
+            isQuickPlanMode={isQuickPlanFlow}
+            onExit={() => setShowCancelConfirm(true)}
+            onBack={() => setShowCancelConfirm(true)}
+            onEditDate={() => {
+              setCameFromReview(true);
+              transitionToPhase('when');
+            }}
+            onEditParticipants={() => {
+              setCameFromReview(true);
+              if (friends.length === 0) {
+                transitionToPhase('who');
+              } else {
+                transitionToPhase('who-actually');
+              }
+            }}
+            onAddParticipants={() => {
+              setReturnToWhoActually(friends.length > 0);
+              setReturnToPlanSizeSheet(friends.length > 0);
               transitionToPhase('who');
-            } else {
-              transitionToPhase('who-actually');
-            }
-          }}
-          onAddParticipants={() => {
-            setReturnToWhoActually(friends.length > 0);
-            setReturnToPlanSizeSheet(friends.length > 0);
-            transitionToPhase('who');
-          }}
-          onSubmit={isQuickPlanFlow ? handleCreateQuickPlanSubmit : handleHostPlanSubmit}
-          isSubmitting={form.isSubmitting}
-        />
+            }}
+            onSubmit={isQuickPlanFlow ? handleCreateQuickPlanSubmit : handleHostPlanSubmit}
+            isSubmitting={form.isSubmitting}
+          />
+        </React.Suspense>
 
         {/* Discard Confirmation Bottom Sheet */}
         <DiscardPlanBottomSheet
@@ -640,24 +681,26 @@ export const CreatePlanScreen = ({
   // CONFIRMATION PHASE
   if (createPhase === 'confirmation') {
     return (
-      <CreatePlanConfirmation
-        planTitle={form.localTitle || "New Activity"}
-        planCoverImage={form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory)}
-        planId={postedPlanUuid}
-        onCopyInviteLink={handleCopyInviteLink}
-        isCopying={isCopying}
-        isCopied={isCopied}
-        onGoToPlans={() => {
-          const targetPlanId = postedPlanUuid;
-          handleResetAll();
-          if (setPlansFilter) setPlansFilter("JOINED");
-          if (targetPlanId && setSelectedPlanId) {
-            setSelectedPlanId(targetPlanId);
-          }
-          navigateToRoute({ tab: "plans", selectedPlanId: targetPlanId || undefined });
-          setActiveTab("plans");
-        }}
-      />
+      <React.Suspense fallback={ScreenLoadingFallback}>
+        <CreatePlanConfirmation
+          planTitle={form.localTitle || "New Activity"}
+          planCoverImage={form.customOriginalImage || form.customCoverImage || getPlanCover(selectedCategory, selectedSubcategory)}
+          planId={postedPlanUuid}
+          onCopyInviteLink={handleCopyInviteLink}
+          isCopying={isCopying}
+          isCopied={isCopied}
+          onGoToPlans={() => {
+            const targetPlanId = postedPlanUuid;
+            handleResetAll();
+            if (setPlansFilter) setPlansFilter("JOINED");
+            if (targetPlanId && setSelectedPlanId) {
+              setSelectedPlanId(targetPlanId);
+            }
+            navigateToRoute({ tab: "plans", selectedPlanId: targetPlanId || undefined });
+            setActiveTab("plans");
+          }}
+        />
+      </React.Suspense>
     );
   }
 

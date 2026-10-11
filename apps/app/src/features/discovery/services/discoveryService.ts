@@ -176,17 +176,6 @@ export async function getSectionsByCategory(
             }
 
             sectionsCache.set(cacheKey, loadedSections);
-
-            // Pre-warm discovery card cover images in memory cache for instant render
-            if (typeof window !== "undefined") {
-              for (const sec of loadedSections) {
-                for (const item of (sec.items || []).slice(0, 4)) {
-                  if (item.cover_image_url) {
-                    preloadImage(item.cover_image_url);
-                  }
-                }
-              }
-            }
             return loadedSections;
           } catch (err: any) {
             console.warn("[DiscoveryService] Places API failed:", err?.message || err);
