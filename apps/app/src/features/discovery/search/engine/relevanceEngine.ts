@@ -5,6 +5,7 @@ import {
   isAuthenticDiningVenue,
   isAuthenticActivityVenue,
   classifyVenueCategory,
+  hasValidRealVenuePhoto,
 } from "../../services/venueRelevance";
 import {
   scoreSportsVenueRelevance,
@@ -71,6 +72,9 @@ export class PlanlessRelevanceEngine {
       const intrinsicCat = classifyVenueCategory(venueLike);
 
       if (targetCategory === "SPORTS") {
+        if (!hasValidRealVenuePhoto(item)) {
+          return { isRelevant: false, relevanceConfidence: 0, reason: "No valid real venue photo" };
+        }
         return {
           isRelevant: isSports,
           assignedCategory: "SPORTS",
@@ -79,6 +83,9 @@ export class PlanlessRelevanceEngine {
         };
       }
       if (targetCategory === "DINING") {
+        if (!hasValidRealVenuePhoto(item)) {
+          return { isRelevant: false, relevanceConfidence: 0, reason: "No valid real venue photo" };
+        }
         return {
           isRelevant: isDining,
           assignedCategory: "DINING",
@@ -87,6 +94,9 @@ export class PlanlessRelevanceEngine {
         };
       }
       if (targetCategory === "ACTIVITIES") {
+        if (!hasValidRealVenuePhoto(item)) {
+          return { isRelevant: false, relevanceConfidence: 0, reason: "No valid real venue photo" };
+        }
         return {
           isRelevant: isActivity,
           assignedCategory: "ACTIVITIES",
@@ -305,6 +315,12 @@ export class PlanlessRelevanceEngine {
         if (result.assignedCategory) {
           item.category = result.assignedCategory;
           item.section_id = `places_${result.assignedCategory.toLowerCase()}`;
+        }
+        const effectiveCat = (result.assignedCategory || item.category || "").toUpperCase();
+        if (effectiveCat === "SPORTS" || effectiveCat === "DINING" || effectiveCat === "ACTIVITIES") {
+          if (!hasValidRealVenuePhoto(item)) {
+            continue;
+          }
         }
         relevantItems.push(item);
       }

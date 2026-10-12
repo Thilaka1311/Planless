@@ -383,5 +383,57 @@ describe("Sports Relevance Dedicated Suite (Section 17 Requirements)", () => {
       }
     });
   });
+
+  describe("Public Grounds and Commercial Gyms Exclusion", () => {
+    it("excludes commercial workout gyms and fitness chains across 'all' and individual sports", () => {
+      const gyms = [
+        createPlace({ title: "Cult Fit JP Nagar", types: ["gym"] }),
+        createPlace({ title: "Gold's Gym Indiranagar", types: ["fitness_center"] }),
+        createPlace({ title: "Anytime Fitness 24/7", types: ["health_club"] }),
+        createPlace({ title: "Powerhouse Gym and Fitness Studio", subcategory: "Gym" }),
+        createPlace({ title: "Snap Fitness HSR Layout", types: ["gym"] }),
+      ];
+
+      for (const gym of gyms) {
+        expect(isSportVenueRelevant(gym, "all")).toBe(false);
+        expect(scoreSportsVenueRelevance(gym, "all").score).toBeLessThan(0);
+        expect(isSportVenueRelevant(gym, "football")).toBe(false);
+        expect(isSportVenueRelevant(gym, "badminton")).toBe(false);
+      }
+    });
+
+    it("excludes generic public grounds, BBMP parks, and open maidans", () => {
+      const publicGrounds = [
+        createPlace({ title: "Shantinagar Ground", types: ["playground"] }),
+        createPlace({ title: "BBMP Play Ground", types: ["park"] }),
+        createPlace({ title: "Corporation Public Ground", types: ["playground"] }),
+        createPlace({ title: "Austin Town Sports Ground", types: ["playground"] }),
+        createPlace({ title: "RBANM's Ground", subcategory: "ground" }),
+        createPlace({ title: "Madhavan Park Playground", types: ["park"] }),
+      ];
+
+      for (const ground of publicGrounds) {
+        expect(isSportVenueRelevant(ground, "all")).toBe(false);
+        expect(scoreSportsVenueRelevance(ground, "all").score).toBeLessThan(0);
+        expect(isSportVenueRelevant(ground, "cricket")).toBe(false);
+      }
+    });
+
+    it("preserves legitimate sports venues: dedicated turfs, courts, academies, stadiums, and gymkhanas", () => {
+      const legitimateVenues = [
+        createPlace({ title: "Bangalore Gymkhana Club", types: ["sports_club"] }),
+        createPlace({ title: "Play Arena Football Turf", types: ["sports_complex"] }),
+        createPlace({ title: "Baseline Badminton & Fitness Academy", types: ["sports_complex"] }),
+        createPlace({ title: "Powerplay Cricket Nets & Turf", types: ["athletic_field"] }),
+        createPlace({ title: "Koramangala Football Ground" }),
+        createPlace({ title: "Lords Cricket Ground & Box Nets", subcategory: "cricket" }),
+      ];
+
+      for (const venue of legitimateVenues) {
+        expect(isSportVenueRelevant(venue, "all")).toBe(true);
+        expect(scoreSportsVenueRelevance(venue, "all").isRelevant).toBe(true);
+      }
+    });
+  });
 });
 

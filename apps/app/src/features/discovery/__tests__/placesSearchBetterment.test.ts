@@ -52,6 +52,7 @@ describe("Places Search Betterment & Distance Verification", () => {
                       subcategory: "Restaurant",
                       latitude: 12.9355,
                       longitude: 77.6248, // ~0.05 km from Koramangala center (12.9352, 77.6245)
+                      cover_image_url: "/functions/v1/maps?action=photo&photo_reference=social_photo",
                     },
                   ],
                 },
@@ -98,6 +99,7 @@ describe("Places Search Betterment & Distance Verification", () => {
                       subcategory: "Turf",
                       latitude: 12.9784,
                       longitude: 77.6408,
+                      cover_image_url: "/functions/v1/maps?action=photo&photo_reference=turf_photo",
                     },
                     {
                       id: "badminton-1",
@@ -107,6 +109,7 @@ describe("Places Search Betterment & Distance Verification", () => {
                       subcategory: "Badminton",
                       latitude: 12.9788,
                       longitude: 77.6412,
+                      cover_image_url: "/functions/v1/maps?action=photo&photo_reference=badminton_photo",
                     },
                   ],
                 },
@@ -153,6 +156,7 @@ describe("Places Search Betterment & Distance Verification", () => {
       longitude_override: 78.4073,
       is_deleted: false,
       status: "ACTIVE",
+      image_path: "https://images.unsplash.com/photo-mcdonalds",
     };
 
     const mockSelect = vi.fn().mockReturnThis();

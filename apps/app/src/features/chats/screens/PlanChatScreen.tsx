@@ -19,6 +19,7 @@ import { getPlanCover } from "../../plans/config/planCoverImages";
 import { useHorizontalPager } from "../hooks/useHorizontalPager";
 import { useChatCache, ChatMessage, getCachedUnreadInfo, setCachedUnreadInfo } from "../hooks/useChatCache";
 import { markPlanChatAsRead } from "../utils/chatReads";
+import { useDismissibleOverlay, navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../navigation/appRouter";
 
 interface PlanChatScreenProps {
   planId: string;
@@ -93,8 +94,24 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
 
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
-  const [showSettingsScreen, setShowSettingsScreen] = useState(false);
+  const [showSettingsScreen, setShowSettingsScreen] = useState(() => {
+    const route = parseCurrentRoute();
+    return route.subScreen === 'plan-settings' || route.subScreen === 'plan-settings-cover';
+  });
+
+  useEffect(() => {
+    return listenToNavigation((route) => {
+      if (route.subScreen === 'plan-settings' || route.subScreen === 'plan-settings-cover') {
+        setShowSettingsScreen(true);
+      } else if (showSettingsScreen) {
+        setShowSettingsScreen(false);
+      }
+    });
+  }, [showSettingsScreen]);
+
   const [replaceTargetUserId, setReplaceTargetUserId] = useState<string | null>(null);
+
+  useDismissibleOverlay(Boolean(replaceTargetUserId), () => setReplaceTargetUserId(null), "plan-chat-replace-user");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = textareaRef;
 
@@ -1037,7 +1054,22 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
                 console.error("Failed to update title:", err);
               }
             } : undefined}
-            onOpenSettings={!isCancelled && !isAnySheetOpen ? () => setShowSettingsScreen(true) : undefined}
+            onOpenSettings={
+              !isCancelled && !isAnySheetOpen
+                ? () => {
+                    setShowSettingsScreen(true);
+                    const planParam = (plan as any)?.slug || planId;
+                    navigateToRoute({
+                      tab: 'plans',
+                      selectedPlanId: planParam,
+                      subScreen: 'plan-settings',
+                      entryPoint: 'chat',
+                      originTab: 'chats',
+                      originChatPlanId: planId,
+                    });
+                  }
+                : undefined
+            }
           />
         </div>
       )}
@@ -1558,7 +1590,10 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           isPlanSettingsForParticipant={!isHost}
           mode={isHost ? "host" : "participant"}
           isCreatorHost={isHost}
-          onBack={() => setShowSettingsScreen(false)}
+          onBack={() => {
+            setShowSettingsScreen(false);
+            navigateBack({ tab: 'chats', selectedChatPlanId: planId });
+          }}
           onUpdateSettings={async (settings) => {
             try {
               await updatePlanSettings(plan.id, settings);

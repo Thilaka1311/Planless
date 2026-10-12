@@ -527,7 +527,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
           <div className="min-w-0 flex-1 flex flex-col justify-center h-full space-y-1">
             {/* Top row: Plan Title & Latest Timestamp */}
             <div className="flex items-center justify-between gap-2">
-              <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate leading-snug flex-1 min-w-0">
+              <h3 className="font-sans font-semibold text-[14px] text-white truncate leading-snug flex-1 min-w-0">
                 {plan.title}
               </h3>
               {formattedTime && (

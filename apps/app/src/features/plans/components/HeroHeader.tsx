@@ -437,7 +437,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                   }
                 }}
                 placeholder="Set a title"
-                className="w-full bg-transparent border-none outline-none text-center text-[17px] font-bold text-white tracking-[0.08em] leading-tight placeholder:text-white/60 placeholder:font-semibold focus:outline-none focus:ring-0 p-0 m-0 shadow-none"
+                className="w-full bg-transparent border-none outline-none text-center text-[17px] font-bold text-white leading-tight placeholder:text-white/60 placeholder:font-semibold focus:outline-none focus:ring-0 p-0 m-0 shadow-none"
                 maxLength={50}
               />
             </div>
@@ -450,7 +450,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                   setIsEditingTitle(true);
                 }
               }}
-              className={`text-[17px] font-bold tracking-[0.08em] leading-tight select-text text-center px-14 max-w-full flex items-center justify-center gap-1.5 min-w-0 ${
+              className={`text-[17px] font-bold leading-tight select-text text-center px-14 max-w-full flex items-center justify-center gap-1.5 min-w-0 ${
                 isHost && onEditTitle ? "cursor-pointer pointer-events-auto hover:opacity-90 active:opacity-75" : ""
               } ${!title || title === "Set a title" || title === "Enter Title" ? "text-white/60 font-semibold" : "text-white"}`}
             >

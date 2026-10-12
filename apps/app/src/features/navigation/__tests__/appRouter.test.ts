@@ -102,10 +102,15 @@ describe('appRouter URL and Navigation Architecture', () => {
     it('accepts plans, chats, profile, wallet, and invites', () => {
       expect(isValidRoute('/plans')).toBe(true);
       expect(isValidRoute('/plans/plan-abc-123')).toBe(true);
+      expect(isValidRoute('/plans/plan-abc-123/settings')).toBe(true);
+      expect(isValidRoute('/plans/plan-abc-123/settings/cover')).toBe(true);
+      expect(isValidRoute('/plans/hosted/cancelled')).toBe(true);
       expect(isValidRoute('/plan/plan-abc-123')).toBe(true);
       expect(isValidRoute('/chats')).toBe(true);
       expect(isValidRoute('/chats/plan-xyz')).toBe(true);
       expect(isValidRoute('/profile')).toBe(true);
+      expect(isValidRoute('/profile/name')).toBe(true);
+      expect(isValidRoute('/profile/about')).toBe(true);
       expect(isValidRoute('/join/invite_token_123')).toBe(true);
     });
 
@@ -163,12 +168,32 @@ describe('appRouter URL and Navigation Architecture', () => {
       expect(parseCurrentRoute()).toEqual({ tab: 'activities', discoveryCategory: 'activities' });
     });
 
-    it('parses /plans and /plans/:id', () => {
+    it('parses /plans and /plans/:id and settings/cancelled sub-routes', () => {
       mockWindow.location = new URL('http://localhost:3000/plans');
       expect(parseCurrentRoute()).toEqual({ tab: 'plans', selectedPlanId: null });
 
       mockWindow.location = new URL('http://localhost:3000/plans/rush-koland-football');
       expect(parseCurrentRoute()).toEqual({ tab: 'plans', selectedPlanId: 'rush-koland-football' });
+
+      mockWindow.location = new URL('http://localhost:3000/plans/rush-koland-football/settings');
+      expect(parseCurrentRoute()).toEqual({
+        tab: 'plans',
+        selectedPlanId: 'rush-koland-football',
+        subScreen: 'plan-settings',
+      });
+
+      mockWindow.location = new URL('http://localhost:3000/plans/rush-koland-football/settings/cover');
+      expect(parseCurrentRoute()).toEqual({
+        tab: 'plans',
+        selectedPlanId: 'rush-koland-football',
+        subScreen: 'plan-settings-cover',
+      });
+
+      mockWindow.location = new URL('http://localhost:3000/plans/hosted/cancelled');
+      expect(parseCurrentRoute()).toEqual({
+        tab: 'plans',
+        subScreen: 'cancelled-plans',
+      });
     });
 
     it('parses /chats and /chats/:id', () => {
@@ -179,9 +204,15 @@ describe('appRouter URL and Navigation Architecture', () => {
       expect(parseCurrentRoute()).toEqual({ tab: 'chats', selectedChatPlanId: 'chat-plan-999' });
     });
 
-    it('parses /profile and /join/:token', () => {
+    it('parses /profile, /profile/name, /profile/about and /join/:token', () => {
       mockWindow.location = new URL('http://localhost:3000/profile');
       expect(parseCurrentRoute()).toEqual({ tab: 'profile' });
+
+      mockWindow.location = new URL('http://localhost:3000/profile/name');
+      expect(parseCurrentRoute()).toEqual({ tab: 'profile', subScreen: 'profile-name' });
+
+      mockWindow.location = new URL('http://localhost:3000/profile/about');
+      expect(parseCurrentRoute()).toEqual({ tab: 'profile', subScreen: 'profile-about' });
 
       mockWindow.location = new URL('http://localhost:3000/join/token123');
       expect(parseCurrentRoute()).toEqual({ tab: 'home', inviteToken: 'token123' });
@@ -228,6 +259,15 @@ describe('appRouter URL and Navigation Architecture', () => {
       expect(getRoutePath({ tab: 'create', subScreen: 'master-search' })).toBe('/create/search');
       expect(getRoutePath({ tab: 'create', subScreen: 'quick-plans' })).toBe('/create/quick-plans');
       expect(getRoutePath({ tab: 'plans', selectedPlanId: 'p_100' })).toBe('/plans/p_100');
+      expect(getRoutePath({ tab: 'plans', selectedPlanId: 'p_100', subScreen: 'plan-settings' })).toBe(
+        '/plans/p_100/settings'
+      );
+      expect(getRoutePath({ tab: 'plans', selectedPlanId: 'p_100', subScreen: 'plan-settings-cover' })).toBe(
+        '/plans/p_100/settings/cover'
+      );
+      expect(getRoutePath({ tab: 'plans', subScreen: 'cancelled-plans' })).toBe('/plans/hosted/cancelled');
+      expect(getRoutePath({ tab: 'profile', subScreen: 'profile-name' })).toBe('/profile/name');
+      expect(getRoutePath({ tab: 'profile', subScreen: 'profile-about' })).toBe('/profile/about');
       expect(getRoutePath({ tab: 'chats', selectedChatPlanId: 'c_200' })).toBe('/chats/c_200');
       expect(getRoutePath({ tab: 'home', inviteToken: 'inv_abc' })).toBe('/join/inv_abc');
     });

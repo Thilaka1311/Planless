@@ -9,7 +9,7 @@ import {
   isPlayableSportsVenue,
   isAuthenticActivityVenue,
   extractOwnerPhotos,
-  getCuratedPhotoForVenue,
+  isPlaceholderImageUrl,
 } from "../../services/venueRelevance";
 
 
@@ -148,13 +148,9 @@ export function normalizeCandidate(
     }
   }
 
-  // If still no cover image and category is non-movie, assign curated aesthetic subcategory photo
-  if (!coverImageUrl && category !== "MOVIES") {
-    coverImageUrl = getCuratedPhotoForVenue(
-      category,
-      candidate.subcategory || (Array.isArray(candidate.types) ? candidate.types.join(" ") : ""),
-      candidate.name || candidate.title || ""
-    );
+  // For non-movies, never assign generic fallback photos. Clear placeholders.
+  if (category !== "MOVIES" && isPlaceholderImageUrl(coverImageUrl)) {
+    coverImageUrl = null;
   }
 
   const name = candidate.name || candidate.title || "Unnamed Place";

@@ -722,8 +722,97 @@ function calculateHaversineKm(lat1: number, lon1: number, lat2: number, lon2: nu
   return R * c;
 }
 
+function isGeneralPurposeGym(p: any): boolean {
+  if (!p) return false;
+  const name = (p.name || p.title || "").toLowerCase();
+  const types: string[] = Array.isArray(p.types) ? p.types.map((t: string) => t.toLowerCase()) : [];
+
+  if (name.includes("gymkhana")) return false;
+
+  const dedicatedSportKeywords = [
+    "badminton", "tennis", "squash", "pickleball", "table tennis",
+    "football", "futsal", "soccer", "cricket", "basketball",
+    "swimming pool", "swim centre", "swim center", "aquatic centre",
+    "aquatic center", "turf", "court", "arena", "stadium", "box cricket",
+    "sports club", "sports complex"
+  ];
+  const hasDedicatedSportFacility = dedicatedSportKeywords.some((k) => name.includes(k));
+
+  const gymTypes = ["gym", "fitness_center", "health_club"];
+  const hasGymType = types.some((t) => gymTypes.includes(t));
+
+  const gymBrandOrKeywords = [
+    "fitness", "crossfit", "workout", "health club", "bodybuilding",
+    "aerobics", "pilates", "zumba", "calisthenics", "cult fit",
+    "cult.fit", "gold's gym", "golds gym", "anytime fitness",
+    "snap fitness", "slam fitness", "talwalkars", "chisel",
+    "fitness first", "powerhouse gym", "iron gym", "barbell", "gymnasium"
+  ];
+  const hasGymKeyword =
+    gymBrandOrKeywords.some((k) => name.includes(k)) ||
+    /\b(gym|gyms)\b/i.test(name);
+
+  if (hasGymType || hasGymKeyword) {
+    if (hasDedicatedSportFacility) return false;
+    return true;
+  }
+  return false;
+}
+
+function isPublicGround(p: any): boolean {
+  if (!p) return false;
+  const name = (p.name || p.title || "").toLowerCase();
+  const types: string[] = Array.isArray(p.types) ? p.types.map((t: string) => t.toLowerCase()) : [];
+
+  const dedicatedFacilityIndicators = [
+    "turf", "court", "arena", "stadium", "academy", "complex",
+    "box cricket", "box nets", "cricket nets", "nets", "futsal",
+    "5-a-side", "5 aside", "7-a-side", "7 aside", "swimming pool",
+    "swim centre", "swim center", "aquatic centre", "aquatic center",
+    "squash", "sports club", "indoor stadium"
+  ];
+  const hasDedicatedFacility = dedicatedFacilityIndicators.some((k) => name.includes(k));
+
+  const publicGroundPrefixes = [
+    "public ground", "public playground", "bbmp ground", "bbmp play ground",
+    "bbmp playground", "bda ground", "corporation ground", "corporation public ground",
+    "municipal ground", "municipal sports ground", "government ground",
+    "austin town sports ground", "austin town ground", "children playground",
+    "children's playground", "children park"
+  ];
+  if (publicGroundPrefixes.some((k) => name.includes(k)) && !hasDedicatedFacility) {
+    return true;
+  }
+
+  if ((types.includes("playground") || types.includes("park")) && !hasDedicatedFacility) {
+    return true;
+  }
+
+  const isGenericGroundName = /\b(ground|grounds|maidan|maidana)\b/i.test(name);
+  if (isGenericGroundName) {
+    if (hasDedicatedFacility) return false;
+
+    const concreteSports = ["football", "cricket", "basketball", "hockey", "rugby"];
+    const hasConcreteSport = concreteSports.some((s) => name.includes(s));
+    const isMunicipalOrPublic = [
+      "bbmp", "bda", "municipal", "corporation", "government",
+      "public", "civic", "austin town", "rbanm", "shantinagar", "national college"
+    ].some((m) => name.includes(m));
+
+    if (hasConcreteSport && !isMunicipalOrPublic) {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function isPlayableSportsVenue(p: any): boolean {
   if (!p) return false;
+  if (isGeneralPurposeGym(p)) return false;
+  if (isPublicGround(p)) return false;
+
   const name = (p.name || "").toLowerCase();
   const types: string[] = Array.isArray(p.types) ? p.types.map((t: string) => t.toLowerCase()) : [];
 
@@ -759,8 +848,8 @@ function isPlayableSportsVenue(p: any): boolean {
   if (officeKeywords.some((k) => name.includes(k))) return false;
 
   const playableVenueKeywords = [
-    "matchday", "sports zone", "sports arena", "turf club", "playfield",
-    "turf", "court", "arena", "ground", "pitch", "nets", "box cricket",
+    "matchday", "sports zone", "sports arena", "turf club",
+    "turf", "court", "arena", "football ground", "cricket ground", "pitch", "nets", "box cricket",
     "badminton", "football", "futsal", "soccer", "pickleball", "tennis",
     "basketball", "table tennis", "ping pong", "squash", "swimming pool",
     "swim centre", "swim center", "aquatic centre", "sports club",
@@ -771,7 +860,7 @@ function isPlayableSportsVenue(p: any): boolean {
 
   if (isRetail || hasRetailKeyword) {
     const isExplicitFacility = [
-      "turf", "court", "ground", "pitch", "arena", "nets", "box cricket", "academy", "facility"
+      "turf", "court", "pitch", "arena", "nets", "box cricket", "academy", "facility"
     ].some((k) => name.includes(k));
     if (!isExplicitFacility) return false;
   }
@@ -780,11 +869,6 @@ function isPlayableSportsVenue(p: any): boolean {
     "stadium", "sports_complex", "athletic_field", "sports_club", "swimming_pool", "golf_course"
   ];
   if (types.some((t) => playableTypes.includes(t)) || hasPlayableKeyword) {
-    return true;
-  }
-
-  const isGym = types.includes("gym") || types.includes("fitness_center") || name.includes("gym") || name.includes("fitness");
-  if (isGym && !hasRetailKeyword && !isRetail) {
     return true;
   }
 
@@ -1169,10 +1253,7 @@ function normalizePlaces(
     // Determine target planar category
     const itemCategory = category === "ALL" ? determinePlanlessCategory(place) || "DINING" : category;
     
-    // If no owner photo available on Google, assign curated aesthetic subcategory photo
-    if (!coverUrl && itemCategory !== "MOVIES") {
-      coverUrl = getCuratedPhotoForVenue(itemCategory, place.types, placeName);
-    }
+    // For non-movies, never assign generic fallback photos. If no authentic photo exists, coverUrl remains null.
     
     const sportLabels: Record<string, string> = {
       football: "Football",
@@ -1312,7 +1393,7 @@ export async function handleDiscoveryPlaces(
     } else if (typeof body?.type === "string" && body.type.trim()) {
       types = [body.type.trim()];
     } else if (requestedCategory === "SPORTS") {
-      types = ["athletic_field", "fitness_center", "sports_complex", "stadium"];
+      types = ["athletic_field", "sports_club", "sports_complex", "stadium"];
     } else if (requestedCategory === "DINING") {
       types = ["restaurant", "cafe", "bar", "bakery"];
     } else if (requestedCategory === "ACTIVITIES") {
@@ -1434,7 +1515,7 @@ export async function handleDiscoveryPlaces(
         { query: "pickleball court", sport: "pickleball" },
         { query: "tennis court", sport: "tennis" },
         { query: "basketball court", sport: "basketball" },
-        { query: "cricket ground box nets", sport: "cricket" },
+        { query: "cricket box nets turf", sport: "cricket" },
       ];
 
       const [queryResults, nearbySports] = await Promise.all([
@@ -1450,7 +1531,7 @@ export async function handleDiscoveryPlaces(
             return res.results;
           })
         ),
-        fetchNearbyPlacesNew(apiKey, lat, lng, radius, ["athletic_field", "fitness_center", "sports_complex", "stadium"]),
+        fetchNearbyPlacesNew(apiKey, lat, lng, radius, ["athletic_field", "sports_club", "sports_complex", "stadium"]),
       ]);
       const sportsRaw = queryResults.flat().concat(nearbySports.results);
 

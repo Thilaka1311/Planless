@@ -1,5 +1,5 @@
 import { ISearchProvider, SearchProviderType, SearchStrategy, ProviderCandidateResult, RawCandidatePlace } from "../types/provider";
-import { searchMovies, fetchDiscoverMovies } from "../../services/tmdbMovieService";
+import { searchMovies, fetchDiscoverMovies, hasValidTmdbPoster } from "../../services/tmdbMovieService";
 
 export class TMDBMovieProvider implements ISearchProvider {
   readonly id: SearchProviderType = "TMDB";
@@ -16,11 +16,11 @@ export class TMDBMovieProvider implements ISearchProvider {
         if (!query || query.toLowerCase() === "movies" || query.toLowerCase() === "cinema") {
           // Browse mode: fetch now playing movies
           const res = await fetchDiscoverMovies("now_playing", page);
-          items = res.items || [];
+          items = (res.items || []).filter(hasValidTmdbPoster);
           totalPages = res.totalPages || 1;
         } else {
           const res = await searchMovies(query, page, "all");
-          items = res.items || [];
+          items = (res.items || []).filter(hasValidTmdbPoster);
           totalPages = res.totalPages || 1;
         }
       } catch (tmdbErr) {

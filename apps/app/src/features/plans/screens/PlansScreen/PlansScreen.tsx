@@ -13,6 +13,7 @@ import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
 import { PlansDivider } from "../../components/PlansDivider";
 
 import { getPendingHostActionPlanIds } from "../../utils/planHostActions";
+import { parseCurrentRoute, navigateToRoute, PlansFilter } from "../../../navigation/appRouter";
 
 interface PlansScreenProps {
   setSelectedPlanId: (planId: string | null) => void;
@@ -30,9 +31,27 @@ export const PlansScreen = React.memo(({
   const { plans, dbPlanParticipants } = usePlansStore();
   const { userProfile, activeUserId } = useProfileStore();
 
-  const [localPlansFilter, setLocalPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted'>('JOINED');
+  const [localPlansFilter, setLocalPlansFilter] = useState<'JOINED' | 'WAITLISTED' | 'SKIPPED' | 'hosted'>(() => {
+    const route = parseCurrentRoute();
+    if (route.plansFilter === 'waitlisted') return 'WAITLISTED';
+    if (route.plansFilter === 'skipped') return 'SKIPPED';
+    return 'JOINED';
+  });
   const plansFilter = propPlansFilter !== undefined ? propPlansFilter : localPlansFilter;
-  const setPlansFilter = propSetPlansFilter !== undefined ? propSetPlansFilter : setLocalPlansFilter;
+
+  const handleFilterSelect = React.useCallback((filter: any) => {
+    if (propSetPlansFilter) {
+      propSetPlansFilter(filter);
+    } else {
+      setLocalPlansFilter(filter);
+      if (filter !== 'hosted') {
+        navigateToRoute(
+          { tab: 'plans', plansFilter: String(filter).toLowerCase() as PlansFilter },
+          { replace: true }
+        );
+      }
+    }
+  }, [propSetPlansFilter]);
 
   const userUuid = userProfile?.dbUuid || (userProfile as any)?.id || activeUserId || "";
 
@@ -250,7 +269,7 @@ export const PlansScreen = React.memo(({
 
           {/* Content details side-by-side */}
           <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-            <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate">
+            <h3 className="font-sans font-semibold text-[14px] text-white truncate">
               {plan.title}
             </h3>
             <span className="text-[11px] text-[#8E8E93] font-sans font-medium">
@@ -358,7 +377,7 @@ export const PlansScreen = React.memo(({
               waitlisted: waitlistedCount,
               skipped: skippedCount,
             }}
-            onSelect={setPlansFilter}
+            onSelect={handleFilterSelect}
           />
         </div>
 

@@ -12,9 +12,11 @@ import {
   isMovieWithinSixMonths,
   isMovieReleased2026OrLater,
   MIN_MOVIE_RELEASE_DATE,
+  hasValidTmdbPoster,
 } from "../services/tmdbMovieService";
 import { TmdbMovie } from "../../../core/types/discovery";
 import { supabase } from "../../../../lib/supabaseClient";
+import { markPhotoUrlBroken, resetBrokenPhotoRegistry } from "../services/venueRelevance";
 
 describe("tmdbMovieService", () => {
   beforeEach(() => {
@@ -282,6 +284,7 @@ describe("tmdbMovieService", () => {
             title: "2026 Blockbuster",
             release_date: "2026-02-15",
             original_language: "hi",
+            poster_path: "/blockbuster.jpg",
             adult: false,
             video: false,
           },
@@ -355,6 +358,7 @@ describe("tmdbMovieService", () => {
             title: "Super Cinema",
             original_language: "hi",
             release_date: "2026-08-01",
+            poster_path: "/super.jpg",
             adult: false,
             video: false,
           },
@@ -378,6 +382,93 @@ describe("tmdbMovieService", () => {
       });
       expect(res.items.length).toBe(1);
       expect(res.items[0].title).toBe("Super Cinema");
+    });
+  });
+
+  describe("hasValidTmdbPoster & photo exclusion rule", () => {
+    beforeEach(() => {
+      resetBrokenPhotoRegistry();
+    });
+
+    it("accepts movies with a valid TMDB poster path or cover image URL", () => {
+      expect(hasValidTmdbPoster({ poster_path: "/avatar.jpg" })).toBe(true);
+      expect(hasValidTmdbPoster({ poster_path: "https://image.tmdb.org/t/p/w500/avatar.jpg" })).toBe(true);
+      expect(hasValidTmdbPoster({ cover_image_url: "https://image.tmdb.org/t/p/w500/avatar.jpg" })).toBe(true);
+    });
+
+    it("rejects movies with missing, null, undefined, or empty poster_path", () => {
+      expect(hasValidTmdbPoster({ poster_path: null })).toBe(false);
+      expect(hasValidTmdbPoster({ poster_path: undefined })).toBe(false);
+      expect(hasValidTmdbPoster({ poster_path: "" })).toBe(false);
+      expect(hasValidTmdbPoster({ poster_path: "   " })).toBe(false);
+      expect(hasValidTmdbPoster({ poster_path: "null" })).toBe(false);
+      expect(hasValidTmdbPoster({ poster_path: "undefined" })).toBe(false);
+      expect(hasValidTmdbPoster({})).toBe(false);
+      expect(hasValidTmdbPoster(null)).toBe(false);
+    });
+
+    it("rejects movies whose cover image is a generic placeholder or fallback", () => {
+      expect(hasValidTmdbPoster({ cover_image_url: "/assets/plan-covers/movie.png" })).toBe(false);
+      expect(hasValidTmdbPoster({ cover_image_url: "https://example.com/placeholder.jpg" })).toBe(false);
+      expect(hasValidTmdbPoster({ cover_image_url: "https://example.com/default-cover.jpg" })).toBe(false);
+    });
+
+    it("rejects movies whose poster image has been marked broken at runtime", () => {
+      const brokenUrl = "https://image.tmdb.org/t/p/w500/broken_poster.jpg";
+      expect(hasValidTmdbPoster({ cover_image_url: brokenUrl })).toBe(true);
+
+      // Register broken URL
+      markPhotoUrlBroken(brokenUrl);
+
+      // Now it must be rejected
+      expect(hasValidTmdbPoster({ cover_image_url: brokenUrl })).toBe(false);
+      expect(hasValidTmdbPoster({ poster_path: "/broken_poster.jpg" })).toBe(false);
+    });
+
+    it("excludes movies without posters from fetchDiscoverMovies results", async () => {
+      const mockApiResponse = {
+        page: 1,
+        total_pages: 1,
+        results: [
+          {
+            id: 111,
+            title: "Movie With Poster",
+            poster_path: "/poster.jpg",
+            release_date: "2026-05-01",
+            original_language: "hi",
+            adult: false,
+            video: false,
+          },
+          {
+            id: 222,
+            title: "Movie Without Poster",
+            poster_path: null,
+            release_date: "2026-05-01",
+            original_language: "hi",
+            adult: false,
+            video: false,
+          },
+          {
+            id: 333,
+            title: "Movie With Empty Poster",
+            poster_path: "",
+            release_date: "2026-05-01",
+            original_language: "hi",
+            adult: false,
+            video: false,
+          },
+        ],
+      };
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => mockApiResponse,
+      });
+
+      const res = await fetchDiscoverMovies("now_playing", 777);
+      expect(res.items.length).toBe(1);
+      expect(res.items[0].title).toBe("Movie With Poster");
     });
   });
 });

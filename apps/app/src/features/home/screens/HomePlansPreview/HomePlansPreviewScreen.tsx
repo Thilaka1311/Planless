@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { CalendarDays, Hourglass, MapPin, MessageCircle, Receipt } from "lucide-react";
 import { UserProfile, Plan } from "../../../../core/types";
@@ -23,6 +23,7 @@ import PlanCompletionModal from "../../../../shared/modals/PlanCompletionModal";
 import { JoinPlanConfirmationBottomSheet, CancelLeaveRequestBottomSheet, LeavePlanBottomSheet, MakeAnotherParticipantHostBottomSheet, InvitedPlanActionsBottomSheet, SharePlanLinkBottomSheet } from "../../../plans/components/BottomSheets";
 import { LiveActionButton } from "../../../plans/components/LiveActionButton";
 import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen";
+import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../../navigation/appRouter";
 import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../../plans/utils/planUtils";
 import { getPlanPreviewCtaState } from "../../../plans/utils/planPreviewCtaUtils";
@@ -84,7 +85,16 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   const [showHostLeaveReplacementSheet, setShowHostLeaveReplacementSheet] = useState(false);
   const [isSubmittingHostReplacement, setIsSubmittingHostReplacement] = useState(false);
   const [isCostPopoverOpen, setIsCostPopoverOpen] = useState(false);
-  const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(false);
+  const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(() => {
+    const route = parseCurrentRoute();
+    return route.subScreen === 'plan-settings' || route.subScreen === 'plan-settings-cover';
+  });
+
+  useEffect(() => {
+    return listenToNavigation((route) => {
+      setShowPlanSettingsScreen(route.subScreen === 'plan-settings' || route.subScreen === 'plan-settings-cover');
+    });
+  }, []);
   const [showCompletionFlow, setShowCompletionFlow] = useState(false);
   const [showManageTeams, setShowManageTeams] = useState(false);
   const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
@@ -515,7 +525,15 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
         isCreatorHost={isCreatorHost}
         isPlanSettingsForParticipant={!isCreatorHost}
         myParticipantRecord={myParticipantRecord}
-        onBack={() => setShowPlanSettingsScreen(false)}
+        onBack={() => {
+          setShowPlanSettingsScreen(false);
+          const planParam = selectedPlan.slug || cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
+          navigateBack({
+            tab: 'plans',
+            selectedPlanId: planParam,
+            originTab: 'home',
+          });
+        }}
         onUpdateSettings={async (newSettings) => {
           await updatePlanSettings(selectedPlan.id, newSettings);
         }}
@@ -612,7 +630,16 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
             onOpenSettings={
               isCancelled || isCompleted
                 ? undefined
-                : () => setShowPlanSettingsScreen(true)
+                : () => {
+                    setShowPlanSettingsScreen(true);
+                    const planParam = selectedPlan.slug || cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
+                    navigateToRoute({
+                      tab: 'plans',
+                      selectedPlanId: planParam,
+                      subScreen: 'plan-settings',
+                      originTab: 'home',
+                    });
+                  }
             }
             onSharePlanLink={
               !isCancelled && !isCompleted && (isHost || allowParticipantInvites) && currentCount < 50

@@ -125,4 +125,21 @@ describe("HeroHeader Host Layout Regression Suite", () => {
     expect(html).toContain("immersive-plan-overflow-btn");
     expect(html).toContain("absolute right-4 top-1/2 -translate-y-1/2");
   });
+
+  it("renders plan title heading with natural letter spacing and without excessive tracking", () => {
+    const html = renderToString(
+      <HeroHeader
+        title="Timezone Phoenix Mall of Asia - Bangalore"
+        hosts={[{ id: "h1", name: "You", avatar: "" }]}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Title renders verbatim
+    expect(html).toContain("Timezone Phoenix Mall of Asia - Bangalore");
+    // Does not contain excessive letter spacing tracking class
+    expect(html).not.toContain("tracking-[0.08em]");
+    expect(html).not.toContain("tracking-[0.06em]");
+  });
 });
+

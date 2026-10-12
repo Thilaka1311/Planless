@@ -584,7 +584,7 @@ export function PlanAnimation({
                     <div className="absolute top-0 left-0 right-0 z-30 bg-black/35 backdrop-blur-xl border-b border-white/10 shadow-lg py-2 px-3 rounded-b-xl">
                       <div className="w-full flex items-center justify-center relative min-h-[28px]">
                         <div className="flex flex-col items-center max-w-full">
-                          <span className="text-[13.5px] xs:text-[14.5px] font-bold tracking-[0.06em] leading-tight text-white select-none">
+                          <span className="text-[13.5px] xs:text-[14.5px] font-bold leading-tight text-white select-none">
                             {slide.title}
                           </span>
                           <div className="flex items-center gap-1 mt-0.5 select-none">
@@ -1185,7 +1185,7 @@ export function PlanAnimation({
               <div className="absolute top-0 left-0 right-0 z-30 bg-black/35 backdrop-blur-xl border-b border-white/10 shadow-lg py-2 px-3 rounded-b-xl">
                 <div className="w-full flex items-center justify-center relative min-h-[28px]">
                   <div className="flex flex-col items-center max-w-full">
-                    <span className="text-[13.5px] xs:text-[14.5px] font-bold tracking-[0.06em] leading-tight text-white select-none">
+                    <span className="text-[13.5px] xs:text-[14.5px] font-bold leading-tight text-white select-none">
                       Friday Plans
                     </span>
                     <div className="flex items-center gap-1 mt-0.5 select-none">

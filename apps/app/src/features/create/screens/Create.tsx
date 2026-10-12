@@ -12,6 +12,7 @@ import { formatDateTimeStandard } from "../../../shared/components/NativeDateTim
 import { BrowseExperiencesStep, DiscoverySubScreen } from "../../discovery/screens/Discovery";
 import { DiscardPlanBottomSheet } from "../../plans/components/BottomSheets";
 import { QuickPlan } from "../../../core/types";
+import { DiscoveryItem } from "../../../core/types/discovery";
 import { lazyWithRetry } from "../../../shared/utils/lazyWithRetry";
 
 const CreateCategoryScreen = lazyWithRetry(
@@ -199,6 +200,36 @@ export const CreatePlanScreen = ({
     setTargetQuickPlanListId(listId || null);
     setIsQuickPlanFlow(true);
     setIsQuickPlanCategorySelect(true);
+  };
+
+  const handleSelectQuickPlanDiscoveryItem = (item: DiscoveryItem, targetListId?: string | null) => {
+    form.resetForm();
+    setTargetQuickPlanListId(targetListId || null);
+    setIsQuickPlanFlow(true);
+    setIsQuickPlanCategorySelect(false);
+
+    const lowerCategory = item.category ? item.category.toLowerCase() : "custom";
+    setSelectedCategory(lowerCategory as any);
+    setSelectedSubcategory(item.subcategory ? (item.subcategory.toLowerCase() as any) : null);
+    if (form.setDiscoveryItemId) form.setDiscoveryItemId(item.id);
+
+    form.setLocalTitle(item.title);
+    const isMovieItem = lowerCategory === "movies" || (item.category && item.category.toUpperCase() === "MOVIES");
+    form.setLocalLocation(isMovieItem ? "" : (item.location || ""));
+    form.setCustomCoverImage(item.cover_image_url || defaultPlanCover);
+
+    if (form.setPlaceId) form.setPlaceId(isMovieItem ? null : ((item as any).place_id || null));
+    if (form.setPlaceAddress) form.setPlaceAddress(isMovieItem ? null : ((item as any).place_address || item.location || null));
+    if (form.setLatitude) form.setLatitude(isMovieItem ? null : ((item as any).latitude || null));
+    if (form.setLongitude) form.setLongitude(isMovieItem ? null : ((item as any).longitude || null));
+
+    form.setCostAmount(0);
+    form.setIsCostManuallySet(false);
+    form.setTotalCapacity(undefined);
+    form.setIsDateManuallySet(false);
+    form.setQuickNote("");
+
+    transitionToPhase('review');
   };
 
   const handleSelectExistingQuickPlan = (quickPlan: QuickPlan) => {
@@ -527,6 +558,14 @@ export const CreatePlanScreen = ({
         <CreateCategoryScreen
           userProfile={form.userProfile}
           setActiveTab={setActiveTab}
+          title="Quick Plan"
+          onBack={() => {
+            setIsQuickPlanCategorySelect(false);
+            setIsQuickPlanFlow(false);
+            setTargetQuickPlanListId(null);
+            setLastSubScreen('quick-plans');
+            setCreatePhase('category');
+          }}
           onSelectCategory={(category) => {
             setSelectedCategory(category);
             setIsQuickPlanCategorySelect(false);
@@ -539,12 +578,13 @@ export const CreatePlanScreen = ({
               form.setIsCostManuallySet(false);
               form.setIsDateManuallySet(false);
               form.setTotalCapacity(undefined);
-              transitionToPhase('who');
+              transitionToPhase('review');
             } else {
               setLastSubScreen(category as any);
               setCreatePhase('category');
             }
           }}
+          onSelectDiscoveryItem={(item) => handleSelectQuickPlanDiscoveryItem(item, targetQuickPlanListId)}
         />
       </React.Suspense>
     );
@@ -711,15 +751,21 @@ export const CreatePlanScreen = ({
       initialSubScreen={lastSubScreen}
       onSubScreenChange={(screen) => {
         setLastSubScreen(screen);
-        if (screen === null && (lastSubScreen === "sports" || lastSubScreen === "dining" || lastSubScreen === "movies" || lastSubScreen === "activities")) {
-          setActiveTab("create");
+        if (screen === null) {
+          if (isQuickPlanFlow) {
+            setIsQuickPlanCategorySelect(true);
+          } else if (lastSubScreen === "sports" || lastSubScreen === "dining" || lastSubScreen === "movies" || lastSubScreen === "activities") {
+            setActiveTab("create");
+          }
         }
       }}
       onAddQuickPlan={handleStartAddQuickPlan}
       onSelectQuickPlan={handleSelectExistingQuickPlan}
+      onSelectQuickPlanDiscoveryItem={handleSelectQuickPlanDiscoveryItem}
 
       onSelectDiscoveryItem={(item) => {
         // 1. Reset any previous form inputs
+        const currentIsQuickPlan = isQuickPlanFlow;
         form.resetForm();
 
         // 2. Setup category and subcategory
@@ -749,8 +795,13 @@ export const CreatePlanScreen = ({
         form.setIsDateManuallySet(false);
         form.setQuickNote("");
 
-        // 4. Entry into WhoIsComingScreen first
-        transitionToPhase('who');
+        // 4. In Quick Plan flow, jump straight to review in Quick Plan mode; else enter normal wizard
+        if (currentIsQuickPlan) {
+          setIsQuickPlanFlow(true);
+          transitionToPhase('review');
+        } else {
+          transitionToPhase('who');
+        }
       }}
       onSelectCustomPlan={() => {
         // Reset and launch manual create wizard for custom plans

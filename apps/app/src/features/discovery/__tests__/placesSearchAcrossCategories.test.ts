@@ -31,6 +31,7 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
                     subcategory: "Restaurant",
                     latitude: 12.9785,
                     longitude: 77.6409,
+                    cover_image_url: "/functions/v1/maps?action=photo&photo_reference=truffles_photo_ref",
                   },
                 ],
                 nextPageToken: "next-token-dining",
@@ -58,23 +59,24 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
     expect(result.searchCoordinates).toEqual({ latitude: 12.9784, longitude: 77.6408 });
   });
 
-  it("triggers fresh Google Places search for Sports ('Cult Fit', 'football turf')", async () => {
+  it("triggers fresh Google Places search for Sports ('football turf', 'badminton court')", async () => {
     const invokeSpy = vi.spyOn(Object.getPrototypeOf(supabase.functions) as any, "invoke").mockImplementation(
       async (fnName: string, options: any) => {
         if (fnName === "maps" && options?.body?.action === "places-discovery") {
           expect(options.body.category).toBe("SPORTS");
-          expect(options.body.query).toBe("Cult Fit");
+          expect(options.body.query).toBe("dribble football");
           return {
             data: {
               items: [
                 {
-                  id: "cult-fit-1",
-                  place_id: "cult-fit-1",
-                  title: "Cult Gym Richmond Road",
+                  id: "turf-dribble-1",
+                  place_id: "turf-dribble-1",
+                  title: "Dribble Football Turf",
                   category: "SPORTS",
-                  subcategory: "Gym",
+                  subcategory: "Football Turf",
                   latitude: 12.966,
                   longitude: 77.607,
+                  cover_image_url: "/functions/v1/maps?action=photo&photo_reference=dribble_turf_photo",
                 },
               ],
               nextPageToken: null,
@@ -88,13 +90,13 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
 
     const result = await searchDiscoveryPlaces({
       category: "SPORTS",
-      query: "Cult Fit",
+      query: "dribble football",
       currentCoordinates: { latitude: 12.9716, longitude: 77.5946 },
     });
 
     expect(invokeSpy).toHaveBeenCalled();
     expect(result.items.length).toBe(1);
-    expect(result.items[0].title).toBe("Cult Gym Richmond Road");
+    expect(result.items[0].title).toBe("Dribble Football Turf");
   });
 
   it("triggers fresh Google Places search for Activities ('bowling', 'escape room')", async () => {
@@ -114,6 +116,7 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
                   subcategory: "Bowling Alley",
                   latitude: 12.973,
                   longitude: 77.608,
+                  cover_image_url: "/functions/v1/maps?action=photo&photo_reference=amoeba_bowling_photo",
                 },
               ],
               nextPageToken: "next-token-act",
@@ -152,6 +155,7 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
                     category: "DINING",
                     latitude: 12.978,
                     longitude: 77.64,
+                    cover_image_url: "/functions/v1/maps?action=photo&photo_reference=pizzahut_photo",
                   },
                 ],
                 nextPageToken: null,
@@ -206,6 +210,7 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
       longitude_override: 77.601,
       is_deleted: false,
       status: "ACTIVE",
+      image_path: "https://images.unsplash.com/photo-truffles",
     };
 
     const mockSelect = vi.fn().mockReturnThis();

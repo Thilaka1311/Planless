@@ -1,6 +1,7 @@
 import React from "react";
 import { DiscoveryItem } from "../../../core/types/discovery";
-import { TMDB_LANGUAGE_NAMES } from "../services/tmdbMovieService";
+import { TMDB_LANGUAGE_NAMES, hasValidTmdbPoster } from "../services/tmdbMovieService";
+import { isPlaceholderImageUrl, isPhotoUrlBroken, markPhotoUrlBroken } from "../services/venueRelevance";
 
 export interface MoviePortraitCardProps {
   item: DiscoveryItem;
@@ -19,6 +20,18 @@ export const MoviePortraitCard: React.FC<MoviePortraitCardProps> = ({
   onTap,
 }) => {
   const effectiveItem = item;
+  const [isImageBroken, setIsImageBroken] = React.useState(false);
+
+  // If movie poster is missing, placeholder, or broken: NEVER display the card!
+  if (
+    isImageBroken ||
+    !effectiveItem.cover_image_url ||
+    !hasValidTmdbPoster(effectiveItem) ||
+    isPlaceholderImageUrl(effectiveItem.cover_image_url) ||
+    isPhotoUrlBroken(effectiveItem.cover_image_url)
+  ) {
+    return null;
+  }
 
   const langLabel =
     effectiveItem.language_name ||
@@ -53,7 +66,7 @@ export const MoviePortraitCard: React.FC<MoviePortraitCardProps> = ({
         onContextMenu={(e) => e.preventDefault()}
       >
         <img
-          src={effectiveItem.cover_image_url || "/assets/plan-covers/movie.png"}
+          src={effectiveItem.cover_image_url}
           alt={effectiveItem.title}
           width={130}
           height={195}
@@ -68,8 +81,9 @@ export const MoviePortraitCard: React.FC<MoviePortraitCardProps> = ({
             userSelect: "none",
             WebkitUserSelect: "none",
           }}
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).src = "/assets/plan-covers/movie.png";
+          onError={() => {
+            markPhotoUrlBroken(effectiveItem.cover_image_url);
+            setIsImageBroken(true);
           }}
         />
       </div>

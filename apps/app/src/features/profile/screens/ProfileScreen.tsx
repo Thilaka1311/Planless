@@ -20,6 +20,7 @@ import { Name } from "./Name";
 import { About } from "./About";
 import { PastPlans } from "./PastPlans";
 import { PlanImageEditorModal } from "../../create/components/PlanImageEditorModal";
+import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../navigation/appRouter";
 
 interface ProfileScreenProps {
   onLogout: () => void;
@@ -66,7 +67,24 @@ export const ProfileScreen = ({
   const currentUser = dbUsers.find(u => u.id === activeUserUuid || u.user_id === activeUserId);
 
   // Sub-sheet states for inline edit flows (Name, About, Friends, Past Plans, Logout)
-  const [activeSheet, setActiveSheet] = useState<'pastPlans' | 'logout' | 'friends' | 'editName' | 'editAbout' | null>(null);
+  const [activeSheet, setActiveSheet] = useState<'pastPlans' | 'logout' | 'friends' | 'editName' | 'editAbout' | null>(() => {
+    const route = parseCurrentRoute();
+    if (route.subScreen === 'profile-name') return 'editName';
+    if (route.subScreen === 'profile-about') return 'editAbout';
+    return null;
+  });
+
+  useEffect(() => {
+    return listenToNavigation((route) => {
+      if (route.subScreen === 'profile-name') {
+        setActiveSheet('editName');
+      } else if (route.subScreen === 'profile-about') {
+        setActiveSheet('editAbout');
+      } else if (activeSheet === 'editName' || activeSheet === 'editAbout') {
+        setActiveSheet(null);
+      }
+    });
+  }, [activeSheet]);
 
   // Step 1: User selects file from device -> open editor immediately if valid
   const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,14 +230,20 @@ export const ProfileScreen = ({
           <div className="text-center select-none max-w-[280px] flex flex-col items-center">
             <button
               type="button"
-              onClick={() => setActiveSheet('editName')}
+              onClick={() => {
+                setActiveSheet('editName');
+                navigateToRoute({ tab: 'profile', subScreen: 'profile-name' });
+              }}
               className="font-sans font-bold text-xl text-white tracking-wide hover:opacity-80 active:scale-[0.98] transition cursor-pointer"
             >
               {userProfile?.name || "User"}
             </button>
             <button
               type="button"
-              onClick={() => setActiveSheet('editAbout')}
+              onClick={() => {
+                setActiveSheet('editAbout');
+                navigateToRoute({ tab: 'profile', subScreen: 'profile-about' });
+              }}
               className="text-zinc-550 text-[13px] font-medium leading-relaxed mt-1.5 mb-5 font-sans hover:text-zinc-400 active:scale-[0.98] transition cursor-pointer"
             >
               {userProfile?.bio || "Always spontaneous, never planless."}
@@ -426,9 +450,13 @@ export const ProfileScreen = ({
           <Name
             activeUserUuid={activeUserUuid}
             currentValue={userProfile?.name || ""}
-            onBack={() => setActiveSheet(null)}
+            onBack={() => {
+              setActiveSheet(null);
+              navigateBack({ tab: 'profile' });
+            }}
             onSaveSuccess={(newName) => {
               setActiveSheet(null);
+              navigateBack({ tab: 'profile' });
               updateProfileName(newName).catch(err => {
                 console.error("[ProfileScreen] Failed to save name:", err);
               });
@@ -441,9 +469,13 @@ export const ProfileScreen = ({
           <About
             activeUserUuid={activeUserUuid}
             currentValue={userProfile?.bio || ""}
-            onBack={() => setActiveSheet(null)}
+            onBack={() => {
+              setActiveSheet(null);
+              navigateBack({ tab: 'profile' });
+            }}
             onSaveSuccess={(newBio) => {
               setActiveSheet(null);
+              navigateBack({ tab: 'profile' });
               updateProfileBio(newBio).catch(err => {
                 console.error("[ProfileScreen] Failed to save bio:", err);
               });

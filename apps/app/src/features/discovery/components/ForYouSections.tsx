@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Loader2, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
 import { DiscoverySection } from "./DiscoverySection";
 import { ADMIN_CONFIGS, ContentConfig } from "../services/discoveryAdminService";
@@ -8,6 +8,7 @@ import {
   fetchDiscoverMovies,
   isMovieReleased2026OrLater,
   isMovieWithinSixMonths,
+  hasValidTmdbPoster,
 } from "../services/tmdbMovieService";
 import { MoviePortraitCard } from "./MoviePortraitCard";
 import { usePlanlessSearch } from "../search";
@@ -127,11 +128,14 @@ export const MovieRailSection: React.FC<MovieRailProps> = ({
             ))}
         {isLoadingMore && (
           <div
-            style={{ width: 130, minWidth: 130 }}
-            className="shrink-0 aspect-[2/3] rounded-2xl bg-[#121216] border border-white/[0.06] flex flex-col items-center justify-center gap-2 snap-start"
+            style={{ width: 130, minWidth: 130, height: 235 }}
+            className="shrink-0 rounded-2xl bg-[#121216] border border-white/[0.06] overflow-hidden flex flex-col shadow-lg animate-pulse snap-start"
           >
-            <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
-            <span className="text-[10px] text-zinc-400 font-medium">Loading...</span>
+            <div className="w-full aspect-[2/3] bg-white/[0.04]" />
+            <div className="p-3 flex flex-col justify-between flex-1 space-y-2">
+              <div className="h-4 w-3/4 bg-white/[0.07] rounded" />
+              <div className="h-3 w-1/2 bg-white/[0.04] rounded" />
+            </div>
           </div>
         )}
       </div>
@@ -160,12 +164,13 @@ export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStrea
           (m.movie_id || String(m.id || "").startsWith("tmdb-")) &&
           !String(m.id || "").startsWith("place_") &&
           !(m as any).place_id &&
-          isMovieReleased2026OrLater(m.release_date)
+          isMovieReleased2026OrLater(m.release_date) &&
+          hasValidTmdbPoster(m)
       );
       if (validMovies.length > 0) return validMovies;
     }
     return getCachedMovieSection(NOW_PLAYING_KEY).filter((m) =>
-      isMovieReleased2026OrLater(m.release_date)
+      isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)
     );
   });
 
@@ -177,7 +182,8 @@ export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStrea
           (m.movie_id || String(m.id || "").startsWith("tmdb-")) &&
           !String(m.id || "").startsWith("place_") &&
           !(m as any).place_id &&
-          isMovieReleased2026OrLater(m.release_date)
+          isMovieReleased2026OrLater(m.release_date) &&
+          hasValidTmdbPoster(m)
       );
       if (validMovies.length > 0) return false;
     }
@@ -207,7 +213,8 @@ export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStrea
           (m.movie_id || String(m.id || "").startsWith("tmdb-")) &&
           !String(m.id || "").startsWith("place_") &&
           !(m as any).place_id &&
-          isMovieReleased2026OrLater(m.release_date)
+          isMovieReleased2026OrLater(m.release_date) &&
+          hasValidTmdbPoster(m)
       );
       if (validMovies.length > 0) {
         validMovies.forEach((m) => {
@@ -231,7 +238,7 @@ export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStrea
       try {
         const res = await fetchDiscoverMovies("now_playing", 1, undefined, "all");
         if (!active) return;
-        const valid = (res.items || []).filter((m) => isMovieReleased2026OrLater(m.release_date));
+        const valid = (res.items || []).filter((m) => isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m));
         valid.forEach((m) => {
           const key = m.id || m.public_id || (m as any).movie_id;
           if (key) seenIdsRef.current.add(key);
@@ -269,7 +276,7 @@ export function useMoviesStream(initialMovies?: DiscoveryItem[]): UseMoviesStrea
         currentPage += 1;
         pagesChecked += 1;
         const res = await fetchDiscoverMovies("now_playing", currentPage, undefined, "all");
-        const valid = (res.items || []).filter((m) => isMovieReleased2026OrLater(m.release_date));
+        const valid = (res.items || []).filter((m) => isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m));
         if (res.totalPages) totalPagesRef.current = res.totalPages;
 
         valid.forEach((m) => {
@@ -454,7 +461,7 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
   const sportsItems = sportsStream.allVenues.length > 0 ? sportsStream.allVenues : sortedRawSports;
   const diningItems = diningStream.allVenues.length > 0 ? diningStream.allVenues : sortedRawDining;
   const activitiesItems = activitiesStream.allVenues.length > 0 ? activitiesStream.allVenues : sortedRawActivities;
-  const movieItems = moviesStream.movies;
+  const movieItems = moviesStream.movies.filter(hasValidTmdbPoster);
 
   // ── Search mode rendering ────────────────────────────────────────────────────
   if (isSearching) {

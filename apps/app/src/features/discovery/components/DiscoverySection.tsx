@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { DiscoveryItem } from "../../../core/types/discovery";
 import { RestaurantCard, SportsCard, MovieCard, ActivityCard, DiscoveryCard } from "./DiscoveryCard";
 import { extractCleanPlaceId } from "../services/venueRelevance";
@@ -106,9 +106,16 @@ export const DiscoverySection = React.memo<DiscoverySectionProps>(({
           return <DiscoveryCard key={itemKey} {...cardProps} />;
         })}
         {isLoadingMore && (
-          <div className="shrink-0 w-36 h-48 rounded-2xl bg-zinc-900/40 border border-white/[0.06] flex flex-col items-center justify-center gap-2 snap-start">
-            <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
-            <span className="text-[10px] text-zinc-400 font-medium">Loading more...</span>
+          <div
+            style={{ width: "220px", minWidth: "220px", maxWidth: "220px", height: "225px", minHeight: "225px" }}
+            className="shrink-0 rounded-2xl bg-[#121216] border border-white/[0.06] overflow-hidden flex flex-col shadow-lg animate-pulse snap-start"
+          >
+            <div className="w-full h-[130px] bg-white/[0.04]" />
+            <div className="p-3 flex flex-col justify-between flex-1 space-y-2">
+              <div className="h-4 w-3/4 bg-white/[0.07] rounded" />
+              <div className="h-3 w-1/2 bg-white/[0.04] rounded" />
+              <div className="h-3 w-2/3 bg-white/[0.04] rounded" />
+            </div>
           </div>
         )}
       </div>

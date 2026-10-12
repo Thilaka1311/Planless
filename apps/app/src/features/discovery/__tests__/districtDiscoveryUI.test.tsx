@@ -236,7 +236,7 @@ describe("District Discovery UI Architecture Suite", () => {
       expect(html).not.toContain("100 Feet Rd, Koramangala");
       expect(html).toContain("Turf");
       expect(html).toContain("5.2 km");
-      expect(html).toContain("Create a plan");
+      expect(html).toContain("Create a Plan");
       expect(html).not.toContain("Pick a date, invite your squad");
       expect(html).not.toContain("DINING &amp; CAFE");
     });
