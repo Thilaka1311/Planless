@@ -151,15 +151,15 @@ describe("Owner-Posted Photo Verification & Enforcement Suite", () => {
       expect(hasOwnerPostedPhoto(noPhotoPlace)).toBe(false);
     });
 
-    it("accepts authentic venues with curated subcategory photos", () => {
+    it("rejects curated subcategory photos as generic fallbacks", () => {
       const curatedPlace = {
         title: "Mystery Rooms",
         category: "ACTIVITIES",
         cover_image_url: "/assets/curated/mystery_rooms.jpg",
       };
 
-      expect(hasOwnerPostedPhoto(curatedPlace)).toBe(true);
-      expect(isPlaceholderImageUrl("/assets/curated/mystery_rooms.jpg")).toBe(false);
+      expect(hasOwnerPostedPhoto(curatedPlace)).toBe(false);
+      expect(isPlaceholderImageUrl("/assets/curated/mystery_rooms.jpg")).toBe(true);
     });
 
     it("rejects places using default or placeholder images", () => {
@@ -228,7 +228,7 @@ describe("Owner-Posted Photo Verification & Enforcement Suite", () => {
       expect(normalized.photo_references).toEqual(["owner_ref_1"]);
     });
 
-    it("assigns curated subcategory photo instead of customer photo when no owner photo exists", () => {
+    it("leaves cover_image_url null when no owner photo exists (no customer or fallback photos)", () => {
       const candidate: any = {
         place_id: "test_place_888",
         name: "Torq03 Go Karting",
@@ -245,10 +245,8 @@ describe("Owner-Posted Photo Verification & Enforcement Suite", () => {
         category: "ACTIVITIES",
       });
 
-      // Customer photo is NEVER assigned
-      expect(normalized.cover_image_url).not.toContain("customer_ref_0");
-      // Curated go-karting photo is assigned
-      expect(normalized.cover_image_url).toBe("/assets/curated/go_karting.jpg");
+      // Customer photo is NEVER assigned, and fallback photo is NEVER assigned
+      expect(normalized.cover_image_url).toBeNull();
       // Google photo references remain null since no owner photos exist
       expect(normalized.photo_references).toBeNull();
     });

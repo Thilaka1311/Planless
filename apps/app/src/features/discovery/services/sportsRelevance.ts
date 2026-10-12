@@ -1,5 +1,9 @@
 import { DiscoveryItem } from "../../../core/types/discovery";
-import { VenueMetadataLike } from "./venueRelevance";
+import {
+  VenueMetadataLike,
+  isGeneralPurposeGym,
+  isPublicGround,
+} from "./venueRelevance";
 
 export function extractSportsList(sub: string[] | string | null | undefined): string[] {
   if (!sub) return [];
@@ -552,7 +556,19 @@ export function scoreSportsVenueRelevance(
   let score = 0;
   const breakdown: string[] = [];
 
-  // ── 1. NEGATIVE SCORING & HARD REJECTIONS (Offices, Retail, Clinics) ──
+  // ── 1. NEGATIVE SCORING & HARD REJECTIONS (Gyms, Public Grounds, Offices, Retail, Clinics) ──
+  if (isGeneralPurposeGym(place)) {
+    score -= 100;
+    breakdown.push("General-purpose gym / fitness centre (-100)");
+    return { score, isRelevant: false, isStronglyRelevant: false, breakdown };
+  }
+
+  if (isPublicGround(place)) {
+    score -= 100;
+    breakdown.push("Public / municipal open ground (-100)");
+    return { score, isRelevant: false, isStronglyRelevant: false, breakdown };
+  }
+
   const isRetailType = types.some((t) =>
     [
       "sporting_goods_store",

@@ -7,12 +7,25 @@ import { QuickPlanCard } from "../components/QuickPlanCard";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { useLongPress } from "../../../shared/hooks/useLongPress";
 
+import { DiscoverySection as DiscoverySectionType, DiscoveryItem } from "../../../core/types/discovery";
+import { CreateCategoryScreen } from "./CreateCategoryScreen";
+import { DiscoverDining } from "../../discovery/screens/DiscoverDining";
+import { DiscoverMovies } from "../../discovery/screens/DiscoverMovies";
+import { DiscoverSports } from "../../discovery/screens/DiscoverSports";
+import { DiscoverActivities } from "../../discovery/screens/DiscoverActivities";
+
 export interface QuickPlansScreenProps {
   userId?: string;
   initialListId?: string;
   onBack: () => void;
   onSelectQuickPlan: (plan: QuickPlan) => void;
-  onAddQuickPlan: (listId?: string) => void;
+  onAddQuickPlan?: (listId?: string) => void;
+  onSelectDiscoveryItem?: (item: DiscoveryItem, targetListId?: string | null) => void;
+  sections?: DiscoverySectionType[];
+  currentCity?: string;
+  currentLocality?: string;
+  currentCoordinates?: { latitude: number; longitude: number };
+  isAdmin?: boolean;
 }
 
 
@@ -109,10 +122,17 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
   onBack,
   onSelectQuickPlan,
   onAddQuickPlan,
+  onSelectDiscoveryItem,
+  sections,
+  currentCity,
+  currentLocality,
+  currentCoordinates,
+  isAdmin,
 }) => {
   const {
     quickPlans,
     quickPlanLists,
+    createQuickPlan: hookCreateQuickPlan,
     deleteQuickPlan,
     createList,
     updateList,
@@ -121,6 +141,50 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
 
   // Navigation state within Quick Plans screen
   const [selectedListId, setSelectedListId] = useState<string | null>(initialListId || null);
+  const [isCategorySelect, setIsCategorySelect] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<"dining" | "movies" | "sports" | "activities" | null>(null);
+
+  const handleStartAddPlan = (listId?: string) => {
+    setIsCategorySelect(true);
+    onAddQuickPlan?.(listId);
+  };
+
+  const handleSelectDiscoveryItem = async (item: DiscoveryItem) => {
+    if (onSelectDiscoveryItem) {
+      onSelectDiscoveryItem(item, selectedListId);
+      return;
+    }
+
+    if (userId && selectedListId) {
+      try {
+        const lowerCategory = item.category ? item.category.toLowerCase() : "custom";
+        const isMovieItem = lowerCategory === "movies";
+        await hookCreateQuickPlan(
+          {
+            creator_id: userId,
+            quick_plan_list_id: selectedListId,
+            name: item.title,
+            description: item.description || null,
+            category: (item.category || "CUSTOM").toUpperCase(),
+            subcategory: item.subcategory ? item.subcategory.toUpperCase() : "OTHER",
+            place_id: isMovieItem ? null : ((item as any).place_id || null),
+            place_name: isMovieItem ? null : (item.location || null),
+            place_address: isMovieItem ? null : ((item as any).place_address || item.location || null),
+            latitude: isMovieItem ? null : ((item as any).latitude || null),
+            longitude: isMovieItem ? null : ((item as any).longitude || null),
+            cover_image: item.cover_image_url || null,
+            default_cost: 0,
+            plan_size: null,
+          },
+          []
+        );
+        setSelectedCategory(null);
+        setIsCategorySelect(false);
+      } catch (err) {
+        console.error("[QuickPlansScreen] Error creating quick plan from item:", err);
+      }
+    }
+  };
 
   // Create List state
   const [isCreateListOpen, setIsCreateListOpen] = useState(false);
@@ -219,6 +283,79 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
     }
   };
 
+  if (selectedCategory) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black flex flex-col">
+        {selectedCategory === "dining" && (
+          <DiscoverDining
+            sections={sections}
+            isAdmin={isAdmin}
+            onBack={() => setSelectedCategory(null)}
+            onSelectDiscoveryItem={handleSelectDiscoveryItem}
+            currentCity={currentCity}
+            currentLocality={currentLocality}
+            currentCoordinates={currentCoordinates}
+          />
+        )}
+        {selectedCategory === "movies" && (
+          <DiscoverMovies
+            sections={sections}
+            isAdmin={isAdmin}
+            onBack={() => setSelectedCategory(null)}
+            onSelectDiscoveryItem={handleSelectDiscoveryItem}
+            currentCity={currentCity}
+            currentLocality={currentLocality}
+            currentCoordinates={currentCoordinates}
+          />
+        )}
+        {selectedCategory === "sports" && (
+          <DiscoverSports
+            sections={sections}
+            isAdmin={isAdmin}
+            onBack={() => setSelectedCategory(null)}
+            onSelectDiscoveryItem={handleSelectDiscoveryItem}
+            currentCity={currentCity}
+            currentLocality={currentLocality}
+            currentCoordinates={currentCoordinates}
+          />
+        )}
+        {selectedCategory === "activities" && (
+          <DiscoverActivities
+            sections={sections}
+            isAdmin={isAdmin}
+            onBack={() => setSelectedCategory(null)}
+            onSelectDiscoveryItem={handleSelectDiscoveryItem}
+            currentCity={currentCity}
+            currentLocality={currentLocality}
+            currentCoordinates={currentCoordinates}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (isCategorySelect) {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col">
+        <CreateCategoryScreen
+          title="Quick Plan"
+          onBack={() => setIsCategorySelect(false)}
+          onSelectCategory={(category) => {
+            if (category === "dining" || category === "movies" || category === "sports" || category === "activities") {
+              setSelectedCategory(category);
+            }
+          }}
+          onSelectDiscoveryItem={handleSelectDiscoveryItem}
+          sections={sections}
+          currentCity={currentCity}
+          currentLocality={currentLocality}
+          currentCoordinates={currentCoordinates}
+          isAdmin={isAdmin}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex-1 flex flex-col h-full bg-[#000000] text-left select-none overflow-y-auto no-scrollbar pb-6 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]"
@@ -244,24 +381,33 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
             <ArrowLeft className="w-6 h-6 text-white" />
           </button>
 
-          <h2
-            onClick={() => {
-              if (activeList) {
-                setListMenuTarget(activeList);
-              }
-            }}
-            className="text-lg font-bold text-white tracking-tight font-sans truncate cursor-pointer select-none"
-            title={activeList ? "Tap or hold to manage list" : undefined}
-          >
-            {activeList ? activeList.name : "Quick Plans"}
-          </h2>
+          {activeList ? (
+            <div className="flex flex-col min-w-0">
+              <h2
+                onClick={() => setListMenuTarget(activeList)}
+                className="text-lg font-bold text-white tracking-tight font-sans truncate cursor-pointer select-none"
+                title="Tap or hold to manage list"
+              >
+                Quick Plan
+              </h2>
+              <span className="text-xs text-zinc-400 font-medium truncate font-sans">
+                {activeList.name}
+              </span>
+            </div>
+          ) : (
+            <h2
+              className="text-lg font-bold text-white tracking-tight font-sans truncate select-none"
+            >
+              Quick Plans
+            </h2>
+          )}
         </div>
 
         <button
           type="button"
           onClick={() => {
             if (activeList) {
-              onAddQuickPlan(activeList.id);
+              handleStartAddPlan(activeList.id);
             } else {
               setIsCreateListOpen(true);
             }
@@ -286,7 +432,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
             </h3>
             <button
               type="button"
-              onClick={() => onAddQuickPlan(activeList.id)}
+              onClick={() => handleStartAddPlan(activeList.id)}
               className="mt-1 px-6 py-2.5 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white font-bold text-xs shadow-lg shadow-[#FF6B2C]/20 transition cursor-pointer"
             >
               Add Quick Plan
@@ -311,23 +457,17 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
         /* ================= TOP-LEVEL LIST-FIRST SCREEN ================= */
         quickPlanLists.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center px-6 py-20 text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-[#FF6B2C]/10 border border-[#FF6B2C]/30 flex items-center justify-center text-[#FF6B2C] shadow-lg shadow-[#FF6B2C]/10">
-              <Zap className="w-7 h-7 fill-[#FF6B2C]" />
+            <div className="flex items-center justify-center">
+              <Zap className="w-8 h-8 text-white fill-white" />
             </div>
-            <div className="space-y-1.5 max-w-xs">
-              <h3 className="text-base font-bold text-white tracking-tight font-sans">
-                No Quick Plan lists yet.
-              </h3>
-              <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-                Organize your quick plans into lists like Football, Movies, or Dining.
-              </p>
-            </div>
+            <h3 className="text-base font-bold text-white tracking-tight font-sans">
+              No lists have been made
+            </h3>
             <button
               type="button"
               onClick={() => setIsCreateListOpen(true)}
-              className="mt-3 px-5 py-2.5 rounded-xl bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-[#FF6B2C]/20 transition cursor-pointer"
+              className="mt-1 px-6 py-2.5 rounded-full bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-95 text-white font-bold text-xs flex items-center justify-center shadow-lg shadow-[#FF6B2C]/20 transition cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
               <span>Create List</span>
             </button>
           </div>
@@ -508,7 +648,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
                   })()}
                 </div>
                 <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                  <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                  <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                     {listMenuTarget.name}
                   </h3>
                   <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">

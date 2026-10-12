@@ -56,6 +56,7 @@ const PlanChatScreen = lazyWithRetry(
 );
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";
+import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../../../navigation/appRouter";
 import { uploadPlanImage } from "../../../../../shared/utils/imageUtils";
 import { cleanPlanId, parsePlanDateTime, isUuid, isPlanTimeEnded } from "../../../utils/planUtils";
 import { useToast } from "../../../../../shared/contexts/ToastContext";
@@ -979,7 +980,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const [isEndingPlan, setIsEndingPlan] = useState(false);
   const [showRestorePlanConfirm, setShowRestorePlanConfirm] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(false);
+  const [showPlanSettingsScreen, setShowPlanSettingsScreen] = useState(() => {
+    const route = parseCurrentRoute();
+    return route.subScreen === 'plan-settings' || route.subScreen === 'plan-settings-cover';
+  });
+
+  useEffect(() => {
+    return listenToNavigation((route) => {
+      setShowPlanSettingsScreen(route.subScreen === 'plan-settings' || route.subScreen === 'plan-settings-cover');
+    });
+  }, []);
   const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
   const planStartIso = (selectedPlan as any)?.scheduled_at || selectedPlan?.datetime || selectedPlan?.time || selectedPlan?.createdAt;
   const rawRsvpDeadline = (selectedPlan as any)?.rsvp_deadline || selectedPlan?.response_deadline_at;
@@ -2250,7 +2260,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
         isCreatorHost={isCreatorHost}
         isPlanSettingsForParticipant={!isHost}
         myParticipantRecord={myParticipantRecord}
-        onBack={() => setShowPlanSettingsScreen(false)}
+        onBack={() => {
+          setShowPlanSettingsScreen(false);
+          const planParam = (selectedPlan as any)?.slug || cleanPlanId(selectedPlan?.dbUuid || selectedPlan?.id || planId);
+          navigateBack({
+            tab: 'plans',
+            selectedPlanId: planParam,
+            originTab: 'plans',
+          });
+        }}
         onUpdateSettings={async (newSettings) => {
           await updatePlanSettings(selectedPlan.id, newSettings);
         }}
@@ -2400,7 +2418,16 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               onOpenSettings={
                 createMode || isCancelled || isCompleted
                   ? undefined
-                  : () => setShowPlanSettingsScreen(true)
+                  : () => {
+                      setShowPlanSettingsScreen(true);
+                      const planParam = (selectedPlan as any)?.slug || cleanPlanId(selectedPlan?.dbUuid || selectedPlan?.id || planId);
+                      navigateToRoute({
+                        tab: 'plans',
+                        selectedPlanId: planParam,
+                        subScreen: 'plan-settings',
+                        originTab: 'plans',
+                      });
+                    }
               }
               onSharePlanLink={
                 !createMode && !isCancelled && !isCompleted && (isHost || allowParticipantInvites) && currentJoinedCount < 50
@@ -2908,6 +2935,13 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               onOpenSettings={() => {
                 setShowParticipantManagement(false);
                 setShowPlanSettingsScreen(true);
+                const planParam = (selectedPlan as any)?.slug || cleanPlanId(selectedPlan?.dbUuid || selectedPlan?.id || planId);
+                navigateToRoute({
+                  tab: 'plans',
+                  selectedPlanId: planParam,
+                  subScreen: 'plan-settings',
+                  originTab: 'plans',
+                });
               }}
               onLeavePlan={handleSkip}
             />

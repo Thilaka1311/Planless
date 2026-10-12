@@ -90,8 +90,11 @@ describe("QuickPlansScreen Dedicated Screen", () => {
     );
 
     expect(html).toContain("Quick Plans");
-    expect(html).toContain("No Quick Plan lists yet.");
+    expect(html).toContain("No lists have been made");
+    expect(html).not.toContain("No Quick Plan lists yet.");
+    expect(html).not.toContain("Organize your quick plans into lists");
     expect(html).toContain("Create List");
+    expect(html).toContain("rounded-full");
   });
 
   it("renders list-first screen showing user's lists and accurate counts", async () => {
@@ -350,6 +353,174 @@ describe("QuickPlansScreen Dedicated Screen", () => {
     // Pill-shaped CTA button without plus icon
     expect(html).toContain("Add Quick Plan");
     expect(html).toContain("rounded-full");
+  });
+
+  it("renders individual Quick Plan list screen with 'Quick Plan' heading, list name, back button, and add button", async () => {
+    const mockLists: QuickPlanList[] = [
+      {
+        id: "list-squad",
+        creator_id: "user-1",
+        name: "Weekend Squad",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        quick_plans_count: 0,
+      },
+    ];
+
+    vi.spyOn(quickPlanService, "getCachedQuickPlanLists").mockReturnValue(mockLists);
+    vi.spyOn(quickPlanService, "getCachedQuickPlans").mockReturnValue([]);
+
+    const { QuickPlansScreen } = await import("../screens/QuickPlansScreen");
+    const html = renderToString(
+      <QuickPlansScreen
+        userId="user-1"
+        initialListId="list-squad"
+        onBack={vi.fn()}
+        onSelectQuickPlan={vi.fn()}
+        onAddQuickPlan={vi.fn()}
+      />
+    );
+
+    // Heading says "Quick Plan"
+    expect(html).toContain("Quick Plan");
+    // List name is preserved
+    expect(html).toContain("Weekend Squad");
+    // Back button is present to the left of the heading
+    expect(html).toContain('aria-label="Back to lists"');
+    // Top-right add button is present
+    expect(html).toContain('aria-label="Add Quick Plan"');
+  });
+
+  it("renders CreateCategoryScreen with 'Quick Plan' header (not 'Create'), back button, and category cards", async () => {
+    const { CreateCategoryScreen } = await import("../screens/CreateCategoryScreen");
+    const handleBack = vi.fn();
+    const handleSelectCategory = vi.fn();
+
+    const html = renderToString(
+      <CreateCategoryScreen
+        title="Quick Plan"
+        onBack={handleBack}
+        onSelectCategory={handleSelectCategory}
+      />
+    );
+
+    // Header says "Quick Plan", not "Create"
+    expect(html).toContain("Quick Plan");
+    expect(html).not.toContain("title=\"Create\"");
+    // Back button is present
+    expect(html).toContain('aria-label="Back"');
+    // Category selection instruction is present
+    expect(html).toContain("Choose a category.");
+    // All 4 categories are present
+    expect(html).toContain("Dining");
+    expect(html).toContain("Movies");
+    expect(html).toContain("Sports");
+    expect(html).toContain("Activities");
+  });
+
+  it("reuses existing Discovery screens for Dining, Movies, Sports, and Activities with search bar and cards", async () => {
+    const { DiscoverDining } = await import("../../discovery/screens/DiscoverDining");
+    const { DiscoverMovies } = await import("../../discovery/screens/DiscoverMovies");
+    const { DiscoverSports } = await import("../../discovery/screens/DiscoverSports");
+    const { DiscoverActivities } = await import("../../discovery/screens/DiscoverActivities");
+
+    // DiscoverDining renders with back button and search bar
+    const diningHtml = renderToString(
+      <DiscoverDining
+        onBack={vi.fn()}
+        onSelectDiscoveryItem={vi.fn()}
+      />
+    );
+    expect(diningHtml).toContain("Dining");
+    expect(diningHtml).toContain("Search");
+
+    // DiscoverMovies renders with back button and search bar
+    const moviesHtml = renderToString(
+      <DiscoverMovies
+        onBack={vi.fn()}
+        onSelectDiscoveryItem={vi.fn()}
+      />
+    );
+    expect(moviesHtml).toContain("Movies");
+    expect(moviesHtml).toContain("Search");
+
+    // DiscoverSports renders with back button and search bar
+    const sportsHtml = renderToString(
+      <DiscoverSports
+        onBack={vi.fn()}
+        onSelectDiscoveryItem={vi.fn()}
+      />
+    );
+    expect(sportsHtml).toContain("Sports");
+    expect(sportsHtml).toContain("Search");
+
+    // DiscoverActivities renders with back button and search bar
+    const activitiesHtml = renderToString(
+      <DiscoverActivities
+        onBack={vi.fn()}
+        onSelectDiscoveryItem={vi.fn()}
+      />
+    );
+    expect(activitiesHtml).toContain("Activities");
+    expect(activitiesHtml).toContain("Search");
+  });
+
+  it("renders discovery content (ForYouSections and discovery cards) underneath category selector", async () => {
+    const { CreateCategoryScreen } = await import("../screens/CreateCategoryScreen");
+    const mockSections: any[] = [
+      {
+        id: "dining-trending",
+        title: "Trending Restaurants",
+        category: "dining",
+        items: [
+          {
+            id: "d1",
+            title: "Truffles Koramangala",
+            category: "dining",
+            cover_image_url: "https://example.com/truffles.jpg",
+            location: "Koramangala, Bengaluru",
+            rating: 4.5,
+          },
+        ],
+      },
+      {
+        id: "sports-trending",
+        title: "Turfs & Courts",
+        category: "sports",
+        items: [
+          {
+            id: "s1",
+            title: "Play Arena Turf",
+            category: "sports",
+            cover_image_url: "https://example.com/turf.jpg",
+            location: "Sarjapur Road, Bengaluru",
+            rating: 4.6,
+          },
+        ],
+      },
+    ];
+
+    const html = renderToString(
+      <CreateCategoryScreen
+        title="Quick Plan"
+        onBack={vi.fn()}
+        onSelectCategory={vi.fn()}
+        sections={mockSections}
+      />
+    );
+
+    // Header & Categories preserved
+    expect(html).toContain("Quick Plan");
+    expect(html).toContain("Dining");
+    expect(html).toContain("Movies");
+    expect(html).toContain("Sports");
+    expect(html).toContain("Activities");
+
+    // Discovery content rendered underneath
+    expect(html).toContain("Restaurants");
+    expect(html).toContain("Truffles Koramangala");
+    expect(html).toContain("Sports");
+    expect(html).toContain("Play Arena Turf");
   });
 });
 

@@ -1,5 +1,6 @@
 import { DiscoveryItem, TmdbMovie } from "../../../core/types/discovery";
 import { supabase } from "../../../../lib/supabaseClient";
+import { isPlaceholderImageUrl, isPhotoUrlBroken } from "./venueRelevance";
 
 export const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/";
 export const TMDB_REGION = "IN";
@@ -107,6 +108,53 @@ export function getTmdbBackdropUrl(backdropPath: string | null | undefined, size
 }
 
 /**
+ * Validates that a TMDB movie has a real, non-placeholder, non-broken poster image.
+ * Excludes movies with missing/empty poster paths, placeholder images, or broken URLs.
+ */
+export function hasValidTmdbPoster(movie: any): boolean {
+  if (!movie) return false;
+
+  // 1. Raw TMDB movie object check
+  if ("poster_path" in movie) {
+    const posterPath = movie.poster_path;
+    if (!posterPath || typeof posterPath !== "string") return false;
+    const trimmedPath = posterPath.trim().toLowerCase();
+    if (
+      !trimmedPath ||
+      trimmedPath === "null" ||
+      trimmedPath === "undefined" ||
+      trimmedPath.includes("placeholder") ||
+      trimmedPath.includes("default-")
+    ) {
+      return false;
+    }
+  }
+
+  // 2. DiscoveryItem check (or resolved URL check)
+  const coverUrl =
+    typeof movie.cover_image_url === "string" && movie.cover_image_url
+      ? movie.cover_image_url
+      : movie.poster_path
+      ? getTmdbPosterUrl(movie.poster_path)
+      : null;
+
+  if (!coverUrl || typeof coverUrl !== "string") return false;
+
+  const trimmedUrl = coverUrl.trim().toLowerCase();
+  if (
+    !trimmedUrl ||
+    trimmedUrl === "null" ||
+    trimmedUrl === "undefined" ||
+    isPlaceholderImageUrl(trimmedUrl) ||
+    isPhotoUrlBroken(trimmedUrl)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Converts a TMDB movie result into a Planless DiscoveryItem.
  */
 export function mapTmdbMovieToDiscoveryItem(
@@ -191,9 +239,21 @@ function setMemoryCache(key: string, data: { items: DiscoveryItem[]; totalPages:
 }
 
 /**
- * Synchronous local storage retrieval for zero-flash startup.
+ * Synchronous cache retrieval (in-memory and localStorage) for zero-flash startup.
  */
 export function getCachedMovieSection(key: string): DiscoveryItem[] {
+  // 1. Check in-memory cache first (handles fast tab switches, in-session pre-warming)
+  const inMem = getFromMemoryCache(key);
+  if (inMem && Array.isArray(inMem.items) && inMem.items.length > 0) {
+    return inMem.items
+      .filter((item: any) => isMovieReleased2026OrLater(item.release_date) && hasValidTmdbPoster(item))
+      .map((item: any) => ({
+        ...item,
+        location: "",
+      }));
+  }
+
+  // 2. Check localStorage for cross-session instant start
   if (typeof window === "undefined" || !window.localStorage) return [];
   try {
     const raw = window.localStorage.getItem(`planless_tmdb_${key}`);
@@ -201,7 +261,7 @@ export function getCachedMovieSection(key: string): DiscoveryItem[] {
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed?.items) ? parsed.items : [];
     return items
-      .filter((item: any) => isMovieReleased2026OrLater(item.release_date))
+      .filter((item: any) => isMovieReleased2026OrLater(item.release_date) && hasValidTmdbPoster(item))
       .map((item: any) => ({
         ...item,
         location: "",
@@ -386,7 +446,7 @@ export async function fetchDiscoverMovies(
 
           if (normalizedLang !== "all") {
             for (const m of allRaw) {
-              if (!m || !m.title || m.adult || m.video || seen.has(m.id)) continue;
+              if (!m || !m.title || m.adult || m.video || seen.has(m.id) || !hasValidTmdbPoster(m)) continue;
               if (!isMovieReleased2026OrLater(m.release_date)) continue;
               if (m.original_language === normalizedLang) {
                 seen.add(m.id);
@@ -397,7 +457,7 @@ export async function fetchDiscoverMovies(
             const byLang: Record<string, TmdbMovie[]> = { hi: [], ta: [], te: [], kn: [], en: [] };
 
             for (const m of allRaw) {
-              if (!m || !m.title || m.adult || m.video || seen.has(m.id)) continue;
+              if (!m || !m.title || m.adult || m.video || seen.has(m.id) || !hasValidTmdbPoster(m)) continue;
               if (!isMovieReleased2026OrLater(m.release_date)) continue;
               if (byLang[m.original_language]) {
                 seen.add(m.id);
@@ -448,7 +508,7 @@ export async function fetchDiscoverMovies(
                 { headers }
               )
                 .then((r) => r.json())
-                .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video))
+                .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)))
                 .catch(() => [])
             );
 
@@ -486,7 +546,7 @@ export async function fetchDiscoverMovies(
                 { headers }
               )
                 .then((r) => r.json())
-                .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video))
+                .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)))
                 .catch(() => [])
             );
 
@@ -500,10 +560,11 @@ export async function fetchDiscoverMovies(
         return { items: [], totalPages: 0 };
       }
 
-      // Filter to strictly supported languages, 2026 or later, and non-adult/non-video
+      // Filter to strictly supported languages, 2026 or later, non-adult/non-video, and valid poster
       const validMovies: TmdbMovie[] = rawData.results.filter((m: any) => {
         if (!m || !m.title || m.adult || m.video) return false;
         if (!isMovieReleased2026OrLater(m.release_date)) return false;
+        if (!hasValidTmdbPoster(m)) return false;
         if (normalizedLang !== "all") {
           return m.original_language === normalizedLang;
         }
@@ -635,10 +696,11 @@ export async function searchMovies(
         return { items: [], totalPages: 0 };
       }
 
-      // Filter to strictly supported languages, 2026 or later, and non-adult/non-video
+      // Filter to strictly supported languages, 2026 or later, non-adult/non-video, and valid poster
       const validMovies: TmdbMovie[] = rawData.results.filter((m: any) => {
         if (!m || !m.title || m.adult || m.video) return false;
         if (!isMovieReleased2026OrLater(m.release_date)) return false;
+        if (!hasValidTmdbPoster(m)) return false;
         if (normalizedLang !== "all") {
           return m.original_language === normalizedLang;
         }

@@ -8,6 +8,7 @@ import {
   getCachedMovieSection,
   TMDB_LANGUAGE_NAMES,
   isMovieReleased2026OrLater,
+  hasValidTmdbPoster,
 } from "../services/tmdbMovieService";
 import { ADMIN_CONFIGS } from "../services/discoveryAdminService";
 import { SearchBar } from "../../../shared/components/SearchBar";
@@ -55,15 +56,15 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
     typeof initialHasMore === "boolean" ? initialHasMore : true
   );
 
-  // Pre-load from sections or localStorage cache for instant zero-flash render (filtered to >= 2026-01-01)
+  // Pre-load from sections or localStorage cache for instant zero-flash render (filtered to >= 2026-01-01 and valid poster)
   const [movies, setMovies] = useState<DiscoveryItem[]>(() => {
     const rawMovies = (sections || [])
       .filter((s) => s.category?.toUpperCase() === "MOVIES")
       .flatMap((s) => s.items || [])
-      .filter((m) => isMovieReleased2026OrLater(m.release_date));
+      .filter((m) => isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m));
     if (rawMovies.length > 0) return rawMovies;
     return getCachedMovieSection("discover_now_playing_lall_p1_gall").filter((m) =>
-      isMovieReleased2026OrLater(m.release_date)
+      isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)
     );
   });
   const [searchResults, setSearchResults] = useState<DiscoveryItem[]>([]);
@@ -73,11 +74,11 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
     const rawMovies = (sections || [])
       .filter((s) => s.category?.toUpperCase() === "MOVIES")
       .flatMap((s) => s.items || [])
-      .filter((m) => isMovieReleased2026OrLater(m.release_date));
+      .filter((m) => isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m));
     if (rawMovies.length > 0) return false;
     return (
       getCachedMovieSection("discover_now_playing_lall_p1_gall").filter((m) =>
-        isMovieReleased2026OrLater(m.release_date)
+        isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)
       ).length === 0
     );
   });
@@ -89,11 +90,23 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
   // Pagination refs for movie feed
   const pageRef = useRef<number>(1);
   const totalPagesRef = useRef<number>(10);
-  const seenIdsRef = useRef<Set<string>>(new Set());
+  const seenIdsRef = useRef<Set<string>>(
+    new Set(movies.map((m) => (m.id || m.public_id) as string).filter(Boolean))
+  );
 
   const searchPageRef = useRef<number>(1);
   const searchTotalPagesRef = useRef<number>(1);
   const searchSeenIdsRef = useRef<Set<string>>(new Set());
+
+  const isMountedRef = useRef(true);
+  const activeLoadIdRef = useRef(0);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Search debounce
   useEffect(() => {
@@ -126,7 +139,7 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
       .then((res) => {
         if (!active) return;
         const movieItems = (res.items || []).filter((m) =>
-          isMovieReleased2026OrLater(m.release_date)
+          isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)
         );
         const seen = new Set<string>();
         const deduped: DiscoveryItem[] = [];
@@ -135,9 +148,9 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
           if (key && !seen.has(key)) {
             seen.add(key);
             deduped.push(item);
-            searchSeenIdsRef.current.add(key);
           }
         }
+        searchSeenIdsRef.current = seen;
         setSearchResults(deduped);
         const total = res.totalPages || 1;
         searchTotalPagesRef.current = total;
@@ -161,24 +174,29 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
   // Load Primary Movie Catalogue (strictly 2026 or later)
   const loadCatalogue = useCallback(async () => {
     if (typeof initialHasMore === "boolean" && !initialHasMore) return;
+    const currentLoadId = ++activeLoadIdRef.current;
     setLoadError(null);
     setIsLoadingFeeds(true);
     pageRef.current = 1;
     totalPagesRef.current = 10;
-    seenIdsRef.current.clear();
     setHasMore(true);
 
     try {
       const res = await fetchDiscoverMovies("now_playing", 1, undefined, "all");
+      if (!isMountedRef.current || activeLoadIdRef.current !== currentLoadId) {
+        return;
+      }
+
       const filtered = (res.items || []).filter((m) =>
-        isMovieReleased2026OrLater(m.release_date)
+        isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)
       );
 
+      const localSeen = new Set<string>();
       const uniqueMovies: DiscoveryItem[] = [];
       filtered.forEach((m) => {
         const key = m.id || m.public_id;
-        if (key && !seenIdsRef.current.has(key)) {
-          seenIdsRef.current.add(key);
+        if (key && !localSeen.has(key)) {
+          localSeen.add(key);
           uniqueMovies.push(m);
         }
       });
@@ -187,26 +205,54 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
         totalPagesRef.current = res.totalPages;
       }
 
-      setMovies(uniqueMovies);
-      if (uniqueMovies.length === 0) {
-        setLoadError("Unable to load movies. Tap below to retry.");
-        setHasMore(false);
-      } else {
+      if (uniqueMovies.length > 0) {
+        seenIdsRef.current = localSeen;
+        setMovies(uniqueMovies);
         setLoadError(null);
         setHasMore(1 < totalPagesRef.current);
+      } else {
+        setMovies((prev) => {
+          if (prev.length > 0) {
+            return prev;
+          }
+          setLoadError("Unable to load movies. Tap below to retry.");
+          setHasMore(false);
+          return [];
+        });
       }
     } catch (err: any) {
+      if (!isMountedRef.current || activeLoadIdRef.current !== currentLoadId) return;
       console.error("[DiscoverMovies] Error loading movie catalogue:", err);
-      setLoadError("Failed to load movies. Tap below to retry.");
-      setHasMore(false);
+      setMovies((prev) => {
+        if (prev.length === 0) {
+          setLoadError("Failed to load movies. Tap below to retry.");
+          setHasMore(false);
+        }
+        return prev;
+      });
     } finally {
-      setIsLoadingFeeds(false);
+      if (isMountedRef.current && activeLoadIdRef.current === currentLoadId) {
+        setIsLoadingFeeds(false);
+      }
     }
-  }, []);
+  }, [initialHasMore]);
 
   useEffect(() => {
     loadCatalogue();
   }, [loadCatalogue]);
+
+  // Re-check catalogue on window focus if feed is empty or in error state
+  useEffect(() => {
+    const handleFocus = () => {
+      if (movies.length === 0 && !isLoadingFeeds && !isSearching && !debouncedQuery) {
+        loadCatalogue();
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [movies.length, isLoadingFeeds, isSearching, debouncedQuery, loadCatalogue]);
 
   // Pagination loader (strictly no looping/cycling)
   const loadMoreMovies = useCallback(async () => {
@@ -223,7 +269,7 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
         const nextSearchPage = searchPageRef.current + 1;
         const res = await searchMovies(debouncedQuery, nextSearchPage, "all");
         const nextMovieItems = (res.items || []).filter((m) =>
-          isMovieReleased2026OrLater(m.release_date)
+          isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)
         );
 
         const newItems: DiscoveryItem[] = [];
@@ -284,7 +330,7 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
         }
 
         const validMovies = (res.items || []).filter((m) =>
-          isMovieReleased2026OrLater(m.release_date)
+          isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)
         );
 
         for (const m of validMovies) {
@@ -351,12 +397,12 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
     [hasMore, isLoadingFeeds, isLoadingMore]
   );
 
-  // When searching, show searchResults. Otherwise show catalogue. Both filtered to 2026 or later.
+  // When searching, show searchResults. Otherwise show catalogue. Both filtered to 2026 or later and valid poster.
   const displayedMovies = useMemo(() => {
     if (debouncedQuery) {
-      return searchResults.filter((m) => isMovieReleased2026OrLater(m.release_date));
+      return searchResults.filter((m) => isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m));
     }
-    return movies.filter((m) => isMovieReleased2026OrLater(m.release_date));
+    return movies.filter((m) => isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m));
   }, [debouncedQuery, searchResults, movies]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);

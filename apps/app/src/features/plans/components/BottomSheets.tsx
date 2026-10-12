@@ -115,7 +115,7 @@ export const CreatePlanActionsBottomSheet: React.FC<CreatePlanActionsBottomSheet
                 />
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                   {planTitle}
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
@@ -439,7 +439,7 @@ export const LeavePlanBottomSheet: React.FC<LeavePlanBottomSheetProps> = ({
                 />
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                   {resolvedTitle}
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
@@ -582,7 +582,7 @@ export const RejoinPlanBottomSheet: React.FC<RejoinPlanBottomSheetProps> = ({
                 />
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                   {resolvedTitle}
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
@@ -723,7 +723,7 @@ export const CancelRejoinRequestBottomSheet: React.FC<CancelRejoinRequestBottomS
                 />
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                   {resolvedTitle}
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
@@ -1240,7 +1240,7 @@ export const InvitedPlanActionsBottomSheet: React.FC<InvitedPlanActionsBottomShe
                 />
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                   {resolvedTitle}
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
@@ -1411,7 +1411,7 @@ export const CancelLeaveRequestBottomSheet: React.FC<CancelLeaveRequestBottomShe
                 />
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                   Cancel leave request?
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
@@ -1594,7 +1594,7 @@ export const CancelPlanBottomSheet: React.FC<CancelPlanBottomSheetProps> = ({
                 />
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                   {resolvedTitle}
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
@@ -1891,7 +1891,7 @@ export const EarlyCompletePlanConfirmationBottomSheet: React.FC<EarlyCompletePla
                 />
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                   {resolvedTitle}
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
@@ -2030,7 +2030,7 @@ export const RestorePlanBottomSheet: React.FC<RestorePlanBottomSheetProps> = ({
                 />
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                   {resolvedTitle}
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">
@@ -4353,7 +4353,7 @@ export const SharePlanLinkBottomSheet: React.FC<SharePlanLinkBottomSheetProps> =
                 />
               </div>
               <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-                <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+                <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
                   {resolvedTitle}
                 </h3>
                 <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">

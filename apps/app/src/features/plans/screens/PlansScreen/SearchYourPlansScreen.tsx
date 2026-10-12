@@ -243,7 +243,7 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
 
             {/* Content details */}
             <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-              <h3 className="font-sans font-semibold text-[14px] text-white/80 tracking-wide truncate line-through">
+              <h3 className="font-sans font-semibold text-[14px] text-white/80 truncate line-through">
                 {plan.title}
               </h3>
               <span className="text-[11px] text-[#8E8E93] font-sans font-medium">
@@ -290,7 +290,7 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
 
           {/* Content details */}
           <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-            <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate">
+            <h3 className="font-sans font-semibold text-[14px] text-white truncate">
               {plan.title}
             </h3>
             <span className="text-[11px] text-[#8E8E93] font-sans font-medium">

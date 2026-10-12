@@ -144,6 +144,7 @@ describe("Dining Infinite-Loading & Progressive Pagination Suite", () => {
         subcategory: "Restaurant",
         latitude: originCoords.latitude + idx * 0.002,
         longitude: originCoords.longitude,
+        cover_image_url: `https://lh3.googleusercontent.com/places/restaurant_${idx}.jpg`,
         _distanceKm: 0.1 + idx * 0.1,
         distance: `${(0.1 + idx * 0.1).toFixed(1)} km`,
       })) as any;

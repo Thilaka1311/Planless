@@ -21,7 +21,12 @@ export type SubScreen =
   | 'friends'
   | 'hosted-plans'
   | 'past-plans'
-  | 'search-plans';
+  | 'search-plans'
+  | 'cancelled-plans'
+  | 'plan-settings'
+  | 'plan-settings-cover'
+  | 'profile-name'
+  | 'profile-about';
 
 export interface AppRoute {
   tab: AppTab;
@@ -31,7 +36,14 @@ export interface AppRoute {
   selectedPlanId?: string | null;
   selectedChatPlanId?: string | null;
   inviteToken?: string | null;
+  originTab?: AppTab | null;
+  originSubScreen?: SubScreen | null;
+  entryPoint?: 'preview' | 'chat' | null;
+  originChatPlanId?: string | null;
+  plansFilter?: PlansFilter | null;
 }
+
+export type PlansFilter = 'joined' | 'waitlisted' | 'skipped';
 
 // Track in-app navigation depth so in-screen back buttons and system back share identical semantics.
 let inAppNavigationDepth = 0;
@@ -193,7 +205,8 @@ export function canGoBack(): boolean {
  */
 export function isValidRoute(pathname: string): boolean {
   if (!pathname) return false;
-  const clean = pathname.replace(/\/+$/, '') || '/';
+  const [cleanPath] = pathname.split('?');
+  const clean = cleanPath.replace(/\/+$/, '') || '/';
   if (clean === '/' || clean === '/home') return true;
   if (clean === '/friends') return true;
   if (clean === '/create' || clean.startsWith('/create/')) return true;
@@ -201,7 +214,7 @@ export function isValidRoute(pathname: string): boolean {
   if (clean === '/sports' || clean === '/dining' || clean === '/movies' || clean === '/activities') return true;
   if (clean === '/plans' || clean.startsWith('/plans/') || clean.startsWith('/plan/')) return true;
   if (clean === '/chats' || clean.startsWith('/chats/') || clean.startsWith('/chat/')) return true;
-  if (clean === '/profile' || clean === '/wallet') return true;
+  if (clean === '/profile' || clean.startsWith('/profile/') || clean === '/wallet') return true;
   if (clean.startsWith('/join/')) return true;
   return false;
 }
@@ -209,12 +222,7 @@ export function isValidRoute(pathname: string): boolean {
 /**
  * Parses current URL pathname and query into an AppRoute.
  */
-export function parseCurrentRoute(): AppRoute {
-  if (typeof window === 'undefined') {
-    return { tab: 'home' };
-  }
-
-  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+function parseRoutePath(pathname: string, search?: string): AppRoute {
   const parts = pathname.split('/').filter(Boolean);
 
   if (parts.length === 0 || parts[0] === 'home') {
@@ -270,10 +278,14 @@ export function parseCurrentRoute(): AppRoute {
     return { tab: 'create', createPhase };
   }
 
-  // Plans: /plans, /plans/hosted, /plans/past, /plans/search, /plans/:id, /plans/:id/chat, /plan/:id
+  // Plans: /plans, /plans/hosted, /plans/hosted/cancelled, /plans/past, /plans/search, /plans/:id, /plans/:id/settings, /plans/:id/settings/cover, /plans/:id/chat, /plan/:id
   if (primary === 'plans' || primary === 'plan') {
     const sub = (parts[1] || '').toLowerCase();
     if (sub === 'hosted') {
+      const sub2 = (parts[2] || '').toLowerCase();
+      if (sub2 === 'cancelled') {
+        return { tab: 'plans', subScreen: 'cancelled-plans' };
+      }
       return { tab: 'plans', subScreen: 'hosted-plans' };
     }
     if (sub === 'past') {
@@ -288,7 +300,22 @@ export function parseCurrentRoute(): AppRoute {
     if (sub2 === 'chat') {
       return { tab: 'plans', selectedPlanId: planId, selectedChatPlanId: planId };
     }
-    return { tab: 'plans', selectedPlanId: planId };
+    if (sub2 === 'settings') {
+      const sub3 = (parts[3] || '').toLowerCase();
+      if (sub3 === 'cover' || sub3 === 'image') {
+        return { tab: 'plans', selectedPlanId: planId, subScreen: 'plan-settings-cover' };
+      }
+      return { tab: 'plans', selectedPlanId: planId, subScreen: 'plan-settings' };
+    }
+    const route: AppRoute = { tab: 'plans', selectedPlanId: planId };
+    if (!planId && search) {
+      const searchParams = new URLSearchParams(search);
+      const filter = searchParams.get('filter')?.toLowerCase();
+      if (filter === 'waitlisted' || filter === 'skipped' || filter === 'joined') {
+        route.plansFilter = filter as PlansFilter;
+      }
+    }
+    return route;
   }
 
   // Chats: /chats, /chats/:id, /chat/:id
@@ -309,15 +336,139 @@ export function parseCurrentRoute(): AppRoute {
     return { tab: 'wallet' };
   }
 
-  // Profile: /profile, /profile/friends, /profile/past
+  // Profile: /profile, /profile/friends, /profile/past, /profile/name, /profile/about
   if (primary === 'profile') {
     const sub = (parts[1] || '').toLowerCase();
     if (sub === 'friends') return { tab: 'profile', subScreen: 'friends' };
     if (sub === 'past') return { tab: 'profile', subScreen: 'past-plans' };
+    if (sub === 'name' || sub === 'edit-name') return { tab: 'profile', subScreen: 'profile-name' };
+    if (sub === 'about' || sub === 'edit-about' || sub === 'bio') return { tab: 'profile', subScreen: 'profile-about' };
     return { tab: 'profile' };
   }
 
   return { tab: 'home' };
+}
+
+/**
+ * Resolves legacy or alternative URL aliases to their single canonical equivalent.
+ * Returns null if the given pathname is already canonical or unrecognized.
+ */
+export function getCanonicalPathForAlias(pathname: string): string | null {
+  if (!pathname) return null;
+  const [cleanPath] = pathname.split('?');
+  const clean = cleanPath.replace(/\/+$/, '') || '/';
+  const parts = clean.split('/').filter(Boolean);
+  if (parts.length === 0) return null;
+
+  const primary = parts[0].toLowerCase();
+
+  // /sports, /dining, /movies, /activities -> /create/:category
+  if (primary === 'sports' || primary === 'dining' || primary === 'movies' || primary === 'activities') {
+    return `/create/${primary}`;
+  }
+
+  // /profile/friends -> /friends
+  if (primary === 'profile' && parts[1]?.toLowerCase() === 'friends') {
+    return '/friends';
+  }
+
+  // /profile/past -> /plans/past
+  if (primary === 'profile' && parts[1]?.toLowerCase() === 'past') {
+    return '/plans/past';
+  }
+
+  // /profile/edit-name -> /profile/name
+  if (primary === 'profile' && parts[1]?.toLowerCase() === 'edit-name') {
+    return '/profile/name';
+  }
+
+  // /profile/edit-about or /profile/bio -> /profile/about
+  if (primary === 'profile' && (parts[1]?.toLowerCase() === 'edit-about' || parts[1]?.toLowerCase() === 'bio')) {
+    return '/profile/about';
+  }
+
+  // /plan/:id -> /plans/:id
+  if (primary === 'plan' && parts[1]) {
+    const remaining = parts.slice(1).join('/');
+    return `/plans/${remaining}`;
+  }
+
+  // /chat/:id -> /chats/:id
+  if (primary === 'chat' && parts[1]) {
+    const remaining = parts.slice(1).join('/');
+    return `/chats/${remaining}`;
+  }
+
+  // /create legacy aliases
+  if (primary === 'create' && parts[1]) {
+    const sub = parts[1].toLowerCase();
+    if (sub === 'who-actually' || sub === 'who-was-actually-coming') {
+      return '/create/participants';
+    }
+    if (sub === 'time' || sub === 'date') {
+      return '/create/when';
+    }
+    if (sub === 'done') {
+      return '/create/confirmation';
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Parses current URL pathname and query into an AppRoute, carrying forward history state origin metadata.
+ */
+export function parseCurrentRoute(): AppRoute {
+  if (typeof window === 'undefined') {
+    return { tab: 'home' };
+  }
+
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  const search = window.location.search || '';
+
+  // Canonicalize known legacy URL aliases via replaceState without polluting history
+  const canonicalAlias = getCanonicalPathForAlias(pathname);
+  if (canonicalAlias) {
+    const fullCanonical = canonicalAlias + search;
+    try {
+      if (window.history && typeof window.history.replaceState === 'function') {
+        window.history.replaceState(window.history.state, '', fullCanonical);
+      }
+    } catch {
+      // In restricted sandbox or test environments, ignore
+    }
+    const route = parseRoutePath(canonicalAlias, search);
+    const historyState = (typeof window !== 'undefined' && window.history?.state
+      ? window.history.state
+      : {}) as Partial<AppRoute>;
+    if (historyState.originTab) route.originTab = historyState.originTab;
+    if (historyState.originSubScreen !== undefined) route.originSubScreen = historyState.originSubScreen;
+    if (historyState.entryPoint) route.entryPoint = historyState.entryPoint;
+    if (historyState.originChatPlanId) route.originChatPlanId = historyState.originChatPlanId;
+    return route;
+  }
+
+  const route = parseRoutePath(pathname, search);
+
+  // Preserve origin context from window.history.state if available
+  const historyState = (typeof window !== 'undefined' && window.history?.state
+    ? window.history.state
+    : {}) as Partial<AppRoute>;
+  if (historyState.originTab) {
+    route.originTab = historyState.originTab;
+  }
+  if (historyState.originSubScreen !== undefined) {
+    route.originSubScreen = historyState.originSubScreen;
+  }
+  if (historyState.entryPoint) {
+    route.entryPoint = historyState.entryPoint;
+  }
+  if (historyState.originChatPlanId) {
+    route.originChatPlanId = historyState.originChatPlanId;
+  }
+
+  return route;
 }
 
 /**
@@ -334,15 +485,32 @@ export function getRoutePath(route: AppRoute): string {
   if (route.subScreen === 'hosted-plans') {
     return '/plans/hosted';
   }
+  if (route.subScreen === 'cancelled-plans') {
+    return '/plans/hosted/cancelled';
+  }
   if (route.subScreen === 'past-plans') {
     return '/plans/past';
   }
   if (route.subScreen === 'search-plans') {
     return '/plans/search';
   }
+  if (route.subScreen === 'profile-name') {
+    return '/profile/name';
+  }
+  if (route.subScreen === 'profile-about') {
+    return '/profile/about';
+  }
 
-  // Nested Plan chat route: /plans/:id/chat
-  if (route.selectedPlanId && route.selectedChatPlanId) {
+  // Nested Plan Settings route: /plans/:id/settings, /plans/:id/settings/cover
+  if (route.selectedPlanId && route.subScreen === 'plan-settings-cover') {
+    return `/plans/${encodeURIComponent(route.selectedPlanId)}/settings/cover`;
+  }
+  if (route.selectedPlanId && route.subScreen === 'plan-settings') {
+    return `/plans/${encodeURIComponent(route.selectedPlanId)}/settings`;
+  }
+
+  // Nested Plan chat route: /plans/:id/chat (when viewing plan chat on top of preview)
+  if (route.selectedPlanId && route.selectedChatPlanId && route.entryPoint !== 'chat') {
     return `/plans/${encodeURIComponent(route.selectedPlanId)}/chat`;
   }
 
@@ -373,6 +541,15 @@ export function getRoutePath(route: AppRoute): string {
   }
 
   if (route.tab === 'plans') {
+    if (route.plansFilter === 'waitlisted') {
+      return '/plans?filter=waitlisted';
+    }
+    if (route.plansFilter === 'skipped') {
+      return '/plans?filter=skipped';
+    }
+    if (route.plansFilter === 'joined') {
+      return '/plans?filter=joined';
+    }
     return '/plans';
   }
 
@@ -394,9 +571,20 @@ export function navigateToRoute(route: AppRoute, options?: { replace?: boolean }
   if (typeof window === 'undefined') return;
 
   const targetPath = getRoutePath(route);
-  const currentSearch = window.location.search || '';
-  const fullTarget = targetPath + currentSearch;
-  const currentFull = window.location.pathname + currentSearch;
+  const [basePath, targetQuery] = targetPath.split('?');
+  const targetParams = new URLSearchParams(targetQuery || '');
+
+  // Preserve existing non-filter search params (e.g. session, user)
+  const currentParams = new URLSearchParams(window.location.search || '');
+  currentParams.forEach((val, key) => {
+    if (key !== 'filter' && !targetParams.has(key)) {
+      targetParams.set(key, val);
+    }
+  });
+
+  const queryString = targetParams.toString() ? `?${targetParams.toString()}` : '';
+  const fullTarget = basePath + queryString;
+  const currentFull = window.location.pathname + (window.location.search || '');
 
   if (currentFull !== fullTarget) {
     if (options?.replace) {
@@ -405,6 +593,8 @@ export function navigateToRoute(route: AppRoute, options?: { replace?: boolean }
       window.history.pushState(route, '', fullTarget);
       inAppNavigationDepth++;
     }
+  } else if (options?.replace) {
+    window.history.replaceState(route, '', fullTarget);
   }
 
   // If navigating to root home, reset depth so Home acts as root exit destination
@@ -454,7 +644,7 @@ export function navigateBack(fallbackRoute: AppRoute = { tab: 'home' }): void {
  * Centralized subscriber registry for navigation events.
  * Uses a single listener on window to avoid duplicate, overlapping handlers.
  */
-const subscribers = new Set<(route: AppRoute) => void>();
+const subscribers = new Set<(route: AppRoute, isPopState?: boolean) => void>();
 let isGlobalPopStateListening = false;
 
 function setupGlobalNavigationListener(): void {
@@ -490,7 +680,7 @@ function setupGlobalNavigationListener(): void {
     const currentRoute = parseCurrentRoute();
     subscribers.forEach((cb) => {
       try {
-        cb(currentRoute);
+        cb(currentRoute, true);
       } catch (err) {
         console.error('[appRouter] subscriber error on popstate:', err);
       }
@@ -502,7 +692,7 @@ function setupGlobalNavigationListener(): void {
     const route = customEvent.detail || parseCurrentRoute();
     subscribers.forEach((cb) => {
       try {
-        cb(route);
+        cb(route, false);
       } catch (err) {
         console.error('[appRouter] subscriber error on customNav:', err);
       }
@@ -516,7 +706,9 @@ function setupGlobalNavigationListener(): void {
 /**
  * Subscribes to browser history (popstate) and internal route navigation events.
  */
-export function listenToNavigation(callback: (route: AppRoute) => void): () => void {
+export function listenToNavigation(
+  callback: (route: AppRoute, isPopState?: boolean) => void
+): () => void {
   if (typeof window === 'undefined') return () => {};
 
   setupGlobalNavigationListener();
@@ -526,3 +718,4 @@ export function listenToNavigation(callback: (route: AppRoute) => void): () => v
     subscribers.delete(callback);
   };
 }
+

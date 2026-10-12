@@ -53,6 +53,54 @@ describe("Strict Venue Relevance Layer Unit & Integration Tests", () => {
         expect(isRelevantVenueForCategory(place, "SPORTS")).toBe(false);
       }
     });
+
+    it("strictly rejects public grounds, municipal open playgrounds, and BBMP parks from sports discovery", () => {
+      const publicGrounds = [
+        { title: "Shantinagar Ground", types: ["playground"] },
+        { title: "BBMP Play Ground", types: ["park"] },
+        { title: "BBMP Playground", types: ["playground"] },
+        { title: "RBANM's Ground", subcategory: "ground" },
+        { title: "Corporation Public Ground", types: ["playground"] },
+        { title: "Austin Town Sports Ground", types: ["playground"] },
+        { title: "Madhavan Park Playground", types: ["park", "playground"] },
+        { title: "Public Playground HSR", subcategory: "playground" },
+      ];
+
+      for (const place of publicGrounds) {
+        expect(isPlayableSportsVenue(place)).toBe(false);
+        expect(isRelevantVenueForCategory(place, "SPORTS")).toBe(false);
+      }
+    });
+
+    it("strictly rejects commercial workout gyms and fitness centres from sports discovery", () => {
+      const generalGyms = [
+        { title: "Cult Fit JP Nagar", types: ["gym"] },
+        { title: "Gold's Gym Indiranagar", types: ["fitness_center"] },
+        { title: "Snap Fitness 24/7", types: ["gym", "health"] },
+        { title: "Anytime Fitness Gym", types: ["fitness_center"] },
+        { title: "Powerhouse Gym & Fitness Centre", types: ["gym"] },
+        { title: "Slam Fitness Studio", subcategory: "Fitness Studio" },
+        { title: "Talwalkars Gym", subcategory: "Gym" },
+      ];
+
+      for (const place of generalGyms) {
+        expect(isPlayableSportsVenue(place)).toBe(false);
+        expect(isRelevantVenueForCategory(place, "SPORTS")).toBe(false);
+      }
+    });
+
+    it("preserves gymkhanas and sports academies that include fitness training", () => {
+      const legitimateFacilities = [
+        { title: "Bangalore Gymkhana Club", types: ["sports_club"] },
+        { title: "Baseline Badminton & Fitness Academy", types: ["sports_complex"] },
+        { title: "Gamepoint Sports and Fitness Center", subcategory: "Sports Complex" },
+      ];
+
+      for (const place of legitimateFacilities) {
+        expect(isPlayableSportsVenue(place)).toBe(true);
+        expect(isRelevantVenueForCategory(place, "SPORTS")).toBe(true);
+      }
+    });
   });
 
   describe("DINING / PLACES TO EAT Relevance", () => {
@@ -163,6 +211,7 @@ describe("Strict Venue Relevance Layer Unit & Integration Tests", () => {
           types: ["restaurant", "food"],
           latitude: 12.9716,
           longitude: 77.5946,
+          cover_image_url: "/functions/v1/maps?action=photo&photo_reference=truffles_owner_photo",
         },
         {
           id: "p2",
@@ -171,6 +220,7 @@ describe("Strict Venue Relevance Layer Unit & Integration Tests", () => {
           types: ["grocery_or_supermarket", "food"],
           latitude: 12.972,
           longitude: 77.595,
+          cover_image_url: "/functions/v1/maps?action=photo&photo_reference=supermarket_photo",
         },
         {
           id: "p3",
@@ -179,6 +229,7 @@ describe("Strict Venue Relevance Layer Unit & Integration Tests", () => {
           types: ["convenience_store", "food"],
           latitude: 12.973,
           longitude: 77.596,
+          cover_image_url: "/functions/v1/maps?action=photo&photo_reference=grocery_photo",
         },
         {
           id: "p4",
@@ -187,6 +238,7 @@ describe("Strict Venue Relevance Layer Unit & Integration Tests", () => {
           types: ["bar", "restaurant"],
           latitude: 12.974,
           longitude: 77.597,
+          cover_image_url: "/functions/v1/maps?action=photo&photo_reference=toit_owner_photo",
         },
         {
           id: "p5",
@@ -195,6 +247,7 @@ describe("Strict Venue Relevance Layer Unit & Integration Tests", () => {
           types: ["corporate_office"],
           latitude: 12.975,
           longitude: 77.598,
+          cover_image_url: "/functions/v1/maps?action=photo&photo_reference=office_photo",
         },
       ];
 

@@ -1,6 +1,7 @@
 import { supabase, SUPABASE_URL } from "../../../../lib/supabaseClient";
 import { DiscoveryItem } from "../../../core/types/discovery";
 import { RawCandidatePlace } from "../search/types/provider";
+import { isPlayableSportsVenue, hasValidRealVenuePhoto } from "./venueRelevance";
 
 export interface PlaceOverride {
   id?: string;
@@ -181,6 +182,21 @@ export function hasPlacePhotoOverride(placeId: string): boolean {
   const override = overridesCache.get(cleanId) || overridesCache.get(placeId);
   if (!override || override.is_deleted) return false;
   return Boolean(override.google_photo_reference || override.image_path);
+}
+
+/**
+ * Retrieves the photo override references (google_photo_reference or image_path) for a place.
+ */
+export function getPlacePhotoOverride(placeId: string): { google_photo_reference?: string | null; image_path?: string | null } | null {
+  if (!placeId) return null;
+  const cleanId = placeId.split("::")[0].replace(/^place_/, "");
+  const override = overridesCache.get(cleanId) || overridesCache.get(placeId);
+  if (!override || override.is_deleted) return null;
+  if (!override.google_photo_reference && !override.image_path) return null;
+  return {
+    google_photo_reference: override.google_photo_reference,
+    image_path: override.image_path,
+  };
 }
 
 export type PlaceOverrideTarget = {
@@ -490,7 +506,6 @@ export function mergeSportsPlacesWithOverrides<
     ].some((k) => sub.includes(k));
 
     if (isSportsCat || isSportsSub) {
-      seenPlaceIds.add(cleanId);
       const parsedSports = parseSportsFromSubcategory(override.subcategory);
       const dbPlace: any = {
         id: `place_${cleanId}`,
@@ -519,6 +534,8 @@ export function mergeSportsPlacesWithOverrides<
         google_photo_reference: override.google_photo_reference,
         image_path: override.image_path,
       };
+      if (!hasValidRealVenuePhoto(dbPlace, photoBaseUrl)) return;
+      seenPlaceIds.add(cleanId);
       merged.push(dbPlace as T);
     }
   });
@@ -730,8 +747,7 @@ export async function getDatabaseSportsCandidatePlaces(
       return;
     }
 
-    seenIds.add(cleanId);
-    candidates.push({
+    const candidate: any = {
       place_id: cleanId,
       title: override.name_override || "Sports Venue",
       name: override.name_override || "Sports Venue",
@@ -752,7 +768,13 @@ export async function getDatabaseSportsCandidatePlaces(
         : override.image_path || null,
       _hasPlanlessOverride: true,
       _raw: override,
-    });
+    };
+
+    if (!hasValidRealVenuePhoto(candidate, photoBaseUrl)) {
+      return;
+    }
+    seenIds.add(cleanId);
+    candidates.push(candidate);
   });
 
   return candidates;
@@ -807,6 +829,15 @@ export function getDatabasePlacesForCategoryAndDistanceBand(
         "box cricket", "padel", "swimming", "squash", "stadium"
       ].some((k) => sub.includes(k) || name.includes(k));
       if (!isSportsCat && !isSportsSub) return;
+
+      // Exclude public grounds and general-purpose gyms from sports database overrides
+      if (!isPlayableSportsVenue({
+        title: override.name_override || "",
+        name: override.name_override || "",
+        subcategory: override.subcategory || "",
+      })) {
+        return;
+      }
     } else if (category === "DINING") {
       if (cat && cat !== "DINING") return;
       const isDiningCat = cat === "DINING";
@@ -856,7 +887,7 @@ export function getDatabasePlacesForCategoryAndDistanceBand(
         ? "Restaurant"
         : "Activity";
 
-    items.push({
+    const dbItem: any = {
       id: `place_${cleanId}`,
       public_id: `place_${cleanId}`,
       section_id: `places_${category.toLowerCase()}`,
@@ -891,7 +922,13 @@ export function getDatabasePlacesForCategoryAndDistanceBand(
       _hasPlanlessOverride: true,
       google_photo_reference: override.google_photo_reference,
       image_path: override.image_path,
-    } as any);
+    };
+
+    if (!hasValidRealVenuePhoto(dbItem, photoBaseUrl)) {
+      return;
+    }
+    seenPlaceIds?.add(cleanId);
+    items.push(dbItem as any);
   });
 
   return items;

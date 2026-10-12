@@ -25,7 +25,8 @@ import {
   HARD_EXCLUDED_DINING_KEYWORDS,
   extractDiningSubcategory,
 } from "./diningRelevance";
-import { hasPlacePhotoOverride } from "./placeOverridesService";
+import { hasPlacePhotoOverride, getPlacePhotoOverride } from "./placeOverridesService";
+import { SUPABASE_URL } from "../../../../lib/supabaseClient";
 export {
   isStrictActivityVenue,
   isActivityVenueRelevant,
@@ -243,6 +244,214 @@ export interface VenueMetadataLike {
  * Exclude: sporting goods stores, sportswear shops, equipment stores, sports offices,
  * associations, physiotherapy, and non-playable facilities.
  */
+/**
+ * ── GENERAL-PURPOSE GYM & FITNESS CENTER EXCLUSION ──
+ * Excludes commercial workout gyms, fitness centres, CrossFit boxes, bodybuilding gyms,
+ * and aerobics/pilates studios from Sports discovery.
+ *
+ * PRESERVES:
+ * - Traditional sports clubs & gymkhanas (e.g. "Bangalore Gymkhana Club")
+ * - Dedicated sports facilities / academies that include fitness training (e.g. "Baseline Badminton & Fitness Academy")
+ */
+export function isGeneralPurposeGym(place: VenueMetadataLike): boolean {
+  if (!place) return false;
+  const name = (place.title || place.name || "").toLowerCase();
+  const sub = (place.subcategory || "").toLowerCase();
+  const desc = (place.description || "").toLowerCase();
+  const types: string[] = Array.isArray(place.types) ? place.types.map((t) => t.toLowerCase()) : [];
+
+  // Exception 1: Traditional sports clubs & gymkhanas (e.g. "Bangalore Gymkhana Club") are multi-sport facilities, not gyms
+  if (name.includes("gymkhana") || sub.includes("gymkhana")) {
+    return false;
+  }
+
+  // Exception 2: Dedicated playable sports facilities/academies that also offer fitness/gym coaching
+  const dedicatedSportKeywords = [
+    "badminton",
+    "tennis",
+    "squash",
+    "pickleball",
+    "table tennis",
+    "football",
+    "futsal",
+    "soccer",
+    "cricket",
+    "basketball",
+    "swimming pool",
+    "swim centre",
+    "swim center",
+    "aquatic centre",
+    "aquatic center",
+    "turf",
+    "court",
+    "arena",
+    "stadium",
+    "box cricket",
+    "sports club",
+    "sports complex",
+  ];
+  const hasDedicatedSportFacility = dedicatedSportKeywords.some(
+    (k) => name.includes(k) || sub.includes(k)
+  );
+
+  const gymTypes = ["gym", "fitness_center", "health_club"];
+  const hasGymType = types.some((t) => gymTypes.includes(t));
+
+  const gymBrandOrKeywords = [
+    "fitness",
+    "crossfit",
+    "workout",
+    "health club",
+    "bodybuilding",
+    "aerobics",
+    "pilates",
+    "zumba",
+    "calisthenics",
+    "cult fit",
+    "cult.fit",
+    "gold's gym",
+    "golds gym",
+    "anytime fitness",
+    "snap fitness",
+    "slam fitness",
+    "talwalkars",
+    "chisel",
+    "fitness first",
+    "powerhouse gym",
+    "iron gym",
+    "barbell",
+    "gymnasium",
+  ];
+  const hasGymKeyword =
+    gymBrandOrKeywords.some((k) => name.includes(k) || sub.includes(k)) ||
+    /\b(gym|gyms)\b/i.test(name) ||
+    /\b(gym|gyms)\b/i.test(sub);
+
+  if (hasGymType || hasGymKeyword) {
+    if (hasDedicatedSportFacility) {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * ── PUBLIC GROUNDS & MUNICIPAL OPEN PLAYGROUNDS EXCLUSION ──
+ * Excludes generic public grounds, BBMP/municipal/government grounds, open maidans,
+ * and generic public playgrounds from Sports discovery.
+ *
+ * PRESERVES:
+ * - Legitimate sports venues with dedicated facilities: turfs, courts, arenas, stadiums, academies,
+ *   complexes, and cricket box nets.
+ * - Sports grounds that explicitly specify a concrete sport or facility (e.g., "Koramangala Football Ground",
+ *   "Lords Cricket Ground & Box Nets", "Urban Turf Football Ground").
+ */
+export function isPublicGround(place: VenueMetadataLike): boolean {
+  if (!place) return false;
+  const name = (place.title || place.name || "").toLowerCase();
+  const sub = (place.subcategory || "").toLowerCase();
+  const desc = (place.description || "").toLowerCase();
+  const types: string[] = Array.isArray(place.types) ? place.types.map((t) => t.toLowerCase()) : [];
+
+  // Dedicated facility indicators that distinguish legitimate sports facilities
+  const dedicatedFacilityIndicators = [
+    "turf",
+    "court",
+    "arena",
+    "stadium",
+    "academy",
+    "complex",
+    "box cricket",
+    "box nets",
+    "cricket nets",
+    "nets",
+    "futsal",
+    "5-a-side",
+    "5 aside",
+    "7-a-side",
+    "7 aside",
+    "swimming pool",
+    "swim centre",
+    "swim center",
+    "aquatic centre",
+    "aquatic center",
+    "squash",
+    "sports club",
+    "indoor stadium",
+  ];
+  const hasDedicatedFacility = dedicatedFacilityIndicators.some(
+    (k) => name.includes(k) || sub.includes(k)
+  );
+
+  // 1. Explicit public/municipal ground keyword patterns
+  const publicGroundPrefixes = [
+    "public ground",
+    "public playground",
+    "bbmp ground",
+    "bbmp play ground",
+    "bbmp playground",
+    "bda ground",
+    "corporation ground",
+    "corporation public ground",
+    "municipal ground",
+    "municipal sports ground",
+    "government ground",
+    "austin town sports ground",
+    "austin town ground",
+    "children playground",
+    "children's playground",
+    "children park",
+  ];
+  const isExplicitPublicGround = publicGroundPrefixes.some((p) => name.includes(p) || sub.includes(p));
+  if (isExplicitPublicGround && !hasDedicatedFacility) {
+    return true;
+  }
+
+  // 2. Google type 'playground' or 'park'
+  const isPlaygroundType = types.includes("playground") || types.includes("park");
+  if (isPlaygroundType && !hasDedicatedFacility) {
+    return true;
+  }
+
+  // 3. Generic ground / maidan names without sport or dedicated facility
+  const isGenericGroundName =
+    /\b(ground|grounds|maidan|maidana)\b/i.test(name) ||
+    /\b(ground|grounds|maidan|maidana)\b/i.test(sub);
+
+  if (isGenericGroundName) {
+    if (hasDedicatedFacility) {
+      return false;
+    }
+
+    // Concrete sports grounds (e.g., "Koramangala Football Ground", "National Cricket Ground")
+    const concreteSports = ["football", "cricket", "basketball", "hockey", "rugby"];
+    const hasConcreteSport = concreteSports.some((s) => name.includes(s) || sub.includes(s));
+    const isMunicipalOrPublic = [
+      "bbmp",
+      "bda",
+      "municipal",
+      "corporation",
+      "government",
+      "public",
+      "civic",
+      "austin town",
+      "rbanm",
+      "shantinagar",
+      "national college",
+    ].some((m) => name.includes(m));
+
+    if (hasConcreteSport && !isMunicipalOrPublic) {
+      return false;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
 export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
   if (!place) return false;
   const name = (place.title || place.name || "").toLowerCase();
@@ -250,6 +459,10 @@ export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
   const desc = (place.description || "").toLowerCase();
   const types: string[] = Array.isArray(place.types) ? place.types.map((t) => t.toLowerCase()) : [];
   const text = `${name} ${sub} ${desc}`;
+
+  // 1. HARD EXCLUSIONS: Public grounds & General-purpose gyms
+  if (isGeneralPurposeGym(place)) return false;
+  if (isPublicGround(place)) return false;
 
   const isSyntheticSub = [
     "dining venue",
@@ -260,7 +473,7 @@ export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
   ].includes(sub);
   const cleanSub = isSyntheticSub ? "" : sub;
 
-  // 1. HARD EXCLUSIONS: Retail stores, equipment shops, merchandise, offices, medical
+  // 2. HARD EXCLUSIONS: Retail stores, equipment shops, merchandise, offices, medical
   const isRetailStore = types.some((t) =>
     [
       "sporting_goods_store",
@@ -355,11 +568,11 @@ export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
     "sports arena",
     "sports hub",
     "turf club",
-    "playfield",
     "turf",
     "court",
     "arena",
-    "ground",
+    "football ground",
+    "cricket ground",
     "pitch",
     "nets",
     "box cricket",
@@ -397,12 +610,11 @@ export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
   }
 
   // If marked as retail store or containing retail keyword:
-  // ONLY keep if it is an explicit playable venue/turf/court/ground (e.g. "Decathlon Anubhava Turf")
+  // ONLY keep if it is an explicit playable venue/turf/court (e.g. "Decathlon Anubhava Turf")
   if (isRetailStore || hasRetailKeyword) {
     const isExplicitPlayableFacility = [
       "turf",
       "court",
-      "ground",
       "pitch",
       "arena",
       "nets",
@@ -413,7 +625,7 @@ export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
     if (!isExplicitPlayableFacility) return false;
   }
 
-  // Google Playable venue types
+  // Google Playable venue types (excluding playground/park)
   const playableTypes = [
     "stadium",
     "sports_complex",
@@ -425,17 +637,10 @@ export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
     "sports_school",
     "sports_coaching",
     "ice_skating_rink",
-    "playground",
   ];
   const hasPlayableType = types.some((t) => playableTypes.includes(t));
 
   if (hasPlayableType || hasPlayableKeyword) {
-    return true;
-  }
-
-  // Gym / fitness centre only if not a retail equipment shop
-  const isGym = types.includes("gym") || types.includes("fitness_center") || text.includes("gym") || text.includes("fitness");
-  if (isGym && !hasRetailKeyword && !isRetailStore) {
     return true;
   }
 
@@ -749,13 +954,45 @@ export function extractOwnerPhotos(
   return ownerPhotos;
 }
 
-export function isPlaceholderImageUrl(url?: string | null): boolean {
-  if (!url) return true;
-  const lower = url.toLowerCase();
-  // Curated category artwork is never a placeholder
-  if (lower.includes("/assets/curated/")) {
-    return false;
+const brokenPhotoUrlsSet = new Set<string>();
+
+export function markPhotoUrlBroken(url?: string | null): void {
+  if (url && typeof url === "string") {
+    brokenPhotoUrlsSet.add(url.trim().toLowerCase());
   }
+}
+
+export function isPhotoUrlBroken(url?: string | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  return brokenPhotoUrlsSet.has(url.trim().toLowerCase());
+}
+
+export function resetBrokenPhotoRegistry(): void {
+  brokenPhotoUrlsSet.clear();
+}
+
+export function isPlaceholderImageUrl(url?: string | null): boolean {
+  if (!url || typeof url !== "string") return true;
+  const lower = url.toLowerCase().trim();
+  if (!lower) return true;
+
+  // Broken or malformed query string parameters
+  if (
+    lower.includes("photo_reference=undefined") ||
+    lower.includes("photo_reference=null") ||
+    lower.includes("photo_reference=&") ||
+    lower.endsWith("photo_reference=")
+  ) {
+    return true;
+  }
+
+  // Runtime registered broken URLs
+  if (isPhotoUrlBroken(url)) {
+    return true;
+  }
+
+  // Generic assets, curated category fallbacks, and placeholders
+  // Curated category artwork (/assets/curated/) is a fallback image, NEVER a real venue photo.
   return (
     lower.includes("/assets/") ||
     lower.includes("placeholder") ||
@@ -765,7 +1002,7 @@ export function isPlaceholderImageUrl(url?: string | null): boolean {
   );
 }
 
-export function hasOwnerPostedPhoto(place: any, allowCurated = true): boolean {
+export function hasOwnerPostedPhoto(place: any, allowCurated = false): boolean {
   if (!place) return false;
   const category = (place.category || "").toUpperCase();
   // Movies use TMDB poster paths, exempt from Google owner photo rule
@@ -787,7 +1024,7 @@ export function hasOwnerPostedPhoto(place: any, allowCurated = true): boolean {
 
   const venueName = place.title || place.name || "";
 
-  // If place has a curated subcategory photo and allowCurated is true: accept!
+  // If place has a curated subcategory photo and allowCurated is explicitly true: accept
   if (allowCurated && typeof place.cover_image_url === "string" && place.cover_image_url.includes("/assets/curated/")) {
     return true;
   }
@@ -828,6 +1065,131 @@ export function hasOwnerPostedPhoto(place: any, allowCurated = true): boolean {
   }
 
   return false;
+}
+
+export interface ResolvedVenuePhoto {
+  hasValidPhoto: boolean;
+  resolvedUrl: string | null;
+}
+
+/**
+ * Resolves the venue's image using the existing Planless image pipeline:
+ * 1. Checks current cover_image_url (if valid and not a placeholder/broken).
+ * 2. Checks database overrides (image_path or google_photo_reference from override cache or object).
+ * 3. Checks Google Places authentic owner photos (photo_references or photos array with owner attribution).
+ *
+ * If valid photo is found, attaches resolvedUrl to place.cover_image_url and returns { hasValidPhoto: true, resolvedUrl }.
+ * If resolution fails or yields a placeholder/fallback/broken URL, sets place.cover_image_url to null and returns { hasValidPhoto: false, resolvedUrl: null }.
+ */
+export function resolveAndValidateVenuePhoto(
+  place: any,
+  photoBaseUrl?: string
+): ResolvedVenuePhoto {
+  if (!place) {
+    return { hasValidPhoto: false, resolvedUrl: null };
+  }
+
+  const category = (place.category || "").toUpperCase();
+  // Movies use TMDB posters/backdrops and are exempt from venue photo rules
+  if (category === "MOVIES" || place.movie_id) {
+    const movieCover = place.cover_image_url || place.poster_url || place.backdrop_url || null;
+    return { hasValidPhoto: Boolean(movieCover), resolvedUrl: movieCover };
+  }
+
+  const baseUrl = photoBaseUrl || `${SUPABASE_URL}/functions/v1/maps`;
+  const placeId = extractCleanPlaceId(place.place_id || place.id || "");
+
+  // 1. If place already has a valid non-placeholder, non-broken cover_image_url:
+  if (
+    typeof place.cover_image_url === "string" &&
+    place.cover_image_url.trim().length > 0 &&
+    !isPlaceholderImageUrl(place.cover_image_url)
+  ) {
+    return { hasValidPhoto: true, resolvedUrl: place.cover_image_url };
+  }
+
+  // 2. Check Database Overrides (from place properties or overrides cache)
+  const overrideRef =
+    place.google_photo_reference ||
+    (placeId ? getPlacePhotoOverride(placeId)?.google_photo_reference : null);
+
+  if (overrideRef && typeof overrideRef === "string" && !isPlaceholderImageUrl(overrideRef)) {
+    const constructedUrl = `${baseUrl}?action=photo&photo_reference=${encodeURIComponent(
+      overrideRef
+    )}&maxwidth=800${placeId ? `&place_id=${encodeURIComponent(placeId)}` : ""}`;
+    if (!isPlaceholderImageUrl(constructedUrl)) {
+      place.cover_image_url = constructedUrl;
+      return { hasValidPhoto: true, resolvedUrl: constructedUrl };
+    }
+  }
+
+  const overrideImagePath =
+    place.image_path ||
+    (placeId ? getPlacePhotoOverride(placeId)?.image_path : null);
+
+  if (
+    typeof overrideImagePath === "string" &&
+    overrideImagePath.trim().length > 0 &&
+    !isPlaceholderImageUrl(overrideImagePath)
+  ) {
+    let storageUrl = overrideImagePath;
+    if (!storageUrl.startsWith("http://") && !storageUrl.startsWith("https://") && !storageUrl.startsWith("/")) {
+      storageUrl = `${SUPABASE_URL}/storage/v1/object/public/${storageUrl}`;
+    }
+    if (!isPlaceholderImageUrl(storageUrl)) {
+      place.cover_image_url = storageUrl;
+      return { hasValidPhoto: true, resolvedUrl: storageUrl };
+    }
+  }
+
+  // 3. Check Google Places Authentic Owner Photos
+  // First, check already extracted photo_references
+  if (Array.isArray(place.photo_references) && place.photo_references.length > 0) {
+    const firstRef = place.photo_references[0];
+    if (firstRef && typeof firstRef === "string" && !isPlaceholderImageUrl(firstRef)) {
+      const constructedUrl = `${baseUrl}?action=photo&photo_reference=${encodeURIComponent(
+        firstRef
+      )}&maxwidth=800${placeId ? `&place_id=${encodeURIComponent(placeId)}` : ""}`;
+      if (!isPlaceholderImageUrl(constructedUrl)) {
+        place.cover_image_url = constructedUrl;
+        return { hasValidPhoto: true, resolvedUrl: constructedUrl };
+      }
+    }
+  }
+
+  // Next, check raw photos array with author attributions
+  const venueName = place.title || place.name || "";
+  if (Array.isArray(place.photos) && place.photos.length > 0) {
+    const ownerPhotos = extractOwnerPhotos(venueName, place.photos);
+    if (ownerPhotos.length > 0) {
+      const firstRef = ownerPhotos[0].photoReference;
+      if (firstRef && typeof firstRef === "string" && !isPlaceholderImageUrl(firstRef)) {
+        const constructedUrl = `${baseUrl}?action=photo&photo_reference=${encodeURIComponent(
+          firstRef
+        )}&maxwidth=800${placeId ? `&place_id=${encodeURIComponent(placeId)}` : ""}`;
+        if (!isPlaceholderImageUrl(constructedUrl)) {
+          place.cover_image_url = constructedUrl;
+          if (!place.photo_references) {
+            place.photo_references = ownerPhotos.map((p) => p.photoReference);
+          }
+          return { hasValidPhoto: true, resolvedUrl: constructedUrl };
+        }
+      }
+    }
+  }
+
+  // Image resolution failed or only placeholder/fallback photos were found
+  place.cover_image_url = null;
+  return { hasValidPhoto: false, resolvedUrl: null };
+}
+
+/**
+ * Checks if a venue has a valid, real photo using the existing resolution pipeline.
+ * If valid, updates place.cover_image_url with the resolved photo URL.
+ * If resolution fails or yields a fallback/placeholder, returns false.
+ */
+export function hasValidRealVenuePhoto(place: any, photoBaseUrl?: string): boolean {
+  return resolveAndValidateVenuePhoto(place, photoBaseUrl).hasValidPhoto;
 }
 
 export { getCuratedPhotoForVenue, CURATED_CATEGORY_PHOTOS } from "./curatedPhotos";

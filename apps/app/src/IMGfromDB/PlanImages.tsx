@@ -30,6 +30,7 @@ export interface DiscoveryImagesProps {
   draggable?: boolean;
   /** Click handler */
   onClick?: (e: React.MouseEvent<HTMLImageElement>) => void;
+  onError?: () => void;
   style?: React.CSSProperties;
 }
 
@@ -142,11 +143,16 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
   decoding = "async",
   className = "",
   onClick,
+  onError,
   style,
 }) => {
   const [version, setVersion] = useState<number>(0);
   const [catalogFailed, setCatalogFailed] = useState(false);
   const [localFailed, setLocalFailed] = useState(false);
+
+  const isStrictDiscoveryCategory = ["SPORTS", "DINING", "ACTIVITIES"].includes(
+    (category || "").toUpperCase()
+  );
 
   // Subscribe to image cache updates
   useEffect(() => {
@@ -191,6 +197,9 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
 
     if (sourceType === "CATALOG") {
       if (catalogFailed) {
+        if (isStrictDiscoveryCategory) {
+          return { resolvedPath: "", resolvedUrl: "" };
+        }
         const defaultAsset = getPlanCover(category, subcategory);
         return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
       }
@@ -200,6 +209,9 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
 
     // LOCAL_DEFAULT (cover_image absent, deleted, or planimagedefault.png)
     if (localFailed) {
+      if (isStrictDiscoveryCategory) {
+        return { resolvedPath: "", resolvedUrl: "" };
+      }
       const defaultAsset = getPlanCover(category, subcategory);
       return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
     }
@@ -209,9 +221,19 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
       return { resolvedPath: details.objectKey, resolvedUrl: details.url };
     }
 
+    if (isStrictDiscoveryCategory) {
+      return { resolvedPath: "", resolvedUrl: "" };
+    }
+
     const defaultAsset = getPlanCover(category, subcategory);
     return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
-  }, [sourceType, cleanedPath, catalogFailed, localFailed, category, subcategory, version]);
+  }, [sourceType, cleanedPath, catalogFailed, localFailed, category, subcategory, version, isStrictDiscoveryCategory]);
+
+  useEffect(() => {
+    if (isStrictDiscoveryCategory && (!resolvedUrl || resolvedUrl === "")) {
+      onError?.();
+    }
+  }, [isStrictDiscoveryCategory, resolvedUrl, onError]);
 
   const handleLoadSuccess = () => {
     // silent
@@ -223,6 +245,9 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
       setCatalogFailed(true);
     } else if (sourceType === "LOCAL_DEFAULT") {
       setLocalFailed(true);
+    }
+    if (onError) {
+      onError();
     }
   };
 

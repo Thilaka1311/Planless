@@ -1,6 +1,6 @@
 import React from "react";
 import { createPortal } from "react-dom";
-import { MapPin, ArrowRight, Calendar, Film, Globe } from "lucide-react";
+import { MapPin, Calendar, Film, Globe } from "lucide-react";
 import { DiscoveryItem } from "../../../core/types/discovery";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { resolveVenueRating, resolveVenueDistance } from "./DiscoveryCard";
@@ -167,10 +167,9 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
         <div className="p-4 px-6 bg-[#111113]/95 border-t border-white/[0.06] backdrop-blur-md shrink-0 pb-[calc(1.25rem+env(safe-area-inset-bottom,16px))]">
           <button
             onClick={() => onConfirmPlan(item)}
-            className="w-full h-12 rounded-2xl bg-[#FF6B2C] hover:bg-[#ff5a14] active:scale-[0.98] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#FF6B2C]/20 transition-all duration-200 cursor-pointer"
+            className="w-full h-12 rounded-2xl bg-[#FF6B2C] hover:bg-[#ff5a14] active:scale-[0.98] text-white font-semibold text-sm flex items-center justify-center shadow-lg shadow-[#FF6B2C]/20 transition-all duration-200 cursor-pointer"
           >
-            <span>{isMovie ? "Create Plan with this Movie" : "Create a plan"}</span>
-            <ArrowRight className="w-4 h-4" />
+            <span>Create a Plan</span>
           </button>
         </div>
       </div>

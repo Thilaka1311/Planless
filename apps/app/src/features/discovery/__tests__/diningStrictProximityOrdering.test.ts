@@ -20,6 +20,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
       subcategory: "Indian Restaurant",
       latitude: 13.0706, // ~3.3km away
       longitude: 77.5914,
+      cover_image_url: "https://lh3.googleusercontent.com/places/ishaara.jpg",
     },
     {
       id: "place_far_2",
@@ -29,6 +30,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
       subcategory: "American",
       latitude: 13.0707, // ~3.3km away
       longitude: 77.5906,
+      cover_image_url: "https://lh3.googleusercontent.com/places/chilis.jpg",
     },
     {
       id: "place_close_1",
@@ -38,6 +40,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
       subcategory: "Cafe",
       latitude: 13.0993, // ~100m away
       longitude: 77.5894,
+      cover_image_url: "https://lh3.googleusercontent.com/places/monks.jpg",
     },
     {
       id: "place_close_2",
@@ -47,6 +50,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
       subcategory: "South Indian",
       latitude: 13.0993, // ~110m away
       longitude: 77.5893,
+      cover_image_url: "https://lh3.googleusercontent.com/places/saisogadu.jpg",
     },
     {
       id: "place_close_3",
@@ -56,6 +60,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
       subcategory: "Ice Cream",
       latitude: 13.0992, // ~120m away
       longitude: 77.5893,
+      cover_image_url: "https://lh3.googleusercontent.com/places/polarbear.jpg",
     },
     {
       id: "place_mid_1",
@@ -65,6 +70,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
       subcategory: "Fast Food",
       latitude: 13.0986, // ~200m away
       longitude: 77.5901,
+      cover_image_url: "https://lh3.googleusercontent.com/places/californiaburrito.jpg",
     },
     {
       id: "place_mid_2",
@@ -74,6 +80,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
       subcategory: "South Indian",
       latitude: 13.0970, // ~400m away
       longitude: 77.5905,
+      cover_image_url: "https://lh3.googleusercontent.com/places/cafesanman.jpg",
     },
     {
       id: "place_mid_3",
@@ -83,6 +90,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
       subcategory: "Vegetarian",
       latitude: 13.0990, // ~550m away
       longitude: 77.5847,
+      cover_image_url: "https://lh3.googleusercontent.com/places/srivishnu.jpg",
     },
   ] as unknown[]) as DiscoveryItem[];
 
@@ -178,6 +186,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
             subcategory: "Microbrewery",
             latitude: 12.9790,
             longitude: 77.6410,
+            cover_image_url: "https://lh3.googleusercontent.com/places/toit_seed.jpg",
             _distanceKm: dist,
             distance: `${dist.toFixed(1)} km`,
           } as any);
@@ -190,6 +199,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
             subcategory: "Restaurant",
             latitude: 12.9784 + (dist * 0.009),
             longitude: 77.6408,
+            cover_image_url: `https://lh3.googleusercontent.com/places/rest_${i}.jpg`,
             _distanceKm: dist,
             distance: `${dist.toFixed(1)} km`,
           } as any);
@@ -205,6 +215,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
         subcategory: "Brewpub",
         latitude: 12.9790,
         longitude: 77.6410,
+        cover_image_url: "https://lh3.googleusercontent.com/places/toit_brewpub.jpg",
         _distanceKm: 4.8,
         distance: "4.8 km",
       } as any);
@@ -218,6 +229,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
         subcategory: "Microbrewery",
         latitude: 12.9790,
         longitude: 77.6410,
+        cover_image_url: "https://lh3.googleusercontent.com/places/toit_override.jpg",
         _distanceKm: 4.9,
         distance: "4.9 km",
         _hasPlanlessOverride: true,
@@ -335,6 +347,7 @@ describe("Dining Strict Proximity & Distance Ordering Suite", () => {
         category: "DINING",
         latitude: origin.latitude + (idx * 0.005),
         longitude: origin.longitude,
+        cover_image_url: `https://lh3.googleusercontent.com/places/venue_${idx}.jpg`,
         _distanceKm: 0.5 + idx * 0.2,
         distance: `${(0.5 + idx * 0.2).toFixed(1)} km`,
       })) as any;

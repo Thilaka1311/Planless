@@ -17,6 +17,7 @@ import { getStoredDiscoveryLocation } from "../hooks/useUserLocation";
 import {
   extractCleanPlaceId,
   hasOwnerPostedPhoto,
+  hasValidRealVenuePhoto,
   getVenueDeduplicationKeys,
   areVenuesIdentical,
   mergeDuplicateVenues,
@@ -128,6 +129,7 @@ export function createDistanceOrderedDiscoverySections(
 
   for (const v of venues) {
     if (!v) continue;
+    if (!hasValidRealVenuePhoto(v)) continue;
     const cleanId = extractCleanPlaceId(v.place_id || v.id);
     const keys = getVenueDeduplicationKeys(v);
     if (!cleanId || keys.some((k) => seenKeys.has(k))) continue;
@@ -214,7 +216,9 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
   // Deduplicate and filter initialItems upfront using canonical place identity
   const sanitizedInitialItems = useMemo(() => {
     if (!initialItems || initialItems.length === 0) return [];
-    const relevant = initialItems.filter((it) => isVenueRelevantForCategory(it, category));
+    const relevant = initialItems.filter(
+      (it) => isVenueRelevantForCategory(it, category) && hasValidRealVenuePhoto(it)
+    );
     const unique: DiscoveryItem[] = [];
     for (const item of relevant) {
       const idx = unique.findIndex((ex) => areVenuesIdentical(ex, item));
@@ -419,6 +423,7 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
       // Deduplicate processedCandidates one final time before splitting into rows
       const strictlyUniqueCandidates: DiscoveryItem[] = [];
       for (const item of processedCandidates) {
+        if (!hasValidRealVenuePhoto(item)) continue;
         if (
           !strictlyUniqueCandidates.some((ex) => areVenuesIdentical(ex, item)) &&
           !sections.some((sec) => sec.items.some((ex) => areVenuesIdentical(ex, item)))
@@ -544,7 +549,7 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
 
         // Prepare initial items with calculated distance
         for (const it of sanitizedInitialItems) {
-          if (hasOwnerPostedPhoto(it) || it.cover_image_url) {
+          if (hasValidRealVenuePhoto(it)) {
             const rawLat =
               it.latitude ??
               (it as any).geometry?.location?.lat ??
@@ -619,6 +624,7 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
           seenPlaceIdsRef.current
         );
         dbVenues.forEach((it) => {
+          if (!hasValidRealVenuePhoto(it)) return;
           if (!initialBatch.some((ex) => areVenuesIdentical(ex, it))) {
             const cid = extractCleanPlaceId(it.place_id || it.id);
             if (cid) venuesMapRef.current.set(cid, it);

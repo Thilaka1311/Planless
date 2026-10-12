@@ -67,9 +67,11 @@ const EditCard = lazyWithRetry(
   "EditCard"
 );
 
+import { DiscoverySkeleton, DiscoverySectionsSkeleton } from "../components/DiscoverySkeleton";
+
 const LazyOverlayFallback = (
-  <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
-    <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
+  <div className="fixed inset-0 z-50 bg-black overflow-y-auto no-scrollbar pointer-events-none">
+    <DiscoverySkeleton />
   </div>
 );
 
@@ -97,6 +99,7 @@ interface DiscoveryProps {
   onSelectCategory?: (category: "sports" | "movies" | "dining" | "activities" | "custom") => void;
   onSelectQuickPlan?: (plan: QuickPlan) => void;
   onAddQuickPlan?: (listId?: string) => void;
+  onSelectQuickPlanDiscoveryItem?: (item: DiscoveryItem, targetListId?: string | null) => void;
 }
 
 const PLANLESS_CATEGORIES = [
@@ -138,6 +141,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
   onSelectCategory,
   onSelectQuickPlan,
   onAddQuickPlan,
+  onSelectQuickPlanDiscoveryItem,
 }) => {
   const { isAdmin, userProfile: storeUserProfile, activeUserUuid, activeUserId, dbUsers } = useProfileStore();
   const userProfile = propUserProfile || storeUserProfile;
@@ -482,44 +486,7 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
 
       {/* ── 3. DYNAMIC MULTI-SECTION DISCOVERY FEED ── */}
       {isLoading ? (
-        <div className="space-y-7 pt-2">
-          {["Sports", "Movies", "Restaurants", "Activities"].map((catTitle) => {
-            const isMovieCat = catTitle === "Movies";
-            return (
-              <div key={catTitle} className="space-y-3">
-                <div className="px-6 flex items-center justify-between">
-                  <div className="h-4 w-32 bg-white/[0.06] rounded-md animate-pulse" />
-                </div>
-                <div className="flex gap-3 overflow-x-auto no-scrollbar px-6 pb-2.5">
-                  {[1, 2, 3, 4, 5].slice(0, isMovieCat ? 5 : 4).map((i) => (
-                    <div
-                      key={i}
-                      style={
-                        isMovieCat
-                          ? { width: 130, minWidth: 130, height: 235 }
-                          : {
-                              width: "220px",
-                              minWidth: "220px",
-                              maxWidth: "220px",
-                              height: "225px",
-                              minHeight: "225px",
-                            }
-                      }
-                      className="shrink-0 rounded-2xl bg-[#121216] border border-white/[0.06] overflow-hidden flex flex-col animate-pulse"
-                    >
-                      <div className={isMovieCat ? "w-full aspect-[2/3] bg-white/[0.04]" : "w-full h-[130px] bg-white/[0.04]"} />
-                      <div className="p-3 flex flex-col justify-between flex-1 space-y-2">
-                        <div className="h-4 w-3/4 bg-white/[0.07] rounded" />
-                        <div className="h-3 w-1/2 bg-white/[0.04] rounded" />
-                        {!isMovieCat && <div className="h-3 w-2/3 bg-white/[0.04] rounded" />}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <DiscoverySectionsSkeleton />
       ) : (
         <ForYouSections
           sections={sections}
@@ -699,10 +666,19 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
                 handleSubScreenChange(null);
                 onSelectQuickPlan?.(plan);
               }}
-              onAddQuickPlan={(listId) => {
+              onSelectDiscoveryItem={(item, targetListId) => {
                 handleSubScreenChange(null);
-                onAddQuickPlan?.(listId);
+                if (onSelectQuickPlanDiscoveryItem) {
+                  onSelectQuickPlanDiscoveryItem(item, targetListId);
+                } else {
+                  onSelectDiscoveryItem(item);
+                }
               }}
+              sections={sections}
+              currentCity={displayCity}
+              currentLocality={displayLocality}
+              currentCoordinates={activeCoordinates}
+              isAdmin={isAdmin}
             />
           </div>
         </Suspense>

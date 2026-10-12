@@ -18,6 +18,7 @@ import {
 import { getPlanPreviewCtaState } from "../../../utils/planPreviewCtaUtils";
 import { LiveActionButton } from "../../../components/LiveActionButton";
 import { EditPlanImageScreen } from "./EditPlanImageScreen";
+import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../../../navigation/appRouter";
 import { cleanPlanId, parsePlanDateTime, isPlanTimeEnded } from "../../../utils/planUtils";
 import { supabase } from "../../../../../../lib/supabaseClient";
 
@@ -71,7 +72,16 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
   const [isLeaving, setIsLeaving] = useState(false);
 
   // Edit Image Screen navigation & state
-  const [showEditImageScreen, setShowEditImageScreen] = useState(false);
+  const [showEditImageScreen, setShowEditImageScreen] = useState(() => {
+    const route = parseCurrentRoute();
+    return route.subScreen === 'plan-settings-cover';
+  });
+
+  useEffect(() => {
+    return listenToNavigation((route) => {
+      setShowEditImageScreen(route.subScreen === 'plan-settings-cover');
+    });
+  }, []);
   const [currentCoverImage, setCurrentCoverImage] = useState<string | null | undefined>(
     plan.coverImage || (plan as any).cover_image || (plan as any).cover_photo
   );
@@ -603,7 +613,19 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       <div className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-6 pb-28">
         <div className="flex flex-col items-center justify-center pt-2 pb-6 text-center border-b border-white/10">
           <div
-            onClick={!isPlanSettingsForParticipant ? () => setShowEditImageScreen(true) : undefined}
+            onClick={
+              !isPlanSettingsForParticipant
+                ? () => {
+                    setShowEditImageScreen(true);
+                    const planParam = (plan as any).slug || cleanPlanId(plan.dbUuid || (plan as any).public_id || plan.id);
+                    navigateToRoute({
+                      tab: 'plans',
+                      selectedPlanId: planParam,
+                      subScreen: 'plan-settings-cover',
+                    });
+                  }
+                : undefined
+            }
             className={`w-[110px] h-[110px] rounded-full overflow-hidden border-2 border-white/20 shadow-2xl relative bg-zinc-900 mb-4 flex-shrink-0 ${
               !isPlanSettingsForParticipant ? "cursor-pointer hover:border-white/40 active:scale-95 transition-all" : ""
             }`}
@@ -1174,7 +1196,15 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           category={plan.category || (plan as any).category}
           subcategory={(plan as any).subcategory || (plan as any).sports_type}
           title={plan.title}
-          onBack={() => setShowEditImageScreen(false)}
+          onBack={() => {
+            setShowEditImageScreen(false);
+            const planParam = (plan as any).slug || cleanPlanId(plan.dbUuid || (plan as any).public_id || plan.id);
+            navigateBack({
+              tab: 'plans',
+              selectedPlanId: planParam,
+              subScreen: 'plan-settings',
+            });
+          }}
           onImageUpdated={(newImage, newCardImage) => {
             setCurrentCoverImage(newImage);
             // If the parent wants to know about the card image update, pass it along

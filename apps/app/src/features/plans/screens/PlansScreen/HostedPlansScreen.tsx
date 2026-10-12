@@ -10,6 +10,7 @@ import { EmptyState } from "../../../home/components/EmptyState";
 import { getPlanCover } from "../../config/planCoverImages";
 import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
 import { CancelledPlans } from "./CancelledPlans";
+import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../../navigation/appRouter";
 
 import { getPendingHostActionPlanIds } from "../../utils/planHostActions";
 
@@ -204,7 +205,7 @@ export const HostedPlansScreen = React.memo(({
 
           {/* Content details */}
           <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-            <h3 className="font-sans font-semibold text-[14px] text-white tracking-wide truncate">
+            <h3 className="font-sans font-semibold text-[14px] text-white truncate">
               {plan.title}
             </h3>
             <span className="text-[11px] text-[#8E8E93] font-sans font-medium">
@@ -287,12 +288,24 @@ export const HostedPlansScreen = React.memo(({
     );
   };
 
-  const [showCancelledPlans, setShowCancelledPlans] = React.useState(false);
+  const [showCancelledPlans, setShowCancelledPlans] = React.useState(() => {
+    const route = parseCurrentRoute();
+    return route.subScreen === 'cancelled-plans';
+  });
+
+  React.useEffect(() => {
+    return listenToNavigation((route) => {
+      setShowCancelledPlans(route.subScreen === 'cancelled-plans');
+    });
+  }, []);
 
   if (showCancelledPlans) {
     return (
       <CancelledPlans
-        onBack={() => setShowCancelledPlans(false)}
+        onBack={() => {
+          setShowCancelledPlans(false);
+          navigateBack({ tab: 'plans', subScreen: 'hosted-plans' });
+        }}
         setSelectedPlanId={setSelectedPlanId}
       />
     );
@@ -326,7 +339,10 @@ export const HostedPlansScreen = React.memo(({
         <div className="flex-shrink-0 border-t border-white/[0.08] bg-[#050505]/95 backdrop-blur-md px-6 py-3.5 z-20">
           <button
             type="button"
-            onClick={() => setShowCancelledPlans(true)}
+            onClick={() => {
+              setShowCancelledPlans(true);
+              navigateToRoute({ tab: 'plans', subScreen: 'cancelled-plans' });
+            }}
             className="w-full group flex items-center justify-between py-1 text-[13px] font-sans font-medium text-white/50 hover:text-white/80 active:text-white transition-colors cursor-pointer select-none text-left"
           >
             <span>View Cancelled Plans</span>

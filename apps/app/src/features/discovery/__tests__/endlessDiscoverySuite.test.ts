@@ -31,6 +31,7 @@ describe("Endless Location-Based Discovery Suite", () => {
           category: "SPORTS",
           latitude: 13.0827,
           longitude: 77.5877, // ~12 km away
+          cover_image_url: "https://lh3.googleusercontent.com/places/far_away_arena.jpg",
         },
         {
           id: "place_close",
@@ -39,6 +40,7 @@ describe("Endless Location-Based Discovery Suite", () => {
           category: "SPORTS",
           latitude: 12.9755,
           longitude: 77.6050, // ~0.06 km away
+          cover_image_url: "https://lh3.googleusercontent.com/places/mg_road_turf.jpg",
         },
         {
           id: "place_medium",
@@ -47,6 +49,7 @@ describe("Endless Location-Based Discovery Suite", () => {
           category: "SPORTS",
           latitude: 12.9784,
           longitude: 77.6408, // ~3.9 km away
+          cover_image_url: "https://lh3.googleusercontent.com/places/indiranagar_sports.jpg",
         },
       ];
 

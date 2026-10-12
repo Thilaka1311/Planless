@@ -45,6 +45,26 @@ export function isMovieWithinSixMonths(releaseDateStr?: string | null, _referenc
   return isMovieReleased2026OrLater(releaseDateStr);
 }
 
+/**
+ * Validates that a TMDB movie has a real, non-placeholder, non-empty poster image.
+ */
+export function hasValidTmdbPoster(m: any): boolean {
+  if (!m) return false;
+  const p = m.poster_path;
+  if (!p || typeof p !== "string") return false;
+  const trimmed = p.trim().toLowerCase();
+  if (
+    !trimmed ||
+    trimmed === "null" ||
+    trimmed === "undefined" ||
+    trimmed.includes("placeholder") ||
+    trimmed.includes("default-")
+  ) {
+    return false;
+  }
+  return true;
+}
+
 // In-memory cache for server-side response deduplication (TTL: 15 minutes)
 const serverCache = new Map<string, { data: any; expiry: number }>();
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -205,7 +225,7 @@ async function handleMoviesDiscover(body: any): Promise<any> {
     if (lang !== "all") {
       for (const m of npRaw) {
         if (!m || !m.title || m.adult || m.video || seen.has(m.id)) continue;
-        if (!isMovieReleased2026OrLater(m.release_date)) continue;
+        if (!isMovieReleased2026OrLater(m.release_date) || !hasValidTmdbPoster(m)) continue;
         if (m.original_language === lang) {
           seen.add(m.id);
           candidates.push(m);
@@ -215,7 +235,7 @@ async function handleMoviesDiscover(body: any): Promise<any> {
       const byLang: Record<string, any[]> = { hi: [], ta: [], te: [], kn: [], en: [] };
       for (const m of npRaw) {
         if (!m || !m.title || m.adult || m.video || seen.has(m.id)) continue;
-        if (!isMovieReleased2026OrLater(m.release_date)) continue;
+        if (!isMovieReleased2026OrLater(m.release_date) || !hasValidTmdbPoster(m)) continue;
         if (byLang[m.original_language]) {
           seen.add(m.id);
           byLang[m.original_language].push(m);
@@ -243,7 +263,7 @@ async function handleMoviesDiscover(body: any): Promise<any> {
         with_genres: genre,
       });
       finalResults = (data.results || []).filter(
-        (m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date)
+        (m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)
       );
       totalPages = data.total_pages || 1;
     } else {
@@ -259,7 +279,7 @@ async function handleMoviesDiscover(body: any): Promise<any> {
           with_genres: genre,
           "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
         })
-          .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date)))
+          .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)))
           .catch(() => [])
       );
 
@@ -280,7 +300,7 @@ async function handleMoviesDiscover(body: any): Promise<any> {
         "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
       });
       finalResults = (data.results || []).filter(
-        (m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date)
+        (m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)
       );
       totalPages = data.total_pages || 1;
     } else {
@@ -295,7 +315,7 @@ async function handleMoviesDiscover(body: any): Promise<any> {
           with_genres: genre,
           "primary_release_date.gte": MIN_MOVIE_RELEASE_DATE,
         })
-          .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date)))
+          .then((d) => (d.results || []).filter((m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)))
           .catch(() => [])
       );
 
@@ -342,7 +362,7 @@ async function handleMoviesSearch(body: any): Promise<any> {
   });
 
   let results = (rawData.results || []).filter(
-    (m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date)
+    (m: any) => m && m.title && !m.adult && !m.video && isMovieReleased2026OrLater(m.release_date) && hasValidTmdbPoster(m)
   );
 
   if (lang !== "all") {

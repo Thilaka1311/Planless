@@ -109,7 +109,7 @@ export const UpdatePlanFeeBottomSheet: React.FC<UpdatePlanFeeBottomSheetProps> =
             />
           </div>
           <div className="min-w-0 flex-1 flex flex-col justify-center space-y-0.5">
-            <h3 className="font-sans font-semibold text-[15px] text-white tracking-wide truncate leading-snug">
+            <h3 className="font-sans font-semibold text-[15px] text-white truncate leading-snug">
               {plan?.title || 'Plan'}
             </h3>
             <p className="font-sans text-[12px] text-zinc-400 truncate leading-tight">

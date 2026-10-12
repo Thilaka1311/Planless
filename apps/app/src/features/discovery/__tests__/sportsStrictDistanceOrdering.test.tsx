@@ -30,6 +30,7 @@ describe("Sports Strict Distance Ordering & Layout Suite", () => {
         longitude: 77.5946,
         _distanceKm: dist,
         distance: `${dist.toFixed(1)} km`,
+        cover_image_url: `https://lh3.googleusercontent.com/p/venue_${idx}`,
       })) as any;
 
       const { sections, sortedVenues } = createDistanceOrderedSportsSections(
@@ -149,6 +150,7 @@ describe("Sports Strict Distance Ordering & Layout Suite", () => {
         category: "SPORTS",
         _distanceKm: idx * 0.2,
         distance: `${(idx * 0.2).toFixed(1)} km`,
+        cover_image_url: `https://lh3.googleusercontent.com/p/v_${idx}`,
       })) as any;
 
       const { sections } = createDistanceOrderedSportsSections(venues, userOrigin, 7);
@@ -207,9 +209,9 @@ describe("Sports Strict Distance Ordering & Layout Suite", () => {
     it("re-sorts combined results globally when a new batch arrives without duplicating places", () => {
       // Initial batch of 3 places
       const batch1: DiscoveryItem[] = [
-        { id: "p1", place_id: "p1", title: "P1", _distanceKm: 1.0 },
-        { id: "p2", place_id: "p2", title: "P2", _distanceKm: 3.0 },
-        { id: "p3", place_id: "p3", title: "P3", _distanceKm: 5.0 },
+        { id: "p1", place_id: "p1", title: "P1", category: "SPORTS", _distanceKm: 1.0, cover_image_url: "https://lh3.googleusercontent.com/p/p1" },
+        { id: "p2", place_id: "p2", title: "P2", category: "SPORTS", _distanceKm: 3.0, cover_image_url: "https://lh3.googleusercontent.com/p/p2" },
+        { id: "p3", place_id: "p3", title: "P3", category: "SPORTS", _distanceKm: 5.0, cover_image_url: "https://lh3.googleusercontent.com/p/p3" },
       ] as any;
 
       const res1 = createDistanceOrderedSportsSections(batch1, userOrigin, 7);
@@ -217,9 +219,9 @@ describe("Sports Strict Distance Ordering & Layout Suite", () => {
 
       // Later batch arrives with places that fit in-between (e.g. 2.0 km) and duplicate of p2
       const batch2: DiscoveryItem[] = [
-        { id: "p2", place_id: "p2", title: "P2 (Dup)", _distanceKm: 3.0 },
-        { id: "p4", place_id: "p4", title: "P4", _distanceKm: 2.0 },
-        { id: "p5", place_id: "p5", title: "P5", _distanceKm: 6.0 },
+        { id: "p2", place_id: "p2", title: "P2 (Dup)", category: "SPORTS", _distanceKm: 3.0, cover_image_url: "https://lh3.googleusercontent.com/p/p2" },
+        { id: "p4", place_id: "p4", title: "P4", category: "SPORTS", _distanceKm: 2.0, cover_image_url: "https://lh3.googleusercontent.com/p/p4" },
+        { id: "p5", place_id: "p5", title: "P5", category: "SPORTS", _distanceKm: 6.0, cover_image_url: "https://lh3.googleusercontent.com/p/p5" },
       ] as any;
 
       // Merge combined

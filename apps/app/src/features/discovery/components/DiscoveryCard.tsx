@@ -6,6 +6,7 @@ import { getSportsVenueLabel, extractSportsList } from "../services/sportsReleva
 import { getStoredDiscoveryLocation } from "../hooks/useUserLocation";
 import { useLongPress } from "../../../shared/hooks/useLongPress";
 import { resolveVenueLocality } from "../services/addressUtils";
+import { isPhotoUrlBroken, markPhotoUrlBroken, isPlaceholderImageUrl } from "../services/venueRelevance";
 
 export { resolveVenueLocality };
 
@@ -321,9 +322,23 @@ export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
 }) => {
   const isMovie = (item.category || "").toUpperCase() === "MOVIES";
   const cat = (item.category || "").toUpperCase();
+  const isStrictCategory = cat === "SPORTS" || cat === "DINING" || cat === "ACTIVITIES" || cat === "MOVIES";
   const isSports = !isMovie && (showLocality === true || cat === "SPORTS");
   const locality = isSports ? resolveVenueLocality(item) : null;
   const shouldEnableAdminHold = isAdmin && Boolean(onLongPressAdmin) && !isMovie;
+
+  const [isImageBroken, setIsImageBroken] = React.useState(false);
+
+  // If strict category venue photo is broken, missing, placeholder, or failed to load: NEVER display the card!
+  if (
+    isStrictCategory &&
+    (isImageBroken ||
+      !item.cover_image_url ||
+      isPlaceholderImageUrl(item.cover_image_url) ||
+      isPhotoUrlBroken(item.cover_image_url))
+  ) {
+    return null;
+  }
 
   const longPress = useLongPress(
     () => {
@@ -380,6 +395,10 @@ export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
           loading="lazy"
           decoding="async"
           draggable={false}
+          onError={() => {
+            markPhotoUrlBroken(item.cover_image_url);
+            setIsImageBroken(true);
+          }}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none select-none"
           style={{
             width: "100%",

@@ -6,6 +6,7 @@ import {
   isAuthenticActivityVenue,
   extractCleanPlaceId,
   hasOwnerPostedPhoto,
+  hasValidRealVenuePhoto,
   getVenueDeduplicationKeys,
   areVenuesIdentical,
   mergeDuplicateVenues,
@@ -32,7 +33,7 @@ export const SPORTS_PROGRESSION_QUERIES = [
   "football turf",
   "pickleball court",
   "tennis court",
-  "cricket ground box nets",
+  "cricket box nets turf",
   "basketball court",
   "table tennis",
   "sports arena complex",
@@ -242,8 +243,8 @@ export async function fetchProgressiveDiscoveryBatch(
     // City boundary filter
     if (city && !isPlaceInCity(merged, city)) continue;
 
-    // Must have owner photo or valid cover image
-    if (!hasOwnerPostedPhoto(merged) && !merged.cover_image_url) continue;
+    // Must have authentic owner photo or valid DB photo resolved via pipeline (never a fallback/placeholder)
+    if (!hasValidRealVenuePhoto(merged, photoBaseUrl)) continue;
 
     const rawLat =
       merged.latitude ??
@@ -292,7 +293,7 @@ export async function fetchProgressiveDiscoveryBatch(
     0,
     maxDistanceKm,
     seenPlaceIds
-  );
+  ).filter((v) => hasValidRealVenuePhoto(v, photoBaseUrl));
 
   // 5. Merge Google Places and database results into one unique result set first
   const combined = [...eligibleGooglePlaces, ...dbVenuesInTier];
