@@ -308,8 +308,12 @@ function parseRoutePath(pathname: string, search?: string): AppRoute {
       return { tab: 'plans', selectedPlanId: planId, subScreen: 'plan-settings' };
     }
     const route: AppRoute = { tab: 'plans', selectedPlanId: planId };
-    if (!planId && search) {
+    if (search) {
       const searchParams = new URLSearchParams(search);
+      if (!route.selectedPlanId) {
+        const queryPlanId = searchParams.get('id') || searchParams.get('planId');
+        if (queryPlanId) route.selectedPlanId = decodeURIComponent(queryPlanId);
+      }
       const filter = searchParams.get('filter')?.toLowerCase();
       if (filter === 'waitlisted' || filter === 'skipped' || filter === 'joined') {
         route.plansFilter = filter as PlansFilter;
@@ -318,9 +322,14 @@ function parseRoutePath(pathname: string, search?: string): AppRoute {
     return route;
   }
 
-  // Chats: /chats, /chats/:id, /chat/:id
+  // Chats: /chats, /chats/:id, /chat/:id, /chats?id=:id
   if (primary === 'chats' || primary === 'chat') {
-    const chatPlanId = parts[1] || null;
+    let chatPlanId = parts[1] || null;
+    if (!chatPlanId && search) {
+      const searchParams = new URLSearchParams(search);
+      const queryChatId = searchParams.get('id') || searchParams.get('planId');
+      if (queryChatId) chatPlanId = decodeURIComponent(queryChatId);
+    }
     return { tab: 'chats', selectedChatPlanId: chatPlanId };
   }
 

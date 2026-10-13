@@ -576,6 +576,25 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
         // Replace temp message with actual inserted row in shared cache
         replaceOptimisticMessage(tempId, data as ChatMessage);
         scrollToBottom(false);
+
+        // Dispatch push notification to plan participants (non-blocking)
+        supabase.functions
+          .invoke("send-push", {
+            body: {
+              event: "CHAT_MESSAGE",
+              record: data,
+            },
+          })
+          .then(({ data: pushRes, error: pushErr }) => {
+            if (pushErr) {
+              console.warn("[PlanChatScreen] Push dispatch failed:", pushErr.message || pushErr);
+            } else if (pushRes?.deliveredCount !== undefined) {
+              console.log(`[PlanChatScreen] Push dispatch completed: delivered to ${pushRes.deliveredCount} devices.`);
+            }
+          })
+          .catch((pushErr) => {
+            console.warn("[PlanChatScreen] Push invocation network error:", pushErr);
+          });
       }
     } catch (err) {
       console.error("[PlanChatScreen] Exception inserting plan_message:", err);

@@ -1,4 +1,5 @@
 import { registerSW } from 'virtual:pwa-register';
+import { supabase } from '../../../lib/supabaseClient';
 
 type UpdateListener = (hasUpdate: boolean) => void;
 
@@ -12,6 +13,7 @@ class PwaManager {
   private hasReloaded = false;
   private isCheckingUpdate = false;
   private lastCheckTime = 0;
+  private lastReminderCheckTime = 0;
   private currentBuildId: string = typeof __APP_BUILD_ID__ !== 'undefined' ? __APP_BUILD_ID__ : '';
 
   /**
@@ -37,8 +39,18 @@ class PwaManager {
     // These run in all environments to detect new Vercel deployments via /version.json
     this.setupGlobalListeners();
 
-    // In development mode, unregister old service workers and clear cache to prevent stale HMR
-    if (import.meta.env.DEV) {
+    // In development mode, unregister old service workers and clear cache to prevent stale HMR,
+    // unless explicitly enabled for PWA mobile tunnel testing
+    const allowPwaInDev = typeof window !== 'undefined' && (
+      window.location.host.includes('ngrok') ||
+      window.location.host.includes('trycloudflare') ||
+      window.location.host.includes('cloudflare') ||
+      window.location.host.includes('localtunnel') ||
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      (typeof localStorage !== 'undefined' && localStorage.getItem('planless_force_pwa') === 'true')
+    );
+    if (import.meta.env.DEV && !allowPwaInDev) {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then((registrations) => {
           for (const registration of registrations) {
@@ -103,7 +115,15 @@ class PwaManager {
     } catch (err) {
       console.error('[PWA] Error in registerSW:', err);
     }
+
+    // Always ensure /sw.js is actively registered for Web Push notifications
+    this.ensureServiceWorker().then((reg) => {
+      if (reg && !this.registration) {
+        this.registration = reg;
+      }
+    }).catch(() => {});
   }
+
 
   /**
    * Sets up cross-browser listeners for deployment detection.
@@ -243,10 +263,7 @@ class PwaManager {
 
     try {
       // 1. Direct version check: works everywhere (even in webviews or private windows)
-      const foundNewVersion = await this.checkVersionEndpoint();
-      if (foundNewVersion) {
-        return;
-      }
+      await this.checkVersionEndpoint();
 
       // 2. Service Worker lifecycle check (if supported)
       if ('serviceWorker' in navigator) {
@@ -261,12 +278,23 @@ class PwaManager {
             this.trackInstallingWorker(this.registration.installing);
           }
 
-          await this.registration.update();
+          try {
+            await this.registration.update();
+          } catch (updateErr: any) {
+            // If the service worker is in an invalid/redundant state, clean it up and re-register
+            if (updateErr?.name === 'InvalidStateError') {
+              console.log('[PWA] Service worker in invalid state during update check, resetting registration...');
+              await this.registration.unregister().catch(() => {});
+              this.registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => null);
+            } else {
+              throw updateErr;
+            }
+          }
 
-          if (this.registration.waiting && navigator.serviceWorker.controller) {
+          if (this.registration?.waiting && navigator.serviceWorker.controller) {
             this.setHasUpdate(true);
           }
-          if (this.registration.installing) {
+          if (this.registration?.installing) {
             this.trackInstallingWorker(this.registration.installing);
           }
         }
@@ -370,6 +398,24 @@ class PwaManager {
         }
       }
 
+      // If a worker is currently installing, allow it up to 2 seconds to transition to waiting
+      if (!hasWaitingWorker && this.registration?.installing) {
+        const worker = this.registration.installing;
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 2000);
+          worker.addEventListener('statechange', () => {
+            if (worker.state === 'installed' || worker.state === 'redundant') {
+              clearTimeout(timer);
+              resolve();
+            }
+          });
+        });
+        if (this.registration.waiting) {
+          hasWaitingWorker = true;
+          this.registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+      }
+
       // If updateSwFn is registered, invoke it to activate the waiting service worker
       if (this.updateSwFn) {
         await this.updateSwFn(true);
@@ -399,6 +445,368 @@ class PwaManager {
         }
       }
     }, 800);
+  }
+
+  /**
+   * Checks if Push Notifications are supported in the current browser/OS.
+   */
+  isPushSupported(): boolean {
+    if (typeof window === 'undefined') return false;
+    return (
+      'serviceWorker' in navigator &&
+      'PushManager' in window &&
+      'Notification' in window
+    );
+  }
+
+  /**
+   * Returns current Notification permission state ('default', 'granted', 'denied').
+   */
+  getPushPermissionState(): NotificationPermission {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return 'default';
+    }
+    return Notification.permission;
+  }
+
+  /**
+   * Detects if the user is on an iOS device in Safari without having installed the PWA.
+   * On iOS, Web Push is ONLY supported when added to the Home Screen (standalone PWA).
+   */
+  isIosSafariWithoutPwa(): boolean {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent.toLowerCase();
+    const isIos = /iphone|ipad|ipod/.test(ua);
+    const isStandalone =
+      (window.navigator as any).standalone === true ||
+      window.matchMedia('(display-mode: standalone)').matches;
+    return isIos && !isStandalone;
+  }
+
+  /**
+   * Ensures the service worker is registered and returns its registration with an active worker.
+   */
+  async ensureServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
+    try {
+      let reg: ServiceWorkerRegistration | null = null;
+      if (typeof navigator.serviceWorker.getRegistration === 'function') {
+        reg = await navigator.serviceWorker.getRegistration().catch(() => null);
+      }
+
+      // If registration exists but is completely dead/redundant, reset it
+      if (reg && !reg.active && !reg.installing && !reg.waiting) {
+        console.log('[PWA] Found stale service worker registration, clearing and re-registering...');
+        await reg.unregister().catch(() => {});
+        reg = null;
+      }
+
+      if (!reg && typeof navigator.serviceWorker.register === 'function') {
+        reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => null);
+      }
+
+      // If active worker exists, return immediately
+      if (reg?.active) {
+        return reg;
+      }
+
+      // If waiting worker exists, tell it to activate
+      if (reg?.waiting) {
+        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      }
+
+      // Await navigator.serviceWorker.ready to guarantee active state
+      if (navigator.serviceWorker.ready) {
+        const readyReg = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+        ]);
+        if (readyReg) return readyReg;
+      }
+
+      return reg;
+    } catch (e) {
+      console.warn('[PWA] Failed to get/register service worker:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Checks if the device has an actual active Web Push subscription with the browser.
+   */
+  async hasActivePushSubscription(): Promise<boolean> {
+    if (!this.isPushSupported()) return false;
+    try {
+      const registration = await this.ensureServiceWorker();
+      if (!registration || !registration.pushManager) return false;
+      const sub = await registration.pushManager.getSubscription();
+      return !!sub;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Automatically synchronizes the push subscription if permission is already granted.
+   * Safe to call on app startup and login.
+   */
+  async syncPushSubscription(userId: string): Promise<boolean> {
+    if (!userId || !this.isPushSupported() || this.isIosSafariWithoutPwa()) {
+      return false;
+    }
+
+    if (this.getPushPermissionState() !== 'granted') {
+      return false;
+    }
+
+    try {
+      const res = await this.subscribeToPush(userId);
+      return res.success;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Subscribes the current device to Web Push and persists the subscription in Supabase.
+   */
+  async subscribeToPush(userId: string): Promise<{
+    success: boolean;
+    error?: string;
+    permissionDenied?: boolean;
+    requiresIosPwa?: boolean;
+  }> {
+    let effectiveUserId = userId;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        effectiveUserId = session.user.id;
+      } else {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user?.id) {
+          effectiveUserId = authData.user.id;
+        }
+      }
+    } catch {}
+
+    if (!effectiveUserId) {
+      return { success: false, error: 'User is not authenticated' };
+    }
+
+    if (this.isIosSafariWithoutPwa()) {
+      return {
+        success: false,
+        requiresIosPwa: true,
+        error: 'Push notifications on iPhone require adding Planless to your Home Screen first.',
+      };
+    }
+
+    if (!this.isPushSupported()) {
+      return {
+        success: false,
+        error: 'Push notifications are not supported on this browser.',
+      };
+    }
+
+    try {
+      // 1. Request user permission
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        return {
+          success: false,
+          permissionDenied: true,
+          error: 'Notification permission was not granted.',
+        };
+      }
+
+      // 2. Ensure Service Worker registration is active
+      let registration = await this.ensureServiceWorker();
+      if (!registration || !registration.pushManager) {
+        return {
+          success: false,
+          error: 'Push manager is not available in the active service worker.',
+        };
+      }
+
+      // Wait for worker to be active before subscribing
+      if (!registration.active && navigator.serviceWorker.ready) {
+        const readyReg = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise<ServiceWorkerRegistration | null>((resolve) => setTimeout(() => resolve(null), 3000)),
+        ]);
+        if (readyReg) {
+          registration = readyReg;
+        }
+      }
+
+      if (!registration.active && typeof navigator.serviceWorker.register === 'function') {
+        console.log('[PWA] Worker not active, re-registering /sw.js...');
+        if (typeof registration.unregister === 'function') {
+          await registration.unregister().catch(() => {});
+        }
+        registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => null);
+        if (registration && navigator.serviceWorker.ready) {
+          const readyReg = await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise<ServiceWorkerRegistration | null>((resolve) => setTimeout(() => resolve(null), 3000)),
+          ]);
+          if (readyReg) registration = readyReg;
+        }
+      }
+
+      if (!registration || (!registration.active && typeof navigator.serviceWorker.register === 'function')) {
+        return {
+          success: false,
+          error: 'Service worker is still activating. Please retry in a moment.',
+        };
+      }
+
+      // 3. Resolve VAPID Public Key
+      const vapidPublicKey =
+        (import.meta as any).env?.VITE_VAPID_PUBLIC_KEY ||
+        'BP0zSZXwnl0p9_nvQM5Z5w48Klde00b0rGkN84maT_qgnTfH5dJ0WkT3pET6SX5E2ccHNs_0SwStdmcE3EFdAAg';
+
+      const convertedVapidKey = this.urlBase64ToUint8Array(vapidPublicKey);
+
+      // 4. Retrieve or create PushSubscription (renew if VAPID key mismatch)
+      let subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        const existingKey = subscription.options?.applicationServerKey;
+        if (existingKey) {
+          const existingKeyBytes = new Uint8Array(existingKey);
+          const keysMatch =
+            existingKeyBytes.length === convertedVapidKey.length &&
+            existingKeyBytes.every((val, i) => val === convertedVapidKey[i]);
+          if (!keysMatch) {
+            console.log('[PWA] Renewing subscription with updated VAPID key...');
+            await subscription.unsubscribe().catch(() => {});
+            subscription = null;
+          }
+        }
+      }
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey as unknown as BufferSource,
+        });
+      }
+
+      const subJson = subscription.toJSON();
+      if (!subJson.endpoint || !subJson.keys?.p256dh || !subJson.keys?.auth) {
+        return { success: false, error: 'Invalid subscription payload generated by browser' };
+      }
+
+      // 5. Detect platform
+      const ua = navigator.userAgent.toLowerCase();
+      let platform = 'desktop';
+      if (/iphone|ipad|ipod/.test(ua)) platform = 'ios';
+      else if (/android/.test(ua)) platform = 'android';
+
+      // 6. Upsert subscription in Supabase user_push_subscriptions table
+      const subPayload = {
+        user_id: effectiveUserId,
+        endpoint: subJson.endpoint,
+        p256dh: subJson.keys.p256dh,
+        auth: subJson.keys.auth,
+        user_agent: navigator.userAgent,
+        platform,
+        is_active: true,
+        last_seen_at: new Date().toISOString(),
+      };
+
+      let saveSuccess = false;
+      let lastErrorMsg: string | undefined;
+
+      try {
+        const { error: dbError } = await supabase
+          .from('user_push_subscriptions')
+          .upsert(subPayload, { onConflict: 'endpoint' });
+
+        if (!dbError) {
+          saveSuccess = true;
+        } else {
+          lastErrorMsg = dbError.message;
+          console.warn('[PWA] Direct table upsert returned error, trying Edge Function fallback:', dbError.message);
+        }
+      } catch (err: any) {
+        lastErrorMsg = err?.message;
+      }
+
+      // Fallback: If RLS or client direct upsert failed, persist via send-push Edge Function
+      if (!saveSuccess) {
+        try {
+          const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('send-push', {
+            body: {
+              action: 'register-subscription',
+              subscription: subPayload,
+            },
+          });
+          if (!edgeErr && edgeData?.success) {
+            saveSuccess = true;
+            console.log('[PWA] Subscription persisted via Edge Function fallback');
+          } else {
+            lastErrorMsg = edgeErr?.message || edgeData?.error || lastErrorMsg;
+          }
+        } catch (err: any) {
+          lastErrorMsg = err?.message || lastErrorMsg;
+        }
+      }
+
+      if (!saveSuccess) {
+        console.error('[PWA] Failed to save push subscription in database:', lastErrorMsg);
+        return { success: false, error: lastErrorMsg || 'Failed to save push subscription' };
+      }
+
+      console.log('[PWA] Push subscription registered successfully for user:', effectiveUserId);
+      return { success: true };
+    } catch (err: any) {
+      console.error('[PWA] Failed to subscribe to push notifications:', err);
+      return { success: false, error: err?.message || 'Unknown error during push registration' };
+    }
+  }
+
+
+  /**
+   * Unsubscribes the current device from Web Push and deactivates the record in Supabase.
+   */
+  async unsubscribeFromPush(userId?: string): Promise<boolean> {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return false;
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+
+      if (subscription) {
+        const endpoint = subscription.endpoint;
+        await subscription.unsubscribe();
+
+        if (endpoint) {
+          await supabase
+            .from('user_push_subscriptions')
+            .update({ is_active: false })
+            .eq('endpoint', endpoint);
+        }
+      }
+      return true;
+    } catch (err) {
+      console.warn('[PWA] Error unsubscribing from push:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Converts a URL-safe Base64 string to a Uint8Array for VAPID applicationServerKey.
+   */
+  private urlBase64ToUint8Array(base64String: string): Uint8Array {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
   }
 }
 

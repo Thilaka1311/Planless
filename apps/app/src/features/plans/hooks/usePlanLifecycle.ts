@@ -6,6 +6,7 @@ import { DbPlanTeamAssignment } from "../../../../lib/db";
 import { deleteAllPlanTeamAssignments, removePlanTeamAssignment } from "../../../../lib/db";
 import { normalizeStatus } from "../../../../lib/participantStatus";
 import { cleanPlanId as cleanPlanIdUtil, isUuid as isUuidUtil, resolveUserUuid as resolveUserUuidUtil } from "../utils/planUtils";
+import { verifyPlanHostAuthorization } from "../utils/planHostAuthorization";
 import { recalculateWalletExpenses } from "../../wallet/services/walletSyncService";
 import * as api from "../api/plans";
 
@@ -353,6 +354,64 @@ new = ${planUpdate.cover_image}`);
           console.error("[usePlanLifecycle.updatePlanDetails] Failed to update plan in database:", planError);
           throw new Error("Failed to update plan details in database: " + planError.message);
         }
+
+        // Check for rescheduling: only trigger if date, time, or venue actually changed
+        const oldSched = currentPlan?.datetime || currentPlan?.scheduled_at;
+        const newSched = planUpdate.scheduled_at;
+        const oldPlaceName = currentPlan?.place_name || currentPlan?.location || "";
+        const newPlaceName = planUpdate.place_name;
+        const oldPlaceAddress = currentPlan?.place_address || "";
+        const newPlaceAddress = planUpdate.place_address;
+
+        let dateChanged = false;
+        let timeChanged = false;
+        let formattedNewDate = "";
+        let formattedNewTime = "";
+
+        if (newSched !== undefined && newSched !== oldSched) {
+          const oldDateObj = oldSched ? new Date(oldSched) : null;
+          const newDateObj = new Date(newSched);
+          if (!isNaN(newDateObj.getTime())) {
+            if (!oldDateObj || oldDateObj.toDateString() !== newDateObj.toDateString()) {
+              dateChanged = true;
+            }
+            if (!oldDateObj || oldDateObj.toTimeString().slice(0, 5) !== newDateObj.toTimeString().slice(0, 5)) {
+              timeChanged = true;
+            }
+            formattedNewDate = newDateObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+            formattedNewTime = newDateObj.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+          }
+        }
+
+        const venueChanged =
+          (newPlaceName !== undefined && newPlaceName !== oldPlaceName) ||
+          (newPlaceAddress !== undefined && newPlaceAddress !== oldPlaceAddress);
+        const formattedNewVenue = newPlaceName || newPlaceAddress || "";
+
+        if (dateChanged || timeChanged || venueChanged) {
+          void (async () => {
+            try {
+              await (supabase as any).functions.invoke("send-push", {
+                body: {
+                  event: "PLAN_RESCHEDULED",
+                  planId: planUuid,
+                  actorId: userId,
+                  changes: {
+                    dateChanged,
+                    timeChanged,
+                    venueChanged,
+                    newDate: formattedNewDate,
+                    newTime: formattedNewTime,
+                    newVenue: formattedNewVenue,
+                  },
+                },
+              });
+            } catch (pushErr) {
+              console.warn("[updatePlanDetails] Push rescheduling dispatch failed:", pushErr);
+            }
+          })();
+        }
+
         if (setDbPlans) {
           setDbPlans(prev => prev.map(p => {
             if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId || (p as any).public_id === planId) {
@@ -373,6 +432,7 @@ new = ${planUpdate.cover_image}`);
         }
       }
     }
+
 
     // Always keep setDbPlans updated in memory with cover_image
     if (setDbPlans && updatedCoverImage !== undefined) {
@@ -425,6 +485,21 @@ new = ${planUpdate.cover_image}`);
     return rebalanceResult;
   }, [plans, dbPlans, dbPlanParticipants, userId, resolveUserUuid, cleanPlanId, setDbPlanParticipants, refreshPlans]);
 
+  // ─── verifyIsPlanHost ────────────────────────────────────────────────────────
+
+  const verifyIsPlanHost = useCallback(async (
+    planId: string,
+    matchedPlan?: any
+  ): Promise<boolean> => {
+    return verifyPlanHostAuthorization({
+      planId,
+      matchedPlan,
+      userId,
+      dbPlanParticipants,
+      resolveUserUuid,
+    });
+  }, [dbPlanParticipants, resolveUserUuid, userId]);
+
   // ─── completePlan ────────────────────────────────────────────────────────────
 
   const completePlan = useCallback(async (
@@ -442,11 +517,8 @@ new = ${planUpdate.cover_image}`);
       throw new Error("Cannot complete plan: invalid plan ID");
     }
 
-    // Host validation
-    const hostUuid = resolveUserUuid(matchedPlan?.hostId || matchedPlan?.creatorId || "");
-    const activeUserUuidResolved = resolveUserUuid(userId || "");
-
-    const isHost = hostUuid === activeUserUuidResolved || matchedPlan?.isOwner;
+    // Host validation (checks plan, canonical participants state, and RPC fallback)
+    const isHost = await verifyIsPlanHost(planUuid, matchedPlan);
     if (!isHost) {
       console.error("[PLAN_COMPLETE_ERROR] Unauthorized user attempting completion:", userId);
       throw new Error("Only the plan host can complete the plan.");
@@ -475,7 +547,7 @@ new = ${planUpdate.cover_image}`);
       throw new Error(err.message || "Failed to complete plan");
     }
 
-  }, [plans, dbPlans, userId, resolveUserUuid, insertSystemMessage, refreshPlans]);
+  }, [plans, verifyIsPlanHost, userId, insertSystemMessage, refreshPlans]);
 
   // ─── manageCompletedPlanParticipants ──────────────────────────────────────────
 
@@ -494,12 +566,8 @@ new = ${planUpdate.cover_image}`);
       throw new Error("Cannot manage participants: invalid plan ID");
     }
 
-    // Host validation
-    const dbPlanObj = dbPlans.find(p => p.id === planUuid || p.id === matchedPlan?.id);
-    const hostUuid = resolveUserUuid(matchedPlan?.hostId || matchedPlan?.creatorId || "");
-    const activeUserUuidResolved = resolveUserUuid(userId || "");
-
-    const isHost = hostUuid === activeUserUuidResolved || matchedPlan?.isOwner;
+    // Host validation (checks plan, canonical participants state, and RPC fallback)
+    const isHost = await verifyIsPlanHost(planUuid, matchedPlan);
     if (!isHost) {
       throw new Error("Only the plan host can manage participants of a completed plan.");
     }
@@ -516,7 +584,7 @@ new = ${planUpdate.cover_image}`);
       const rawMsg = err?.message || err?.details || String(err);
       throw new Error(rawMsg || "Failed to manage participants");
     }
-  }, [plans, dbPlans, userId, resolveUserUuid, refreshPlans]);
+  }, [plans, verifyIsPlanHost, refreshPlans]);
 
   return {
     changePlanHost,

@@ -3,6 +3,7 @@ import { UserProfile, User, DbFriendship } from "../../../core/types";
 import { updateDbUser } from "../../../../lib/db";
 import { supabase } from "../../../../lib/supabaseClient";
 import { evictImageCache, ImageType } from "../../../shared/imaging/imageResolver";
+import { pwaManager } from "../../../shared/pwa/pwaService";
 
 interface ProfileState {
   userProfile: UserProfile | null;
@@ -117,6 +118,39 @@ export const ProfileProvider = ({
           }
           return prev;
         });
+
+        // Auto-sync or prompt push notification subscription with Supabase
+        if (dbUser.id) {
+          if (pwaManager.getPushPermissionState() === "granted") {
+            void pwaManager.syncPushSubscription(dbUser.id).catch(() => {});
+          } else if (pwaManager.getPushPermissionState() === "default" && pwaManager.isPushSupported()) {
+            const triggerPrompt = () => {
+              if (dbUser.id && pwaManager.getPushPermissionState() === "default") {
+                void pwaManager.subscribeToPush(dbUser.id).catch(() => {});
+              }
+            };
+
+            // If running as an installed PWA (standalone mode), prompt immediately on app open
+            const isStandalone = typeof window !== "undefined" && (
+              window.matchMedia("(display-mode: standalone)").matches ||
+              (window.navigator as any).standalone === true
+            );
+            if (isStandalone) {
+              triggerPrompt();
+            }
+
+            // Also attach to first user tap so the browser accepts the permission prompt gesture
+            if (typeof window !== "undefined") {
+              const onUserTap = () => {
+                window.removeEventListener("click", onUserTap);
+                window.removeEventListener("touchstart", onUserTap);
+                triggerPrompt();
+              };
+              window.addEventListener("click", onUserTap, { once: true });
+              window.addEventListener("touchstart", onUserTap, { once: true });
+            }
+          }
+        }
       } catch (err) {
         console.warn("[ProfileContext] Could not rehydrate user role:", err);
       }

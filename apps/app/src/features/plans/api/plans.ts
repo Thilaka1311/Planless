@@ -136,8 +136,27 @@ export async function leavePlanRPC(planId: string): Promise<any> {
   });
 
   if (error) throw error;
+
+  if (data && data.success) {
+    void (async () => {
+      try {
+        await supabase.functions.invoke("send-push", {
+          body: {
+            event: "PLAN_LEAVE",
+            planId,
+            actorId: data.user_id,
+            previousStatus: "JOINED",
+          },
+        });
+      } catch (pushErr) {
+        console.warn("[leavePlanRPC] Push dispatch failed:", pushErr);
+      }
+    })();
+  }
+
   return data;
 }
+
 
 /**
  * Invokes request_host_leave_with_replacement SECURITY DEFINER RPC in PostgreSQL.
@@ -202,6 +221,32 @@ export async function inviteParticipantsRPC(
   });
 
   if (error) throw error;
+
+  // Dispatch push notifications to invited participants (non-blocking)
+  if (Array.isArray(inviteeUserIds) && inviteeUserIds.length > 0) {
+    void (async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const inviterId = authData?.user?.id;
+        const { data: pushRes, error: pushErr } = await supabase.functions.invoke("send-push", {
+          body: {
+            event: "PLAN_INVITATION",
+            planId,
+            userIds: inviteeUserIds,
+            inviterId,
+          },
+        });
+        if (pushErr) {
+          console.warn("[inviteParticipantsRPC] Push dispatch failed:", pushErr.message || pushErr);
+        } else if (pushRes?.deliveredCount !== undefined) {
+          console.log(`[inviteParticipantsRPC] Push delivered to ${pushRes.deliveredCount} devices.`);
+        }
+      } catch (pushErr) {
+        console.warn("[inviteParticipantsRPC] Non-critical push delivery error:", pushErr);
+      }
+    })();
+  }
+
   return data;
 }
 
@@ -220,6 +265,23 @@ export async function promoteToHostRPC(
   });
 
   if (error) throw error;
+
+  void (async () => {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      await supabase.functions.invoke("send-push", {
+        body: {
+          event: "HOST_ASSIGNED",
+          planId,
+          targetUserId,
+          actorId: authData?.user?.id,
+        },
+      });
+    } catch (pushErr) {
+      console.warn("[promoteToHostRPC] Push dispatch failed:", pushErr);
+    }
+  })();
+
   return data;
 }
 
@@ -287,6 +349,22 @@ export async function cancelPlanRPC(planId: string): Promise<any> {
   });
 
   if (error) throw error;
+
+  void (async () => {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      await supabase.functions.invoke("send-push", {
+        body: {
+          event: "PLAN_CANCELLED",
+          planId,
+          actorId: authData?.user?.id,
+        },
+      });
+    } catch (pushErr) {
+      console.warn("[cancelPlanRPC] Push dispatch failed:", pushErr);
+    }
+  })();
+
   return data;
 }
 
@@ -305,6 +383,23 @@ export async function removeParticipantRPC(
   });
 
   if (error) throw error;
+
+  void (async () => {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      await supabase.functions.invoke("send-push", {
+        body: {
+          event: "PARTICIPANT_REMOVED",
+          planId,
+          targetUserId,
+          actorId: authData?.user?.id,
+        },
+      });
+    } catch (pushErr) {
+      console.warn("[removeParticipantRPC] Push dispatch failed:", pushErr);
+    }
+  })();
+
   return data;
 }
 
@@ -318,8 +413,27 @@ export async function joinPlanRPC(planId: string): Promise<any> {
   });
 
   if (error) throw error;
+
+  if (data && data.success) {
+    void (async () => {
+      try {
+        await supabase.functions.invoke("send-push", {
+          body: {
+            event: data.rsvp_status === "WAITLISTED" ? "WAITLIST_JOIN" : "PLAN_JOIN",
+            planId,
+            actorId: data.user_id,
+            rsvpStatus: data.rsvp_status,
+          },
+        });
+      } catch (pushErr) {
+        console.warn("[joinPlanRPC] Push dispatch failed:", pushErr);
+      }
+    })();
+  }
+
   return data;
 }
+
 
 /**
  * Invokes the rejoin_plan SECURITY DEFINER RPC.
@@ -412,8 +526,30 @@ export async function completePlan(
   });
 
   if (error) throw error;
+
+  void (async () => {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const attendingUserIds = attendanceInput
+        .filter((a) => a.attendance === "ATTENDED")
+        .map((a) => a.user_id);
+
+      await supabase.functions.invoke("send-push", {
+        body: {
+          event: "PLAN_COMPLETED",
+          planId,
+          actorId: authData?.user?.id,
+          attendingUserIds,
+        },
+      });
+    } catch (pushErr) {
+      console.warn("[completePlan] Push dispatch failed:", pushErr);
+    }
+  })();
+
   return data;
 }
+
 
 /**
  * Invokes the manage_completed_plan_participants SECURITY DEFINER RPC.

@@ -26,6 +26,9 @@ export interface BackendEnv {
   GOOGLE_MAPS_API_KEY?: string;
   TMDB_API_KEY?: string;
   TMDB_ACCESS_TOKEN?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
 }
 
 function getRequiredEnv(name: string): string {
@@ -47,4 +50,8 @@ export const env: BackendEnv = {
   GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
   TMDB_API_KEY: process.env.TMDB_API_KEY,
   TMDB_ACCESS_TOKEN: process.env.TMDB_ACCESS_TOKEN,
+  VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY,
+  VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
+  VAPID_SUBJECT: process.env.VAPID_SUBJECT,
 };
+

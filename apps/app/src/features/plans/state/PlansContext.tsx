@@ -798,6 +798,22 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     await handleParticipantStatusChange(planUuid, userUuid, existing?.rsvp_status, targetDbState);
 
+    void (async () => {
+      try {
+        await supabase.functions.invoke("send-push", {
+          body: {
+            event: targetDbState === "WAITLISTED" ? "WAITLIST_JOIN" : "PLAN_JOIN",
+            planId: planUuid,
+            actorId: userUuid,
+            rsvpStatus: targetDbState,
+          },
+        });
+      } catch (err) {
+        console.warn("[acceptPlan] Non-critical push delivery error:", err);
+      }
+    })();
+
+
 
 
     // 2. Check if all non-host participants have accepted (state updated via realtime)
@@ -868,8 +884,24 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await removePlanTeamAssignment(planUuid, userUuid);
       setDbPlanTeamAssignments(prev => prev.filter(a => !(a.plan_id === planUuid && a.user_id === userUuid)));
       await promoteWaitlistIfSpotsAvailable(planUuid);
+
+      void (async () => {
+        try {
+          await supabase.functions.invoke("send-push", {
+            body: {
+              event: "PLAN_LEAVE",
+              planId: planUuid,
+              actorId: userUuid,
+              previousStatus: oldStatus,
+            },
+          });
+        } catch (err) {
+          console.warn("[declinePlan] Non-critical push delivery error:", err);
+        }
+      })();
     }
   };
+
 
   const createPlan = async (
     newDbPlan: any,
@@ -1015,6 +1047,28 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (filteredParticipantRecords.length > 0) {
       const partResultData = await api.upsertParticipants(filteredParticipantRecords);
       dbPartRow = partResultData?.[0];
+    }
+
+    // Dispatch push notifications to initial invited participants (non-blocking)
+    if (inviteeUuids.length > 0) {
+      supabase.functions
+        .invoke("send-push", {
+          body: {
+            event: "PLAN_INVITATION",
+            planId: insertedPlanUuid,
+            userIds: inviteeUuids,
+          },
+        })
+        .then(({ data: pushRes, error: pushErr }) => {
+          if (pushErr) {
+            console.warn("[createPlan] Push invitation dispatch failed:", pushErr.message || pushErr);
+          } else if (pushRes?.deliveredCount !== undefined) {
+            console.log(`[createPlan] Push invitations delivered to ${pushRes.deliveredCount} devices.`);
+          }
+        })
+        .catch((pushErr) => {
+          console.warn("[createPlan] Push invitation invocation network error:", pushErr);
+        });
     }
 
     // Insert plan_created activity log (temporarily disabled)

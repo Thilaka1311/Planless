@@ -188,23 +188,317 @@ async function startServer() {
 
   // 2. VITE MIDDLEWARE (DEV) OR STATIC CHASSIS (PROD)
   if (env.NODE_ENV !== "production") {
-    // In development mode, serve an unregistering service worker script for /sw.js.
-    // It silently unregisters any active service worker and clears caches without forcing
-    // disruptive page reload loops while modules are in flight.
+    // In development mode, serve a lean Service Worker that activates immediately
+    // without failing Workbox precache checks on non-existent production asset hashes,
+    // while maintaining full background Web Push notification and click handling.
+    app.get(["/manifest.webmanifest", "/manifest.json"], (req, res) => {
+      res.setHeader("Content-Type", "application/manifest+json");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.sendFile(path.resolve(process.cwd(), "apps/app/public/manifest.webmanifest"));
+    });
+
     app.get(["/sw.js", "/sw.js.map"], (req, res) => {
       res.setHeader("Content-Type", "application/javascript");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Service-Worker-Allowed", "/");
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       res.send(`
-        self.addEventListener('install', () => self.skipWaiting());
-        self.addEventListener('activate', (event) => {
-          event.waitUntil(
-            self.registration.unregister()
-              .then(() => self.caches.keys())
-              .then((keys) => Promise.all(keys.map((k) => self.caches.delete(k))))
-          );
-        });
+// Planless Development Service Worker (Web Push Enabled)
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+// Fetch listener: Required for Chromium / Android PWA installability criteria
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request))
+  );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+// Background Push Notification Event
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  let payload;
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = {
+      title: 'Planless',
+      body: event.data.text() || 'New update available',
+    };
+  }
+
+  const notificationType = payload.notificationType || payload.data?.notificationType || '';
+  const tag = payload.tag || 'planless-notification';
+
+  event.waitUntil(
+    (async () => {
+      const origin = (self.location && self.location.origin) ? self.location.origin : '';
+      const badge = origin ? \`\${origin}/favicon-32x32.png\` : '/favicon-32x32.png';
+
+      // =========================================================================
+      // SCENARIO 1: PLAN INVITATIONS (Must NEVER be merged with chat messages)
+      // =========================================================================
+      if (notificationType === 'PLAN_INVITATION' || tag.startsWith('plan-invite-')) {
+        const title = payload.title || 'Planless';
+        const body = payload.body || '';
+        let icon = payload.icon || '/pwa-192x192.png';
+        const url = payload.data?.url || payload.url || '/';
+
+        if (origin) {
+          if (icon && typeof icon === 'string' && icon.startsWith('/')) {
+            try { icon = new URL(icon, origin).href; } catch {}
+          }
+        }
+
+        const inviteOptions = {
+          body,
+          icon,
+          badge,
+          tag,
+          timestamp: payload.timestamp || Date.now(),
+          renotify: true,
+          data: {
+            url,
+            planId: payload.data?.planId,
+            notificationType: 'PLAN_INVITATION',
+            ...payload.data,
+            receivedAt: Date.now(),
+          },
+          vibrate: [100, 50, 100],
+        };
+
+        if (icon && typeof icon === 'string' && !icon.includes('pwa-192x192.png')) {
+          try {
+            await fetch(icon, { mode: 'no-cors', cache: 'force-cache' }).catch(() => {});
+          } catch {}
+        }
+
+        await self.registration.showNotification(title, inviteOptions);
+        return;
+      }
+
+      // =========================================================================
+      // SCENARIO 2: CHAT MESSAGES (WhatsApp-style Multi-Group & Expanded History)
+      // =========================================================================
+      if (
+        notificationType === 'CHAT_MESSAGE' ||
+        tag === 'plan-chats' ||
+        tag.startsWith('plan-chat-')
+      ) {
+        let existingGroups = {};
+
+        try {
+          const activeNotifications = await self.registration.getNotifications();
+          const existingChatNotif = activeNotifications.find((n) => n.tag === 'plan-chats');
+          if (existingChatNotif && existingChatNotif.data?.groups) {
+            existingGroups = { ...existingChatNotif.data.groups };
+          }
+        } catch (e) {
+          console.warn('[SW] Could not read active notifications:', e);
+        }
+
+        if (payload.data?.groups && typeof payload.data.groups === 'object') {
+          for (const [pId, groupData] of Object.entries(payload.data.groups)) {
+            if (!existingGroups[pId]) {
+              existingGroups[pId] = {
+                planId: groupData.planId || pId,
+                planTitle: groupData.planTitle || 'Plan',
+                messages: Array.isArray(groupData.messages) ? [...groupData.messages] : [],
+                latestAvatar: groupData.latestAvatar || payload.icon || '',
+              };
+            } else {
+              const currentIds = new Set(existingGroups[pId].messages.map((m) => m.id));
+              for (const m of groupData.messages || []) {
+                if (!currentIds.has(m.id)) {
+                  existingGroups[pId].messages.push(m);
+                  currentIds.add(m.id);
+                }
+              }
+              if (groupData.latestAvatar) {
+                existingGroups[pId].latestAvatar = groupData.latestAvatar;
+              }
+            }
+          }
+        } else if (payload.data?.planId) {
+          const pId = payload.data.planId;
+          const pTitle = payload.data.planTitle || payload.title || 'Plan';
+          const senderName = payload.data.senderName || 'Friend';
+          const content = payload.body || payload.data.messageText || '';
+          const msgId = payload.data.messageId || \`msg_\${Date.now()}_\${Math.random()}\`;
+          const avatar = payload.icon || payload.data.senderAvatar || '';
+
+          if (!existingGroups[pId]) {
+            existingGroups[pId] = {
+              planId: pId,
+              planTitle: pTitle,
+              messages: [{ id: msgId, senderName, content, senderAvatar: avatar }],
+              latestAvatar: avatar,
+            };
+          } else {
+            const currentIds = new Set(existingGroups[pId].messages.map((m) => m.id));
+            if (!currentIds.has(msgId)) {
+              existingGroups[pId].messages.push({ id: msgId, senderName, content, senderAvatar: avatar });
+            }
+            if (avatar) {
+              existingGroups[pId].latestAvatar = avatar;
+            }
+          }
+        }
+
+        const groupList = Object.values(existingGroups);
+        const distinctGroupsCount = groupList.length;
+        const totalMessagesCount = groupList.reduce((sum, g) => sum + g.messages.length, 0);
+
+        let finalTitle = payload.title || 'Planless';
+        let finalBody = payload.body || '';
+        let finalIcon = payload.icon || '/pwa-192x192.png';
+        let finalUrl = '/chats';
+        let actions = [];
+
+        if (distinctGroupsCount > 1) {
+          finalTitle = \`\${totalMessagesCount} messages from \${distinctGroupsCount} groups\`;
+          const groupSections = groupList.map((g) => {
+            const lines = g.messages.slice(-4).map((m) => \`  \${m.senderName}: \${m.content}\`);
+            return \`\${g.planTitle}:\\n\${lines.join('\\n')}\`;
+          });
+          finalBody = groupSections.join('\\n\\n');
+          finalUrl = '/chats';
+          actions = groupList.slice(0, 2).map((g) => ({
+            action: \`open_chat_\${g.planId}\`,
+            title: g.planTitle.length > 15 ? \`\${g.planTitle.slice(0, 14)}…\` : g.planTitle,
+          }));
+
+          const latestGroup = groupList[groupList.length - 1];
+          if (latestGroup?.latestAvatar) {
+            finalIcon = latestGroup.latestAvatar;
+          }
+        } else if (distinctGroupsCount === 1) {
+          const single = groupList[0];
+          if (single.messages.length === 1) {
+            finalTitle = \`\${single.messages[0].senderName} • \${single.planTitle}\`;
+            finalBody = single.messages[0].content;
+          } else {
+            finalTitle = \`\${single.planTitle} • \${single.messages.length} messages\`;
+            finalBody = single.messages.slice(-8).map((m) => \`\${m.senderName}: \${m.content}\`).join('\\n');
+          }
+          finalUrl = \`/chats?id=\${single.planId}\`;
+          if (single.latestAvatar) {
+            finalIcon = single.latestAvatar;
+          }
+          actions = [
+            {
+              action: \`open_chat_\${single.planId}\`,
+              title: 'Open Chat',
+            },
+          ];
+        }
+
+        if (origin) {
+          if (finalIcon && typeof finalIcon === 'string' && finalIcon.startsWith('/')) {
+            try { finalIcon = new URL(finalIcon, origin).href; } catch {}
+          }
+        }
+
+        const chatOptions = {
+          body: finalBody,
+          icon: finalIcon,
+          badge,
+          tag: 'plan-chats',
+          timestamp: payload.timestamp || Date.now(),
+          renotify: true,
+          data: {
+            url: finalUrl,
+            notificationType: 'CHAT_MESSAGE',
+            groups: existingGroups,
+            totalMessages: totalMessagesCount,
+            groupCount: distinctGroupsCount,
+            receivedAt: Date.now(),
+          },
+          vibrate: [100, 50, 100],
+          actions,
+        };
+
+        if (finalIcon && typeof finalIcon === 'string' && !finalIcon.includes('pwa-192x192.png')) {
+          try {
+            await fetch(finalIcon, { mode: 'no-cors', cache: 'force-cache' }).catch(() => {});
+          } catch {}
+        }
+
+        await self.registration.showNotification(finalTitle, chatOptions);
+
+        if ('setAppBadge' in self.navigator) {
+          try { await self.navigator.setAppBadge(totalMessagesCount); } catch {}
+        }
+        return;
+      }
+
+      // =========================================================================
+      // SCENARIO 3: FALLBACK NOTIFICATION
+      // =========================================================================
+      const defaultTitle = payload.title || 'Planless';
+      const defaultBody = payload.body || '';
+      const defaultIcon = payload.icon || '/pwa-192x192.png';
+      await self.registration.showNotification(defaultTitle, {
+        body: defaultBody,
+        icon: defaultIcon,
+        badge,
+        tag,
+        renotify: true,
+        data: { url: payload.data?.url || payload.url || '/' },
+      });
+    })()
+  );
+});
+
+// Notification Click Handler (focus or open target URL)
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  if ('clearAppBadge' in self.navigator) {
+    self.navigator.clearAppBadge().catch(() => {});
+  }
+  let url = event.notification.data?.url || '/';
+  if (event.action && event.action.startsWith('open_chat_')) {
+    const planId = event.action.replace('open_chat_', '');
+    url = \`/chats?id=\${planId}\`;
+  }
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          return client.focus().then(() => {
+            if ('navigate' in client && url) {
+              return client.navigate(url);
+            }
+          });
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(url);
+      }
+    })
+  );
+});
+
+self.addEventListener('notificationclose', (event) => {
+  console.log('[SW] Notification dismissed by user:', event.notification.tag);
+});
       `);
     });
+
 
     // Disable HTTP browser caching for dev responses
     app.use((req, res, next) => {
@@ -331,8 +625,63 @@ async function startServer() {
     // seedDefaultUsers();
     if (env.NODE_ENV !== "production") {
       ensureNgrokTunnel(PORT);
+      ensureEdgeFunctions();
     }
   });
+}
+
+let edgeFunctionsProcess: ChildProcess | null = null;
+
+async function ensureEdgeFunctions() {
+  if (process.env.NODE_ENV === "production") return;
+  // Check if edge functions are already serving on local Supabase Kong gateway
+  try {
+    const ping = await fetch("http://127.0.0.1:54321/functions/v1/send-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "PING" }),
+    });
+    if (ping.status === 200) {
+      console.log("⚡ [Supabase] Edge functions (send-push, maps) active on local port 54321");
+      return;
+    }
+  } catch {}
+
+  // Spawn local Supabase Edge Functions runtime
+  try {
+    console.log("⚡ [Supabase] Spawning local Edge Functions runtime...");
+    edgeFunctionsProcess = spawn("npx", ["supabase", "functions", "serve", "--env-file", "./supabase/functions/.env"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        PATH: `${process.env.PATH || ""}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`,
+      },
+    });
+
+    edgeFunctionsProcess.stderr?.on("data", (chunk: Buffer) => {
+      const msg = chunk.toString();
+      if (msg.includes("error") || msg.includes("Error")) {
+        console.warn(`[Supabase Functions] ${msg.trim()}`);
+      }
+    });
+
+    edgeFunctionsProcess.on("exit", () => {
+      edgeFunctionsProcess = null;
+    });
+
+    const cleanup = () => {
+      if (edgeFunctionsProcess && !edgeFunctionsProcess.killed) {
+        try {
+          edgeFunctionsProcess.kill("SIGTERM");
+        } catch {}
+      }
+    };
+    process.once("SIGINT", cleanup);
+    process.once("SIGTERM", cleanup);
+    process.once("exit", cleanup);
+  } catch (err: any) {
+    console.warn(`[Supabase Functions] Could not spawn local functions: ${err.message}`);
+  }
 }
 
 let ngrokProcess: ChildProcess | null = null;
@@ -360,6 +709,7 @@ async function ensureNgrokTunnel(port: number) {
     console.log(`\n🚀 [ngrok] Public tunnel active: ${url}\n`);
     return;
   }
+
 
   // 2. Spawn ngrok process with explicit authtoken if provided
   try {

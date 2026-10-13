@@ -6,7 +6,10 @@ import {
   History,
   Camera,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Bell,
+  Share2,
+  Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useProfileStore } from "../state/ProfileContext";
@@ -21,6 +24,9 @@ import { About } from "./About";
 import { PastPlans } from "./PastPlans";
 import { PlanImageEditorModal } from "../../create/components/PlanImageEditorModal";
 import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../navigation/appRouter";
+import { pwaManager } from "../../../shared/pwa/pwaService";
+import { useToast } from "../../../shared/contexts/ToastContext";
+import { supabase } from "../../../../lib/supabaseClient";
 
 interface ProfileScreenProps {
   onLogout: () => void;
@@ -66,13 +72,136 @@ export const ProfileScreen = ({
 
   const currentUser = dbUsers.find(u => u.id === activeUserUuid || u.user_id === activeUserId);
 
-  // Sub-sheet states for inline edit flows (Name, About, Friends, Past Plans, Logout)
-  const [activeSheet, setActiveSheet] = useState<'pastPlans' | 'logout' | 'friends' | 'editName' | 'editAbout' | null>(() => {
+  const { showToast } = useToast();
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>(() => pwaManager.getPushPermissionState());
+  const [isPushSubscribed, setIsPushSubscribed] = useState(false);
+  const [isSubscribingPush, setIsSubscribingPush] = useState(false);
+  const [isSendingTestPush, setIsSendingTestPush] = useState(false);
+
+  // Check actual active push subscription in browser and auto-sync with Supabase
+  useEffect(() => {
+    let isCancelled = false;
+    async function checkSubscription() {
+      const active = await pwaManager.hasActivePushSubscription();
+      if (!isCancelled) {
+        setIsPushSubscribed(active);
+        setPushPermission(pwaManager.getPushPermissionState());
+      }
+      const targetUid = activeUserUuid || activeUserId;
+      if (targetUid) {
+        try {
+          const { data: dbSubs } = await supabase
+            .from('user_push_subscriptions')
+            .select('id')
+            .eq('user_id', targetUid)
+            .eq('is_active', true)
+            .limit(1);
+
+          if (!isCancelled && dbSubs && dbSubs.length > 0) {
+            setIsPushSubscribed(true);
+          }
+        } catch {}
+      }
+
+      if (targetUid && pwaManager.getPushPermissionState() === 'granted' && !active) {
+        const synced = await pwaManager.syncPushSubscription(targetUid);
+        if (!isCancelled && synced) {
+          setIsPushSubscribed(true);
+        }
+      }
+    }
+    checkSubscription();
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeUserUuid, activeUserId]);
+
+
+  // Sub-sheet states for inline edit flows (Name, About, Friends, Past Plans, Logout, iOS PWA Instructions)
+  const [activeSheet, setActiveSheet] = useState<'pastPlans' | 'logout' | 'friends' | 'editName' | 'editAbout' | 'iosPwaInstructions' | null>(() => {
     const route = parseCurrentRoute();
     if (route.subScreen === 'profile-name') return 'editName';
     if (route.subScreen === 'profile-about') return 'editAbout';
     return null;
   });
+
+  const handleToggleNotifications = async () => {
+    if (pwaManager.isIosSafariWithoutPwa()) {
+      setActiveSheet('iosPwaInstructions');
+      return;
+    }
+
+    if (!pwaManager.isPushSupported()) {
+      showToast('Notifications are not supported in this browser.', 'error');
+      return;
+    }
+
+    if (pushPermission === 'denied') {
+      showToast('Notifications are blocked. Please enable them in browser site settings.', 'error');
+      return;
+    }
+
+    const targetUid = activeUserUuid || activeUserId;
+
+    if (isPushSubscribed) {
+      setIsSubscribingPush(true);
+      try {
+        await pwaManager.unsubscribeFromPush(targetUid);
+        setIsPushSubscribed(false);
+        showToast('Notifications paused on this device.', 'info');
+      } catch {
+        showToast('Failed to pause notifications.', 'error');
+      } finally {
+        setIsSubscribingPush(false);
+      }
+      return;
+    }
+
+    setIsSubscribingPush(true);
+    try {
+      const res = await pwaManager.subscribeToPush(targetUid);
+      if (res.success) {
+        setIsPushSubscribed(true);
+        setPushPermission('granted');
+        showToast('Push notifications enabled!', 'success');
+      } else if (res.requiresIosPwa) {
+        setActiveSheet('iosPwaInstructions');
+      } else if (res.permissionDenied) {
+        setPushPermission('denied');
+        showToast('Notification permission was not granted.', 'error');
+      } else {
+        showToast(res.error || 'Could not enable notifications.', 'error');
+      }
+    } catch {
+      showToast('Error enabling notifications.', 'error');
+    } finally {
+      setIsSubscribingPush(false);
+    }
+  };
+
+  const handleSendTestPush = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const targetUid = activeUserUuid || activeUserId;
+    if (!targetUid) return;
+    setIsSendingTestPush(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-push', {
+        body: {
+          action: 'test',
+          userId: targetUid,
+        },
+      });
+      if (error || !data?.success) {
+        showToast(error?.message || data?.message || 'Failed to dispatch test notification.', 'error');
+      } else {
+        showToast('Test notification sent! Lock your phone to verify.', 'success');
+      }
+    } catch {
+      showToast('Error requesting test notification.', 'error');
+    } finally {
+      setIsSendingTestPush(false);
+    }
+  };
 
   useEffect(() => {
     return listenToNavigation((route) => {
@@ -287,6 +416,82 @@ export const ProfileScreen = ({
               </div>
             </div>
 
+            {/* Notifications Option */}
+            <div
+              id="profile_notifications_row"
+              className="w-full flex items-center justify-between gap-4 px-1 py-2.5 rounded-xl hover:bg-zinc-900/20 transition text-left group"
+            >
+              <button
+                type="button"
+                id="btn_profile_notifications"
+                onClick={handleToggleNotifications}
+                disabled={isSubscribingPush}
+                className="flex-1 flex items-center gap-4 min-w-0 cursor-pointer text-left bg-transparent border-none p-0 outline-none active:scale-[0.99] transition-transform"
+              >
+                <div className={`w-9 h-9 rounded-xl bg-zinc-900/60 border border-white/[0.02] flex items-center justify-center transition flex-shrink-0 ${
+                  isPushSubscribed
+                    ? 'text-emerald-400 group-hover:text-emerald-300'
+                    : 'text-zinc-400 group-hover:text-white'
+                }`}>
+                  {isSubscribingPush ? (
+                    <Loader2 className="w-4.5 h-4.5 animate-spin" />
+                  ) : (
+                    <Bell className="w-4.5 h-4.5" />
+                  )}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <span className="text-sm font-sans font-medium text-zinc-200 block">
+                    Notifications
+                  </span>
+                  <span className="text-[11px] font-sans text-zinc-500 block truncate">
+                    {pwaManager.isIosSafariWithoutPwa()
+                      ? 'Add to Home Screen required on iPhone'
+                      : isPushSubscribed
+                      ? 'Active on this device'
+                      : pushPermission === 'denied'
+                      ? 'Blocked in browser settings'
+                      : 'Tap to enable lock screen alerts'}
+                  </span>
+                </div>
+              </button>
+
+              {/* Status Badge & Test Action */}
+              <div className="shrink-0 flex items-center gap-2">
+                {isPushSubscribed && (
+                  <button
+                    type="button"
+                    onClick={handleSendTestPush}
+                    disabled={isSendingTestPush}
+                    className="text-[11px] font-sans font-medium px-2 py-0.5 rounded-lg bg-zinc-800 text-zinc-300 hover:text-white border border-white/[0.06] hover:bg-zinc-700/60 transition cursor-pointer flex items-center gap-1"
+                    title="Send a real test push notification"
+                  >
+                    {isSendingTestPush ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      'Test'
+                    )}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleToggleNotifications}
+                  disabled={isSubscribingPush}
+                  className="bg-transparent border-none p-0 cursor-pointer"
+                >
+                  {isPushSubscribed ? (
+                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      ON
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-white/[0.04]">
+                      OFF
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+
             {/* Past Plans Option */}
             <button
               type="button"
@@ -481,6 +686,98 @@ export const ProfileScreen = ({
               });
             }}
           />
+        )}
+
+        {/* 6. IOS PWA INSTRUCTIONS SHEET */}
+        {activeSheet === 'iosPwaInstructions' && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setActiveSheet(null)}
+              className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 pointer-events-auto"
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 w-full z-50 pointer-events-auto select-none"
+              style={{
+                background: "#18181B",
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+                padding: "16px 20px 24px",
+                boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.4)",
+                paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center mb-4">
+                <div
+                  style={{
+                    width: 36,
+                    height: 5,
+                    borderRadius: 2.5,
+                    background: "rgba(255, 255, 255, 0.2)",
+                  }}
+                />
+              </div>
+
+              <div className="mb-5 text-left">
+                <div className="w-10 h-10 rounded-2xl bg-[#FF6B2C]/10 border border-[#FF6B2C]/20 flex items-center justify-center text-[#FF6B2C] mb-3">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <h3 className="font-sans font-bold text-lg text-white mb-1 tracking-tight">
+                  Enable Lock Screen Alerts
+                </h3>
+                <p className="text-zinc-400 font-sans text-xs leading-relaxed">
+                  On iPhone, Apple requires Planless to be on your Home Screen to receive alerts when the app is closed.
+                </p>
+              </div>
+
+              <div className="space-y-3 mb-6 text-left">
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                  <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-[#FF6B2C] shrink-0 mt-0.5">
+                    1
+                  </div>
+                  <div className="text-xs font-sans text-zinc-300 leading-normal">
+                    Tap the <span className="text-white font-medium">Share</span> button in Safari's bottom navigation bar.
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                  <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-[#FF6B2C] shrink-0 mt-0.5">
+                    2
+                  </div>
+                  <div className="text-xs font-sans text-zinc-300 leading-normal">
+                    Scroll down and tap <span className="text-white font-medium">Add to Home Screen</span>.
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                  <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-[#FF6B2C] shrink-0 mt-0.5">
+                    3
+                  </div>
+                  <div className="text-xs font-sans text-zinc-300 leading-normal">
+                    Open Planless from your Home Screen and tap <span className="text-white font-medium">Enable Notifications</span>.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                id="btn_dismiss_ios_pwa_sheet"
+                onClick={() => setActiveSheet(null)}
+                className="w-full py-3.5 rounded-xl font-sans font-semibold text-sm text-black bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] transition cursor-pointer"
+              >
+                Got it
+              </button>
+            </motion.div>
+          </>
         )}
 
       </AnimatePresence>

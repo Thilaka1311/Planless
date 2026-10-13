@@ -377,6 +377,7 @@ export type Database = {
           title: string
           type: Database["public"]["Enums"]["notification_type"]
           user_id: string
+          metadata?: Json
         }
         Insert: {
           body: string
@@ -388,6 +389,7 @@ export type Database = {
           title: string
           type: Database["public"]["Enums"]["notification_type"]
           user_id: string
+          metadata?: Json
         }
         Update: {
           body?: string
@@ -399,6 +401,7 @@ export type Database = {
           title?: string
           type?: Database["public"]["Enums"]["notification_type"]
           user_id?: string
+          metadata?: Json
         }
         Relationships: [
           {
@@ -410,6 +413,95 @@ export type Database = {
           },
           {
             foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_push_subscriptions: {
+        Row: {
+          id: string
+          user_id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+          user_agent: string | null
+          platform: string | null
+          is_active: boolean
+          last_seen_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          endpoint: string
+          p256dh: string
+          auth: string
+          user_agent?: string | null
+          platform?: string | null
+          is_active?: boolean
+          last_seen_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          endpoint?: string
+          p256dh?: string
+          auth?: string
+          user_agent?: string | null
+          platform?: string | null
+          is_active?: boolean
+          last_seen_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_push_subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sent_plan_reminders: {
+        Row: {
+          id: string
+          plan_id: string
+          user_id: string
+          reminder_type: string
+          sent_at: string
+        }
+        Insert: {
+          id?: string
+          plan_id: string
+          user_id: string
+          reminder_type: string
+          sent_at?: string
+        }
+        Update: {
+          id?: string
+          plan_id?: string
+          user_id?: string
+          reminder_type?: string
+          sent_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sent_plan_reminders_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sent_plan_reminders_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -1587,6 +1679,9 @@ export type Database = {
         | "PAYMENT_RECEIVED"
         | "PAYMENT_REMINDER"
         | "MEMORY_GENERATED"
+        | "CHAT_MESSAGE"
+        | "WAITLIST_PROMOTED"
+        | "PLAN_UPDATED"
       participant_filtering_type: "AUTOMATIC" | "ASSIGNED"
       participant_payment_status: "PENDING" | "SETTLED"
       participant_role: "HOST" | "PARTICIPANT"
@@ -1811,6 +1906,9 @@ export const Constants = {
         "PAYMENT_RECEIVED",
         "PAYMENT_REMINDER",
         "MEMORY_GENERATED",
+        "CHAT_MESSAGE",
+        "WAITLIST_PROMOTED",
+        "PLAN_UPDATED",
       ],
       participant_filtering_type: ["AUTOMATIC", "ASSIGNED"],
       participant_payment_status: ["PENDING", "SETTLED"],

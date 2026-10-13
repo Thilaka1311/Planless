@@ -1462,6 +1462,23 @@ export function usePlanParticipants({
         throw updateErr;
       }
 
+      if (isWaitlisted && nextRsvp === 'JOINED') {
+        void (async () => {
+          try {
+            await supabase.functions.invoke("send-push", {
+              body: {
+                event: "WAITLIST_PROMOTION",
+                planId: planUuid,
+                targetUserId: resolvedUserUuid,
+              },
+            });
+          } catch (pushErr) {
+            console.warn("[moveParticipantToGoing] Push promotion dispatch failed:", pushErr);
+          }
+        })();
+      }
+
+
       await renumberWaitlistPositions(planUuid).catch(err =>
         console.warn("[moveParticipantToGoing] renumberWaitlistPositions warning:", err)
       );

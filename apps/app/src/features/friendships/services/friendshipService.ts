@@ -71,6 +71,20 @@ export async function sendFriendRequest(
     throw new Error(`Failed to send friend request: ${insertError.message}`);
   }
 
+  void (async () => {
+    try {
+      await supabase.functions.invoke("send-push", {
+        body: {
+          event: "FRIEND_REQUEST_SENT",
+          actorId: currentUserId,
+          targetUserId,
+        },
+      });
+    } catch (pushErr) {
+      console.warn("[sendFriendRequest] Push dispatch failed:", pushErr);
+    }
+  })();
+
   return inserted as Friendship;
 }
 
@@ -123,8 +137,23 @@ export async function acceptFriendRequest(friendshipId: string): Promise<Friends
     throw new Error(`Failed to accept friend request: ${updateError.message}`);
   }
 
+  void (async () => {
+    try {
+      await supabase.functions.invoke("send-push", {
+        body: {
+          event: "FRIEND_REQUEST_ACCEPTED",
+          actorId: currentUserId,
+          targetUserId: existing.requested_by,
+        },
+      });
+    } catch (pushErr) {
+      console.warn("[acceptFriendRequest] Push dispatch failed:", pushErr);
+    }
+  })();
+
   return updated as Friendship;
 }
+
 
 
 /**
