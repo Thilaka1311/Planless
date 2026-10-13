@@ -344,4 +344,48 @@ describe('Plan Chat ↔ Plan Preview Navigation Loop Prevention', () => {
 
     unsubscribe();
   });
+
+  it('navigateToRoute with replace: true preserves active overlay marker on history.state when route is identical', () => {
+    mockWindow.location = new URL('http://localhost:3000/plans/test-plan-overlay');
+    historyStack = [{ state: { tab: 'plans', selectedPlanId: 'test-plan-overlay' }, url: 'http://localhost:3000/plans/test-plan-overlay' }];
+    historyIndex = 0;
+
+    const dismissModal = vi.fn();
+    const unregister = registerDismissibleOverlay('test-bottom-sheet', dismissModal);
+
+    expect(mockWindow.history.state.__isPlanlessOverlay).toBe(true);
+    expect(mockWindow.history.state.__overlayId).toBe('test-bottom-sheet');
+
+    // Background synchronization effect runs with identical route
+    navigateToRoute(
+      { tab: 'plans', selectedPlanId: 'test-plan-overlay' },
+      { replace: true }
+    );
+
+    // Overlay state should NOT be wiped out
+    expect(mockWindow.history.state.__isPlanlessOverlay).toBe(true);
+    expect(mockWindow.history.state.__overlayId).toBe('test-bottom-sheet');
+
+    unregister();
+  });
+
+  it('Flow B maintains selectedChatPlanId across navigateToRoute calls without wiping chat context', () => {
+    mockWindow.location = new URL('http://localhost:3000/chats/chat-plan-99');
+    historyStack = [{ state: { tab: 'chats', selectedChatPlanId: 'chat-plan-99' }, url: 'http://localhost:3000/chats/chat-plan-99' }];
+    historyIndex = 0;
+
+    // Open plan details from chat
+    navigateToRoute({
+      tab: 'plans',
+      selectedPlanId: 'chat-plan-99',
+      selectedChatPlanId: 'chat-plan-99',
+      originTab: 'chats',
+      originChatPlanId: 'chat-plan-99',
+      entryPoint: 'chat',
+    });
+
+    expect(mockWindow.history.state.selectedChatPlanId).toBe('chat-plan-99');
+    expect(mockWindow.history.state.entryPoint).toBe('chat');
+    expect(mockWindow.history.state.originChatPlanId).toBe('chat-plan-99');
+  });
 });

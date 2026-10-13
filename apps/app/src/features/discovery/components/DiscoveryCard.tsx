@@ -329,6 +329,15 @@ export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
 
   const [isImageBroken, setIsImageBroken] = React.useState(false);
 
+  const longPress = useLongPress(
+    () => {
+      if (shouldEnableAdminHold && onLongPressAdmin) {
+        onLongPressAdmin();
+      }
+    },
+    { threshold: 500, onTap }
+  );
+
   // If strict category venue photo is broken, missing, placeholder, or failed to load: NEVER display the card!
   if (
     isStrictCategory &&
@@ -339,15 +348,6 @@ export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
   ) {
     return null;
   }
-
-  const longPress = useLongPress(
-    () => {
-      if (shouldEnableAdminHold && onLongPressAdmin) {
-        onLongPressAdmin();
-      }
-    },
-    { threshold: 500, onTap }
-  );
 
   const rating = resolveVenueRating(item);
   const distance = resolveVenueDistance(item, userCoordinates);

@@ -431,14 +431,19 @@ export function parseCurrentRoute(): AppRoute {
   const canonicalAlias = getCanonicalPathForAlias(pathname);
   if (canonicalAlias) {
     const fullCanonical = canonicalAlias + search;
+    const route = parseRoutePath(canonicalAlias, search);
     try {
-      if (window.history && typeof window.history.replaceState === 'function') {
+      if (
+        typeof window !== 'undefined' &&
+        window.location.pathname !== canonicalAlias &&
+        window.history &&
+        typeof window.history.replaceState === 'function'
+      ) {
         window.history.replaceState(window.history.state, '', fullCanonical);
       }
     } catch {
       // In restricted sandbox or test environments, ignore
     }
-    const route = parseRoutePath(canonicalAlias, search);
     const historyState = (typeof window !== 'undefined' && window.history?.state
       ? window.history.state
       : {}) as Partial<AppRoute>;
@@ -565,6 +570,32 @@ export function getRoutePath(route: AppRoute): string {
 }
 
 /**
+ * Checks whether two route representations or history states are semantically equal.
+ */
+export function areRoutesEqual(a?: unknown, b?: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  const routeA = a as Record<string, any>;
+  const routeB = b as Record<string, any>;
+  return (
+    routeA.tab === routeB.tab &&
+    (routeA.createPhase ?? null) === (routeB.createPhase ?? null) &&
+    (routeA.discoveryCategory ?? null) === (routeB.discoveryCategory ?? null) &&
+    (routeA.subScreen ?? null) === (routeB.subScreen ?? null) &&
+    (routeA.selectedPlanId ?? null) === (routeB.selectedPlanId ?? null) &&
+    (routeA.selectedChatPlanId ?? null) === (routeB.selectedChatPlanId ?? null) &&
+    (routeA.inviteToken ?? null) === (routeB.inviteToken ?? null) &&
+    (routeA.originTab ?? null) === (routeB.originTab ?? null) &&
+    (routeA.originSubScreen ?? null) === (routeB.originSubScreen ?? null) &&
+    (routeA.entryPoint ?? null) === (routeB.entryPoint ?? null) &&
+    (routeA.originChatPlanId ?? null) === (routeB.originChatPlanId ?? null) &&
+    (routeA.plansFilter ?? null) === (routeB.plansFilter ?? null) &&
+    Boolean(routeA.__isPlanlessOverlay) === Boolean(routeB.__isPlanlessOverlay) &&
+    (routeA.__overlayId ?? null) === (routeB.__overlayId ?? null)
+  );
+}
+
+/**
  * Navigates to a route, preserving existing query search parameters.
  */
 export function navigateToRoute(route: AppRoute, options?: { replace?: boolean }): void {
@@ -586,24 +617,42 @@ export function navigateToRoute(route: AppRoute, options?: { replace?: boolean }
   const fullTarget = basePath + queryString;
   const currentFull = window.location.pathname + (window.location.search || '');
 
-  if (currentFull !== fullTarget) {
-    if (options?.replace) {
-      window.history.replaceState(route, '', fullTarget);
-    } else {
-      window.history.pushState(route, '', fullTarget);
-      inAppNavigationDepth++;
-    }
-  } else if (options?.replace) {
-    window.history.replaceState(route, '', fullTarget);
-  }
+  const isUrlDifferent = currentFull !== fullTarget;
+  const isOverlayOnState = Boolean(window.history?.state?.__isPlanlessOverlay);
+  const routeWithOverlay = isOverlayOnState && !isUrlDifferent
+    ? { ...route, __isPlanlessOverlay: true, __overlayId: window.history.state.__overlayId }
+    : route;
+  const isStateDifferent = !areRoutesEqual(window.history?.state, routeWithOverlay);
 
   // If navigating to root home, reset depth so Home acts as root exit destination
   if (route.tab === 'home' && !route.selectedPlanId && !route.subScreen && !route.inviteToken) {
     inAppNavigationDepth = 0;
   }
 
+  if (!isUrlDifferent && !isStateDifferent) {
+    return;
+  }
+
+  const finalRouteToStore = isOverlayOnState && !isUrlDifferent ? routeWithOverlay : route;
+
+  if (isUrlDifferent) {
+    if (options?.replace) {
+      window.history.replaceState(finalRouteToStore, '', fullTarget);
+    } else {
+      window.history.pushState(finalRouteToStore, '', fullTarget);
+      inAppNavigationDepth++;
+    }
+  } else if (isStateDifferent) {
+    window.history.replaceState(finalRouteToStore, '', fullTarget);
+  }
+
   // Dispatch custom event so listeners can synchronize state immediately
   window.dispatchEvent(new CustomEvent('planless-navigation', { detail: route }));
+}
+
+if (typeof window !== 'undefined') {
+  (window as any).navigateToRoute = navigateToRoute;
+  (window as any).parseCurrentRoute = parseCurrentRoute;
 }
 
 let lastBackTriggerTime = 0;

@@ -36,6 +36,7 @@ import {
   navigateBack,
   listenToNavigation,
   useDismissibleOverlay,
+  areRoutesEqual,
   AppTab,
   AppRoute,
   SubScreen,
@@ -266,6 +267,7 @@ export default function MainApp({
   );
 
   const handleClosePlanPreview = React.useCallback(() => {
+    isNavigatingFromPopStateRef.current = true;
     const origin = planNavigationOriginRef.current;
     const major = origin?.majorScreen || (activeTab === "plans" ? "home" : activeTab);
     const sub = origin?.subScreen || null;
@@ -391,6 +393,7 @@ export default function MainApp({
   );
 
   const handleCloseChat = React.useCallback(() => {
+    isNavigatingFromPopStateRef.current = true;
     const currentOrigin = planNavigationOriginRef.current;
     setSelectedChatPlanId(null);
 
@@ -472,12 +475,21 @@ export default function MainApp({
       navigateToRoute({
         tab: "plans",
         selectedPlanId: routePlanParam,
+        selectedChatPlanId: cleanId,
         originTab: "chats",
         originChatPlanId: cleanId,
         entryPoint: "chat",
       });
     }
   }, [selectedChatPlanId, selectedPlanId, plans]);
+
+  // Memoize resolved slug for the selected plan to avoid re-triggering synchronization
+  // on every plans array reference update when no plan is selected or slug hasn't changed.
+  const selectedPlanSlug = React.useMemo(() => {
+    if (!selectedPlanId) return null;
+    const matchedPlan = findPlanBySlugOrId(plans, selectedPlanId);
+    return matchedPlan ? (matchedPlan.slug || getPlanSlug(matchedPlan, plans)) : selectedPlanId;
+  }, [plans, selectedPlanId]);
 
   // Synchronize route and URL with activeTab, selectedPlanId, and selectedChatPlanId
   const isFirstRouteSync = React.useRef(true);
@@ -495,13 +507,13 @@ export default function MainApp({
     // Always use replace: true for background synchronization so we NEVER push duplicate history entries!
     if (selectedPlanId && selectedChatPlanId) {
       localStorage.setItem("planless_selected_plan_id", selectedPlanId);
-      const matchedPlan = findPlanBySlugOrId(plans, selectedPlanId);
-      const routePlanParam = matchedPlan ? (matchedPlan.slug || getPlanSlug(matchedPlan, plans)) : selectedPlanId;
+      const routePlanParam = selectedPlanSlug || selectedPlanId;
       if (planNavigationOrigin?.entryPoint === "chat") {
         navigateToRoute(
           {
             tab: "plans",
             selectedPlanId: routePlanParam,
+            selectedChatPlanId: planNavigationOrigin.originChatPlanId || selectedChatPlanId,
             originTab: "chats",
             originChatPlanId: planNavigationOrigin.originChatPlanId || selectedChatPlanId,
             entryPoint: "chat",
@@ -523,9 +535,7 @@ export default function MainApp({
       }
     } else if (selectedPlanId) {
       localStorage.setItem("planless_selected_plan_id", selectedPlanId);
-      // Resolve readable slug from plan if available
-      const matchedPlan = findPlanBySlugOrId(plans, selectedPlanId);
-      const routePlanParam = matchedPlan ? (matchedPlan.slug || getPlanSlug(matchedPlan, plans)) : selectedPlanId;
+      const routePlanParam = selectedPlanSlug || selectedPlanId;
       navigateToRoute(
         {
           tab: "plans",
@@ -571,9 +581,20 @@ export default function MainApp({
       if (isInitial && (initialRoute.inviteToken || pendingInviteToken)) {
         return;
       }
-      navigateToRoute({ tab: activeTab }, { replace: true });
+      const currentRoute = parseCurrentRoute();
+      if (currentRoute.subScreen) {
+        return;
+      }
+      if (activeTab === "plans") {
+        const filter = plansFilterRef.current !== "hosted" && plansFilterRef.current !== "JOINED"
+          ? (plansFilterRef.current.toLowerCase() as PlansFilter)
+          : undefined;
+        navigateToRoute({ tab: "plans", plansFilter: filter }, { replace: true });
+      } else {
+        navigateToRoute({ tab: activeTab }, { replace: true });
+      }
     }
-  }, [activeTab, selectedPlanId, selectedChatPlanId, plans, initialRoute.inviteToken, pendingInviteToken, planNavigationOrigin]);
+  }, [activeTab, selectedPlanId, selectedChatPlanId, selectedPlanSlug, initialRoute.inviteToken, pendingInviteToken, planNavigationOrigin]);
 
   // Refs to allow persistent subscription to router navigation without missed events or rebinding
   const activeTabRef = useRef(activeTab);
@@ -594,24 +615,46 @@ export default function MainApp({
       if (isPopState) {
         isNavigatingFromPopStateRef.current = true;
       }
-      setCurrentRoute(route);
+      setCurrentRoute((prev) => (areRoutesEqual(prev, route) ? prev : route));
 
       // Restore planNavigationOrigin if route contains origin metadata or reset if at root
       if (route.originTab || route.entryPoint) {
-        setPlanOriginContext({
-          majorScreen: route.originTab || "plans",
-          subScreen: route.originSubScreen || null,
-          entryPoint: route.entryPoint || "preview",
-          planId: route.selectedPlanId || route.selectedChatPlanId || "",
-          originChatPlanId: route.originChatPlanId || (route.entryPoint === "chat" ? (route.selectedChatPlanId || route.selectedPlanId || "") : undefined),
+        setPlanOriginContext((prev) => {
+          const nextMajor = route.originTab || "plans";
+          const nextSub = route.originSubScreen || null;
+          const nextEntryPoint = route.entryPoint || "preview";
+          const nextPlanId = route.selectedPlanId || route.selectedChatPlanId || "";
+          const nextOriginChatPlanId =
+            route.originChatPlanId ||
+            (route.entryPoint === "chat"
+              ? route.selectedChatPlanId || route.selectedPlanId || ""
+              : undefined);
+
+          if (
+            prev &&
+            prev.majorScreen === nextMajor &&
+            prev.subScreen === nextSub &&
+            prev.entryPoint === nextEntryPoint &&
+            prev.planId === nextPlanId &&
+            prev.originChatPlanId === nextOriginChatPlanId
+          ) {
+            return prev;
+          }
+
+          return {
+            majorScreen: nextMajor,
+            subScreen: nextSub,
+            entryPoint: nextEntryPoint,
+            planId: nextPlanId,
+            originChatPlanId: nextOriginChatPlanId,
+          };
         });
       } else if (!route.selectedPlanId && !route.selectedChatPlanId) {
-        setPlanOriginContext(null);
+        setPlanOriginContext((prev) => (prev === null ? prev : null));
       }
 
-      const effectiveTab = route.originTab || route.tab;
-      if (effectiveTab && effectiveTab !== activeTabRef.current && effectiveTab !== "wallet") {
-        setActiveTab(effectiveTab);
+      if (route.tab && route.tab !== activeTabRef.current && route.tab !== "wallet") {
+        setActiveTab(route.tab);
       }
 
       // Sub-screens are derived automatically from currentRoute.subScreen
@@ -632,8 +675,12 @@ export default function MainApp({
         setSelectedPlanId(targetPlanId);
       }
 
-      // Synchronize selectedChatPlanId with route
-      const targetChatId = route.selectedChatPlanId || null;
+      // Synchronize selectedChatPlanId with route (preserve when viewing plan details opened from chat)
+      const targetChatId =
+        route.selectedChatPlanId ||
+        (route.entryPoint === "chat"
+          ? route.originChatPlanId || selectedChatPlanIdRef.current
+          : null);
       if (targetChatId !== selectedChatPlanIdRef.current) {
         setSelectedChatPlanId(targetChatId);
       }

@@ -8,6 +8,7 @@ import {
   listenToNavigation,
   resetInAppNavigationDepth,
   getInAppNavigationDepth,
+  areRoutesEqual,
 } from '../appRouter';
 
 describe('appRouter URL and Navigation Architecture', () => {
@@ -310,6 +311,115 @@ describe('appRouter URL and Navigation Architecture', () => {
       expect(receivedRoute).toEqual({ tab: 'dining', discoveryCategory: 'dining' });
 
       unsubscribe();
+    });
+  });
+
+  describe('areRoutesEqual', () => {
+    it('returns true for semantically identical routes', () => {
+      expect(areRoutesEqual({ tab: 'home' }, { tab: 'home' })).toBe(true);
+      expect(
+        areRoutesEqual(
+          { tab: 'plans', selectedPlanId: 'p-1', plansFilter: null },
+          { tab: 'plans', selectedPlanId: 'p-1' }
+        )
+      ).toBe(true);
+      expect(
+        areRoutesEqual(
+          { tab: 'chats', selectedChatPlanId: 'c-1', entryPoint: 'chat' },
+          { tab: 'chats', selectedChatPlanId: 'c-1', entryPoint: 'chat' }
+        )
+      ).toBe(true);
+    });
+
+    it('returns false for differing route properties', () => {
+      expect(areRoutesEqual({ tab: 'home' }, { tab: 'plans' })).toBe(false);
+      expect(
+        areRoutesEqual(
+          { tab: 'plans', selectedPlanId: 'p-1' },
+          { tab: 'plans', selectedPlanId: 'p-2' }
+        )
+      ).toBe(false);
+      expect(
+        areRoutesEqual(
+          { tab: 'plans', plansFilter: 'waitlisted' },
+          { tab: 'plans', plansFilter: 'joined' }
+        )
+      ).toBe(false);
+      expect(
+        areRoutesEqual(
+          { tab: 'home', subScreen: 'friends' },
+          { tab: 'home' }
+        )
+      ).toBe(false);
+    });
+
+    it('distinguishes overlay state from non-overlay routes', () => {
+      expect(
+        areRoutesEqual(
+          { tab: 'home', __isPlanlessOverlay: true, __overlayId: 'modal-1' },
+          { tab: 'home' }
+        )
+      ).toBe(false);
+    });
+  });
+
+  describe('Navigation Loop and Throttling Prevention', () => {
+    it('does NOT call replaceState or dispatch events when route and state are already identical', () => {
+      mockWindow.location = new URL('http://localhost:3000/home');
+      mockWindow.history.state = { tab: 'home' };
+
+      const eventListener = vi.fn();
+      mockWindow.addEventListener('planless-navigation', eventListener);
+
+      navigateToRoute({ tab: 'home' }, { replace: true });
+
+      expect(mockWindow.history.replaceState).not.toHaveBeenCalled();
+      expect(mockWindow.history.pushState).not.toHaveBeenCalled();
+      expect(eventListener).not.toHaveBeenCalled();
+    });
+
+    it('prevents repeated replaceState calls in high-frequency loops (only updates once)', () => {
+      mockWindow.location = new URL('http://localhost:3000/home');
+      mockWindow.history.state = null;
+
+      const eventListener = vi.fn();
+      mockWindow.addEventListener('planless-navigation', eventListener);
+
+      // Simulate 50 rapid synchronization calls with replace: true for the same route
+      for (let i = 0; i < 50; i++) {
+        navigateToRoute({ tab: 'home' }, { replace: true });
+      }
+
+      // First call initialized the state; subsequent 49 calls were safely skipped
+      expect(mockWindow.history.replaceState).toHaveBeenCalledTimes(1);
+      expect(mockWindow.history.pushState).not.toHaveBeenCalled();
+      expect(eventListener).toHaveBeenCalledTimes(1);
+    });
+
+    it('updates history state once when route metadata changes without changing URL', () => {
+      mockWindow.location = new URL('http://localhost:3000/plans/p-100');
+      mockWindow.history.state = { tab: 'plans', selectedPlanId: 'p-100' };
+
+      // Navigating with added origin metadata (same URL /plans/p-100, but new state)
+      navigateToRoute(
+        { tab: 'plans', selectedPlanId: 'p-100', originTab: 'home', entryPoint: 'preview' },
+        { replace: true }
+      );
+
+      expect(mockWindow.history.replaceState).toHaveBeenCalledTimes(1);
+      expect(mockWindow.history.state).toEqual({
+        tab: 'plans',
+        selectedPlanId: 'p-100',
+        originTab: 'home',
+        entryPoint: 'preview',
+      });
+
+      // Calling again with the same metadata does NOT trigger replaceState again
+      navigateToRoute(
+        { tab: 'plans', selectedPlanId: 'p-100', originTab: 'home', entryPoint: 'preview' },
+        { replace: true }
+      );
+      expect(mockWindow.history.replaceState).toHaveBeenCalledTimes(1);
     });
   });
 });
