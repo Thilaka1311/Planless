@@ -9,7 +9,7 @@ import {
 interface WhoIsActuallyComingProps {
   form: any;
   onBack: () => void;
-  onContinue: () => void;
+  onContinue?: () => void;
   onAddFriends?: () => void;
   selectedCategory?: string;
   initialOpenPlanSizeSheet?: boolean;
@@ -184,7 +184,7 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
 
   return (
     <ParticipantManagementScreen
-      title={form.localTitle || form.title || 'New Activity'}
+      title="Participants"
       category={selectedCategory}
       eventDate={formattedDate}
       eventTime={formattedTime}
@@ -197,7 +197,6 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
       priorityGuestIds={form.priorityGuestIds}
       mode="wizard"
       onBack={onBack}
-      onContinue={handleContinue}
       onParticipantsChange={handleParticipantsChange}
       onAddFriends={onAddFriends}
       onAdjustCapacity={(val) => {

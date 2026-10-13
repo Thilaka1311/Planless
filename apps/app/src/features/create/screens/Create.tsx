@@ -610,6 +610,11 @@ export const CreatePlanScreen = ({
             }
           }}
           onContinue={() => {
+            if (returnToWhoActually) {
+              setReturnToWhoActually(false);
+              transitionToPhase('who-actually');
+              return;
+            }
             setReturnToWhoActually(false);
             setCameFromReview(false);
             transitionToPhase('review');
@@ -657,7 +662,7 @@ export const CreatePlanScreen = ({
           }}
           onAddFriends={() => {
             setReturnToWhoActually(true);
-            setReturnToPlanSizeSheet(true);
+            setReturnToPlanSizeSheet(false);
             transitionToPhase('who');
           }}
           initialOpenPlanSizeSheet={returnToPlanSizeSheet}

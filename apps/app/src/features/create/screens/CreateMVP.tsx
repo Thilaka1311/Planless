@@ -446,7 +446,7 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
           }}
           onAddFriends={() => {
             setReturnToWhoActually(true);
-            setReturnToPlanSizeSheet(true);
+            setReturnToPlanSizeSheet(false);
             transitionToPhase("who");
           }}
           initialOpenPlanSizeSheet={returnToPlanSizeSheet}

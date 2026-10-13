@@ -511,7 +511,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       />
 
       {/* Sticky/Floating Action Button — Bottom Right */}
-      {!isCompletedPlan && mode !== 'wizard' && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
+      {!isCompletedPlan && (mode !== 'wizard' || !onContinue) && (effectiveIsHost || canParticipantInvite) && onAddFriends && (
         <button
           type="button"
           onClick={() => onAddFriends(activeTab)}

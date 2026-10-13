@@ -2668,7 +2668,9 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               onManageParticipants={
                 isHost && !isCancelled
                   ? () => {
-                      if (isCompleted) {
+                      if (createMode && onEditParticipants) {
+                        onEditParticipants();
+                      } else if (isCompleted) {
                         setShowAttendanceSheet(true);
                       } else if (!hasPlanTimeEnded) {
                         setShowParticipantManagement(true);
@@ -2788,7 +2790,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       </div>
 
       {/* Region 2: Fixed CTA region in createMode (outside scroll container, anchored to keyboard-closed content area) */}
-      {createMode && (
+      {createMode && !showParticipantManagement && (
         <div
           id="create-plan-cta-region"
           style={computeCreatePlanCtaPosition(closedScreenHeight)}
