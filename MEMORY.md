@@ -528,5 +528,15 @@ Do not record bug-specific post-mortems as standalone rules. The purpose of memo
   5. **Side-Effect Isolation**: Non-idempotent side effects (e.g., push notifications) are executed strictly ONCE after the final database confirmation. Notifications are never dispatched on retried or failed attempts.
   6. **Exact State Rollback**: On final persistence failure, optimistic state in `usePlanParticipants.addParticipantsToPlan` restores the exact snapshot of `previousPlanParticipants` and `previousDbPlans` rather than performing destructive collection filters.
 
+---
 
+## 33. Unified Domain Mutation & Soft-Delete Invariant for Participant Transitions
 
+* **Core Principle**: Participant lifecycle transitions (`REMOVE`, `REPLACE`, `SWAP`, `MOVE_TO_GOING`, `MOVE_TO_WAITLIST`) must operate through a unified, atomic domain transaction (`public.manage_plan_participant`) that strictly enforces soft-delete data integrity, unique constraint safety, and lock hierarchy. Hard `DELETE` operations on `public.plan_participants` are strictly prohibited.
+* **Invariant**:
+  1. **Strict Soft-Delete Invariant**: Removing or replacing a participant must always transition the row to `rsvp_status = 'SKIPPED'` with an appropriate `skip_reason` (`'REMOVED'`, `'REPLACED'`, `'LEFT'`), clearing `assigned_group = NULL` and `waitlist_position = NULL`. Hard deleting a participant row destroys chat read tracking, past plan lists, notification delivery records, and wallet expense history.
+  2. **RSVP Immutability on Promotion**: Promoting or moving an `INVITED` participant to `GOING` updates their bucket (`assigned_group = 'GOING'`), but their attendance commitment must remain `rsvp_status = 'INVITED'` (`trg_enforce_invited_rsvp_immutable`). Only the invited attendee themselves can confirm attendance via their authenticated RSVP flow.
+  3. **Unique Waitlist Constraint Renumbering**: PostgreSQL partial unique index `idx_uniq_plan_waitlist_position` checks uniqueness per row immediately during updates. Client-side sequential updates trigger PostgreSQL `23505` duplicate key collisions. All contiguous renumbering must execute server-side using a safe two-stage high-offset staging pattern (`+10000` then final 1..N rank).
+  4. **Non-Orphan Host Protection**: A plan's sole active host (`role = 'HOST'`, `rsvp_status = 'JOINED'`) cannot be removed, replaced, or moved to waitlist without first transferring host authority or promoting another confirmed attendee to host.
+  5. **100% Backward-Compatible Shims**: Legacy RPC endpoints (`remove_participant`, `replace_participant`, `remove_and_replace_participant`, `swap_plan_participants`, `move_participant_to_waitlist_and_decrease_capacity`) are preserved as single-line SQL shims delegating to `manage_plan_participant`. Existing mobile builds, web clients, and background jobs continue uninterrupted.
+  6. **Optimistic Cache Reconciliation & Rollback**: Client hooks capture pre-mutation snapshots and rollback instantly on RPC failure, preserving non-affected attendees and avoiding destructive client-side row drops.
