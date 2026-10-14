@@ -1130,7 +1130,7 @@ export default function MainApp({
   ]);
 
   return (
-    <div className="w-full h-full bg-[#050505] flex flex-col justify-between relative overflow-hidden select-none">
+    <div className="w-full h-full min-h-0 bg-[#050505] flex flex-col relative overflow-hidden select-none">
 
       {/* ---------------- FIGMA ALIGNED HEADER ---------------- */}
       <AnimatePresence mode="wait" initial={false}>

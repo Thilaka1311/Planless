@@ -171,7 +171,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = React.memo(({
   };
 
   return (
-    <div id="home_tab_pane" className="w-full h-full relative overflow-hidden bg-[#000000] flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom,0px))]">
+    <div id="home_tab_pane" className="w-full h-full relative overflow-hidden bg-[#000000] flex flex-col">
       {discoverablePlans.length === 0 ? (
         hasLivePlan ? (
           <EmptyState

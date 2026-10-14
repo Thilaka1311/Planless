@@ -22,6 +22,18 @@ if (typeof window !== "undefined") {
     } catch {}
   }
 
+  // Synchronize CSS custom property --app-height with actual runtime visual viewport
+  const syncViewportHeight = () => {
+    const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-height', `${height}px`);
+  };
+  syncViewportHeight();
+  window.addEventListener('resize', syncViewportHeight, { passive: true });
+  window.addEventListener('orientationchange', syncViewportHeight, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncViewportHeight, { passive: true });
+  }
+
   // Intercept Vite dynamic chunk preload errors (triggered when a deployment changes chunk hashes)
   window.addEventListener('vite:preloadError', (event) => {
     console.warn('[Vite] Chunk preload error detected, executing controlled recovery reload:', event);

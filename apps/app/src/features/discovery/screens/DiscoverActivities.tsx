@@ -243,23 +243,25 @@ export const DiscoverActivities: React.FC<DiscoverActivitiesProps> = ({
       <BackToTopButton scrollContainerRef={scrollContainerRef} />
 
       {/* ── 1. HEADER BAR ── */}
-      <div className="w-full shrink-0 px-5 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-2 flex items-center justify-between bg-black border-b border-white/[0.06]">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-white hover:text-zinc-300 active:scale-95 transition cursor-pointer p-1 -ml-1 flex items-center justify-center"
-            aria-label="Back"
-          >
-            <ArrowLeft className="w-6 h-6 text-white" />
-          </button>
-          <div className="flex flex-col text-left">
-            <h2 className="text-base font-bold text-white tracking-tight leading-tight">
-              Activities
-            </h2>
-            <span className="text-[11px] text-pink-400 font-medium mt-0.5 leading-none">
-              Discover fun things to do
-            </span>
+      <div className="w-full shrink-0 px-5 pt-[env(safe-area-inset-top,0px)] bg-black border-b border-white/[0.06]">
+        <div className="py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-white hover:text-zinc-300 active:scale-95 transition cursor-pointer p-1 -ml-1 flex items-center justify-center"
+              aria-label="Back"
+            >
+              <ArrowLeft className="w-6 h-6 text-white" />
+            </button>
+            <div className="flex flex-col text-left">
+              <h2 className="text-base font-bold text-white tracking-tight leading-tight">
+                Activities
+              </h2>
+              <span className="text-[11px] text-pink-400 font-medium mt-0.5 leading-none">
+                Discover fun things to do
+              </span>
+            </div>
           </div>
         </div>
       </div>

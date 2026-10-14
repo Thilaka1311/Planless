@@ -362,7 +362,8 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
       {/* ── TOP HEADER ── */}
-      <div className="flex items-center justify-between px-5 pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-3 shrink-0 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-20">
+      <div className="shrink-0 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-20 pt-[env(safe-area-inset-top,0px)]">
+        <div className="flex items-center justify-between px-5 py-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
             type="button"
@@ -417,6 +418,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
         >
           <Plus className="w-6 h-6 text-white" />
         </button>
+      </div>
       </div>
 
       {/* ── SCREEN VIEW: LIST DETAIL OR TOP-LEVEL LISTS ── */}

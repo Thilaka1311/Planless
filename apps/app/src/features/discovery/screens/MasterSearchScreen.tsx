@@ -282,7 +282,8 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
       {/* ── 1. HEADER WITH BACK ARROW & SEARCH INPUT ── */}
-      <section className="px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-2 shrink-0 flex items-center gap-3">
+      <section className="px-4 pt-[env(safe-area-inset-top,0px)] shrink-0 bg-black">
+        <div className="py-2.5 flex items-center gap-3">
         <button
           type="button"
           onClick={onBack}
@@ -301,6 +302,7 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
             onChange={setSearchQuery}
             autoFocus
           />
+        </div>
         </div>
       </section>
 

@@ -399,8 +399,8 @@ export const ProfileScreen = ({
   return (
     <div className="flex-1 flex flex-col relative overflow-hidden h-full bg-black">
       {/* CORE SCROLLABLE PORT */}
-      <div className="flex-1 overflow-y-auto scrollbar-none pb-[calc(4.5rem+env(safe-area-inset-bottom,0px)+1rem)]">
-        <div className="w-full px-6 pt-[calc(4.5rem+env(safe-area-inset-top,0px))] flex flex-col items-center">
+      <div className="flex-1 overflow-y-auto scrollbar-none pb-6 pt-[env(safe-area-inset-top,0px)]">
+        <div className="w-full px-6 pt-6 flex flex-col items-center">
 
           {/* LARGE CENTRED PROFILE PICTURE (Interactive with instant optimistic preview & camera badge) */}
           <div className="relative w-[136px] h-[136px] rounded-full mb-4 select-none group">

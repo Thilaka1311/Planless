@@ -569,17 +569,19 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
       {/* TOP HEADER: Matching Home & Plans layout */}
       <header
         id="chats_screen_header"
-        className="shrink-0 bg-[#050505] flex items-center justify-between px-6 z-30 select-none relative pt-[env(safe-area-inset-top,0px)] h-[calc(3.5rem+env(safe-area-inset-top,0px))]"
+        className="shrink-0 bg-[#050505] pt-[env(safe-area-inset-top,0px)] z-30 select-none relative"
       >
-        {/* Left Column: Title */}
-        <div className="flex-1 flex items-center justify-start z-10 min-w-0">
-          <h1 className="text-stone-100 font-sans font-bold text-xl tracking-tight leading-none text-left truncate">
-            Chats
-          </h1>
-        </div>
+        <div className="h-14 flex items-center justify-between px-6">
+          {/* Left Column: Title */}
+          <div className="flex-1 flex items-center justify-start z-10 min-w-0">
+            <h1 className="text-stone-100 font-sans font-bold text-xl tracking-tight leading-none text-left truncate">
+              Chats
+            </h1>
+          </div>
 
-        {/* Right Column: Empty spacer for horizontal balance */}
-        <div className="flex-1 flex items-center justify-end z-10" />
+          {/* Right Column: Empty spacer for horizontal balance */}
+          <div className="flex-1 flex items-center justify-end z-10" />
+        </div>
       </header>
 
       {/* STICKY SEARCH BAR CONTAINER */}
@@ -598,7 +600,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
 
       {/* SCROLLABLE CHATS LIST (Begins below sticky search bar) */}
       <div
-        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-3 pt-0.5 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px)+1rem)]"
+        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-3 pt-0.5 pb-6"
       >
         {userPlanChats.length === 0 ? (
           <div className="flex-1 flex items-center justify-center pt-12">

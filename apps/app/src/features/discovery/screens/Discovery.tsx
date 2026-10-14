@@ -397,51 +397,53 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
     <div
       ref={scrollContainerRef}
       onScroll={handleScroll}
-      className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-[calc(4.5rem+env(safe-area-inset-bottom,0px)+1rem)] text-left select-none relative"
+      className="flex-1 flex flex-col h-full bg-[#000000] overflow-y-auto no-scrollbar pb-6 text-left select-none relative"
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
       {/* ── STICKY TOP HEADER (Location, Search, Quick Plans) ── */}
       <header className="sticky top-0 z-30 bg-[#000000] shrink-0 border-b border-white/[0.04]">
         {/* ── 1. COMPACT LOCATION HEADER AT THE VERY TOP (INTERACTIVE) ── */}
-        <section className="px-5 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-2.5 shrink-0 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => setShowLocationSetter(true)}
-            className="flex items-center gap-2 text-left group active:opacity-75 transition cursor-pointer"
-          >
-            <MapPin className="w-4 h-4 text-zinc-400 group-hover:text-zinc-200 transition shrink-0" />
-            <div className="flex flex-col text-left">
-              <div className="flex items-center gap-1 leading-tight">
-                <span className="text-sm font-bold text-white tracking-tight truncate max-w-[200px]">
-                  {displayLocality || displayCity}
+        <section className="px-5 pt-[env(safe-area-inset-top,0px)] shrink-0">
+          <div className="pt-3.5 pb-2.5 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setShowLocationSetter(true)}
+              className="flex items-center gap-2 text-left group active:opacity-75 transition cursor-pointer"
+            >
+              <MapPin className="w-4 h-4 text-zinc-400 group-hover:text-zinc-200 transition shrink-0" />
+              <div className="flex flex-col text-left">
+                <div className="flex items-center gap-1 leading-tight">
+                  <span className="text-sm font-bold text-white tracking-tight truncate max-w-[200px]">
+                    {displayLocality || displayCity}
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-zinc-400 group-hover:text-white transition shrink-0" />
+                </div>
+                <span className="text-[11px] text-zinc-400 font-normal leading-tight truncate max-w-[200px]">
+                  {displayCity}
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 text-zinc-400 group-hover:text-white transition shrink-0" />
               </div>
-              <span className="text-[11px] text-zinc-400 font-normal leading-tight truncate max-w-[200px]">
-                {displayCity}
-              </span>
+            </button>
+
+            {/* ── Top Right: Master Search Icon + Quick Plans Icon ── */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleSubScreenChange("master-search")}
+                className="text-white hover:text-white/80 active:scale-95 transition cursor-pointer p-1 shrink-0"
+                aria-label="Search"
+              >
+                <Search className="w-5.5 h-5.5 text-white" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSubScreenChange("quick-plans")}
+                className="text-white hover:text-white/80 active:scale-95 transition cursor-pointer p-1 shrink-0"
+                aria-label="Quick Plans"
+              >
+                <Zap className="w-5.5 h-5.5 text-white" />
+              </button>
             </div>
-          </button>
-
-          {/* ── Top Right: Master Search Icon + Quick Plans Icon ── */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleSubScreenChange("master-search")}
-              className="text-white hover:text-white/80 active:scale-95 transition cursor-pointer p-1 shrink-0"
-              aria-label="Search"
-            >
-              <Search className="w-5.5 h-5.5 text-white" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSubScreenChange("quick-plans")}
-              className="text-white hover:text-white/80 active:scale-95 transition cursor-pointer p-1 shrink-0"
-              aria-label="Quick Plans"
-            >
-              <Zap className="w-5.5 h-5.5 text-white" />
-            </button>
           </div>
         </section>
       </header>

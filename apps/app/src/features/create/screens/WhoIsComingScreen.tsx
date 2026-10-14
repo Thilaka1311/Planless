@@ -51,14 +51,15 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
 
       {/* ── Standardized Header Top Bar with Unified Pill Search ── */}
       <div
-        className="w-full shrink-0 px-2 flex items-center gap-2 bg-[#000000] relative z-40 pt-[calc(0.5rem+env(safe-area-inset-top,0px))] pb-1"
+        className="w-full shrink-0 px-2 bg-[#000000] relative z-40 pt-[env(safe-area-inset-top,0px)]"
         style={{ boxSizing: 'border-box' }}
       >
-        {/* UNIFIED ELLIPTICAL / PILL-SHAPED SEARCH BOX */}
-        <div
-          className="flex-1 flex items-center rounded-full bg-[#18181B] border border-white/[0.08] px-3.5 transition-all focus-within:border-white/20 focus-within:bg-[#202024]"
-          style={{ height: '46px' }}
-        >
+        <div className="py-2 flex items-center gap-2">
+          {/* UNIFIED ELLIPTICAL / PILL-SHAPED SEARCH BOX */}
+          <div
+            className="flex-1 flex items-center rounded-full bg-[#18181B] border border-white/[0.08] px-3.5 transition-all focus-within:border-white/20 focus-within:bg-[#202024]"
+            style={{ height: '46px' }}
+          >
           {/* BACK BUTTON INSIDE PILL */}
           <button
             type="button"
@@ -117,8 +118,8 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
             );
           })()}
         </div>
-
       </div>
+    </div>
 
       {/* ── Content Area ── */}
       <div

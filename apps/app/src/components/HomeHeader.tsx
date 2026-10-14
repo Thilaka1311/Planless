@@ -52,9 +52,10 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
   return (
     <header
       id="figma_coordinate_header"
-      className={`shrink-0 bg-[#050505] flex items-center justify-between px-6 z-30 select-none relative pt-[env(safe-area-inset-top,0px)] h-[calc(3.5rem+env(safe-area-inset-top,0px))] ${className}`}
+      className={`shrink-0 bg-[#050505] pt-[env(safe-area-inset-top,0px)] z-30 select-none relative ${className}`}
     >
-      {/* Left Column: Title */}
+      <div className="h-14 flex items-center justify-between px-6">
+        {/* Left Column: Title */}
       <div className="flex-1 flex items-center justify-start z-10 min-w-0">
         {title === "Planless" ? (
           <h1
@@ -113,6 +114,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
             </button>
           )}
         </div>
+      </div>
       </div>
     </header>
   );
