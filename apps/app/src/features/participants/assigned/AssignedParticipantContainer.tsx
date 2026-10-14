@@ -1801,20 +1801,13 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
   const managementMode: 'host' | 'invite_only' = effectiveIsHost ? 'host' : 'invite_only';
 
   useEffect(() => {
-    if (!localWaitlist || localWaitlist.length === 0) return;
-    if (waitlistList.length !== localWaitlist.length) return;
-
-    const localIds = localWaitlist.map((f) => f.dbUuid || f.id);
-    const storeIds = waitlistList.map((f) => f.dbUuid || f.id);
-    const orderMatches = localIds.every((id, idx) => storeIds[idx] === id);
-    if (!orderMatches) return;
-
-    const allPositionsValid = waitlistList.every((item, idx) => {
-      const pos = item.waitlistPosition;
-      return typeof pos === 'number' && pos > 0 && pos === idx + 1;
-    });
-
-    if (allPositionsValid) {
+    if (!localWaitlist) return;
+    // Only reset local waitlist override if waitlist membership itself has changed
+    // (e.g. a participant was added, removed, or promoted to going).
+    // Never reset when only the order changed, avoiding post-drag reference swap & realtime websocket jitter.
+    const localIds = new Set(localWaitlist.map((f) => f.dbUuid || f.id));
+    const storeIds = new Set(waitlistList.map((f) => f.dbUuid || f.id));
+    if (localIds.size !== storeIds.size || [...storeIds].some((id) => !localIds.has(id))) {
       setLocalWaitlist(null);
     }
   }, [waitlistList, localWaitlist]);
@@ -1830,12 +1823,22 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
   }, [localWaitlist, waitlistList, displayGoingList]);
 
   const handleReorderWaitlist = useCallback((newWaitlist: Friend[]) => {
-    setLocalWaitlist(newWaitlist);
+    const renumbered = newWaitlist.map((item, idx) => ({
+      ...item,
+      waitlistPosition: idx + 1,
+      waitlist_position: idx + 1,
+    }));
+    setLocalWaitlist(renumbered);
   }, []);
 
   const handleReorderWaitlistComplete = useCallback(
     async (finalWaitlist: Friend[]) => {
-      setLocalWaitlist(finalWaitlist);
+      const renumbered = finalWaitlist.map((item, idx) => ({
+        ...item,
+        waitlistPosition: idx + 1,
+        waitlist_position: idx + 1,
+      }));
+      setLocalWaitlist(renumbered);
       try {
         const userUuids = finalWaitlist.map((f) => f.dbUuid || f.id);
         if (onReorderWaitlist && userUuids.length > 0) {

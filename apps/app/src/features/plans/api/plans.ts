@@ -514,6 +514,30 @@ export async function resolveRejoinedParticipantRPC(
 }
 
 /**
+ * Invokes the unified manage_plan_participant SECURITY DEFINER RPC.
+ * Authorized for any Host.
+ * Handles atomic REMOVE, REPLACE, SWAP, MOVE_TO_GOING, and MOVE_TO_WAITLIST operations.
+ */
+export async function managePlanParticipantRPC(
+  planId: string,
+  action: 'REMOVE' | 'REPLACE' | 'SWAP' | 'MOVE_TO_GOING' | 'MOVE_TO_WAITLIST',
+  targetUserId: string,
+  secondaryUserId?: string,
+  options: Record<string, any> = {}
+): Promise<any> {
+  const { data, error } = await supabase.rpc("manage_plan_participant" as any, {
+    p_plan_id: planId,
+    p_action: action,
+    p_target_user_id: targetUserId,
+    p_secondary_user_id: secondaryUserId || null,
+    p_options: options,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Invokes the replace_participant SECURITY DEFINER RPC.
  * Authorized for any Host.
  * Atomically replaces a target participant with a replacement participant
@@ -524,14 +548,33 @@ export async function replaceParticipantRPC(
   targetUserId: string,
   replacementUserId: string
 ): Promise<any> {
-  const { data, error } = await supabase.rpc("replace_participant" as any, {
-    p_plan_id: planId,
-    p_target_user_id: targetUserId,
-    p_replacement_user_id: replacementUserId,
-  });
+  return managePlanParticipantRPC(planId, 'REPLACE', targetUserId, replacementUserId);
+}
 
-  if (error) throw error;
-  return data;
+/**
+ * Invokes the remove_and_replace_participant SECURITY DEFINER RPC.
+ * Authorized for any Host.
+ * Atomically soft-deletes a leaving participant and promotes a waitlist candidate.
+ */
+export async function removeAndReplaceParticipantRPC(
+  planId: string,
+  removeUserId: string,
+  promoteUserId: string
+): Promise<any> {
+  return managePlanParticipantRPC(planId, 'REPLACE', removeUserId, promoteUserId);
+}
+
+/**
+ * Invokes the swap_plan_participants SECURITY DEFINER RPC.
+ * Authorized for any Host.
+ * Atomically swaps a GOING participant and a WAITLIST participant.
+ */
+export async function swapPlanParticipantsRPC(
+  planId: string,
+  goingUserId: string,
+  waitlistUserId: string
+): Promise<any> {
+  return managePlanParticipantRPC(planId, 'SWAP', goingUserId, waitlistUserId);
 }
 
 /**
@@ -543,13 +586,7 @@ export async function moveParticipantToWaitlistAndDecreaseCapacityRPC(
   planId: string,
   targetUserId: string
 ): Promise<any> {
-  const { data, error } = await supabase.rpc("move_participant_to_waitlist_and_decrease_capacity" as any, {
-    p_plan_id: planId,
-    p_target_user_id: targetUserId,
-  });
-
-  if (error) throw error;
-  return data;
+  return managePlanParticipantRPC(planId, 'MOVE_TO_WAITLIST', targetUserId, undefined, { decrease_capacity: true });
 }
 
 /**

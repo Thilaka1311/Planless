@@ -146,16 +146,18 @@ export function usePlanParticipants({
       .eq("plan_id", planUuid)
       .or("rsvp_status.eq.SKIPPED,assigned_group.eq.GOING");
 
-    // 2. Persist 1..N to DB for waitlist participants
-    for (let i = 0; i < sortedWaitlist.length; i++) {
-      const part = sortedWaitlist[i];
-      await (supabase as any)
-        .from("plan_participants")
-        .update({ waitlist_position: i + 1 })
-        .eq("plan_id", planUuid)
-        .eq("user_id", part.user_id);
+    // 2. Persist 1..N to DB atomically using reorder_waitlist RPC to avoid idx_uniq_plan_waitlist_position collision (23505)
+    const orderedUserIds = sortedWaitlist.map(p => resolveUserUuid(p.user_id) || p.user_id);
+    if (orderedUserIds.length > 0) {
+      const { error: rpcError } = await (supabase as any).rpc("reorder_waitlist", {
+        p_plan_id: planUuid,
+        p_ordered_user_ids: orderedUserIds,
+      });
+      if (rpcError) {
+        console.error("[renumberWaitlistPositions] reorder_waitlist error:", rpcError);
+      }
     }
-  }, [plans, dbPlanParticipants, setDbPlanParticipants]);
+  }, [plans, dbPlanParticipants, setDbPlanParticipants, resolveUserUuid]);
 
   const handleParticipantStatusChange = useCallback(async (
     planUuid: string,
@@ -273,6 +275,19 @@ export function usePlanParticipants({
         return;
       }
 
+      if (isAssigned) {
+        // Atomic promotion adhering to trg_enforce_invited_rsvp_immutable and canonical plan row locking
+        const { error: rpcError } = await (supabase as any).rpc("auto_promote_waitlist_for_assigned", {
+          p_plan_id: resolvedPlanUuid,
+          p_vacated_group: "GOING",
+        });
+        if (rpcError) {
+          console.error("[PlansContext promoteWaitlist] auto_promote_waitlist_for_assigned error:", rpcError);
+        }
+        await refreshPlans(["plan_participants"]);
+        return;
+      }
+
       const countToPromote = Math.min(availableCapacity, waitlisted.length);
       const updates = [];
       for (let i = 0; i < countToPromote; i++) {
@@ -288,7 +303,6 @@ export function usePlanParticipants({
       }
 
       if (updates.length > 0) {
-
         const { error: ppError } = await (supabase as any)
           .from("plan_participants")
           .upsert(updates);
@@ -303,8 +317,6 @@ export function usePlanParticipants({
             }
           }
 
-
-
           // Recalculate wallet expenses for this plan to set cost_per_participant for promoted guests
           recalculateWalletExpenses(planUuid).catch(err =>
             console.error("[promoteWaitlist] recalculateWalletExpenses failed:", err)
@@ -314,7 +326,7 @@ export function usePlanParticipants({
     } catch (err) {
       console.error(`[PlansContext promoteWaitlist] Failed:`, err);
     }
-  }, [plans, dbPlans, dbPlanParticipants, handleParticipantStatusChange]);
+  }, [plans, dbPlans, dbPlanParticipants, handleParticipantStatusChange, refreshPlans, recalculateWalletExpenses]);
 
   const joinPlan = useCallback(async (rawPlanId: string, userProfile: any, options?: JoinOptions) => {
     const planId = cleanPlanId(rawPlanId);
@@ -1451,6 +1463,8 @@ export function usePlanParticipants({
     const isWaitlisted = currentRsvp === 'WAITLISTED' || currentRsvp === 'REJOINED';
     const nextRsvp = isWaitlisted ? 'JOINED' : (currentRsvp || 'INVITED');
 
+    const snapshotBefore = dbPlanParticipants.map(pp => ({ ...pp }));
+
     // Optimistic state update: update assigned_group to GOING, set rsvp_status to JOINED if waitlisted
     setDbPlanParticipants(prev => prev.map(pp => {
       if ((pp.plan_id === planUuid || pp.plan_id === planId) && (pp.user_id === resolvedUserUuid || pp.user_id === participantUserUuid)) {
@@ -1468,24 +1482,7 @@ export function usePlanParticipants({
     }));
 
     try {
-      const existingSr = existingPart?.skip_reason === "PAYMENT_KEPT" ? "PAYMENT_KEPT" : null;
-
-      const { error: updateErr } = await (supabase as any)
-        .from("plan_participants")
-        .update({
-          assigned_group: isAssigned ? "GOING" : null,
-          waitlist_position: null,
-          joined_queue_at: null,
-          rsvp_status: nextRsvp,
-          skip_reason: existingSr,
-          updated_at: new Date().toISOString()
-        })
-        .eq("plan_id", planUuid)
-        .eq("user_id", resolvedUserUuid);
-
-      if (updateErr) {
-        throw updateErr;
-      }
+      await api.managePlanParticipantRPC(planUuid, "MOVE_TO_GOING", resolvedUserUuid);
 
       if (isWaitlisted && nextRsvp === 'JOINED') {
         void (async () => {
@@ -1503,15 +1500,9 @@ export function usePlanParticipants({
         })();
       }
 
-
-      await renumberWaitlistPositions(planUuid).catch(err =>
-        console.warn("[moveParticipantToGoing] renumberWaitlistPositions warning:", err)
-      );
-      // Recalculate wallet splits: moving a participant to Going changes the JOINED count
-      recalculateWalletExpenses(planUuid).catch(err =>
-        console.error("[moveParticipantToGoing] recalculateWalletExpenses failed:", err)
-      );
+      await refreshPlans(["plan_participants", "wallet_expenses", "wallet_expense_participants"]);
     } catch (err) {
+      setDbPlanParticipants(snapshotBefore);
       await refreshPlans(); // Rollback optimistic state on failure
       throw err;
     }
@@ -1536,6 +1527,8 @@ export function usePlanParticipants({
     // Core rule: RSVP STATUS IS IMMUTABLE ONCE AN INVITE EXISTS.
     // Moving someone between Joined and Waitlist only changes their PARTICIPANT GROUP/ASSIGNMENT, never their RSVP status.
     const preservedRsvp = existingPart?.rsvp_status || 'INVITED';
+
+    const snapshotBefore = dbPlanParticipants.map(pp => ({ ...pp }));
 
     // Optimistic state update: update assigned_group to WAITLIST, keep rsvp_status unchanged
     setDbPlanParticipants(prev => {
@@ -1562,42 +1555,10 @@ export function usePlanParticipants({
     });
 
     try {
-      // 1. Fetch MAX waitlist_position directly from database to guarantee absolute uniqueness across parallel client actions
-      const { data: dbWaitlist } = await (supabase as any)
-        .from("plan_participants")
-        .select("waitlist_position")
-        .eq("plan_id", planUuid)
-        .eq("assigned_group", "WAITLIST")
-        .not("waitlist_position", "is", null);
-
-      const dbMaxPos = (dbWaitlist || []).reduce((max: number, p: any) => Math.max(max, p.waitlist_position || 0), 0);
-      const dbCalculatedPos = Math.max(calculatedPos, dbMaxPos + 1);
-
-      const existingSr = existingPart?.skip_reason === "PAYMENT_KEPT" ? "PAYMENT_KEPT" : null;
-
-      const { error: updateError } = await (supabase as any)
-        .from("plan_participants")
-        .update({
-          assigned_group: "WAITLIST",
-          waitlist_position: dbCalculatedPos,
-          rsvp_status: preservedRsvp,
-          skip_reason: existingSr,
-          updated_at: new Date().toISOString()
-        })
-        .eq("plan_id", planUuid)
-        .eq("user_id", resolvedUserUuid);
-
-      if (updateError) {
-        console.error("[moveParticipantToWaitlist] Update error:", updateError);
-        throw new Error("Failed to update status to waitlist: " + updateError.message);
-      }
-
-      renumberWaitlistPositions(planUuid).catch(() => {});
-      // Recalculate wallet splits: moving a participant off Going changes the JOINED count
-      recalculateWalletExpenses(planUuid).catch(err =>
-        console.error("[moveParticipantToWaitlist] recalculateWalletExpenses failed:", err)
-      );
+      await api.managePlanParticipantRPC(planUuid, "MOVE_TO_WAITLIST", resolvedUserUuid);
+      await refreshPlans(["plan_participants", "wallet_expenses", "wallet_expense_participants"]);
     } catch (err) {
+      setDbPlanParticipants(snapshotBefore);
       await refreshPlans(); // Rollback optimistic state on failure
       throw err;
     }
@@ -1682,17 +1643,12 @@ export function usePlanParticipants({
 
     try {
       // 3. Single atomic RPC call — handles both updates in one Postgres transaction
-      const { data: rpcResult, error: rpcError } = await (supabase as any)
-        .rpc("swap_plan_participants", {
-          p_plan_id:          planUuid,
-          p_going_user_id:    resolvedGoingUuid,
-          p_waitlist_user_id: resolvedWaitlistUuid,
-        });
-
-      if (rpcError) {
-        console.error("[swapParticipants] RPC error:", rpcError);
-        throw rpcError;
-      }
+      const rpcResult = await api.managePlanParticipantRPC(
+        planUuid,
+        "SWAP",
+        resolvedGoingUuid,
+        resolvedWaitlistUuid
+      );
 
       // 4. Insert exactly ONE plan_activity record (temporarily disabled)
       /*
@@ -1782,44 +1738,46 @@ export function usePlanParticipants({
     const waitlistMode = (matchedPlan as any)?.participant_filtering || (matchedPlan as any)?.participantFiltering || 'AUTOMATIC';
     const isAssigned = waitlistMode === 'ASSIGNED';
 
-    // Optimistic update: remove the outgoing participant, promote the incoming one
+    // Optimistic update: soft-delete the outgoing participant, promote the incoming one
     setDbPlanParticipants(prev =>
-      prev
-        .filter(pp => !(
+      prev.map(pp => {
+        if (
           (pp.plan_id === planUuid || pp.plan_id === planId) &&
           (pp.user_id === resolvedRemoveUuid || pp.user_id === removeUserUuid)
-        ))
-        .map(pp => {
-          if (
-            (pp.plan_id === planUuid || pp.plan_id === planId) &&
-            (pp.user_id === resolvedPromoteUuid || pp.user_id === promoteUserUuid)
-          ) {
-            const nextStatus = pp.rsvp_status === 'WAITLISTED' ? 'JOINED' : pp.rsvp_status;
-            return {
-              ...pp,
-              assigned_group: isAssigned ? 'GOING' : null,
-              waitlist_position: null,
-              rsvp_status: nextStatus as any,
-              responded_at: pp.responded_at || new Date().toISOString(),
-            };
-          }
-          return pp;
-        })
+        ) {
+          return {
+            ...pp,
+            rsvp_status: 'SKIPPED' as const,
+            skip_reason: 'REPLACED' as const,
+            assigned_group: null,
+            waitlist_position: null,
+          };
+        }
+        if (
+          (pp.plan_id === planUuid || pp.plan_id === planId) &&
+          (pp.user_id === resolvedPromoteUuid || pp.user_id === promoteUserUuid)
+        ) {
+          const nextStatus = pp.rsvp_status === 'WAITLISTED' ? 'JOINED' : pp.rsvp_status;
+          return {
+            ...pp,
+            assigned_group: isAssigned ? 'GOING' : null,
+            waitlist_position: null,
+            rsvp_status: nextStatus as any,
+            responded_at: pp.responded_at || new Date().toISOString(),
+          };
+        }
+        return pp;
+      })
     );
 
     try {
       // Single atomic RPC: removes + promotes in one transaction
-      const { data: rpcResult, error: rpcError } = await (supabase as any)
-        .rpc('remove_and_replace_participant', {
-          p_plan_id:         planUuid,
-          p_remove_user_id:  resolvedRemoveUuid,
-          p_promote_user_id: resolvedPromoteUuid,
-        });
-
-      if (rpcError) {
-        console.error('[removeAndReplaceWithWaitlist] RPC error:', rpcError);
-        throw rpcError;
-      }
+      const rpcResult = await api.managePlanParticipantRPC(
+        planUuid,
+        'REPLACE',
+        resolvedRemoveUuid,
+        resolvedPromoteUuid
+      );
 
       // Write exactly ONE participants_swapped activity
       if (userId) {
@@ -2065,28 +2023,12 @@ export function usePlanParticipants({
       (pp.user_id === resolvedReplacementUuid || pp.user_id === replacementUserId)
     );
 
-    const { data: rpcResult, error: rpcError } = await (supabase as any)
-      .rpc('replace_participant', {
-        p_plan_id: planUuid,
-        p_target_user_id: resolvedTargetUuid,
-        p_replacement_user_id: resolvedReplacementUuid,
-      });
-
-    if (rpcError) {
-      console.error('[replaceParticipant] RPC error details:', {
-        code: rpcError.code,
-        message: rpcError.message,
-        details: rpcError.details,
-        hint: rpcError.hint,
-        rawError: rpcError,
-        params: {
-          p_plan_id: planUuid,
-          p_target_user_id: resolvedTargetUuid,
-          p_replacement_user_id: resolvedReplacementUuid,
-        }
-      });
-      throw rpcError;
-    }
+    const rpcResult = await api.managePlanParticipantRPC(
+      planUuid,
+      'REPLACE',
+      resolvedTargetUuid,
+      resolvedReplacementUuid
+    );
 
     await refreshPlans(['plan_participants', 'wallet_expenses', 'wallet_expense_participants']);
     return rpcResult;
@@ -2108,16 +2050,13 @@ export function usePlanParticipants({
       throw new Error("Cannot move participant to waitlist: missing ID");
     }
 
-    const { data: rpcResult, error: rpcError } = await (supabase as any)
-      .rpc('move_participant_to_waitlist_and_decrease_capacity', {
-        p_plan_id: planUuid,
-        p_target_user_id: resolvedTargetUuid,
-      });
-
-    if (rpcError) {
-      console.error('[moveParticipantToWaitlistAndDecreaseCapacity] RPC error:', rpcError);
-      throw rpcError;
-    }
+    const rpcResult = await api.managePlanParticipantRPC(
+      planUuid,
+      'MOVE_TO_WAITLIST',
+      resolvedTargetUuid,
+      undefined,
+      { decrease_capacity: true }
+    );
 
     await refreshPlans(['plans', 'plan_participants', 'wallet_expenses', 'wallet_expense_participants']);
     return rpcResult;

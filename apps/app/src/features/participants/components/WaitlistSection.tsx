@@ -139,10 +139,10 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
       return { itemIndex: undefined, shouldShowIndex: false };
     }
 
-    // Assigned mode (preserved exactly as before)
-    const itemIndex = useParticipantPosition
-      ? (itemPos !== undefined ? itemPos : (idx + indexOffset))
-      : (idx + indexOffset);
+    // Assigned mode:
+    // Positions in Assigned mode strictly follow contiguous queue ranking (1..N).
+    // Deriving from (idx + indexOffset) ensures smooth dragging without number snap or jitter.
+    const itemIndex = idx + indexOffset;
     const shouldShowIndex = Boolean(effectiveShowIndex && itemIndex !== undefined);
 
     return { itemIndex, shouldShowIndex };
@@ -172,7 +172,6 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
                 value={item}
                 id={itemKey}
                 as="div"
-                layoutId={itemKey}
                 dragConstraints={containerRef}
                 dragElastic={0}
                 onDragEnd={() => {

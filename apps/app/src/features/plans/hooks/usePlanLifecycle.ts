@@ -253,6 +253,8 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     const currentPlan = (plans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid)
       || (dbPlans || []).find(p => p.id === planUuid);
 
+    let capacityRpcResult: { promotedCount: number; demotedCount: number } | null = null;
+
     const oldTitle = (currentPlan?.title || "").trim();
     let titleChanged = false;
     let validatedNewTitle: string | undefined = undefined;
@@ -335,7 +337,13 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
         }
 
         try {
-          await api.updatePlanCapacityRPC(planUuid, boundedPlanSize, options?.autoPromote);
+          const rpcRes = await api.updatePlanCapacityRPC(planUuid, boundedPlanSize, options?.autoPromote);
+          if (rpcRes) {
+            capacityRpcResult = {
+              promotedCount: rpcRes.promoted_count || 0,
+              demotedCount: rpcRes.demoted_count || 0,
+            };
+          }
         } catch (err: any) {
           console.warn("[usePlanLifecycle.updatePlanDetails] updatePlanCapacityRPC failed, falling back to direct plans update:", {
             message: err?.message || String(err),
@@ -508,9 +516,10 @@ new = ${planUpdate.cover_image}`);
     }
 
     // REBALANCE PARTICIPANTS IF CAPACITY CHANGED (AUTOMATIC Mode Only)
-    let rebalanceResult = { promotedCount: 0, demotedCount: 0 };
+    // If updatePlanCapacityRPC already completed the atomic rebalance, reuse its result.
+    let rebalanceResult = capacityRpcResult || { promotedCount: 0, demotedCount: 0 };
     const filteringMode = matchedPlan?.participantFiltering || (matchedPlan as any)?.participant_filtering || 'AUTOMATIC';
-    if (newCapacity !== undefined && filteringMode !== 'ASSIGNED') {
+    if (!capacityRpcResult && newCapacity !== undefined && filteringMode !== 'ASSIGNED') {
       if (rebalanceCapacity) {
         rebalanceResult = await rebalanceCapacity(planUuid, newCapacity);
       }
