@@ -51,7 +51,7 @@ export const WhoIsComingScreen: React.FC<WhoIsComingScreenProps> = ({
 
       {/* ── Standardized Header Top Bar with Unified Pill Search ── */}
       <div
-        className="w-full shrink-0 px-2 flex items-center gap-2 bg-[#000000] relative z-40 pt-2 pb-1"
+        className="w-full shrink-0 px-2 flex items-center gap-2 bg-[#000000] relative z-40 pt-[calc(0.5rem+env(safe-area-inset-top,0px))] pb-1"
         style={{ boxSizing: 'border-box' }}
       >
         {/* UNIFIED ELLIPTICAL / PILL-SHAPED SEARCH BOX */}

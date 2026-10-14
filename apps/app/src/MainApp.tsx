@@ -1190,7 +1190,7 @@ export default function MainApp({
       {/* ---------------- MAIN APP SCREEN FRAME BODY ---------------- */}
       <main
         id="app_tab_content_wrapper"
-        className="flex-1 relative overflow-hidden p-0"
+        className="flex-1 min-h-0 relative overflow-hidden p-0"
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
@@ -1206,7 +1206,7 @@ export default function MainApp({
             initial="initial"
             animate="animate"
             exit="exit"
-            className="w-full h-full flex flex-col flex-1 relative overflow-hidden"
+            className="w-full h-full min-h-0 flex flex-col flex-1 relative overflow-hidden"
           >
             {/* TAB 1: HOME PANEL */}
             {activeTab === "home" && (

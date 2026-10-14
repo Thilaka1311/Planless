@@ -569,7 +569,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
       {/* TOP HEADER: Matching Home & Plans layout */}
       <header
         id="chats_screen_header"
-        className="h-14 shrink-0 bg-[#050505] flex items-center justify-between px-6 z-30 select-none relative"
+        className="shrink-0 bg-[#050505] flex items-center justify-between px-6 z-30 select-none relative pt-[env(safe-area-inset-top,0px)] h-[calc(3.5rem+env(safe-area-inset-top,0px))]"
       >
         {/* Left Column: Title */}
         <div className="flex-1 flex items-center justify-start z-10 min-w-0">
@@ -598,7 +598,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
 
       {/* SCROLLABLE CHATS LIST (Begins below sticky search bar) */}
       <div
-        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-3 pt-0.5 pb-28"
+        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-3 pt-0.5 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px)+1rem)]"
       >
         {userPlanChats.length === 0 ? (
           <div className="flex-1 flex items-center justify-center pt-12">

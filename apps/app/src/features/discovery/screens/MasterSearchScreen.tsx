@@ -282,7 +282,7 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
       {/* ── 1. HEADER WITH BACK ARROW & SEARCH INPUT ── */}
-      <section className="px-4 pt-3.5 pb-2 shrink-0 flex items-center gap-3">
+      <section className="px-4 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-2 shrink-0 flex items-center gap-3">
         <button
           type="button"
           onClick={onBack}

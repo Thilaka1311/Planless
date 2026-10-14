@@ -238,7 +238,7 @@ const ParticipantToggleBarComponent: React.FC<ParticipantToggleBarProps> = ({
   return (
     <div
       onClick={handleCardClick}
-      className="mx-3 mb-6 z-10 relative select-none cursor-pointer overflow-hidden rounded-[24px] px-4 py-4 border border-white/10 shadow-lg no-hold"
+      className="mx-3 mb-2.5 z-10 relative select-none cursor-pointer overflow-hidden rounded-[24px] px-4 py-4 border border-white/10 shadow-lg no-hold"
       style={{
         background: 'rgba(0, 0, 0, 0.32)',
         backdropFilter: 'blur(24px)',

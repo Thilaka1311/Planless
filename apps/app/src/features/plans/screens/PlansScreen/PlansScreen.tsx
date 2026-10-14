@@ -366,7 +366,7 @@ export const PlansScreen = React.memo(({
     <div className="flex-1 flex flex-col relative overflow-hidden h-full bg-[#050505] text-left">
       {/* Scrollable Container */}
       <div
-        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pb-6"
+        className="flex-1 flex flex-col overflow-y-auto scrollbar-none px-6 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px)+1rem)]"
       >
         {/* Sticky Participation Tabs */}
         <div className="sticky top-0 z-20 bg-[#050505] -mx-8 px-3.5 pt-1 pb-2">

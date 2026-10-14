@@ -52,7 +52,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = ({
   return (
     <header
       id="figma_coordinate_header"
-      className={`h-14 shrink-0 bg-[#050505] flex items-center justify-between px-6 z-30 select-none relative ${className}`}
+      className={`shrink-0 bg-[#050505] flex items-center justify-between px-6 z-30 select-none relative pt-[env(safe-area-inset-top,0px)] h-[calc(3.5rem+env(safe-area-inset-top,0px))] ${className}`}
     >
       {/* Left Column: Title */}
       <div className="flex-1 flex items-center justify-start z-10 min-w-0">

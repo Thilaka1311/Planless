@@ -241,7 +241,7 @@ export const DiscoverDining: React.FC<DiscoverDiningProps> = ({
       <BackToTopButton scrollContainerRef={scrollContainerRef} />
 
       {/* ── 1. HEADER BAR ── */}
-      <div className="w-full shrink-0 px-5 pt-3.5 pb-2 flex items-center justify-between bg-black border-b border-white/[0.06]">
+      <div className="w-full shrink-0 px-5 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] pb-2 flex items-center justify-between bg-black border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
           <button
             type="button"

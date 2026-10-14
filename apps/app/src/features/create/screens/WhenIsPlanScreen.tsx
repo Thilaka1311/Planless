@@ -312,7 +312,8 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
       className="flex flex-col bg-[#000000] text-left select-none overflow-hidden"
       style={{
         fontFamily: 'Inter, sans-serif',
-        height: '100dvh',
+        height: '100%',
+        minHeight: '100%',
         width: '100%',
         position: 'relative'
       }}
@@ -335,7 +336,7 @@ export const WhenIsPlanScreen: React.FC<WhenIsPlanScreenProps> = ({
         <div
           style={{
             position: 'absolute',
-            top: 20,
+            top: 'calc(1.25rem + env(safe-area-inset-top, 0px))',
             left: 0,
             right: 0,
             padding: '0 20px',

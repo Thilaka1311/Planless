@@ -362,7 +362,7 @@ export const QuickPlansScreen: React.FC<QuickPlansScreenProps> = ({
       style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif" }}
     >
       {/* ── TOP HEADER ── */}
-      <div className="flex items-center justify-between px-5 pt-4 pb-3 shrink-0 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-20">
+      <div className="flex items-center justify-between px-5 pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-3 shrink-0 bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-20">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
             type="button"

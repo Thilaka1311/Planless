@@ -141,7 +141,7 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
   }, []);
 
   return (
-    <footer id="main_app_footer_nav" className={`fixed bottom-0 left-0 right-0 h-20 border-t border-zinc-950/20 bg-[#09090b]/95 backdrop-blur-xl flex justify-around items-center px-4 z-40 pb-[env(safe-area-inset-bottom,8px)] shadow-2xl select-none transition-all duration-300 ease-out ${isKeyboardOpen ? "!hidden pointer-events-none opacity-0" : isNavHiddenByScroll ? "translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}>
+    <footer id="main_app_footer_nav" className={`fixed bottom-0 left-0 right-0 h-[calc(4rem+env(safe-area-inset-bottom,0px))] border-t border-zinc-950/20 bg-[#09090b]/95 backdrop-blur-xl flex justify-around items-center px-4 z-40 pb-[env(safe-area-inset-bottom,0px)] shadow-2xl select-none transition-all duration-300 ease-out ${isKeyboardOpen ? "!hidden pointer-events-none opacity-0" : isNavHiddenByScroll ? "translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100"}`}>
       <button
         id="nav_item_home"
         onClick={() => { setActiveTab("home"); }}

@@ -371,7 +371,7 @@ function AppContent({
   return (
     <>
       {appState === "initializing" || appState === "retrying" ? (
-        <div className="h-[100dvh] w-screen bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
+        <div className="h-full w-full min-h-full bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
           {/* Sleek Gradient Glows */}
           <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#ff5e3a]/10 blur-[120px] pointer-events-none" />
           <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
@@ -387,7 +387,7 @@ function AppContent({
           </div>
         </div>
       ) : appState === "startupError" ? (
-        <div className="h-[100dvh] w-screen bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden p-6">
+        <div className="h-full w-full min-h-full bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden p-6">
           <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#ff5e3a]/10 blur-[120px] pointer-events-none" />
           <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
 
@@ -424,14 +424,14 @@ function AppContent({
           </div>
         </div>
       ) : (
-        <div className="h-[100dvh] w-screen bg-[#050505] flex flex-col font-sans selection:bg-[#ff5e3a]/35 overflow-hidden">
-          <div className="flex-1 w-full h-full z-10 overflow-hidden">
+        <div className="h-full w-full min-h-full bg-[#050505] flex flex-col font-sans selection:bg-[#ff5e3a]/35 overflow-hidden">
+          <div className="flex-1 w-full min-h-0 z-10 overflow-hidden">
             {appState === "unauthenticated" ? (
               <PlansProviderComp key="plans-onboarding">
                 <FriendshipProvider>
                   <ToastProvider>
-                    <div className="w-full h-full bg-[#050505] flex flex-col relative">
-                      <div className="flex-1 overflow-hidden relative">
+                    <div className="w-full h-full min-h-0 bg-[#050505] flex flex-col relative">
+                      <div className="flex-1 min-h-0 overflow-hidden relative">
                         <Suspense fallback={FlowLoadingFallback}>
                           <OnboardingFlow
                             onComplete={handleOnboardingComplete}
@@ -450,10 +450,10 @@ function AppContent({
                 return (
                   <PlansProviderComp key={`plans-${providerKey}`} userId={userProfile?.dbUuid}>
                     <FriendshipProvider>
-                      <div className="flex flex-row items-stretch justify-center w-full h-full relative overflow-hidden">
+                      <div className="flex flex-row items-stretch justify-center w-full h-full min-h-0 relative overflow-hidden">
                         {/* Responsive Container */}
-                        <div className="w-full h-full bg-[#050505] flex flex-col relative">
-                          <div className="flex-1 overflow-hidden relative">
+                        <div className="w-full h-full min-h-0 bg-[#050505] flex flex-col relative">
+                          <div className="flex-1 min-h-0 overflow-hidden relative">
                             <ToastProvider>
                               <Suspense fallback={FlowLoadingFallback}>
                                 <MainApp
