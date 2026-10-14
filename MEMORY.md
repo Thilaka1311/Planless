@@ -484,3 +484,49 @@ Do not record bug-specific post-mortems as standalone rules. The purpose of memo
   6. **No Phantom States or Bypass Paths**: Do not introduce new participant states, alternate transition mechanisms, or secondary sources of truth without explicit approval.
   7. **Discrepancy Reporting**: If documentation and implementation ever disagree, report the discrepancy immediately instead of silently altering either layer.
 
+---
+
+## 30. Defensive Collection Property Guards & Hierarchical Error Boundary Isolation
+
+* **Core Principle**:
+  1. **Partial Data Invariants in Subordinate Views**: Deep-linked, notification-routed, or cached plan views frequently initialize with partial data models where child collections (such as `selectedPlan.members`) are temporarily `undefined` before background queries complete. Direct invocations (`selectedPlan.members.filter(...)`, `selectedPlan.members.find(...)`) without defensive fallbacks (`(selectedPlan.members || []).filter(...)`) throw fatal runtime `TypeError` exceptions.
+  2. **Hierarchical Subtree Error Boundary Isolation**: An isolated failure in a modal or child detail view must never bubble up to unmount the root application tree. Modals (such as `DetailedPlanModal`) must encapsulate their child screens in a dedicated `ModalErrorBoundary` that catches rendering crashes, presents an informative non-blocking card, and provides a safe "Close" action so the rest of the app remains completely operational.
+  3. **Non-Destructive Global Error Recovery**: Global error boundaries must never default to destructive actions (such as wiping `localStorage` auth sessions or clearing service worker caches) for generic runtime exceptions. The default recovery action must be a safe page reload with reload-loop prevention (redirecting to `/` on repeated failure), paired with a direct "Return to Home" action.
+* **Invariant**:
+  - Always guard access to child collections: `const membersList = selectedPlan?.members || [];`.
+  - Wrap modal containers in dedicated sub-boundaries with clean fallback UI and dismiss triggers.
+  - In `RootErrorBoundary`:
+    - When `isUpdateAvailable` is true: Offer "Update to Latest Version" and "Reset Session & Sign In".
+    - When `isUpdateAvailable` is false: Offer "Reload Planless" and "Return to Home". Never wipe authentication tokens or cache storage for runtime code errors.
+
+---
+
+## 31. Atomic Plan Size Decrement on Participant Removal in Assigned Waitlist Mode
+
+* **Core Principle**: In **Assigned Waitlist mode**, removing an active participant from the Joined / Going group (`assigned_group = 'GOING'`) signifies that the host is shrinking the event's configured capacity rather than opening a vacancy for waitlist replacement. The configured plan size (`plans.plan_size`) must atomically decrement by 1 alongside participant removal, regardless of whether a waitlist exists.
+* **Invariant**:
+  1. **Atomic Database Execution**: `public.remove_participant` performs `plan_size = GREATEST(1, plan_size - 1)` within the same PostgreSQL transaction when removing a non-skipped participant from `GOING` in Assigned mode (`participant_filtering = 'ASSIGNED'`). Removal and capacity decrement succeed or fail together.
+  2. **No Promotion on Removal**: Removing an attendee from `GOING` in Assigned mode closes the vacated spot by shrinking `plan_size`. It does **not** trigger `auto_promote_waitlist_for_assigned`. (The host must explicitly use "Replace Participant" if they wish to substitute a waitlist member into the spot).
+  3. **Zero Waitlist Compatibility**: The capacity decrement applies unconditionally even when no waitlist members exist (e.g., Joined 2/6 with 0 waitlist becomes Joined 1/5).
+  4. **Waitlist Removal Independence**: If a participant is removed specifically from the waitlist (`assigned_group = 'WAITLIST'`), `plan_size` is **not** decremented; only their queue entry is removed and remaining waitlist members are renumbered 1..N.
+  5. **Idempotency**: Repeated clicks, network retries, or duplicate submissions on an already-skipped participant (`v_target_status = 'SKIPPED'`) return immediately without decrementing `plan_size` a second time.
+  6. **Zero Impact on Automatic Mode**: In Automatic mode (`participant_filtering = 'AUTOMATIC'`), `plan_size` remains unchanged and vacancy promotion via FCFS queue continues as standard.
+  7. **Synchronized UI and Cache**: `usePlanParticipants.removeParticipant` applies optimistic cache decrement to `setDbPlans` and reconciles to authoritative `rpcResult.plan_size`, while `AssignedParticipantContainer` optimistically decrements `localCapacity` with rollback protection if the RPC fails.
+
+---
+
+## 32. Canonical Lock Acquisition Order & Deadlock Elimination in Participant Mutations
+
+* **Core Principle**: All database transactions that mutate a plan or its participants (`invite_participants`, `recalculate_wallet_expenses`, `update_plan_capacity`, `remove_participant`, `join_plan`, `leave_plan`, `reorder_waitlist`, `replace_participant`, `swap_plan_participants`) must strictly follow the canonical lock acquisition order:
+  $$\text{public.plans (FOR UPDATE)} \longrightarrow \text{public.plan\_participants (FOR UPDATE / INSERT / UPDATE)}$$
+  Mutating `plan_participants` rows without first acquiring an exclusive row lock on `plans` creates an inverted lock cycle: `plan_participants` tuple update locks are acquired first, after which PostgreSQL's foreign key check (`RI_FKey_check_upd`) requests a `FOR KEY SHARE` lock on `plans`, deadlocking with concurrent transactions holding `FOR UPDATE` on `plans` (Error `40P01`).
+* **Invariant**:
+  1. **Strict Plan-Row Locking**: Any stored procedure or RPC that performs writes or row-level updates on `plan_participants` MUST execute `SELECT ... FROM public.plans WHERE id = p_plan_id FOR UPDATE;` before touching `plan_participants`.
+  2. **Deterministic Invitee Order**: In `public.invite_participants`, incoming participant UUIDs must be deduplicated and sorted in ascending order (`ARRAY(SELECT DISTINCT u FROM unnest(p_invitee_user_ids) u WHERE u IS NOT NULL ORDER BY u ASC)`). Deterministic ordering eliminates intra-table lock inversions across concurrent invitation batches.
+  3. **Idempotent Duplicate Invitation**: Active participant rows (`INVITED`, `JOINED`, `WAITLISTED`) are preserved without errors or duplicate inserts when re-invited, protecting database constraints and avoiding false capacity increases.
+  4. **Bounded Transient Retry Safety**: Client RPC calls (`inviteParticipantsRPC`) wrap database invocations in a bounded retry loop (up to 3 attempts with exponential backoff + jitter) strictly for transient lock conflicts (`40P01` deadlock or `55P03` lock not available). Validation, authorization (`40300`, `40301`), and permanent errors are never retried.
+  5. **Side-Effect Isolation**: Non-idempotent side effects (e.g., push notifications) are executed strictly ONCE after the final database confirmation. Notifications are never dispatched on retried or failed attempts.
+  6. **Exact State Rollback**: On final persistence failure, optimistic state in `usePlanParticipants.addParticipantsToPlan` restores the exact snapshot of `previousPlanParticipants` and `previousDbPlans` rather than performing destructive collection filters.
+
+
+

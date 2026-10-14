@@ -582,14 +582,21 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
           .invoke("send-push", {
             body: {
               event: "CHAT_MESSAGE",
+              idempotencyKey: `chat-msg-${data.id}`,
               record: data,
             },
           })
           .then(({ data: pushRes, error: pushErr }) => {
             if (pushErr) {
               console.warn("[PlanChatScreen] Push dispatch failed:", pushErr.message || pushErr);
-            } else if (pushRes?.deliveredCount !== undefined) {
-              console.log(`[PlanChatScreen] Push dispatch completed: delivered to ${pushRes.deliveredCount} devices.`);
+            } else if (pushRes) {
+              const delivered = pushRes.deliveredCount ?? 0;
+              const reason = pushRes.reason || pushRes.message;
+              if (delivered > 0) {
+                console.log(`[PlanChatScreen] Push dispatch completed: delivered to ${delivered} device(s).`);
+              } else {
+                console.log(`[PlanChatScreen] Push dispatch completed: delivered to 0 devices (${reason || "all recipients read or no active subscriptions"}).`);
+              }
             }
           })
           .catch((pushErr) => {

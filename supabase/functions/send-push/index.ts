@@ -75,6 +75,11 @@ interface PushPayload {
     newVenue?: string;
     description?: string;
   };
+  oldTitle?: string;
+  newTitle?: string;
+  actorName?: string;
+  cancellerName?: string;
+  otherHostNames?: string[];
   idempotencyKey?: string;
 }
 
@@ -98,6 +103,33 @@ function isDuplicateEvent(key: string | undefined): boolean {
   return false;
 }
 
+/**
+ * Natural grammar formatter for co-host notification body.
+ * Formats:
+ * - 0 other hosts: "You're hosting this plan"
+ * - 1 other host: "You're hosting this plan with Renjith"
+ * - 2 other hosts: "You're hosting this plan with Renjith and Thilaka Sundar"
+ * - 3+ other hosts: "You're hosting this plan with Renjith, Thilaka Sundar, and Alex"
+ * Missing display names fallback to "Someone".
+ */
+export function formatCoHostNotificationBody(otherHostNames: string[]): string {
+  if (!otherHostNames || otherHostNames.length === 0) {
+    return "You're hosting this plan";
+  }
+  const resolvedNames = otherHostNames.map((n) => {
+    const trimmed = (n || "").trim();
+    return trimmed.length > 0 ? trimmed : "Someone";
+  });
+  if (resolvedNames.length === 1) {
+    return `You're hosting this plan with ${resolvedNames[0]}`;
+  }
+  if (resolvedNames.length === 2) {
+    return `You're hosting this plan with ${resolvedNames[0]} and ${resolvedNames[1]}`;
+  }
+  const allExceptLast = resolvedNames.slice(0, -1).join(", ");
+  const last = resolvedNames[resolvedNames.length - 1];
+  return `You're hosting this plan with ${allExceptLast}, and ${last}`;
+}
 
 /**
  * Resolves a user's avatar image into an absolute, device-accessible HTTPS URL.
@@ -141,8 +173,9 @@ function resolveUserAvatarUrl(
  * 2. Existing valid venue image (Google Places photo proxy)
  * 3. Contextual category artwork fallback
  */
-function resolvePlanImageUrl(plan: any, publicBaseUrl: string): string | null {
-  if (!plan) return null;
+function resolvePlanImageUrl(plan: any, publicBaseUrl: string): string {
+  const fallbackAsset = `${publicBaseUrl}/assets/planimagedefault.webp`;
+  if (!plan) return fallbackAsset;
   const rawCover = (plan.cover_image || plan.cover_card_image || "").trim();
   const remoteSupabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const isRemoteSupabase =
@@ -177,20 +210,21 @@ function resolvePlanImageUrl(plan: any, publicBaseUrl: string): string | null {
     }
 
     // 1C. Static asset path mapped to public assets
-    if (rawCover.startsWith("/assets/") || rawCover.startsWith("/src/assets/")) {
-      const lower = rawCover.toLowerCase();
-      if (lower.includes("sport") || lower.includes("football") || lower.includes("badminton")) {
-        return `${publicBaseUrl}/assets/categories/sports.png`;
-      }
-      if (lower.includes("movie") || lower.includes("cinema")) {
-        return `${publicBaseUrl}/assets/categories/movies.png`;
-      }
-      if (lower.includes("dining") || lower.includes("restaurant") || lower.includes("food")) {
-        return `${publicBaseUrl}/assets/categories/dining.png`;
-      }
-      if (lower.includes("activity") || lower.includes("game") || lower.includes("bowling")) {
-        return `${publicBaseUrl}/assets/categories/activity.png`;
-      }
+    const lower = rawCover.toLowerCase();
+    if (lower.includes("sport") || lower.includes("football") || lower.includes("badminton") || lower.includes("soccer") || lower.includes("cricket")) {
+      return `${publicBaseUrl}/assets/categories/sports.png`;
+    }
+    if (lower.includes("movie") || lower.includes("cinema")) {
+      return `${publicBaseUrl}/assets/categories/movies.png`;
+    }
+    if (lower.includes("dining") || lower.includes("restaurant") || lower.includes("food") || lower.includes("cafe")) {
+      return `${publicBaseUrl}/assets/categories/dining.png`;
+    }
+    if (lower.includes("activity") || lower.includes("game") || lower.includes("bowling") || lower.includes("arcade")) {
+      return `${publicBaseUrl}/assets/categories/activity.png`;
+    }
+    if (lower.includes("planimage") || lower.includes("placeholder") || lower.includes("default")) {
+      return fallbackAsset;
     }
   }
 
@@ -200,7 +234,9 @@ function resolvePlanImageUrl(plan: any, publicBaseUrl: string): string | null {
     category === "sports" ||
     category === "sport" ||
     category === "football" ||
-    category === "badminton"
+    category === "badminton" ||
+    category === "soccer" ||
+    category === "cricket"
   ) {
     return `${publicBaseUrl}/assets/categories/sports.png`;
   }
@@ -225,13 +261,14 @@ function resolvePlanImageUrl(plan: any, publicBaseUrl: string): string | null {
     category === "activity" ||
     category === "recreation" ||
     category === "games" ||
-    category === "bowling"
+    category === "bowling" ||
+    category === "arcade"
   ) {
     return `${publicBaseUrl}/assets/categories/activity.png`;
   }
 
-  // Fall back gracefully to app icon: do not display Planless logo as large image if plan has no artwork
-  return null;
+  // Fall back gracefully to existing Planless plan fallback image asset
+  return fallbackAsset;
 }
 
 /**
@@ -274,13 +311,14 @@ interface FormattedChatPush {
 
 /**
  * Builds a WhatsApp-style multi-message notification payload tailored for a specific recipient.
- * Excludes any messages sent by the recipient themself.
+ * Excludes any messages sent by the recipient themself and uses exact unread message counts.
  */
 function formatChatPayloadForRecipient({
   recipientUserId,
   planTitle,
   planId,
-  recentMessages,
+  unreadCount,
+  unreadMessages,
   senderMap,
   publicBaseUrl,
   tag,
@@ -290,7 +328,8 @@ function formatChatPayloadForRecipient({
   recipientUserId: string;
   planTitle: string;
   planId: string;
-  recentMessages: any[];
+  unreadCount: number;
+  unreadMessages: any[];
   senderMap: Map<string, { name: string; avatarUrl: string }>;
   publicBaseUrl: string;
   tag: string;
@@ -298,16 +337,18 @@ function formatChatPayloadForRecipient({
   extraData?: Record<string, any>;
 }): FormattedChatPush | null {
   // 1. Exclude messages sent by this recipient so they don't receive their own text
-  const eligible = recentMessages.filter((m) => m.sender_id !== recipientUserId);
-  if (eligible.length === 0) {
+  const eligible = (unreadMessages || []).filter((m) => m.sender_id !== recipientUserId);
+  const effectiveUnreadCount = Math.max(unreadCount, eligible.length);
+
+  if (effectiveUnreadCount <= 0 || eligible.length === 0) {
     return null;
   }
 
   const defaultAvatar = `${publicBaseUrl}/assets/default_avatar.webp`;
   const appBadge = `${publicBaseUrl}/favicon-32x32.png`;
 
-  // Start with up to 8 recent messages (sufficient for full Android expanded shade, removing 4-message cap)
-  let messagesToShow = eligible.slice(-8);
+  // Start with up to 5 recent unread messages for compact expanded preview
+  let messagesToShow = eligible.slice(-5);
 
   const buildPayload = (msgs: any[]): FormattedChatPush => {
     const latestMsg = msgs[msgs.length - 1];
@@ -327,14 +368,14 @@ function formatChatPayloadForRecipient({
     let resolvedTitle: string;
     let resolvedBody: string;
 
-    if (msgs.length === 1) {
+    if (effectiveUnreadCount === 1) {
       const singleMsg = msgs[0];
       const sInfo = senderMap.get(singleMsg.sender_id) || { name: "Friend", avatarUrl: defaultAvatar };
       const text = formatMessagePreview(singleMsg);
-      resolvedTitle = `${sInfo.name} • ${planTitle}`;
-      resolvedBody = text;
+      resolvedTitle = `${planTitle} • 1 unread message`;
+      resolvedBody = `${sInfo.name}: ${text}`;
     } else {
-      resolvedTitle = `${planTitle} • ${msgs.length} messages`;
+      resolvedTitle = `${planTitle} • ${effectiveUnreadCount} unread messages`;
       const lines = msgs.map((m) => {
         const sInfo = senderMap.get(m.sender_id) || { name: "Friend", avatarUrl: defaultAvatar };
         const text = formatMessagePreview(m);
@@ -344,28 +385,26 @@ function formatChatPayloadForRecipient({
       resolvedBody = lines.join("\n");
     }
 
+    const resolvedTag = tag || `plan-chat-${planId}`;
+    const resolvedUrl = url || `/chats?id=${planId}`;
+
     return {
       title: resolvedTitle,
       body: resolvedBody,
       icon: resolvedIcon,
       badge: appBadge,
-      tag: "plan-chats",
+      tag: resolvedTag,
       timestamp: Date.now(),
       notificationType: "CHAT_MESSAGE",
       data: {
-        url,
+        url: resolvedUrl,
         planId,
+        planTitle,
         notificationType: "CHAT_MESSAGE",
         avatar: resolvedIcon,
+        unreadCount: effectiveUnreadCount,
+        messages: formattedMessages,
         ...extraData,
-        groups: {
-          [planId]: {
-            planId,
-            planTitle,
-            messages: formattedMessages,
-            latestAvatar: resolvedIcon,
-          },
-        },
       },
     };
   };
@@ -373,7 +412,7 @@ function formatChatPayloadForRecipient({
   let candidate = buildPayload(messagesToShow);
 
   // Dynamic payload size guard: FCM limit is 4096 bytes. Ensure unencrypted JSON stays safely under 3072 bytes.
-  while (messagesToShow.length > 2 && new TextEncoder().encode(JSON.stringify(candidate)).length > 3072) {
+  while (messagesToShow.length > 1 && new TextEncoder().encode(JSON.stringify(candidate)).length > 3072) {
     messagesToShow = messagesToShow.slice(1);
     candidate = buildPayload(messagesToShow);
   }
@@ -402,8 +441,17 @@ Deno.serve(async (req: Request) => {
     const payload: PushPayload = await req.json().catch(() => ({}));
 
     // Resolve public HTTPS base URL accessible from Android devices
-    const originHeader = req.headers.get("origin") || req.headers.get("referer");
-    let publicBaseUrl = (payload.appUrl || originHeader || "").trim();
+    const xForwardedHost = req.headers.get("x-forwarded-host");
+    const xForwardedProto = req.headers.get("x-forwarded-proto") || "https";
+    let candidateHost = (payload.appUrl || "").trim();
+    if (!candidateHost && xForwardedHost) {
+      candidateHost = `${xForwardedProto}://${xForwardedHost}`;
+    }
+    if (!candidateHost) {
+      candidateHost = (req.headers.get("origin") || req.headers.get("referer") || "").trim();
+    }
+
+    let publicBaseUrl = candidateHost;
     if (publicBaseUrl) {
       try {
         publicBaseUrl = new URL(publicBaseUrl).origin;
@@ -413,7 +461,7 @@ Deno.serve(async (req: Request) => {
     }
     // If empty or local, default to active public Cloudflare tunnel
     if (!publicBaseUrl || publicBaseUrl.includes("localhost") || publicBaseUrl.includes("127.0.0.1")) {
-      publicBaseUrl = Deno.env.get("PUBLIC_BASE_URL") || "https://disclose-purchasing-unfortunately-comics.trycloudflare.com";
+      publicBaseUrl = Deno.env.get("PUBLIC_BASE_URL") || "https://highlighted-rubber-agriculture-cure.trycloudflare.com";
     }
 
     // SCENARIO 1: Automated Scheduled Reminders Check (Disabled per requirement)
@@ -436,24 +484,27 @@ Deno.serve(async (req: Request) => {
     let body = payload.body || "You have a new update";
     let url = payload.url || "/";
     let tag = payload.tag || "planless-notification";
-    let planId = payload.planId || null;
+    let planId = payload.planId || payload.record?.plan_id || null;
     let imageUrl: string | null = payload.image || null;
     let avatarUrl: string | null = payload.avatar || null;
     let notificationType = payload.notificationType || "PLAN_REMINDER";
     let chatContext: {
       planTitle: string;
       planId: string;
-      recentMessages: any[];
+      recipientUnreadsMap: Map<string, { unreadCount: number; unreadMessages: any[] }>;
       senderMap: Map<string, { name: string; avatarUrl: string }>;
       tag: string;
       url: string;
     } | null = null;
+    let testMultiPayloads: any[] | null = null;
 
-    // Check idempotency key if provided, or construct default idempotency key for state-changing events
+    // Check idempotency key if provided, or construct unique key per entity (e.g. per message ID)
     const effectiveIdempotencyKey = payload.idempotencyKey || (
-      payload.event
-        ? `${payload.event}:${payload.planId || ""}:${payload.actorId || payload.userId || ""}:${payload.targetUserId || ""}:${payload.rsvpStatus || ""}`
-        : undefined
+      payload.record?.id
+        ? `${payload.event || "RECORD"}:${payload.record.id}`
+        : payload.event
+          ? `${payload.event}:${planId || ""}:${payload.actorId || payload.userId || payload.record?.sender_id || ""}:${payload.targetUserId || ""}:${payload.rsvpStatus || ""}`
+          : undefined
     );
     if (payload.action !== "test" && effectiveIdempotencyKey && isDuplicateEvent(effectiveIdempotencyKey)) {
       console.log(`[send-push] Duplicate event suppressed by idempotency: ${effectiveIdempotencyKey}`);
@@ -461,7 +512,15 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           success: true,
           message: "Duplicate event suppressed by idempotency",
+          reason: "duplicate_event_suppressed",
           deliveredCount: 0,
+          eligibleRecipientCount: 0,
+          activeSubscriptionCount: 0,
+          attemptedCount: 0,
+          acceptedCount: 0,
+          failedCount: 0,
+          prunedCount: 0,
+          skippedZeroUnreadsCount: 0,
         }),
         {
           status: 200,
@@ -522,27 +581,21 @@ Deno.serve(async (req: Request) => {
         notificationType = "PLAN_INVITATION";
         url = "/plans?id=0623a5f5-37b0-4c54-8a1f-437397fd66f4";
 
-        const { data: sampleUser } = await supabase
-          .from("users")
-          .select("full_name, profile_photo_path")
-          .not("profile_photo_path", "is", null)
-          .limit(1)
+        const { data: samplePlan } = await supabase
+          .from("plans")
+          .select("id, title, cover_image, cover_card_image, category")
+          .eq("id", "0623a5f5-37b0-4c54-8a1f-437397fd66f4")
           .maybeSingle();
 
-        const inviterName = sampleUser?.full_name || "Maanastej";
+        const inviterName = "Maanastej";
         title = `${inviterName} • Sunday Football`;
-        body = "Invited you to join • Turf Club";
-        avatarUrl =
-          resolveUserAvatarUrl(sampleUser?.profile_photo_path, publicBaseUrl) ||
-          `${publicBaseUrl}/assets/default_avatar.webp`;
-      } else if (payload.testType === "multi-group") {
-        // Multi-group test: 4 messages across 2 distinct groups
-        tag = "plan-chats";
-        url = "/chats";
-        notificationType = "CHAT_MESSAGE";
-
+        body = "Invited you to join";
+        avatarUrl = resolvePlanImageUrl(samplePlan, publicBaseUrl);
+      } else if (payload.testType === "two-chats" || payload.testType === "multi-group") {
+        // Multi-chat test: Test conversation-level chat pushes for two independent plan chats
         const mandaadiPlanId = "0623a5f5-37b0-4c54-8a1f-437397fd66f4";
         const smashGuysPlanId = "a5c5ca11-0ebf-4179-9c04-3a38acf19bf1";
+        notificationType = "CHAT_MESSAGE";
 
         const sampleUserIds = [
           "f69ab638-0873-4b99-9966-42ac497d0bbe", // Maanastej
@@ -569,66 +622,80 @@ Deno.serve(async (req: Request) => {
         const mLatestAvatar = testSenderMap.get("030e6575-709b-4a13-9c92-30f0dac2a877")?.avatarUrl || defaultAvatar;
         const sLatestAvatar = testSenderMap.get("dc3f841d-cb5c-4f11-97b7-6f81a7114ee8")?.avatarUrl || defaultAvatar;
 
-        const multiGroups = {
-          [mandaadiPlanId]: {
-            planId: mandaadiPlanId,
-            planTitle: "Mandaadi",
-            messages: [
-              {
-                id: "mandaadi-1",
-                senderName: testSenderMap.get("f69ab638-0873-4b99-9966-42ac497d0bbe")?.name || "Maanastej",
-                senderAvatar: testSenderMap.get("f69ab638-0873-4b99-9966-42ac497d0bbe")?.avatarUrl || defaultAvatar,
-                content: "Are you guys coming to Mandaadi?",
-                createdAt: new Date(Date.now() - 120000).toISOString(),
-              },
-              {
-                id: "mandaadi-2",
-                senderName: testSenderMap.get("030e6575-709b-4a13-9c92-30f0dac2a877")?.name || "Bhaavya",
-                senderAvatar: testSenderMap.get("030e6575-709b-4a13-9c92-30f0dac2a877")?.avatarUrl || defaultAvatar,
-                content: "Yes, booked the tickets!",
-                createdAt: new Date(Date.now() - 60000).toISOString(),
-              },
-            ],
-            latestAvatar: mLatestAvatar,
+        const mandaadiMsgs = [
+          {
+            id: "mandaadi-1",
+            senderName: testSenderMap.get("f69ab638-0873-4b99-9966-42ac497d0bbe")?.name || "Maanastej",
+            content: "Are you guys coming to Mandaadi?",
           },
-          [smashGuysPlanId]: {
-            planId: smashGuysPlanId,
-            planTitle: "Smash Guys",
-            messages: [
-              {
-                id: "smash-1",
-                senderName: testSenderMap.get("06064726-079a-438f-919f-a8be1da70831")?.name || "Renjith",
-                senderAvatar: testSenderMap.get("06064726-079a-438f-919f-a8be1da70831")?.avatarUrl || defaultAvatar,
-                content: "Court 3 is booked for 7 PM",
-                createdAt: new Date(Date.now() - 30000).toISOString(),
-              },
-              {
-                id: "smash-2",
-                senderName: testSenderMap.get("dc3f841d-cb5c-4f11-97b7-6f81a7114ee8")?.name || "Chris",
-                senderAvatar: testSenderMap.get("dc3f841d-cb5c-4f11-97b7-6f81a7114ee8")?.avatarUrl || defaultAvatar,
-                content: "I'll bring extra shuttlecocks",
-                createdAt: new Date().toISOString(),
-              },
-            ],
-            latestAvatar: sLatestAvatar,
+          {
+            id: "mandaadi-2",
+            senderName: testSenderMap.get("030e6575-709b-4a13-9c92-30f0dac2a877")?.name || "Bhaavya",
+            content: "Yes, booked the tickets!",
           },
-        };
+        ];
 
-        title = "4 messages from 2 groups";
-        body = "Mandaadi:\n  Maanastej: Are you guys coming to Mandaadi?\n  Bhaavya: Yes, booked the tickets!\n\nSmash Guys:\n  Renjith: Court 3 is booked for 7 PM\n  Chris: I'll bring extra shuttlecocks";
-        avatarUrl = sLatestAvatar;
-        payload.data = {
-          ...payload.data,
-          notificationType: "CHAT_MESSAGE",
-          groups: multiGroups,
-          totalMessages: 4,
-          groupCount: 2,
-        };
+        const smashMsgs = [
+          {
+            id: "smash-1",
+            senderName: testSenderMap.get("06064726-079a-438f-919f-a8be1da70831")?.name || "Renjith",
+            content: "Court 3 is booked for 7 PM",
+          },
+          {
+            id: "smash-2",
+            senderName: testSenderMap.get("dc3f841d-cb5c-4f11-97b7-6f81a7114ee8")?.name || "Chris",
+            content: "I'll bring extra shuttlecocks",
+          },
+        ];
+
+        testMultiPayloads = [
+          {
+            title: "Mandaadi • 2 unread messages",
+            body: "Maanastej: Are you guys coming to Mandaadi?\nBhaavya: Yes, booked the tickets!",
+            icon: mLatestAvatar,
+            badge: `${publicBaseUrl}/favicon-32x32.png`,
+            tag: `plan-chat-${mandaadiPlanId}`,
+            timestamp: Date.now() - 1000,
+            notificationType: "CHAT_MESSAGE",
+            data: {
+              url: `/chats?id=${mandaadiPlanId}`,
+              planId: mandaadiPlanId,
+              planTitle: "Mandaadi",
+              notificationType: "CHAT_MESSAGE",
+              avatar: mLatestAvatar,
+              unreadCount: 2,
+              messages: mandaadiMsgs,
+            },
+          },
+          {
+            title: "Smash Guys • 2 unread messages",
+            body: "Renjith: Court 3 is booked for 7 PM\nChris: I'll bring extra shuttlecocks",
+            icon: sLatestAvatar,
+            badge: `${publicBaseUrl}/favicon-32x32.png`,
+            tag: `plan-chat-${smashGuysPlanId}`,
+            timestamp: Date.now(),
+            notificationType: "CHAT_MESSAGE",
+            data: {
+              url: `/chats?id=${smashGuysPlanId}`,
+              planId: smashGuysPlanId,
+              planTitle: "Smash Guys",
+              notificationType: "CHAT_MESSAGE",
+              avatar: sLatestAvatar,
+              unreadCount: 2,
+              messages: smashMsgs,
+            },
+          },
+        ];
+
+        tag = `plan-chat-${mandaadiPlanId}`;
+        title = "Mandaadi • 2 unread messages";
+        body = "Maanastej: Are you guys coming to Mandaadi?\nBhaavya: Yes, booked the tickets!";
+        avatarUrl = mLatestAvatar;
       } else if (payload.testType === "group-chat") {
         // Test 6 messages in the same plan chat (validating cap removal >4)
         const samplePlanTitle = "Mandaadi";
         const samplePlanId = "0623a5f5-37b0-4c54-8a1f-437397fd66f4";
-        tag = "plan-chats";
+        tag = `plan-chat-${samplePlanId}`;
         url = `/chats?id=${samplePlanId}`;
         notificationType = "CHAT_MESSAGE";
         planId = samplePlanId;
@@ -698,10 +765,18 @@ Deno.serve(async (req: Request) => {
           },
         ];
 
+        const testUnreadsMap = new Map<string, { unreadCount: number; unreadMessages: any[] }>();
+        for (const uId of targetUserIds) {
+          testUnreadsMap.set(uId, {
+            unreadCount: mockMessages.length,
+            unreadMessages: mockMessages,
+          });
+        }
+
         chatContext = {
           planTitle: samplePlanTitle,
           planId: samplePlanId,
-          recentMessages: mockMessages,
+          recipientUnreadsMap: testUnreadsMap,
           senderMap: testSenderMap,
           tag,
           url,
@@ -711,7 +786,8 @@ Deno.serve(async (req: Request) => {
           recipientUserId: target,
           planTitle: samplePlanTitle,
           planId: samplePlanId,
-          recentMessages: mockMessages,
+          unreadCount: mockMessages.length,
+          unreadMessages: mockMessages,
           senderMap: testSenderMap,
           publicBaseUrl,
           tag,
@@ -747,7 +823,7 @@ Deno.serve(async (req: Request) => {
         const joinerName = sampleUser?.full_name || "Bhaavya";
         title = `${joinerName} • Sunday Football`;
         body = "Joined the waitlist";
-        avatarUrl = resolveUserAvatarUrl(sampleUser?.profile_photo_path, publicBaseUrl) || `${publicBaseUrl}/assets/default_avatar.webp`;
+        avatarUrl = `${publicBaseUrl}/assets/categories/sports.png`;
       } else if (payload.testType === "waitlist-promo") {
         tag = "waitlist-promo-test";
         notificationType = "WAITLIST_PROMOTION";
@@ -759,21 +835,18 @@ Deno.serve(async (req: Request) => {
         tag = "plan-leave-test";
         notificationType = "PLAN_LEAVE";
         url = "/plans?id=0623a5f5-37b0-4c54-8a1f-437397fd66f4";
-        const { data: sampleUser } = await supabase
-          .from("users")
-          .select("full_name, profile_photo_path")
-          .eq("id", "06064726-079a-438f-919f-a8be1da70831")
-          .maybeSingle();
-        const leaverName = sampleUser?.full_name || "Renjith";
+        const leaverName = "Renjith";
         title = `${leaverName} • Sunday Football`;
         body = "Left the plan";
-        avatarUrl = resolveUserAvatarUrl(sampleUser?.profile_photo_path, publicBaseUrl) || `${publicBaseUrl}/assets/default_avatar.webp`;
+        avatarUrl = `${publicBaseUrl}/assets/categories/sports.png`;
       } else if (payload.testType === "cancel") {
         tag = "plan-cancel-test";
         notificationType = "PLAN_CANCELLED";
         url = "/plans?id=0623a5f5-37b0-4c54-8a1f-437397fd66f4";
         title = "Cancelled • Sunday Football";
-        body = "The host cancelled this plan";
+        body = payload.cancellerName
+          ? `${payload.cancellerName} cancelled this plan`
+          : (payload.actorName ? `${payload.actorName} cancelled this plan` : "Renjith cancelled this plan");
         avatarUrl = `${publicBaseUrl}/assets/categories/sports.png`;
       } else if (payload.testType === "reschedule") {
         tag = "plan-reschedule-test";
@@ -782,12 +855,21 @@ Deno.serve(async (req: Request) => {
         title = "Updated • Sunday Football";
         body = "Time changed to 6:30 PM";
         avatarUrl = `${publicBaseUrl}/assets/categories/sports.png`;
+      } else if (payload.testType === "rename") {
+        tag = "plan-rename-test";
+        notificationType = "PLAN_RENAMED";
+        url = "/plans?id=0623a5f5-37b0-4c54-8a1f-437397fd66f4";
+        title = "Plan Updated • Smash Guys";
+        body = "The plan name changed to Doomsday";
+        avatarUrl = `${publicBaseUrl}/assets/categories/sports.png`;
       } else if (payload.testType === "host-role") {
         tag = "host-role-test";
         notificationType = "HOST_ASSIGNED";
         url = "/plans?id=0623a5f5-37b0-4c54-8a1f-437397fd66f4";
-        title = "Host Role • Sunday Football";
-        body = "You've been made a co-host";
+        title = "You're hosting • Sunday Football";
+        body = payload.otherHostNames
+          ? formatCoHostNotificationBody(payload.otherHostNames)
+          : "You're hosting this plan with Renjith and Thilaka Sundar";
         avatarUrl = `${publicBaseUrl}/assets/categories/sports.png`;
       } else if (payload.testType === "removal") {
         tag = "participant-removal-test";
@@ -870,15 +952,14 @@ Deno.serve(async (req: Request) => {
       const senderId = record.sender_id;
       planId = record.plan_id;
       notificationType = "CHAT_MESSAGE";
-      tag = "plan-chats";
+      tag = `plan-chat-${planId}`;
       url = `/chats?id=${planId}`;
 
-      // Fetch sender details, plan metadata, participants, and recent messages in parallel
+      // Fetch sender details, plan metadata, and participants in parallel
       const [
         { data: senderData },
         { data: planData },
         { data: participants },
-        { data: recentMsgsRaw },
       ] = await Promise.all([
         supabase
           .from("users")
@@ -887,44 +968,128 @@ Deno.serve(async (req: Request) => {
           .maybeSingle(),
         supabase
           .from("plans")
-          .select("id, title, cover_image, cover_card_image, category, place_name")
+          .select("id, title, cover_image, cover_card_image, category, place_name, created_at")
           .eq("id", planId)
           .maybeSingle(),
         supabase
           .from("plan_participants")
-          .select("user_id")
+          .select("user_id, created_at, rsvp_status")
           .eq("plan_id", planId)
           .neq("rsvp_status", "SKIPPED")
           .neq("user_id", senderId),
-        supabase
-          .from("plan_messages")
-          .select("id, content, message_type, sender_id, created_at")
-          .eq("plan_id", planId)
-          .order("created_at", { ascending: false })
-          .limit(20), // Remove 4-message cap: query up to 20 recent messages
       ]);
 
       const rawPlanTitle = (planData?.title || "Plan").trim();
       const planTitle = rawPlanTitle.length > 25 ? `${rawPlanTitle.slice(0, 24)}…` : rawPlanTitle;
-      targetUserIds = (participants || []).map((p: any) => p.user_id);
+      targetUserIds = (participants || []).map((p: any) => p.user_id).filter(Boolean);
 
-      // Ensure the newly triggered message record is included in recent messages
-      let allMsgs = [...(recentMsgsRaw || [])];
-      if (record && !allMsgs.some((m) => m.id === record.id)) {
-        allMsgs.unshift(record);
+      const recipientUnreadsMap = new Map<string, { unreadCount: number; unreadMessages: any[] }>();
+
+      if (targetUserIds.length > 0) {
+        // Query exact unread counts and recent unread messages per recipient using authoritative read positions
+        const { data: unreadsData, error: unreadsError } = await supabase.rpc(
+          "get_plan_recipients_chat_unreads",
+          {
+            p_plan_id: planId,
+            p_recipient_ids: targetUserIds,
+          }
+        );
+
+        const recipientMetadataMap = new Map<string, { cutoff: string | null; lastReadMessageId: string | null }>();
+
+        if (!unreadsError && Array.isArray(unreadsData)) {
+          for (const row of unreadsData) {
+            recipientUnreadsMap.set(row.recipient_id, {
+              unreadCount: Number(row.unread_count || 0),
+              unreadMessages: Array.isArray(row.unread_messages) ? row.unread_messages : [],
+            });
+            recipientMetadataMap.set(row.recipient_id, {
+              cutoff: row.read_cutoff || null,
+              lastReadMessageId: row.last_read_message_id || null,
+            });
+          }
+        } else {
+          console.warn("[send-push] RPC get_plan_recipients_chat_unreads fallback:", unreadsError);
+          // Fallback: Query plan_chat_reads and plan_messages directly
+          const { data: pcrRows } = await supabase
+            .from("plan_chat_reads")
+            .select("user_id, last_read_at, last_read_message_id")
+            .eq("plan_id", planId)
+            .in("user_id", targetUserIds);
+
+          const pcrMap = new Map<string, any>((pcrRows || []).map((r: any) => [r.user_id, r]));
+          const participantMap = new Map<string, any>((participants || []).map((p: any) => [p.user_id, p]));
+
+          const { data: recentFallbackMsgs } = await supabase
+            .from("plan_messages")
+            .select("id, content, message_type, sender_id, created_at")
+            .eq("plan_id", planId)
+            .neq("message_type", "cost")
+            .neq("message_type", "poll")
+            .order("created_at", { ascending: true });
+
+          for (const rId of targetUserIds) {
+            const pcr = pcrMap.get(rId);
+            const pRecord = participantMap.get(rId);
+            const cutoff = pcr?.last_read_at || pRecord?.created_at || planData?.created_at || new Date(0).toISOString();
+            const cutoffTime = new Date(cutoff).getTime();
+
+            const unreads = (recentFallbackMsgs || []).filter((m: any) => {
+              if (m.sender_id === rId) return false;
+              const mTime = new Date(m.created_at).getTime();
+              if (mTime <= cutoffTime) return false;
+              if (pcr?.last_read_message_id && m.id === pcr.last_read_message_id) return false;
+              return true;
+            });
+
+            recipientUnreadsMap.set(rId, {
+              unreadCount: unreads.length,
+              unreadMessages: unreads.slice(-8),
+            });
+            recipientMetadataMap.set(rId, {
+              cutoff,
+              lastReadMessageId: pcr?.last_read_message_id || null,
+            });
+          }
+        }
+
+        // Only add newly sent message if it was not already read according to recipient's cutoff
+        if (record && record.message_type !== "cost" && record.message_type !== "poll") {
+          const recordTime = record.created_at ? new Date(record.created_at).getTime() : Date.now();
+          for (const [rId, unreadObj] of recipientUnreadsMap.entries()) {
+            if (rId !== senderId) {
+              const meta = recipientMetadataMap.get(rId);
+              const cutoffTime = meta?.cutoff ? new Date(meta.cutoff).getTime() : 0;
+              const isAlreadyRead =
+                meta?.lastReadMessageId === record.id ||
+                (meta?.cutoff && cutoffTime > recordTime);
+
+              if (!isAlreadyRead) {
+                const alreadyIncluded = unreadObj.unreadMessages.some((m: any) => m.id === record.id);
+                if (!alreadyIncluded) {
+                  unreadObj.unreadMessages.push(record);
+                  if (unreadObj.unreadCount < unreadObj.unreadMessages.length) {
+                    unreadObj.unreadCount = unreadObj.unreadMessages.length;
+                  }
+                }
+              }
+            }
+          }
+        }
       }
-      // Order chronologically: oldest to newest
-      const chronologicalMessages = allMsgs.reverse();
 
-      // Collect all distinct sender IDs from recent messages
-      const senderIds = Array.from(
-        new Set([senderId, ...chronologicalMessages.map((m) => m.sender_id)])
-      ).filter(Boolean);
+      // Collect all distinct sender IDs from unread messages to resolve avatars & names
+      const allUnreadSenderIds = new Set<string>([senderId]);
+      for (const info of recipientUnreadsMap.values()) {
+        for (const m of info.unreadMessages) {
+          if (m.sender_id) allUnreadSenderIds.add(m.sender_id);
+        }
+      }
 
       const { data: sendersData } = await supabase
         .from("users")
         .select("id, full_name, profile_photo_path")
-        .in("id", senderIds);
+        .in("id", Array.from(allUnreadSenderIds));
 
       const senderMap = new Map<string, { name: string; avatarUrl: string }>();
       for (const u of sendersData || []) {
@@ -947,23 +1112,27 @@ Deno.serve(async (req: Request) => {
       chatContext = {
         planTitle,
         planId: planId || "",
-        recentMessages: chronologicalMessages,
+        recipientUnreadsMap,
         senderMap,
         tag,
         url,
       };
 
       // Set fallback values for preview and logging
-      const defaultPreview = formatChatPayloadForRecipient({
-        recipientUserId: "",
-        planTitle,
-        planId: planId || "",
-        recentMessages: chronologicalMessages,
-        senderMap,
-        publicBaseUrl,
-        tag,
-        url,
-      });
+      const defaultPreview = targetUserIds.length > 0 && recipientUnreadsMap.get(targetUserIds[0])
+        ? formatChatPayloadForRecipient({
+            recipientUserId: targetUserIds[0],
+            planTitle,
+            planId: planId || "",
+            unreadCount: recipientUnreadsMap.get(targetUserIds[0])!.unreadCount,
+            unreadMessages: recipientUnreadsMap.get(targetUserIds[0])!.unreadMessages,
+            senderMap,
+            publicBaseUrl,
+            tag,
+            url,
+          })
+        : null;
+
       if (defaultPreview) {
         title = defaultPreview.title;
         body = defaultPreview.body;
@@ -1018,24 +1187,16 @@ Deno.serve(async (req: Request) => {
 
       const rawPlanTitle = (planData?.title || "Plan").trim();
       const planTitle = rawPlanTitle.length > 25 ? `${rawPlanTitle.slice(0, 24)}…` : rawPlanTitle;
-      const placeName = planData?.place_name?.trim() || "";
 
       if (inviterName) {
         title = `${inviterName} • ${planTitle}`;
-        body = placeName
-          ? `Invited you to join • ${placeName}`
-          : "Invited you to join this plan";
+        body = "Invited you to join";
       } else {
         title = `Invited • ${planTitle}`;
-        body = placeName
-          ? `Join your friends • ${placeName}`
-          : "Tap to view details and RSVP";
+        body = "Invited you to join";
       }
 
-      avatarUrl =
-        resolveUserAvatarUrl(inviterPhotoPath, publicBaseUrl) ||
-        resolvePlanImageUrl(planData, publicBaseUrl) ||
-        `${publicBaseUrl}/assets/default_avatar.webp`;
+      avatarUrl = resolvePlanImageUrl(planData, publicBaseUrl);
       imageUrl = null;
     }
 
@@ -1061,10 +1222,7 @@ Deno.serve(async (req: Request) => {
 
       title = `${joinerName} • ${planTitle}`;
       body = isWaitlist ? "Joined the waitlist" : "Joined your plan";
-      avatarUrl =
-        resolveUserAvatarUrl(aUser?.profile_photo_path, publicBaseUrl) ||
-        resolvePlanImageUrl(pData, publicBaseUrl) ||
-        `${publicBaseUrl}/assets/default_avatar.webp`;
+      avatarUrl = resolvePlanImageUrl(pData, publicBaseUrl);
       imageUrl = null;
 
       // Filter out actor so hosts who join don't notify themselves
@@ -1090,9 +1248,7 @@ Deno.serve(async (req: Request) => {
 
       title = `You're in! • ${planTitle}`;
       body = "A spot opened up";
-      avatarUrl =
-        resolvePlanImageUrl(pData, publicBaseUrl) ||
-        `${publicBaseUrl}/pwa-192x192.png`;
+      avatarUrl = resolvePlanImageUrl(pData, publicBaseUrl);
       imageUrl = null;
     }
 
@@ -1118,10 +1274,7 @@ Deno.serve(async (req: Request) => {
 
       title = `${leaverName} • ${planTitle}`;
       body = prevStatus === "INVITED" ? "Declined the invitation" : "Left the plan";
-      avatarUrl =
-        resolveUserAvatarUrl(aUser?.profile_photo_path, publicBaseUrl) ||
-        resolvePlanImageUrl(pData, publicBaseUrl) ||
-        `${publicBaseUrl}/assets/default_avatar.webp`;
+      avatarUrl = resolvePlanImageUrl(pData, publicBaseUrl);
       imageUrl = null;
 
       targetUserIds = (hosts || []).map((h: any) => h.user_id).filter((uid: string) => uid && uid !== actorId);
@@ -1135,19 +1288,29 @@ Deno.serve(async (req: Request) => {
       tag = `plan-cancelled-${planId}`;
       notificationType = "PLAN_CANCELLED";
 
-      const [{ data: pData }, { data: participants }] = await Promise.all([
+      const [{ data: pData }, { data: aUser }, { data: participants }] = await Promise.all([
         supabase.from("plans").select("id, title, cover_image, cover_card_image, category").eq("id", planId).maybeSingle(),
+        actorId ? supabase.from("users").select("id, full_name, profile_photo_path").eq("id", actorId).maybeSingle() : Promise.resolve({ data: null }),
         supabase.from("plan_participants").select("user_id, rsvp_status").eq("plan_id", planId),
       ]);
 
       const rawPlanTitle = (pData?.title || "Plan").trim();
       const planTitle = rawPlanTitle.length > 25 ? `${rawPlanTitle.slice(0, 24)}…` : rawPlanTitle;
 
+      let cancellerName = (payload.cancellerName || payload.actorName)?.trim();
+      if (!cancellerName && aUser) {
+        cancellerName = (aUser.full_name || "").trim();
+      }
+
       title = `Cancelled • ${planTitle}`;
-      body = "The host cancelled this plan";
-      avatarUrl =
-        resolvePlanImageUrl(pData, publicBaseUrl) ||
-        `${publicBaseUrl}/pwa-192x192.png`;
+      if (cancellerName) {
+        body = `${cancellerName} cancelled this plan`;
+      } else if (actorId) {
+        body = "Someone cancelled this plan";
+      } else {
+        body = "The host cancelled this plan";
+      }
+      avatarUrl = resolvePlanImageUrl(pData, publicBaseUrl);
       imageUrl = null;
 
       // Eligible participants pre-cancellation (excluding host who performed the cancellation)
@@ -1191,12 +1354,41 @@ Deno.serve(async (req: Request) => {
         body = "Plan schedule updated";
       }
 
-      avatarUrl =
-        resolvePlanImageUrl(pData, publicBaseUrl) ||
-        `${publicBaseUrl}/pwa-192x192.png`;
+      avatarUrl = resolvePlanImageUrl(pData, publicBaseUrl);
       imageUrl = null;
 
       targetUserIds = (participants || []).map((p: any) => p.user_id).filter((uid: string) => uid && uid !== actorId);
+    }
+
+    // SCENARIO 9B: Plan Renamed Event
+    else if (payload.event === "PLAN_RENAMED" && payload.planId) {
+      planId = payload.planId;
+      const actorId = payload.actorId || payload.userId;
+      url = `/plans?id=${planId}`;
+      tag = `plan-renamed-${planId}`;
+      notificationType = "PLAN_RENAMED";
+
+      const [{ data: pData }, { data: participants }] = await Promise.all([
+        supabase.from("plans").select("id, title, cover_image, cover_card_image, category").eq("id", planId).maybeSingle(),
+        supabase.from("plan_participants").select("user_id, rsvp_status").eq("plan_id", planId),
+      ]);
+
+      const oldPlanTitle = (payload.oldTitle || "Plan").trim();
+      const newPlanTitle = (payload.newTitle || pData?.title || "Plan").trim();
+
+      title = `Plan Updated • ${oldPlanTitle}`;
+      body = `The plan name changed to ${newPlanTitle}`;
+
+      avatarUrl = resolvePlanImageUrl(pData, publicBaseUrl);
+      imageUrl = null;
+
+      targetUserIds = (participants || [])
+        .filter((p: any) => {
+          const status = (p.rsvp_status || "").toUpperCase();
+          return (status === "JOINED" || status === "WAITLISTED" || status === "WAITLIST") && p.user_id !== actorId;
+        })
+        .map((p: any) => p.user_id)
+        .filter(Boolean);
     }
 
     // SCENARIO 10: Host Role Assignment Event
@@ -1207,20 +1399,53 @@ Deno.serve(async (req: Request) => {
       tag = `host-role-${planId}-${targetUser || "user"}`;
       notificationType = "HOST_ASSIGNED";
 
-      const { data: pData } = await supabase
-        .from("plans")
-        .select("id, title, cover_image, cover_card_image, category")
-        .eq("id", planId)
-        .maybeSingle();
+      const [{ data: pData }, { data: hostParticipants }] = await Promise.all([
+        supabase
+          .from("plans")
+          .select("id, title, cover_image, cover_card_image, category")
+          .eq("id", planId)
+          .maybeSingle(),
+        supabase
+          .from("plan_participants")
+          .select("user_id, role, rsvp_status")
+          .eq("plan_id", planId)
+          .eq("role", "HOST")
+          .eq("rsvp_status", "JOINED"),
+      ]);
 
       const rawPlanTitle = (pData?.title || "Plan").trim();
       const planTitle = rawPlanTitle.length > 25 ? `${rawPlanTitle.slice(0, 24)}…` : rawPlanTitle;
 
-      title = `Host Role • ${planTitle}`;
-      body = "You've been made a co-host";
-      avatarUrl =
-        resolvePlanImageUrl(pData, publicBaseUrl) ||
-        `${publicBaseUrl}/pwa-192x192.png`;
+      title = `You're hosting • ${planTitle}`;
+
+      let otherHostNames: string[] = [];
+      if (payload.otherHostNames && Array.isArray(payload.otherHostNames)) {
+        otherHostNames = payload.otherHostNames;
+      } else {
+        const otherHostIds = Array.from(
+          new Set(
+            (hostParticipants || [])
+              .map((h: any) => h.user_id)
+              .filter((uid: string) => uid && uid !== targetUser)
+          )
+        );
+
+        if (otherHostIds.length > 0) {
+          const { data: hostUsers } = await supabase
+            .from("users")
+            .select("id, full_name")
+            .in("id", otherHostIds);
+
+          otherHostNames = otherHostIds.map((id) => {
+            const userObj = (hostUsers || []).find((u: any) => u.id === id);
+            const rawName = (userObj?.full_name || "").trim();
+            return rawName.length > 0 ? rawName : "Someone";
+          });
+        }
+      }
+
+      body = formatCoHostNotificationBody(otherHostNames);
+      avatarUrl = resolvePlanImageUrl(pData, publicBaseUrl);
       imageUrl = null;
 
       targetUserIds = targetUser ? [targetUser] : [];
@@ -1245,9 +1470,7 @@ Deno.serve(async (req: Request) => {
 
       title = `${planTitle}`;
       body = "You've been removed from this plan";
-      avatarUrl =
-        resolvePlanImageUrl(pData, publicBaseUrl) ||
-        `${publicBaseUrl}/pwa-192x192.png`;
+      avatarUrl = resolvePlanImageUrl(pData, publicBaseUrl);
       imageUrl = null;
 
       targetUserIds = targetUser ? [targetUser] : [];
@@ -1271,9 +1494,7 @@ Deno.serve(async (req: Request) => {
 
       title = `Plan Completed • ${planTitle}`;
       body = "Thanks for joining!";
-      avatarUrl =
-        resolvePlanImageUrl(pData, publicBaseUrl) ||
-        `${publicBaseUrl}/pwa-192x192.png`;
+      avatarUrl = resolvePlanImageUrl(pData, publicBaseUrl);
       imageUrl = null;
 
       if (payload.attendingUserIds && Array.isArray(payload.attendingUserIds)) {
@@ -1349,7 +1570,8 @@ Deno.serve(async (req: Request) => {
           .select("id, title, cover_image, cover_card_image, category")
           .eq("id", payload.planId)
           .maybeSingle();
-        imageUrl = resolvePlanImageUrl(planData, publicBaseUrl);
+        avatarUrl = resolvePlanImageUrl(planData, publicBaseUrl);
+        imageUrl = null;
       }
     }
 
@@ -1358,7 +1580,16 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           success: true,
           message: "No recipients to notify",
+          reason: "no_recipients",
           deliveredCount: 0,
+          eligibleRecipientCount: 0,
+          activeSubscriptionCount: 0,
+          attemptedCount: 0,
+          acceptedCount: 0,
+          failedCount: 0,
+          prunedCount: 0,
+          skippedZeroUnreadsCount: 0,
+          recipientDiagnostics: [],
         }),
         {
           status: 200,
@@ -1382,11 +1613,26 @@ Deno.serve(async (req: Request) => {
       });
     }
     if (!subscriptions || subscriptions.length === 0) {
+      const recipientDiagnostics = targetUserIds.map((rId) => ({
+        recipientId: rId,
+        status: "no_active_subscription",
+        unreadCount: chatContext?.recipientUnreadsMap.get(rId)?.unreadCount ?? 0,
+      }));
+
       return new Response(
         JSON.stringify({
           success: true,
           message: "No active push device subscriptions found for recipients",
+          reason: "no_active_subscriptions",
           deliveredCount: 0,
+          eligibleRecipientCount: targetUserIds.length,
+          activeSubscriptionCount: 0,
+          attemptedCount: 0,
+          acceptedCount: 0,
+          failedCount: 0,
+          prunedCount: 0,
+          skippedZeroUnreadsCount: 0,
+          recipientDiagnostics,
         }),
         {
           status: 200,
@@ -1396,8 +1642,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // Dispatch Web Push to all devices with clean WhatsApp layout (no oversized image banner)
-    const planlessAppIcon = `${publicBaseUrl}/pwa-192x192.png`;
-    const chosenIcon = avatarUrl || imageUrl || planlessAppIcon;
+    const planFallbackImage = `${publicBaseUrl}/assets/planimagedefault.webp`;
+    const chosenIcon = avatarUrl || imageUrl || planFallbackImage;
 
     // Safe diagnostic log of resolved payload (no credentials or tokens printed)
     console.log(`[send-push] Dispatching push notification:`, {
@@ -1412,17 +1658,45 @@ Deno.serve(async (req: Request) => {
     });
 
     let deliveredCount = 0;
+    let attemptedCount = 0;
+    let acceptedCount = 0;
+    let failedCount = 0;
+    let skippedZeroUnreadsCount = 0;
     const expiredSubIds: string[] = [];
+    const recipientDiagnostics: Array<{
+      recipientId: string;
+      status: string;
+      unreadCount?: number;
+      error?: string;
+    }> = [];
 
     const deliveryPromises = (subscriptions || []).map(async (sub: any) => {
       let payloadForSub: FormattedChatPush | any;
 
-      if (chatContext) {
+      if (testMultiPayloads && testMultiPayloads.length > 0) {
+        // Multi-chat test: send independent notifications for each tested conversation
+      } else if (chatContext) {
+        const unreadInfo = chatContext.recipientUnreadsMap.get(sub.user_id) || {
+          unreadCount: 0,
+          unreadMessages: [],
+        };
+
+        if (unreadInfo.unreadCount <= 0 || unreadInfo.unreadMessages.length === 0) {
+          skippedZeroUnreadsCount++;
+          recipientDiagnostics.push({
+            recipientId: sub.user_id,
+            status: "skipped_zero_unreads",
+            unreadCount: unreadInfo.unreadCount,
+          });
+          return;
+        }
+
         payloadForSub = formatChatPayloadForRecipient({
           recipientUserId: sub.user_id,
           planTitle: chatContext.planTitle,
           planId: chatContext.planId,
-          recentMessages: chatContext.recentMessages,
+          unreadCount: unreadInfo.unreadCount,
+          unreadMessages: unreadInfo.unreadMessages,
           senderMap: chatContext.senderMap,
           publicBaseUrl,
           tag: chatContext.tag,
@@ -1431,7 +1705,12 @@ Deno.serve(async (req: Request) => {
         });
 
         if (!payloadForSub) {
-          // No incoming messages from other participants for this user
+          skippedZeroUnreadsCount++;
+          recipientDiagnostics.push({
+            recipientId: sub.user_id,
+            status: "skipped_payload_null",
+            unreadCount: unreadInfo.unreadCount,
+          });
           return;
         }
       } else {
@@ -1453,6 +1732,10 @@ Deno.serve(async (req: Request) => {
         };
       }
 
+      const payloadsToSend = testMultiPayloads && testMultiPayloads.length > 0
+        ? testMultiPayloads
+        : (payloadForSub ? [payloadForSub] : []);
+
       const pushSubscription = {
         endpoint: sub.endpoint,
         keys: {
@@ -1461,22 +1744,47 @@ Deno.serve(async (req: Request) => {
         },
       };
 
-      try {
-        await webpush.sendNotification(
-          pushSubscription,
-          JSON.stringify(payloadForSub),
-          { TTL: 86400 } // 24 hours delivery window
-        );
-        deliveredCount++;
-      } catch (pushErr: any) {
-        console.warn(`[send-push] Push failed for subscription ${sub.id}:`, {
-          status: pushErr?.statusCode,
-          message: pushErr?.message,
-          body: pushErr?.body,
+      for (const p of payloadsToSend) {
+        attemptedCount++;
+
+        console.log(`[send-push] Delivering push to user ${sub.user_id}:`, {
+          title: p.title,
+          body: p.body,
+          unreadCount: p.data?.unreadCount,
+          tag: p.tag,
         });
-        // Prune subscription if browser revoked permission or endpoint expired (404/410)
-        if (pushErr?.statusCode === 404 || pushErr?.statusCode === 410) {
-          expiredSubIds.push(sub.id);
+
+        try {
+          await webpush.sendNotification(
+            pushSubscription,
+            JSON.stringify(p),
+            { TTL: 86400 } // 24 hours delivery window
+          );
+          deliveredCount++;
+          acceptedCount++;
+          recipientDiagnostics.push({
+            recipientId: sub.user_id,
+            status: "delivered",
+            unreadCount: p.data?.unreadCount,
+            tag: p.tag,
+          });
+        } catch (pushErr: any) {
+          failedCount++;
+          console.warn(`[send-push] Push failed for subscription ${sub.id}:`, {
+            status: pushErr?.statusCode,
+            message: pushErr?.message,
+            body: pushErr?.body,
+          });
+          recipientDiagnostics.push({
+            recipientId: sub.user_id,
+            status: "push_failed",
+            error: pushErr?.message || "push delivery failed",
+            tag: p.tag,
+          });
+          // Prune subscription if browser revoked permission or endpoint expired (404/410)
+          if (pushErr?.statusCode === 404 || pushErr?.statusCode === 410) {
+            expiredSubIds.push(sub.id);
+          }
         }
       }
     });
@@ -1492,13 +1800,38 @@ Deno.serve(async (req: Request) => {
       console.log(`[send-push] Pruned ${expiredSubIds.length} expired subscriptions`);
     }
 
+    const subscribedUserSet = new Set((subscriptions || []).map((s: any) => s.user_id));
+    for (const rId of targetUserIds) {
+      if (!subscribedUserSet.has(rId)) {
+        recipientDiagnostics.push({
+          recipientId: rId,
+          status: "no_active_subscription",
+          unreadCount: chatContext?.recipientUnreadsMap.get(rId)?.unreadCount ?? 0,
+        });
+      }
+    }
+
+    const reason = deliveredCount > 0
+      ? undefined
+      : skippedZeroUnreadsCount > 0 && attemptedCount === 0
+        ? "all_recipients_already_read"
+        : failedCount > 0
+          ? "push_service_rejected"
+          : "no_devices_delivered";
+
     return new Response(
       JSON.stringify({
         success: true,
+        reason,
         deliveredCount,
-        recipientCount: targetUserIds.length,
-        subscriptionCount: subscriptions.length,
+        eligibleRecipientCount: targetUserIds.length,
+        activeSubscriptionCount: subscriptions.length,
+        attemptedCount,
+        acceptedCount,
+        failedCount,
         prunedCount: expiredSubIds.length,
+        skippedZeroUnreadsCount,
+        recipientDiagnostics,
       }),
       {
         status: 200,

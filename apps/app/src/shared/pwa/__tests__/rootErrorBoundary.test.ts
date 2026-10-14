@@ -76,4 +76,86 @@ describe('RootErrorBoundary UI and Update Behavior', () => {
 
     hardUpdateSpy.mockRestore();
   });
+
+  it('renders Something went wrong with Reload and Return to Home on generic runtime error', () => {
+    const boundary = new RootErrorBoundary({ children: React.createElement('div') });
+    boundary.state = {
+      hasError: true,
+      error: new TypeError("Cannot read properties of undefined (reading 'filter')"),
+      hasUpdate: false,
+      isUpdating: false,
+    };
+
+    const rendered = boundary.render() as React.ReactElement;
+    const html = renderToString(rendered);
+
+    expect(html).toContain('Something went wrong');
+    expect(html).toContain('Planless encountered an unexpected issue. Tap Reload to refresh the screen, or return to Home.');
+    expect(html).toContain('Reload Planless');
+    expect(html).toContain('Return to Home');
+
+    // Must NOT offer destructive session reset or cache wipe for runtime code exceptions
+    expect(html).not.toContain('Reset Session &amp; Sign In');
+    expect(html).not.toContain('Reload &amp; Clear Cache');
+  });
+
+  it('handleNormalReload records reload count and triggers reload on first attempt', () => {
+    const reloadMock = vi.fn();
+    (globalThis as any).window.location = {
+      href: '/plans?id=broken',
+      reload: reloadMock,
+    };
+
+    const boundary = new RootErrorBoundary({ children: React.createElement('div') });
+    boundary.state = {
+      hasError: true,
+      error: new Error('Runtime error'),
+      hasUpdate: false,
+      isUpdating: false,
+    };
+
+    (boundary as any).handleNormalReload();
+
+    expect(sessionStorage.getItem('planless_error_reload_count')).toBe('1');
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+    expect((globalThis as any).window.location.href).toBe('/plans?id=broken');
+  });
+
+  it('handleNormalReload breaks reload loop by redirecting to / on repeated failure', () => {
+    sessionStorage.setItem('planless_error_reload_count', '1');
+    const reloadMock = vi.fn();
+    (globalThis as any).window.location = {
+      href: '/plans?id=broken',
+      reload: reloadMock,
+    };
+
+    const boundary = new RootErrorBoundary({ children: React.createElement('div') });
+    boundary.state = {
+      hasError: true,
+      error: new Error('Runtime error'),
+      hasUpdate: false,
+      isUpdating: false,
+    };
+
+    (boundary as any).handleNormalReload();
+
+    // Reload count should be cleared and location redirected to root
+    expect(sessionStorage.getItem('planless_error_reload_count')).toBeNull();
+    expect(reloadMock).not.toHaveBeenCalled();
+    expect((globalThis as any).window.location.href).toBe('/');
+  });
+
+  it('handleReturnHome redirects to / and clears reload count', () => {
+    sessionStorage.setItem('planless_error_reload_count', '1');
+    (globalThis as any).window.location = {
+      href: '/plans?id=broken',
+    };
+
+    const boundary = new RootErrorBoundary({ children: React.createElement('div') });
+    (boundary as any).handleReturnHome();
+
+    expect(sessionStorage.getItem('planless_error_reload_count')).toBeNull();
+    expect((globalThis as any).window.location.href).toBe('/');
+  });
 });
+

@@ -192,7 +192,8 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
     await insertSystemMessage(planUuid, "Plan cancelled", null);
 
     // 5. Update the plan status to CANCELLED in the database via RPC
-    await api.cancelPlanRPC(planUuid);
+    const resolvedActorId = resolveUserUuid(userId);
+    await api.cancelPlanRPC(planUuid, resolvedActorId);
 
     // 6. Explicitly refresh plans and memories state to ensure cancellation memory appears immediately
     await refreshPlans(["plans", "plan_participants", "memories"]);
@@ -251,6 +252,27 @@ export function usePlanLifecycle(deps: PlanLifecycleDeps) {
 
     const currentPlan = (plans || []).find(p => p.id === planUuid || (p as any).dbUuid === planUuid)
       || (dbPlans || []).find(p => p.id === planUuid);
+
+    const oldTitle = (currentPlan?.title || "").trim();
+    let titleChanged = false;
+    let validatedNewTitle: string | undefined = undefined;
+
+    if (planUpdate.title !== undefined) {
+      const trimmedTitle = String(planUpdate.title).trim();
+      if (!trimmedTitle) {
+        throw new Error("Plan name cannot be empty");
+      }
+      if (trimmedTitle.length > 50) {
+        throw new Error("Plan name must be 50 characters or less");
+      }
+      planUpdate.title = trimmedTitle;
+      validatedNewTitle = trimmedTitle;
+      titleChanged = trimmedTitle !== oldTitle;
+      if (!titleChanged) {
+        delete planUpdate.title;
+      }
+    }
+
 
     if (planUpdate.scheduled_at !== undefined) {
       const curStatus = (currentPlan?.status || "").toUpperCase();
@@ -412,7 +434,27 @@ new = ${planUpdate.cover_image}`);
           })();
         }
 
+        if (titleChanged && validatedNewTitle) {
+          void (async () => {
+            try {
+              await (supabase as any).functions.invoke("send-push", {
+                body: {
+                  event: "PLAN_RENAMED",
+                  planId: planUuid,
+                  actorId: userId,
+                  oldTitle,
+                  newTitle: validatedNewTitle,
+                  idempotencyKey: `plan-renamed-${planUuid}-${validatedNewTitle}`,
+                },
+              });
+            } catch (pushErr) {
+              console.warn("[updatePlanDetails] Push plan rename dispatch failed:", pushErr);
+            }
+          })();
+        }
+
         if (setDbPlans) {
+
           setDbPlans(prev => prev.map(p => {
             if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId || (p as any).public_id === planId) {
               return {

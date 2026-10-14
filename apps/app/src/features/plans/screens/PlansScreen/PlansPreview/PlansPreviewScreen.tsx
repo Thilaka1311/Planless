@@ -59,6 +59,7 @@ import { PlanSettingsScreen } from "./PlanSettingsScreen";
 import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../../../navigation/appRouter";
 import { uploadPlanImage } from "../../../../../shared/utils/imageUtils";
 import { cleanPlanId, parsePlanDateTime, isUuid, isPlanTimeEnded } from "../../../utils/planUtils";
+import { getPlanSlug } from "../../../utils/planSlugUtils";
 import { useToast } from "../../../../../shared/contexts/ToastContext";
 import { LiveActionButton } from "../../../components/LiveActionButton";
 import { WhoIsComingScreen } from "../../../../create/screens/WhoIsComingScreen";
@@ -530,6 +531,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   onOpenMenu,
 }) => {
   const {
+    plans,
     dbPlans,
     dbPlanTeamAssignments,
     getTeamAssignments,
@@ -1179,7 +1181,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   }, [isHost, myParticipantRecord?.rsvp_status]);
 
   const allGoingMembers = useMemo(() => {
-    if (!selectedPlan) return [];
+    if (!selectedPlan?.members) return [];
     return selectedPlan.members.filter(m => m.joinState === "JOINED");
   }, [selectedPlan]);
 
@@ -1213,7 +1215,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const alreadySkipped = normalizeStatus(myParticipantRecord?.rsvp_status) === "SKIPPED";
 
   const eligibleParticipants = useMemo(() => {
-    if (!selectedPlan) return [];
+    if (!selectedPlan?.members) return [];
     return selectedPlan.members.filter(
       m =>
         m.userId !== activeUserId &&
@@ -2286,8 +2288,24 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
           await promoteParticipantToHost(selectedPlan.id, userId);
         }}
         onEditTitle={async (newTitle) => {
-          await updatePlanDetails(selectedPlan.id, { title: newTitle });
+          const targetPlanId = cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
+          const newSlug = getPlanSlug(
+            { id: targetPlanId, dbUuid: targetPlanId, title: newTitle, publicId: selectedPlan.publicId },
+            plans
+          );
+          await updatePlanDetails(targetPlanId, { title: newTitle });
+          const current = parseCurrentRoute();
+          navigateToRoute(
+            {
+              tab: 'plans',
+              ...current,
+              selectedPlanId: newSlug,
+              subScreen: 'plan-settings',
+            },
+            { replace: true }
+          );
         }}
+
         onEditCoverImage={async (newCoverUrl, blob) => {
           const targetPlanId = cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
           if (blob) {

@@ -470,16 +470,32 @@ class PwaManager {
   }
 
   /**
+   * Returns the current detected device platform ('ios' | 'android' | 'desktop').
+   */
+  getDevicePlatform(): 'ios' | 'android' | 'desktop' {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'desktop';
+    const ua = navigator.userAgent.toLowerCase();
+    const isIos =
+      /iphone|ipad|ipod/.test(ua) ||
+      (typeof navigator.platform === 'string' && navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+    if (isIos) return 'ios';
+    if (/android/.test(ua)) return 'android';
+    return 'desktop';
+  }
+
+  /**
    * Detects if the user is on an iOS device in Safari without having installed the PWA.
    * On iOS, Web Push is ONLY supported when added to the Home Screen (standalone PWA).
    */
   isIosSafariWithoutPwa(): boolean {
     if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
     const ua = navigator.userAgent.toLowerCase();
-    const isIos = /iphone|ipad|ipod/.test(ua);
+    const isIos =
+      /iphone|ipad|ipod/.test(ua) ||
+      (typeof navigator.platform === 'string' && navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
     const isStandalone =
       (window.navigator as any).standalone === true ||
-      window.matchMedia('(display-mode: standalone)').matches;
+      (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches);
     return isIos && !isStandalone;
   }
 
@@ -535,14 +551,21 @@ class PwaManager {
    * Checks if the device has an actual active Web Push subscription with the browser.
    */
   async hasActivePushSubscription(): Promise<boolean> {
-    if (!this.isPushSupported()) return false;
+    const sub = await this.getActivePushSubscription();
+    return !!sub;
+  }
+
+  /**
+   * Returns the current active PushSubscription object if one exists in the browser.
+   */
+  async getActivePushSubscription(): Promise<PushSubscription | null> {
+    if (!this.isPushSupported()) return null;
     try {
       const registration = await this.ensureServiceWorker();
-      if (!registration || !registration.pushManager) return false;
-      const sub = await registration.pushManager.getSubscription();
-      return !!sub;
+      if (!registration || !registration.pushManager) return null;
+      return await registration.pushManager.getSubscription();
     } catch {
-      return false;
+      return null;
     }
   }
 
@@ -609,8 +632,11 @@ class PwaManager {
     }
 
     try {
-      // 1. Request user permission
-      const permission = await Notification.requestPermission();
+      // 1. Request user permission if not already granted
+      let permission = this.getPushPermissionState();
+      if (permission !== 'granted') {
+        permission = await Notification.requestPermission();
+      }
       if (permission !== 'granted') {
         return {
           success: false,
@@ -698,10 +724,7 @@ class PwaManager {
       }
 
       // 5. Detect platform
-      const ua = navigator.userAgent.toLowerCase();
-      let platform = 'desktop';
-      if (/iphone|ipad|ipod/.test(ua)) platform = 'ios';
-      else if (/android/.test(ua)) platform = 'android';
+      const platform = this.getDevicePlatform();
 
       // 6. Upsert subscription in Supabase user_push_subscriptions table
       const subPayload = {

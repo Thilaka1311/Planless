@@ -21,6 +21,7 @@ import { EditPlanImageScreen } from "./EditPlanImageScreen";
 import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../../../navigation/appRouter";
 import { cleanPlanId, parsePlanDateTime, isPlanTimeEnded } from "../../../utils/planUtils";
 import { supabase } from "../../../../../../lib/supabaseClient";
+import { useToast } from "../../../../../shared/contexts/ToastContext";
 
 interface PlanSettingsScreenProps {
   plan: Plan;
@@ -148,10 +149,21 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
     return true;
   }, [propIsPlanSettingsForParticipant, propMode, isCreatorHost, userProfile, activeUserUuid, plan.hostId, plan.creatorId, plan.members]);
 
+  const { showToast } = useToast();
+
   const handleSaveTitle = async () => {
     if (isPlanSettingsForParticipant) return;
     const trimmed = newTitleInput.trim();
-    if (!trimmed || trimmed === plan.title) {
+    if (!trimmed) {
+      setNewTitleInput(plan.title || "");
+      showToast("Plan name cannot be empty");
+      return;
+    }
+    if (trimmed.length > 50) {
+      showToast("Plan name must be 50 characters or less");
+      return;
+    }
+    if (trimmed === plan.title) {
       setNewTitleInput(plan.title || "");
       return;
     }
@@ -161,12 +173,14 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
       if (onEditTitle) {
         await onEditTitle(trimmed);
       }
-    } catch {
+    } catch (err: any) {
       setNewTitleInput(plan.title || "");
+      showToast(err?.message || "Failed to rename plan. Please try again.");
     } finally {
       setIsSavingTitle(false);
     }
   };
+
 
   const planCapacity = plan.plan_size ?? (plan as any).planSize ?? (plan as any).joinLimit ?? (plan as any).capacity ?? 0;
   const waitlistCount = useMemo(() => {
@@ -642,30 +656,38 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
             />
           </div>
 
-          <div className="w-full max-w-sm px-4 flex items-center justify-center min-h-[36px]">
+          <div className="w-full max-w-sm px-4 flex items-center justify-center min-h-[36px] relative">
             {!isPlanSettingsForParticipant ? (
-              <textarea
-                ref={titleTextareaRef}
-                value={newTitleInput}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/[\r\n]+/g, " ").slice(0, 50);
-                  setNewTitleInput(val);
-                }}
-                onBlur={handleSaveTitle}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    titleTextareaRef.current?.blur();
-                  } else if (e.key === "Escape") {
-                    setNewTitleInput(plan.title || "");
-                    titleTextareaRef.current?.blur();
-                  }
-                }}
-                maxLength={50}
-                rows={1}
-                placeholder="Plan title"
-                className="w-full max-w-sm bg-transparent text-[22px] sm:text-2xl font-bold text-white tracking-tight text-center focus:outline-none border-none outline-none shadow-none appearance-none cursor-text caret-[#FF6B2C] resize-none overflow-hidden leading-tight p-0 m-0"
-              />
+              <div className="relative w-full flex items-center justify-center">
+                <textarea
+                  ref={titleTextareaRef}
+                  value={newTitleInput}
+                  disabled={isSavingTitle}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[\r\n]+/g, " ").slice(0, 50);
+                    setNewTitleInput(val);
+                  }}
+                  onBlur={handleSaveTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      titleTextareaRef.current?.blur();
+                    } else if (e.key === "Escape") {
+                      setNewTitleInput(plan.title || "");
+                      titleTextareaRef.current?.blur();
+                    }
+                  }}
+                  maxLength={50}
+                  rows={1}
+                  placeholder="Plan title"
+                  className="w-full max-w-sm bg-transparent text-[22px] sm:text-2xl font-bold text-white tracking-tight text-center focus:outline-none border-none outline-none shadow-none appearance-none cursor-text caret-[#FF6B2C] resize-none overflow-hidden leading-tight p-0 m-0 disabled:opacity-50"
+                />
+                {isSavingTitle && (
+                  <div className="absolute right-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-4 h-4 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+                  </div>
+                )}
+              </div>
             ) : (
               <h1 className="w-full max-w-sm text-[22px] sm:text-2xl font-bold text-white tracking-tight text-center leading-tight line-clamp-2 break-words p-0 m-0 select-text">
                 {plan.title}

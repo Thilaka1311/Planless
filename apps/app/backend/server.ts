@@ -220,9 +220,53 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
+// Helper to calculate total unreads across all active conversation notifications and update app badge
+async function updateAppBadge() {
+  if (!('setAppBadge' in self.navigator)) return;
+  try {
+    const activeNotifications = await self.registration.getNotifications();
+    const chatNotifs = activeNotifications.filter(
+      (n) => n.tag && n.tag.startsWith('plan-chat-')
+    );
+    const totalUnreads = chatNotifs.reduce((sum, n) => {
+      const count = typeof n.data?.unreadCount === 'number' ? n.data.unreadCount : 1;
+      return sum + count;
+    }, 0);
+    if (totalUnreads > 0) {
+      await self.navigator.setAppBadge(totalUnreads);
+    } else if ('clearAppBadge' in self.navigator) {
+      await self.navigator.clearAppBadge();
+    }
+  } catch {}
+}
+
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+
+  // When a user opens and reads a plan chat, immediately clear that plan's notification
+  if (event.data && event.data.type === 'CLEAR_CHAT_NOTIFICATION' && event.data.planId) {
+    const planIdToClear = event.data.planId;
+    event.waitUntil(
+      (async () => {
+        try {
+          const activeNotifications = await self.registration.getNotifications();
+          const targetTag = \`plan-chat-\${planIdToClear}\`;
+          for (const notif of activeNotifications) {
+            if (
+              notif.tag === targetTag ||
+              (notif.data?.planId === planIdToClear && notif.tag.startsWith('plan-chat-'))
+            ) {
+              notif.close();
+            }
+          }
+          await updateAppBadge();
+        } catch (err) {
+          console.warn('[SW] Error clearing chat notification:', err);
+        }
+      })()
+    );
   }
 });
 
@@ -248,216 +292,231 @@ self.addEventListener('push', (event) => {
       const origin = (self.location && self.location.origin) ? self.location.origin : '';
       const badge = origin ? \`\${origin}/favicon-32x32.png\` : '/favicon-32x32.png';
 
+      async function verifyAndResolveIcon(iconUrl) {
+        const fallbackAsset = origin ? \`\${origin}/assets/planimagedefault.webp\` : '/assets/planimagedefault.webp';
+        if (!iconUrl || typeof iconUrl !== 'string') {
+          return fallbackAsset;
+        }
+
+        let finalUrl = iconUrl;
+        if (origin) {
+          if (finalUrl.startsWith('/')) {
+            try { finalUrl = new URL(finalUrl, origin).href; } catch {}
+          } else {
+            try {
+              const parsed = new URL(finalUrl);
+              if (parsed.origin !== origin && (parsed.pathname.startsWith('/assets/') || parsed.pathname.startsWith('/storage/'))) {
+                finalUrl = \`\${origin}\${parsed.pathname}\${parsed.search}\`;
+              }
+            } catch {}
+          }
+        }
+
+        try {
+          const res = await fetch(finalUrl, { method: 'HEAD', cache: 'force-cache' });
+          if (!res.ok) {
+            console.warn(\`[SW] Notification icon failed check (\${res.status}), using fallback:\`, finalUrl);
+            return fallbackAsset;
+          }
+        } catch {
+          try {
+            await fetch(finalUrl, { mode: 'no-cors', cache: 'force-cache' });
+          } catch {
+            console.warn('[SW] Notification icon network error, using fallback:', finalUrl);
+            return fallbackAsset;
+          }
+        }
+
+        return finalUrl;
+      }
+
       // =========================================================================
       // SCENARIO 1: PLAN INVITATIONS (Must NEVER be merged with chat messages)
       // =========================================================================
       if (notificationType === 'PLAN_INVITATION' || tag.startsWith('plan-invite-')) {
         const title = payload.title || 'Planless';
         const body = payload.body || '';
-        let icon = payload.icon || '/pwa-192x192.png';
-        const url = payload.data?.url || payload.url || '/';
+        const icon = await verifyAndResolveIcon(payload.icon || payload.data?.avatar);
+        const url = payload.data?.url || payload.url || (payload.data?.planId ? \`/plans?id=\${payload.data.planId}\` : '/');
 
-        if (origin) {
-          if (icon && typeof icon === 'string' && icon.startsWith('/')) {
-            try { icon = new URL(icon, origin).href; } catch {}
-          }
-        }
+        const now = Date.now();
+        let existingInvite;
+        try {
+          const activeNotifications = await self.registration.getNotifications();
+          existingInvite = activeNotifications.find((n) => n.tag === tag);
+        } catch {}
+
+        const lastAlertTime = existingInvite?.data?.lastAlertTime || 0;
+        const isRapid = existingInvite !== undefined && (now - lastAlertTime < 8000);
+        const shouldRenotify = !isRapid;
 
         const inviteOptions = {
           body,
           icon,
           badge,
           tag,
-          timestamp: payload.timestamp || Date.now(),
-          renotify: true,
+          timestamp: payload.timestamp || now,
+          renotify: shouldRenotify,
           data: {
             url,
             planId: payload.data?.planId,
             notificationType: 'PLAN_INVITATION',
             ...payload.data,
-            receivedAt: Date.now(),
+            receivedAt: now,
+            lastAlertTime: shouldRenotify ? now : lastAlertTime,
           },
-          vibrate: [100, 50, 100],
+          ...(shouldRenotify ? { vibrate: [100, 50, 100] } : {}),
         };
-
-        if (icon && typeof icon === 'string' && !icon.includes('pwa-192x192.png')) {
-          try {
-            await fetch(icon, { mode: 'no-cors', cache: 'force-cache' }).catch(() => {});
-          } catch {}
-        }
 
         await self.registration.showNotification(title, inviteOptions);
         return;
       }
 
       // =========================================================================
-      // SCENARIO 2: CHAT MESSAGES (WhatsApp-style Multi-Group & Expanded History)
+      // SCENARIO 2: CHAT MESSAGES (Conversation-Level Notifications)
       // =========================================================================
       if (
         notificationType === 'CHAT_MESSAGE' ||
-        tag === 'plan-chats' ||
         tag.startsWith('plan-chat-')
       ) {
-        let existingGroups = {};
+        const pId = payload.data?.planId || (tag.startsWith('plan-chat-') ? tag.replace('plan-chat-', '') : '');
+        const conversationTag = pId ? \`plan-chat-\${pId}\` : (tag.startsWith('plan-chat-') ? tag : 'plan-chat-default');
 
+        // Check active notifications currently sitting in the Android notification shade
+        let existingNotif;
         try {
           const activeNotifications = await self.registration.getNotifications();
-          const existingChatNotif = activeNotifications.find((n) => n.tag === 'plan-chats');
-          if (existingChatNotif && existingChatNotif.data?.groups) {
-            existingGroups = { ...existingChatNotif.data.groups };
-          }
+          existingNotif = activeNotifications.find((n) => n.tag === conversationTag);
         } catch (e) {
           console.warn('[SW] Could not read active notifications:', e);
         }
 
-        if (payload.data?.groups && typeof payload.data.groups === 'object') {
-          for (const [pId, groupData] of Object.entries(payload.data.groups)) {
-            if (!existingGroups[pId]) {
-              existingGroups[pId] = {
-                planId: groupData.planId || pId,
-                planTitle: groupData.planTitle || 'Plan',
-                messages: Array.isArray(groupData.messages) ? [...groupData.messages] : [],
-                latestAvatar: groupData.latestAvatar || payload.icon || '',
-              };
-            } else {
-              const currentIds = new Set(existingGroups[pId].messages.map((m) => m.id));
-              for (const m of groupData.messages || []) {
-                if (!currentIds.has(m.id)) {
-                  existingGroups[pId].messages.push(m);
-                  currentIds.add(m.id);
-                }
-              }
-              if (groupData.latestAvatar) {
-                existingGroups[pId].latestAvatar = groupData.latestAvatar;
-              }
-            }
-          }
-        } else if (payload.data?.planId) {
-          const pId = payload.data.planId;
-          const pTitle = payload.data.planTitle || payload.title || 'Plan';
-          const senderName = payload.data.senderName || 'Friend';
-          const content = payload.body || payload.data.messageText || '';
-          const msgId = payload.data.messageId || \`msg_\${Date.now()}_\${Math.random()}\`;
-          const avatar = payload.icon || payload.data.senderAvatar || '';
-
-          if (!existingGroups[pId]) {
-            existingGroups[pId] = {
-              planId: pId,
-              planTitle: pTitle,
-              messages: [{ id: msgId, senderName, content, senderAvatar: avatar }],
-              latestAvatar: avatar,
-            };
-          } else {
-            const currentIds = new Set(existingGroups[pId].messages.map((m) => m.id));
-            if (!currentIds.has(msgId)) {
-              existingGroups[pId].messages.push({ id: msgId, senderName, content, senderAvatar: avatar });
-            }
-            if (avatar) {
-              existingGroups[pId].latestAvatar = avatar;
-            }
-          }
+        // Stale push check: Ignore delayed pushes that have an older timestamp than existing notification
+        if (
+          existingNotif &&
+          payload.timestamp &&
+          existingNotif.data?.receivedAt &&
+          payload.timestamp < existingNotif.data.receivedAt
+        ) {
+          console.log('[SW] Stale push ignored for conversation:', pId);
+          return;
         }
 
-        const groupList = Object.values(existingGroups);
-        const distinctGroupsCount = groupList.length;
-        const totalMessagesCount = groupList.reduce((sum, g) => sum + g.messages.length, 0);
+        const unreadCount = typeof payload.data?.unreadCount === 'number'
+          ? payload.data.unreadCount
+          : (Array.isArray(payload.data?.messages) ? payload.data.messages.length : 1);
 
-        let finalTitle = payload.title || 'Planless';
+        // If unread count is 0 or less, dismiss this conversation's notification and update badge
+        if (unreadCount <= 0) {
+          if (existingNotif) {
+            existingNotif.close();
+          }
+          await updateAppBadge();
+          return;
+        }
+
+        // Anti-spam alert cooldown: if this conversation alerted recently (< 8000ms), update silently in place
+        const now = Date.now();
+        const lastAlertTime = existingNotif?.data?.lastAlertTime || 0;
+        const isRapidMessage = existingNotif !== undefined && (now - lastAlertTime < 8000);
+        const shouldRenotify = !isRapidMessage;
+        const nextAlertTime = shouldRenotify ? now : lastAlertTime;
+
+        const planTitle = payload.data?.planTitle || 'Plan';
+        let finalTitle = payload.title || '';
         let finalBody = payload.body || '';
-        let finalIcon = payload.icon || '/pwa-192x192.png';
-        let finalUrl = '/chats';
-        let actions = [];
 
-        if (distinctGroupsCount > 1) {
-          finalTitle = \`\${totalMessagesCount} messages from \${distinctGroupsCount} groups\`;
-          const groupSections = groupList.map((g) => {
-            const lines = g.messages.slice(-4).map((m) => \`  \${m.senderName}: \${m.content}\`);
-            return \`\${g.planTitle}:\\n\${lines.join('\\n')}\`;
-          });
-          finalBody = groupSections.join('\\n\\n');
-          finalUrl = '/chats';
-          actions = groupList.slice(0, 2).map((g) => ({
-            action: \`open_chat_\${g.planId}\`,
-            title: g.planTitle.length > 15 ? \`\${g.planTitle.slice(0, 14)}…\` : g.planTitle,
-          }));
+        // Fallback title formatting if missing or generic
+        if (!finalTitle || finalTitle === 'Planless') {
+          finalTitle = unreadCount === 1
+            ? \`\${planTitle} • 1 unread message\`
+            : \`\${planTitle} • \${unreadCount} unread messages\`;
+        }
 
-          const latestGroup = groupList[groupList.length - 1];
-          if (latestGroup?.latestAvatar) {
-            finalIcon = latestGroup.latestAvatar;
-          }
-        } else if (distinctGroupsCount === 1) {
-          const single = groupList[0];
-          if (single.messages.length === 1) {
-            finalTitle = \`\${single.messages[0].senderName} • \${single.planTitle}\`;
-            finalBody = single.messages[0].content;
+        // Fallback body formatting if missing but messages exist (compact 5 recent messages)
+        if (!finalBody && Array.isArray(payload.data?.messages) && payload.data.messages.length > 0) {
+          if (unreadCount === 1) {
+            const m = payload.data.messages[0];
+            finalBody = \`\${m.senderName || 'Friend'}: \${m.content || ''}\`;
           } else {
-            finalTitle = \`\${single.planTitle} • \${single.messages.length} messages\`;
-            finalBody = single.messages.slice(-8).map((m) => \`\${m.senderName}: \${m.content}\`).join('\\n');
+            finalBody = payload.data.messages
+              .slice(-5)
+              .map((m) => \`\${m.senderName || 'Friend'}: \${m.content || ''}\`)
+              .join('\\n');
           }
-          finalUrl = \`/chats?id=\${single.planId}\`;
-          if (single.latestAvatar) {
-            finalIcon = single.latestAvatar;
-          }
-          actions = [
-            {
-              action: \`open_chat_\${single.planId}\`,
-              title: 'Open Chat',
-            },
-          ];
         }
 
-        if (origin) {
-          if (finalIcon && typeof finalIcon === 'string' && finalIcon.startsWith('/')) {
-            try { finalIcon = new URL(finalIcon, origin).href; } catch {}
-          }
-        }
+        const finalIcon = await verifyAndResolveIcon(payload.icon || payload.data?.avatar);
+        const finalUrl = payload.data?.url || (pId ? \`/chats?id=\${pId}\` : '/chats');
+        const actions = pId
+          ? [
+              {
+                action: \`open_chat_\${pId}\`,
+                title: 'Open Chat',
+              },
+            ]
+          : [];
 
         const chatOptions = {
           body: finalBody,
           icon: finalIcon,
           badge,
-          tag: 'plan-chats',
-          timestamp: payload.timestamp || Date.now(),
-          renotify: true,
+          tag: conversationTag,
+          timestamp: payload.timestamp || now,
+          renotify: shouldRenotify,
           data: {
             url: finalUrl,
+            planId: pId,
+            planTitle,
+            unreadCount,
             notificationType: 'CHAT_MESSAGE',
-            groups: existingGroups,
-            totalMessages: totalMessagesCount,
-            groupCount: distinctGroupsCount,
-            receivedAt: Date.now(),
+            messages: payload.data?.messages || [],
+            receivedAt: now,
+            lastAlertTime: nextAlertTime,
           },
-          vibrate: [100, 50, 100],
+          ...(shouldRenotify ? { vibrate: [100, 50, 100] } : {}),
           actions,
         };
 
-        if (finalIcon && typeof finalIcon === 'string' && !finalIcon.includes('pwa-192x192.png')) {
-          try {
-            await fetch(finalIcon, { mode: 'no-cors', cache: 'force-cache' }).catch(() => {});
-          } catch {}
-        }
-
         await self.registration.showNotification(finalTitle, chatOptions);
-
-        if ('setAppBadge' in self.navigator) {
-          try { await self.navigator.setAppBadge(totalMessagesCount); } catch {}
-        }
+        await updateAppBadge();
         return;
       }
 
       // =========================================================================
-      // SCENARIO 3: FALLBACK NOTIFICATION
+      // SCENARIO 3: FALLBACK NOTIFICATION (Plan Lifecycle, Participation, Friend Requests)
       // =========================================================================
       const defaultTitle = payload.title || 'Planless';
       const defaultBody = payload.body || '';
-      const defaultIcon = payload.icon || '/pwa-192x192.png';
+      const defaultIcon = await verifyAndResolveIcon(payload.icon || payload.data?.avatar);
+      const finalUrl = payload.data?.url || payload.url || (payload.data?.planId ? \`/plans?id=\${payload.data.planId}\` : '/');
+
+      const now = Date.now();
+      let existingFallback;
+      try {
+        const activeNotifications = await self.registration.getNotifications();
+        existingFallback = activeNotifications.find((n) => n.tag === tag);
+      } catch {}
+
+      const lastAlertTime = existingFallback?.data?.lastAlertTime || 0;
+      const isRapid = existingFallback !== undefined && (now - lastAlertTime < 8000);
+      const shouldRenotify = !isRapid;
+
       await self.registration.showNotification(defaultTitle, {
         body: defaultBody,
         icon: defaultIcon,
         badge,
         tag,
-        renotify: true,
-        data: { url: payload.data?.url || payload.url || '/' },
+        timestamp: payload.timestamp || now,
+        renotify: shouldRenotify,
+        data: {
+          url: finalUrl,
+          notificationType,
+          ...payload.data,
+          receivedAt: now,
+          lastAlertTime: shouldRenotify ? now : lastAlertTime,
+        },
+        ...(shouldRenotify ? { vibrate: [100, 50, 100] } : {}),
       });
     })()
   );
@@ -466,30 +525,41 @@ self.addEventListener('push', (event) => {
 // Notification Click Handler (focus or open target URL)
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  if ('clearAppBadge' in self.navigator) {
-    self.navigator.clearAppBadge().catch(() => {});
-  }
   let url = event.notification.data?.url || '/';
   if (event.action && event.action.startsWith('open_chat_')) {
     const planId = event.action.replace('open_chat_', '');
     url = \`/chats?id=\${planId}\`;
+  } else if (
+    event.notification.data?.notificationType === 'CHAT_MESSAGE' &&
+    event.notification.data?.planId &&
+    (!url || url === '/chats')
+  ) {
+    url = \`/chats?id=\${event.notification.data.planId}\`;
+  } else if (
+    event.notification.data?.notificationType !== 'CHAT_MESSAGE' &&
+    event.notification.data?.planId &&
+    (!url || url === '/')
+  ) {
+    url = \`/plans?id=\${event.notification.data.planId}\`;
   }
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    (async () => {
+      await updateAppBadge();
+      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       for (const client of clientList) {
         if ('focus' in client) {
-          return client.focus().then(() => {
-            if ('navigate' in client && url) {
-              return client.navigate(url);
-            }
-          });
+          await client.focus();
+          if ('navigate' in client && url) {
+            return client.navigate(url);
+          }
+          return;
         }
       }
       if (self.clients.openWindow) {
         return self.clients.openWindow(url);
       }
-    })
+    })()
   );
 });
 

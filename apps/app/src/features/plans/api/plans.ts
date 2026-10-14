@@ -214,15 +214,35 @@ export async function inviteParticipantsRPC(
     ? assignedGroup
     : null;
 
-  const { data, error } = await supabase.rpc("invite_participants" as any, {
-    p_plan_id: planId,
-    p_invitee_user_ids: inviteeUserIds,
-    p_assigned_group: normalizedGroup
-  });
+  const MAX_RETRIES = 3;
+  let attempt = 0;
+  let data: any = null;
 
-  if (error) throw error;
+  while (attempt < MAX_RETRIES) {
+    attempt++;
+    const { data: resData, error } = await supabase.rpc("invite_participants" as any, {
+      p_plan_id: planId,
+      p_invitee_user_ids: inviteeUserIds,
+      p_assigned_group: normalizedGroup
+    });
 
-  // Dispatch push notifications to invited participants (non-blocking)
+    if (error) {
+      // Only retry transient concurrency conflicts: 40P01 (deadlock_detected) or 55P03 (lock_not_available)
+      const isTransient = error.code === '40P01' || error.code === '55P03';
+      if (isTransient && attempt < MAX_RETRIES) {
+        const backoffMs = Math.min(250, 50 * Math.pow(2, attempt - 1) + Math.random() * 50);
+        console.warn(`[inviteParticipantsRPC] Transient DB lock conflict (${error.code}). Retrying attempt ${attempt + 1}/${MAX_RETRIES} in ${Math.round(backoffMs)}ms...`);
+        await new Promise((res) => setTimeout(res, backoffMs));
+        continue;
+      }
+      throw error;
+    }
+
+    data = resData;
+    break;
+  }
+
+  // Dispatch push notifications to invited participants (non-blocking, exactly once after success)
   if (Array.isArray(inviteeUserIds) && inviteeUserIds.length > 0) {
     void (async () => {
       try {
@@ -234,6 +254,7 @@ export async function inviteParticipantsRPC(
             planId,
             userIds: inviteeUserIds,
             inviterId,
+            appUrl: typeof window !== "undefined" ? window.location.origin : undefined,
           },
         });
         if (pushErr) {
@@ -257,8 +278,19 @@ export async function inviteParticipantsRPC(
  */
 export async function promoteToHostRPC(
   planId: string,
-  targetUserId: string
+  targetUserId: string,
+  customActorId?: string
 ): Promise<any> {
+  let resolvedActorId = customActorId;
+  if (!resolvedActorId) {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      resolvedActorId = authData?.user?.id;
+    } catch {
+      // Fallback
+    }
+  }
+
   const { data, error } = await supabase.rpc("promote_to_host" as any, {
     p_plan_id: planId,
     p_target_user_id: targetUserId,
@@ -268,13 +300,12 @@ export async function promoteToHostRPC(
 
   void (async () => {
     try {
-      const { data: authData } = await supabase.auth.getUser();
       await supabase.functions.invoke("send-push", {
         body: {
           event: "HOST_ASSIGNED",
           planId,
           targetUserId,
-          actorId: authData?.user?.id,
+          actorId: resolvedActorId,
         },
       });
     } catch (pushErr) {
@@ -343,7 +374,20 @@ export async function updatePlanCapacityRPC(
  * Authorized for any Host (role = 'HOST' or plans.host_id).
  * Updates plans.status to 'CANCELLED'.
  */
-export async function cancelPlanRPC(planId: string): Promise<any> {
+export async function cancelPlanRPC(
+  planId: string,
+  customActorId?: string
+): Promise<any> {
+  let resolvedActorId = customActorId;
+  if (!resolvedActorId) {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      resolvedActorId = authData?.user?.id;
+    } catch {
+      // Fallback
+    }
+  }
+
   const { data, error } = await supabase.rpc("cancel_plan" as any, {
     p_plan_id: planId
   });
@@ -352,12 +396,11 @@ export async function cancelPlanRPC(planId: string): Promise<any> {
 
   void (async () => {
     try {
-      const { data: authData } = await supabase.auth.getUser();
       await supabase.functions.invoke("send-push", {
         body: {
           event: "PLAN_CANCELLED",
           planId,
-          actorId: authData?.user?.id,
+          actorId: resolvedActorId,
         },
       });
     } catch (pushErr) {

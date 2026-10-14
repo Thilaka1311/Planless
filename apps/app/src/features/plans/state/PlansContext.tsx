@@ -13,6 +13,7 @@ import { supabase } from "../../../../lib/supabaseClient";
 import { cleanPlanId, isUuid, resolveUserUuid as resolveUserUuidUtil } from "../utils/planUtils";
 import { getTimelineSectionValue, getDayIndexValue, parseTimeToMinutes } from "../utils/planFeedUtils";
 import { recalculateWalletExpenses } from "../../wallet/services/walletSyncService";
+import { isPlanEligibleForHomeDiscovery } from "../../home/utils/homeFeedEligibility";
 import * as api from "../api/plans";
 
 interface ParticipantCounts {
@@ -1057,6 +1058,7 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             event: "PLAN_INVITATION",
             planId: insertedPlanUuid,
             userIds: inviteeUuids,
+            appUrl: typeof window !== "undefined" ? window.location.origin : undefined,
           },
         })
         .then(({ data: pushRes, error: pushErr }) => {
@@ -1129,40 +1131,18 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const myParticipantRecords = dbPlanParticipants.filter(pp => pp.user_id === userUuid || pp.user_id === userIdStr);
 
     const filtered = plans.filter(plan => {
-      // Plan must be active
-      const statusNorm = (plan.status || "").toLowerCase();
-      if (statusNorm !== "active" && statusNorm !== "live") return false;
-
-      // Respect response deadline for pending invitations if present
-      if (plan.response_deadline_at) {
-        const deadline = new Date(plan.response_deadline_at).getTime();
-        const now = new Date().getTime();
-        if (now > deadline) return false;
-      }
-
       const planUuid = plan.dbUuid || plan.id;
       const ppRecord = myParticipantRecords.find(pp => pp.plan_id === planUuid);
-      if (!ppRecord) return false;
-
-      const rsvp = normalizeStatus(ppRecord.rsvp_status);
-      const isHostRole = ppRecord.role === "HOST";
-
-      // Home screen visibility strictly determined by plan_participants: role = PARTICIPANT & rsvp_status = INVITED or WAITLISTED
-      if (isHostRole || (rsvp !== "INVITED" && rsvp !== "WAITLISTED")) return false;
-
-      // Exclude plans that have reached the hard maximum of 50 joined participants (dynamic capacity)
-      const isNoLimit = plan.plan_size === null || plan.plan_size === undefined;
       const counts = getParticipantCounts(planUuid);
       const joinedCount = counts.host + counts.going;
 
-      if (isNoLimit && joinedCount >= 50) {
-        return false;
-      }
-      if (!isNoLimit && joinedCount >= 50) {
-        return false;
-      }
-
-      return true;
+      return isPlanEligibleForHomeDiscovery({
+        plan,
+        userId: userIdStr,
+        userUuid,
+        participantRecord: ppRecord,
+        joinedCount,
+      });
     });
 
     return filtered.sort((a, b) => {
