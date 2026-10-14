@@ -51,6 +51,9 @@ export default defineConfig(() => {
       tailwindcss(),
       planlessVersionPlugin(),
       VitePWA({
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'sw.ts',
         registerType: 'prompt',
         includeAssets: [
           'favicon.ico',
@@ -90,76 +93,10 @@ export default defineConfig(() => {
             }
           ]
         },
-        workbox: {
-          cleanupOutdatedCaches: true,
-          clientsClaim: true,
+        injectManifest: {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-          // Precache static assets like CSS, JS, HTML, fonts, and core images
           globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2,otf,ttf}'],
-          // Exclude unused or non-core static files from precache
           globIgnores: ['**/navkis_matchday.png'],
-          // Exclude Supabase to ensure Realtime, Auth, and DB endpoints remain network-live
-          navigateFallbackDenylist: [
-            /^\/api\//,
-            /^\/version\.json$/,
-            /^\/auth\/v1\//,
-            /^\/rest\/v1\//,
-            /^\/storage\/v1\//,
-            /^\/realtime\/v1\//,
-            /^\/functions\/v1\//,
-            /^\/\.well-known\//,
-            /.*supabase\.co.*/,
-            /.*\.ngrok(-free)?\.(app|dev).*/,
-          ],
-          runtimeCaching: [
-            {
-              urlPattern: /.*\/version\.json.*/,
-              handler: 'NetworkOnly',
-              options: {
-                cacheName: 'version-network-only',
-              },
-            },
-            {
-              urlPattern: /.*supabase\.co.*/,
-              handler: 'NetworkOnly',
-              options: {
-                cacheName: 'supabase-network-only',
-              },
-            },
-            {
-              urlPattern: /^https?:\/\/.*\/((auth|rest|storage|realtime|functions)\/v1)/,
-              handler: 'NetworkOnly',
-              options: {
-                cacheName: 'supabase-local-network-only',
-              },
-            },
-            // Cache Google Fonts stylesheets with StaleWhileRevalidate
-            {
-              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'google-fonts-stylesheets',
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            // Cache Google Fonts webfont files with CacheFirst (1 year max age)
-            {
-              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'google-fonts-webfonts',
-                expiration: {
-                  maxEntries: 30,
-                  maxAgeSeconds: 60 * 60 * 24 * 365,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-          ]
         },
         devOptions: {
           enabled: false

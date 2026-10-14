@@ -6,7 +6,10 @@ import {
   History,
   Camera,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Bell,
+  Share2,
+  Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useProfileStore } from "../state/ProfileContext";
@@ -21,6 +24,32 @@ import { About } from "./About";
 import { PastPlans } from "./PastPlans";
 import { PlanImageEditorModal } from "../../create/components/PlanImageEditorModal";
 import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../navigation/appRouter";
+import { pwaManager } from "../../../shared/pwa/pwaService";
+import { useToast } from "../../../shared/contexts/ToastContext";
+import { supabase } from "../../../../lib/supabaseClient";
+
+export type NotificationUiState =
+  | 'unsupported'
+  | 'ios_pwa_required'
+  | 'permission_not_requested'
+  | 'requesting_permission'
+  | 'setting_up'
+  | 'active'
+  | 'denied'
+  | 'failed'
+  | 'disabled';
+
+export const NOTIFICATION_STATUS_TEXT: Record<NotificationUiState, string> = {
+  unsupported: 'Notifications unavailable in this browser',
+  ios_pwa_required: 'Add to Home Screen required on iPhone',
+  permission_not_requested: 'Tap to enable notifications',
+  requesting_permission: 'Requesting permission…',
+  setting_up: 'Setting up notifications…',
+  active: 'On · Active on this device',
+  denied: 'Blocked · Enable in browser settings',
+  failed: 'Setup failed · Tap to retry',
+  disabled: 'Off · Tap to enable',
+};
 
 interface ProfileScreenProps {
   onLogout: () => void;
@@ -66,13 +95,205 @@ export const ProfileScreen = ({
 
   const currentUser = dbUsers.find(u => u.id === activeUserUuid || u.user_id === activeUserId);
 
-  // Sub-sheet states for inline edit flows (Name, About, Friends, Past Plans, Logout)
-  const [activeSheet, setActiveSheet] = useState<'pastPlans' | 'logout' | 'friends' | 'editName' | 'editAbout' | null>(() => {
+  const { showToast } = useToast();
+  const [notificationUiState, setNotificationUiState] = useState<NotificationUiState>(() => {
+    if (pwaManager.isIosSafariWithoutPwa()) return 'ios_pwa_required';
+    if (!pwaManager.isPushSupported()) return 'unsupported';
+    const perm = pwaManager.getPushPermissionState();
+    if (perm === 'denied') return 'denied';
+    if (perm === 'default') return 'permission_not_requested';
+    return 'disabled';
+  });
+
+  // Reconcile real permission and subscription state
+  const reconcileNotificationState = async (skipIfBusy = true) => {
+    if (skipIfBusy && (notificationUiState === 'requesting_permission' || notificationUiState === 'setting_up')) {
+      return;
+    }
+
+    if (pwaManager.isIosSafariWithoutPwa()) {
+      setNotificationUiState('ios_pwa_required');
+      return;
+    }
+
+    if (!pwaManager.isPushSupported()) {
+      setNotificationUiState('unsupported');
+      return;
+    }
+
+    const perm = pwaManager.getPushPermissionState();
+    if (perm === 'denied') {
+      setNotificationUiState('denied');
+      return;
+    }
+
+    if (perm === 'default') {
+      setNotificationUiState('permission_not_requested');
+      return;
+    }
+
+    // Permission is 'granted'. Verify actual browser subscription and Supabase persistence.
+    const targetUid = activeUserUuid || activeUserId;
+    const browserSub = await pwaManager.getActivePushSubscription();
+
+    let dbHasActiveSub = false;
+    if (targetUid && browserSub) {
+      try {
+        const { data: dbSubs } = await supabase
+          .from('user_push_subscriptions')
+          .select('id')
+          .eq('user_id', targetUid)
+          .eq('endpoint', browserSub.endpoint)
+          .eq('is_active', true)
+          .limit(1);
+
+        if (dbSubs && dbSubs.length > 0) {
+          dbHasActiveSub = true;
+        }
+      } catch {}
+    }
+
+    if (browserSub && dbHasActiveSub) {
+      setNotificationUiState('active');
+      return;
+    }
+
+    // If browser has an active subscription but database record is missing/inactive, attempt auto-sync
+    if (targetUid && perm === 'granted') {
+      try {
+        const synced = await pwaManager.syncPushSubscription(targetUid);
+        if (synced) {
+          setNotificationUiState('active');
+          return;
+        }
+      } catch {}
+    }
+
+    setNotificationUiState('disabled');
+  };
+
+  // Reconcile on mount and whenever the app regains focus or visibility
+  useEffect(() => {
+    reconcileNotificationState(false);
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        reconcileNotificationState(true);
+      }
+    };
+
+    const handleFocus = () => {
+      reconcileNotificationState(true);
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      }
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [activeUserUuid, activeUserId]);
+
+  // Sub-sheet states for inline edit flows (Name, About, Friends, Past Plans, Logout, iOS PWA, Blocked Settings)
+  const [activeSheet, setActiveSheet] = useState<
+    'pastPlans' | 'logout' | 'friends' | 'editName' | 'editAbout' | 'iosPwaInstructions' | 'notificationsBlocked' | null
+  >(() => {
     const route = parseCurrentRoute();
     if (route.subScreen === 'profile-name') return 'editName';
     if (route.subScreen === 'profile-about') return 'editAbout';
     return null;
   });
+
+  const handleNotificationRowClick = async () => {
+    if (notificationUiState === 'requesting_permission' || notificationUiState === 'setting_up') {
+      return;
+    }
+
+    if (pwaManager.isIosSafariWithoutPwa()) {
+      setActiveSheet('iosPwaInstructions');
+      return;
+    }
+
+    if (!pwaManager.isPushSupported()) {
+      showToast('Notifications are unavailable in this browser.', 'error');
+      return;
+    }
+
+    const currentPerm = pwaManager.getPushPermissionState();
+    if (currentPerm === 'denied' || notificationUiState === 'denied') {
+      setActiveSheet('notificationsBlocked');
+      return;
+    }
+
+    const targetUid = activeUserUuid || activeUserId;
+    if (!targetUid) {
+      showToast('Please sign in to manage notifications.', 'error');
+      return;
+    }
+
+    // If notifications are active, allow disabling/pausing
+    if (notificationUiState === 'active') {
+      try {
+        setNotificationUiState('disabled');
+        await pwaManager.unsubscribeFromPush(targetUid);
+        showToast('Notifications paused on this device.', 'info');
+      } catch {
+        showToast('Failed to pause notifications.', 'error');
+        reconcileNotificationState(false);
+      }
+      return;
+    }
+
+    // Direct permission request from user interaction
+    if (currentPerm === 'default') {
+      setNotificationUiState('requesting_permission');
+      let requestedPerm: NotificationPermission = 'default';
+      try {
+        requestedPerm = await Notification.requestPermission();
+      } catch (e) {
+        console.warn('[PWA] Error requesting permission:', e);
+      }
+
+      if (requestedPerm === 'denied') {
+        setNotificationUiState('denied');
+        setActiveSheet('notificationsBlocked');
+        return;
+      }
+
+      if (requestedPerm !== 'granted') {
+        setNotificationUiState('permission_not_requested');
+        return;
+      }
+    }
+
+    // Permission granted: register service worker, push subscription and Supabase persistence
+    setNotificationUiState('setting_up');
+
+    try {
+      const res = await pwaManager.subscribeToPush(targetUid);
+      if (res.success) {
+        setNotificationUiState('active');
+        showToast('Push notifications enabled!', 'success');
+      } else if (res.requiresIosPwa) {
+        setNotificationUiState('ios_pwa_required');
+        setActiveSheet('iosPwaInstructions');
+      } else if (res.permissionDenied) {
+        setNotificationUiState('denied');
+        setActiveSheet('notificationsBlocked');
+      } else {
+        setNotificationUiState('failed');
+        showToast(res.error || 'Setup failed. Tap to retry.', 'error');
+      }
+    } catch (err: any) {
+      setNotificationUiState('failed');
+      showToast(err?.message || 'Error setting up notifications.', 'error');
+    }
+  };
 
   useEffect(() => {
     return listenToNavigation((route) => {
@@ -287,6 +508,52 @@ export const ProfileScreen = ({
               </div>
             </div>
 
+            {/* Single Interactive Notifications Row */}
+            <button
+              type="button"
+              id="profile_notifications_row"
+              onClick={handleNotificationRowClick}
+              disabled={notificationUiState === 'requesting_permission' || notificationUiState === 'setting_up'}
+              className="w-full flex items-center justify-between gap-4 px-1 py-2.5 rounded-xl hover:bg-zinc-900/20 transition text-left group cursor-pointer bg-transparent border-none outline-none active:scale-[0.99] transition-transform disabled:opacity-75 disabled:cursor-wait"
+              aria-label={`Notifications: ${NOTIFICATION_STATUS_TEXT[notificationUiState]}`}
+            >
+              <div className="flex items-center gap-4 min-w-0 flex-1">
+                <div className={`w-9 h-9 rounded-xl bg-zinc-900/60 border border-white/[0.02] flex items-center justify-center transition flex-shrink-0 ${
+                  notificationUiState === 'active'
+                    ? 'text-emerald-400 group-hover:text-emerald-300'
+                    : 'text-zinc-400 group-hover:text-white'
+                }`}>
+                  {notificationUiState === 'requesting_permission' || notificationUiState === 'setting_up' ? (
+                    <Loader2 className="w-4.5 h-4.5 animate-spin" />
+                  ) : (
+                    <Bell className="w-4.5 h-4.5" />
+                  )}
+                </div>
+                <div className="flex-1 text-left min-w-0">
+                  <span className="text-sm font-sans font-medium text-zinc-200 block">
+                    Notifications
+                  </span>
+                  <span className="text-[11px] font-sans text-zinc-500 block truncate">
+                    {NOTIFICATION_STATUS_TEXT[notificationUiState]}
+                  </span>
+                </div>
+              </div>
+
+              {/* Clear Enabled/Disabled Status Indicator */}
+              <div className="shrink-0 flex items-center">
+                {notificationUiState === 'active' ? (
+                  <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    ON
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-white/[0.04]">
+                    OFF
+                  </span>
+                )}
+              </div>
+            </button>
+
+
             {/* Past Plans Option */}
             <button
               type="button"
@@ -481,6 +748,247 @@ export const ProfileScreen = ({
               });
             }}
           />
+        )}
+
+        {/* 6. IOS PWA INSTRUCTIONS SHEET */}
+        {activeSheet === 'iosPwaInstructions' && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setActiveSheet(null)}
+              className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 pointer-events-auto"
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 w-full z-50 pointer-events-auto select-none"
+              style={{
+                background: "#18181B",
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+                padding: "16px 20px 24px",
+                boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.4)",
+                paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center mb-4">
+                <div
+                  style={{
+                    width: 36,
+                    height: 5,
+                    borderRadius: 2.5,
+                    background: "rgba(255, 255, 255, 0.2)",
+                  }}
+                />
+              </div>
+
+              <div className="mb-5 text-left">
+                <div className="w-10 h-10 rounded-2xl bg-[#FF6B2C]/10 border border-[#FF6B2C]/20 flex items-center justify-center text-[#FF6B2C] mb-3">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <h3 className="font-sans font-bold text-lg text-white mb-1 tracking-tight">
+                  Enable Lock Screen Alerts
+                </h3>
+                <p className="text-zinc-400 font-sans text-xs leading-relaxed">
+                  On iPhone, Apple requires Planless to be on your Home Screen to receive alerts when the app is closed.
+                </p>
+              </div>
+
+              <div className="space-y-3 mb-6 text-left">
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                  <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-[#FF6B2C] shrink-0 mt-0.5">
+                    1
+                  </div>
+                  <div className="text-xs font-sans text-zinc-300 leading-normal">
+                    Tap the <span className="text-white font-medium">Share</span> button in Safari's bottom navigation bar.
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                  <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-[#FF6B2C] shrink-0 mt-0.5">
+                    2
+                  </div>
+                  <div className="text-xs font-sans text-zinc-300 leading-normal">
+                    Scroll down and tap <span className="text-white font-medium">Add to Home Screen</span>.
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                  <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-[#FF6B2C] shrink-0 mt-0.5">
+                    3
+                  </div>
+                  <div className="text-xs font-sans text-zinc-300 leading-normal">
+                    Open Planless from your Home Screen and tap <span className="text-white font-medium">Enable Notifications</span>.
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                id="btn_dismiss_ios_pwa_sheet"
+                onClick={() => setActiveSheet(null)}
+                className="w-full py-3.5 rounded-xl font-sans font-semibold text-sm text-black bg-[#FF6B2C] hover:bg-[#FF854C] active:scale-[0.98] transition cursor-pointer"
+              >
+                Got it
+              </button>
+            </motion.div>
+          </>
+        )}
+
+        {/* 7. NOTIFICATIONS BLOCKED INSTRUCTIONS SHEET */}
+        {activeSheet === 'notificationsBlocked' && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setActiveSheet(null)}
+              className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 pointer-events-auto"
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 260 }}
+              className="fixed bottom-0 left-0 right-0 w-full z-50 pointer-events-auto select-none"
+              style={{
+                background: "#18181B",
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+                padding: "16px 20px 24px",
+                boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.4)",
+                paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center mb-4">
+                <div
+                  style={{
+                    width: 36,
+                    height: 5,
+                    borderRadius: 2.5,
+                    background: "rgba(255, 255, 255, 0.2)",
+                  }}
+                />
+              </div>
+
+              <div className="mb-5 text-left">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-3">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <h3 className="font-sans font-bold text-lg text-white mb-1 tracking-tight">
+                  Enable in Browser Settings
+                </h3>
+                <p className="text-zinc-400 font-sans text-xs leading-relaxed">
+                  Notifications are blocked for Planless in this browser. You can re-enable them in your device settings.
+                </p>
+              </div>
+
+              {pwaManager.getDevicePlatform() === 'android' ? (
+                <div className="space-y-3 mb-6 text-left">
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                      1
+                    </div>
+                    <div className="text-xs font-sans text-zinc-300 leading-normal">
+                      Tap the <span className="text-white font-medium">Page Info / Lock icon</span> in Chrome's top address bar.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                      2
+                    </div>
+                    <div className="text-xs font-sans text-zinc-300 leading-normal">
+                      Tap <span className="text-white font-medium">Permissions</span> or <span className="text-white font-medium">Site settings</span>.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                      3
+                    </div>
+                    <div className="text-xs font-sans text-zinc-300 leading-normal">
+                      Select <span className="text-white font-medium">Notifications</span> and set to <span className="text-white font-medium">Allow</span>, then return to Planless.
+                    </div>
+                  </div>
+                </div>
+              ) : pwaManager.getDevicePlatform() === 'ios' ? (
+                <div className="space-y-3 mb-6 text-left">
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                      1
+                    </div>
+                    <div className="text-xs font-sans text-zinc-300 leading-normal">
+                      Open the <span className="text-white font-medium">Settings</span> app on your iPhone or iPad.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                      2
+                    </div>
+                    <div className="text-xs font-sans text-zinc-300 leading-normal">
+                      Tap <span className="text-white font-medium">Notifications</span> and select <span className="text-white font-medium">Planless</span>.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                      3
+                    </div>
+                    <div className="text-xs font-sans text-zinc-300 leading-normal">
+                      Turn on <span className="text-white font-medium">Allow Notifications</span>, then switch back to Planless.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 mb-6 text-left">
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                      1
+                    </div>
+                    <div className="text-xs font-sans text-zinc-300 leading-normal">
+                      Click the <span className="text-white font-medium">Site settings or padlock icon</span> beside the address bar URL.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                      2
+                    </div>
+                    <div className="text-xs font-sans text-zinc-300 leading-normal">
+                      Change <span className="text-white font-medium">Notifications</span> permission from Block to <span className="text-white font-medium">Allow</span>.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                      3
+                    </div>
+                    <div className="text-xs font-sans text-zinc-300 leading-normal">
+                      Reload this page or return to the app to activate alerts.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                id="btn_dismiss_blocked_notifications_sheet"
+                onClick={() => {
+                  setActiveSheet(null);
+                  reconcileNotificationState(false);
+                }}
+                className="w-full py-3.5 rounded-xl font-sans font-semibold text-sm text-black bg-white hover:bg-zinc-200 active:scale-[0.98] transition cursor-pointer"
+              >
+                Got it
+              </button>
+            </motion.div>
+          </>
         )}
 
       </AnimatePresence>

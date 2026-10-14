@@ -188,23 +188,387 @@ async function startServer() {
 
   // 2. VITE MIDDLEWARE (DEV) OR STATIC CHASSIS (PROD)
   if (env.NODE_ENV !== "production") {
-    // In development mode, serve an unregistering service worker script for /sw.js.
-    // It silently unregisters any active service worker and clears caches without forcing
-    // disruptive page reload loops while modules are in flight.
+    // In development mode, serve a lean Service Worker that activates immediately
+    // without failing Workbox precache checks on non-existent production asset hashes,
+    // while maintaining full background Web Push notification and click handling.
+    app.get(["/manifest.webmanifest", "/manifest.json"], (req, res) => {
+      res.setHeader("Content-Type", "application/manifest+json");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.sendFile(path.resolve(process.cwd(), "apps/app/public/manifest.webmanifest"));
+    });
+
     app.get(["/sw.js", "/sw.js.map"], (req, res) => {
       res.setHeader("Content-Type", "application/javascript");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Service-Worker-Allowed", "/");
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       res.send(`
-        self.addEventListener('install', () => self.skipWaiting());
-        self.addEventListener('activate', (event) => {
-          event.waitUntil(
-            self.registration.unregister()
-              .then(() => self.caches.keys())
-              .then((keys) => Promise.all(keys.map((k) => self.caches.delete(k))))
-          );
-        });
+// Planless Development Service Worker (Web Push Enabled)
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+// Fetch listener: Required for Chromium / Android PWA installability criteria
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request))
+  );
+});
+
+// Helper to calculate total unreads across all active conversation notifications and update app badge
+async function updateAppBadge() {
+  if (!('setAppBadge' in self.navigator)) return;
+  try {
+    const activeNotifications = await self.registration.getNotifications();
+    const chatNotifs = activeNotifications.filter(
+      (n) => n.tag && n.tag.startsWith('plan-chat-')
+    );
+    const totalUnreads = chatNotifs.reduce((sum, n) => {
+      const count = typeof n.data?.unreadCount === 'number' ? n.data.unreadCount : 1;
+      return sum + count;
+    }, 0);
+    if (totalUnreads > 0) {
+      await self.navigator.setAppBadge(totalUnreads);
+    } else if ('clearAppBadge' in self.navigator) {
+      await self.navigator.clearAppBadge();
+    }
+  } catch {}
+}
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+
+  // When a user opens and reads a plan chat, immediately clear that plan's notification
+  if (event.data && event.data.type === 'CLEAR_CHAT_NOTIFICATION' && event.data.planId) {
+    const planIdToClear = event.data.planId;
+    event.waitUntil(
+      (async () => {
+        try {
+          const activeNotifications = await self.registration.getNotifications();
+          const targetTag = \`plan-chat-\${planIdToClear}\`;
+          for (const notif of activeNotifications) {
+            if (
+              notif.tag === targetTag ||
+              (notif.data?.planId === planIdToClear && notif.tag.startsWith('plan-chat-'))
+            ) {
+              notif.close();
+            }
+          }
+          await updateAppBadge();
+        } catch (err) {
+          console.warn('[SW] Error clearing chat notification:', err);
+        }
+      })()
+    );
+  }
+});
+
+// Background Push Notification Event
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  let payload;
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = {
+      title: 'Planless',
+      body: event.data.text() || 'New update available',
+    };
+  }
+
+  const notificationType = payload.notificationType || payload.data?.notificationType || '';
+  const tag = payload.tag || 'planless-notification';
+
+  event.waitUntil(
+    (async () => {
+      const origin = (self.location && self.location.origin) ? self.location.origin : '';
+      const badge = origin ? \`\${origin}/favicon-32x32.png\` : '/favicon-32x32.png';
+
+      async function verifyAndResolveIcon(iconUrl) {
+        const fallbackAsset = origin ? \`\${origin}/assets/planimagedefault.webp\` : '/assets/planimagedefault.webp';
+        if (!iconUrl || typeof iconUrl !== 'string') {
+          return fallbackAsset;
+        }
+
+        let finalUrl = iconUrl;
+        if (origin) {
+          if (finalUrl.startsWith('/')) {
+            try { finalUrl = new URL(finalUrl, origin).href; } catch {}
+          } else {
+            try {
+              const parsed = new URL(finalUrl);
+              if (parsed.origin !== origin && (parsed.pathname.startsWith('/assets/') || parsed.pathname.startsWith('/storage/'))) {
+                finalUrl = \`\${origin}\${parsed.pathname}\${parsed.search}\`;
+              }
+            } catch {}
+          }
+        }
+
+        try {
+          const res = await fetch(finalUrl, { method: 'HEAD', cache: 'force-cache' });
+          if (!res.ok) {
+            console.warn(\`[SW] Notification icon failed check (\${res.status}), using fallback:\`, finalUrl);
+            return fallbackAsset;
+          }
+        } catch {
+          try {
+            await fetch(finalUrl, { mode: 'no-cors', cache: 'force-cache' });
+          } catch {
+            console.warn('[SW] Notification icon network error, using fallback:', finalUrl);
+            return fallbackAsset;
+          }
+        }
+
+        return finalUrl;
+      }
+
+      // =========================================================================
+      // SCENARIO 1: PLAN INVITATIONS (Must NEVER be merged with chat messages)
+      // =========================================================================
+      if (notificationType === 'PLAN_INVITATION' || tag.startsWith('plan-invite-')) {
+        const title = payload.title || 'Planless';
+        const body = payload.body || '';
+        const icon = await verifyAndResolveIcon(payload.icon || payload.data?.avatar);
+        const url = payload.data?.url || payload.url || (payload.data?.planId ? \`/plans?id=\${payload.data.planId}\` : '/');
+
+        const now = Date.now();
+        let existingInvite;
+        try {
+          const activeNotifications = await self.registration.getNotifications();
+          existingInvite = activeNotifications.find((n) => n.tag === tag);
+        } catch {}
+
+        const lastAlertTime = existingInvite?.data?.lastAlertTime || 0;
+        const isRapid = existingInvite !== undefined && (now - lastAlertTime < 8000);
+        const shouldRenotify = !isRapid;
+
+        const inviteOptions = {
+          body,
+          icon,
+          badge,
+          tag,
+          timestamp: payload.timestamp || now,
+          renotify: shouldRenotify,
+          data: {
+            url,
+            planId: payload.data?.planId,
+            notificationType: 'PLAN_INVITATION',
+            ...payload.data,
+            receivedAt: now,
+            lastAlertTime: shouldRenotify ? now : lastAlertTime,
+          },
+          ...(shouldRenotify ? { vibrate: [100, 50, 100] } : {}),
+        };
+
+        await self.registration.showNotification(title, inviteOptions);
+        return;
+      }
+
+      // =========================================================================
+      // SCENARIO 2: CHAT MESSAGES (Conversation-Level Notifications)
+      // =========================================================================
+      if (
+        notificationType === 'CHAT_MESSAGE' ||
+        tag.startsWith('plan-chat-')
+      ) {
+        const pId = payload.data?.planId || (tag.startsWith('plan-chat-') ? tag.replace('plan-chat-', '') : '');
+        const conversationTag = pId ? \`plan-chat-\${pId}\` : (tag.startsWith('plan-chat-') ? tag : 'plan-chat-default');
+
+        // Check active notifications currently sitting in the Android notification shade
+        let existingNotif;
+        try {
+          const activeNotifications = await self.registration.getNotifications();
+          existingNotif = activeNotifications.find((n) => n.tag === conversationTag);
+        } catch (e) {
+          console.warn('[SW] Could not read active notifications:', e);
+        }
+
+        // Stale push check: Ignore delayed pushes that have an older timestamp than existing notification
+        if (
+          existingNotif &&
+          payload.timestamp &&
+          existingNotif.data?.receivedAt &&
+          payload.timestamp < existingNotif.data.receivedAt
+        ) {
+          console.log('[SW] Stale push ignored for conversation:', pId);
+          return;
+        }
+
+        const unreadCount = typeof payload.data?.unreadCount === 'number'
+          ? payload.data.unreadCount
+          : (Array.isArray(payload.data?.messages) ? payload.data.messages.length : 1);
+
+        // If unread count is 0 or less, dismiss this conversation's notification and update badge
+        if (unreadCount <= 0) {
+          if (existingNotif) {
+            existingNotif.close();
+          }
+          await updateAppBadge();
+          return;
+        }
+
+        // Anti-spam alert cooldown: if this conversation alerted recently (< 8000ms), update silently in place
+        const now = Date.now();
+        const lastAlertTime = existingNotif?.data?.lastAlertTime || 0;
+        const isRapidMessage = existingNotif !== undefined && (now - lastAlertTime < 8000);
+        const shouldRenotify = !isRapidMessage;
+        const nextAlertTime = shouldRenotify ? now : lastAlertTime;
+
+        const planTitle = payload.data?.planTitle || 'Plan';
+        let finalTitle = payload.title || '';
+        let finalBody = payload.body || '';
+
+        // Fallback title formatting if missing or generic
+        if (!finalTitle || finalTitle === 'Planless') {
+          finalTitle = unreadCount === 1
+            ? \`\${planTitle} • 1 unread message\`
+            : \`\${planTitle} • \${unreadCount} unread messages\`;
+        }
+
+        // Fallback body formatting if missing but messages exist (compact 5 recent messages)
+        if (!finalBody && Array.isArray(payload.data?.messages) && payload.data.messages.length > 0) {
+          if (unreadCount === 1) {
+            const m = payload.data.messages[0];
+            finalBody = \`\${m.senderName || 'Friend'}: \${m.content || ''}\`;
+          } else {
+            finalBody = payload.data.messages
+              .slice(-5)
+              .map((m) => \`\${m.senderName || 'Friend'}: \${m.content || ''}\`)
+              .join('\\n');
+          }
+        }
+
+        const finalIcon = await verifyAndResolveIcon(payload.icon || payload.data?.avatar);
+        const finalUrl = payload.data?.url || (pId ? \`/chats?id=\${pId}\` : '/chats');
+        const actions = pId
+          ? [
+              {
+                action: \`open_chat_\${pId}\`,
+                title: 'Open Chat',
+              },
+            ]
+          : [];
+
+        const chatOptions = {
+          body: finalBody,
+          icon: finalIcon,
+          badge,
+          tag: conversationTag,
+          timestamp: payload.timestamp || now,
+          renotify: shouldRenotify,
+          data: {
+            url: finalUrl,
+            planId: pId,
+            planTitle,
+            unreadCount,
+            notificationType: 'CHAT_MESSAGE',
+            messages: payload.data?.messages || [],
+            receivedAt: now,
+            lastAlertTime: nextAlertTime,
+          },
+          ...(shouldRenotify ? { vibrate: [100, 50, 100] } : {}),
+          actions,
+        };
+
+        await self.registration.showNotification(finalTitle, chatOptions);
+        await updateAppBadge();
+        return;
+      }
+
+      // =========================================================================
+      // SCENARIO 3: FALLBACK NOTIFICATION (Plan Lifecycle, Participation, Friend Requests)
+      // =========================================================================
+      const defaultTitle = payload.title || 'Planless';
+      const defaultBody = payload.body || '';
+      const defaultIcon = await verifyAndResolveIcon(payload.icon || payload.data?.avatar);
+      const finalUrl = payload.data?.url || payload.url || (payload.data?.planId ? \`/plans?id=\${payload.data.planId}\` : '/');
+
+      const now = Date.now();
+      let existingFallback;
+      try {
+        const activeNotifications = await self.registration.getNotifications();
+        existingFallback = activeNotifications.find((n) => n.tag === tag);
+      } catch {}
+
+      const lastAlertTime = existingFallback?.data?.lastAlertTime || 0;
+      const isRapid = existingFallback !== undefined && (now - lastAlertTime < 8000);
+      const shouldRenotify = !isRapid;
+
+      await self.registration.showNotification(defaultTitle, {
+        body: defaultBody,
+        icon: defaultIcon,
+        badge,
+        tag,
+        timestamp: payload.timestamp || now,
+        renotify: shouldRenotify,
+        data: {
+          url: finalUrl,
+          notificationType,
+          ...payload.data,
+          receivedAt: now,
+          lastAlertTime: shouldRenotify ? now : lastAlertTime,
+        },
+        ...(shouldRenotify ? { vibrate: [100, 50, 100] } : {}),
+      });
+    })()
+  );
+});
+
+// Notification Click Handler (focus or open target URL)
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  let url = event.notification.data?.url || '/';
+  if (event.action && event.action.startsWith('open_chat_')) {
+    const planId = event.action.replace('open_chat_', '');
+    url = \`/chats?id=\${planId}\`;
+  } else if (
+    event.notification.data?.notificationType === 'CHAT_MESSAGE' &&
+    event.notification.data?.planId &&
+    (!url || url === '/chats')
+  ) {
+    url = \`/chats?id=\${event.notification.data.planId}\`;
+  } else if (
+    event.notification.data?.notificationType !== 'CHAT_MESSAGE' &&
+    event.notification.data?.planId &&
+    (!url || url === '/')
+  ) {
+    url = \`/plans?id=\${event.notification.data.planId}\`;
+  }
+
+  event.waitUntil(
+    (async () => {
+      await updateAppBadge();
+      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of clientList) {
+        if ('focus' in client) {
+          await client.focus();
+          if ('navigate' in client && url) {
+            return client.navigate(url);
+          }
+          return;
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(url);
+      }
+    })()
+  );
+});
+
+self.addEventListener('notificationclose', (event) => {
+  console.log('[SW] Notification dismissed by user:', event.notification.tag);
+});
       `);
     });
+
 
     // Disable HTTP browser caching for dev responses
     app.use((req, res, next) => {
@@ -331,8 +695,63 @@ async function startServer() {
     // seedDefaultUsers();
     if (env.NODE_ENV !== "production") {
       ensureNgrokTunnel(PORT);
+      ensureEdgeFunctions();
     }
   });
+}
+
+let edgeFunctionsProcess: ChildProcess | null = null;
+
+async function ensureEdgeFunctions() {
+  if (process.env.NODE_ENV === "production") return;
+  // Check if edge functions are already serving on local Supabase Kong gateway
+  try {
+    const ping = await fetch("http://127.0.0.1:54321/functions/v1/send-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "PING" }),
+    });
+    if (ping.status === 200) {
+      console.log("⚡ [Supabase] Edge functions (send-push, maps) active on local port 54321");
+      return;
+    }
+  } catch {}
+
+  // Spawn local Supabase Edge Functions runtime
+  try {
+    console.log("⚡ [Supabase] Spawning local Edge Functions runtime...");
+    edgeFunctionsProcess = spawn("npx", ["supabase", "functions", "serve", "--env-file", "./supabase/functions/.env"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        PATH: `${process.env.PATH || ""}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`,
+      },
+    });
+
+    edgeFunctionsProcess.stderr?.on("data", (chunk: Buffer) => {
+      const msg = chunk.toString();
+      if (msg.includes("error") || msg.includes("Error")) {
+        console.warn(`[Supabase Functions] ${msg.trim()}`);
+      }
+    });
+
+    edgeFunctionsProcess.on("exit", () => {
+      edgeFunctionsProcess = null;
+    });
+
+    const cleanup = () => {
+      if (edgeFunctionsProcess && !edgeFunctionsProcess.killed) {
+        try {
+          edgeFunctionsProcess.kill("SIGTERM");
+        } catch {}
+      }
+    };
+    process.once("SIGINT", cleanup);
+    process.once("SIGTERM", cleanup);
+    process.once("exit", cleanup);
+  } catch (err: any) {
+    console.warn(`[Supabase Functions] Could not spawn local functions: ${err.message}`);
+  }
 }
 
 let ngrokProcess: ChildProcess | null = null;
@@ -360,6 +779,7 @@ async function ensureNgrokTunnel(port: number) {
     console.log(`\n🚀 [ngrok] Public tunnel active: ${url}\n`);
     return;
   }
+
 
   // 2. Spawn ngrok process with explicit authtoken if provided
   try {

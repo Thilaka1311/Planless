@@ -13,6 +13,7 @@ import { supabase } from "../../../../lib/supabaseClient";
 import { cleanPlanId, isUuid, resolveUserUuid as resolveUserUuidUtil } from "../utils/planUtils";
 import { getTimelineSectionValue, getDayIndexValue, parseTimeToMinutes } from "../utils/planFeedUtils";
 import { recalculateWalletExpenses } from "../../wallet/services/walletSyncService";
+import { isPlanEligibleForHomeDiscovery } from "../../home/utils/homeFeedEligibility";
 import * as api from "../api/plans";
 
 interface ParticipantCounts {
@@ -798,6 +799,22 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     await handleParticipantStatusChange(planUuid, userUuid, existing?.rsvp_status, targetDbState);
 
+    void (async () => {
+      try {
+        await supabase.functions.invoke("send-push", {
+          body: {
+            event: targetDbState === "WAITLISTED" ? "WAITLIST_JOIN" : "PLAN_JOIN",
+            planId: planUuid,
+            actorId: userUuid,
+            rsvpStatus: targetDbState,
+          },
+        });
+      } catch (err) {
+        console.warn("[acceptPlan] Non-critical push delivery error:", err);
+      }
+    })();
+
+
 
 
     // 2. Check if all non-host participants have accepted (state updated via realtime)
@@ -868,8 +885,24 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await removePlanTeamAssignment(planUuid, userUuid);
       setDbPlanTeamAssignments(prev => prev.filter(a => !(a.plan_id === planUuid && a.user_id === userUuid)));
       await promoteWaitlistIfSpotsAvailable(planUuid);
+
+      void (async () => {
+        try {
+          await supabase.functions.invoke("send-push", {
+            body: {
+              event: "PLAN_LEAVE",
+              planId: planUuid,
+              actorId: userUuid,
+              previousStatus: oldStatus,
+            },
+          });
+        } catch (err) {
+          console.warn("[declinePlan] Non-critical push delivery error:", err);
+        }
+      })();
     }
   };
+
 
   const createPlan = async (
     newDbPlan: any,
@@ -1017,6 +1050,29 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       dbPartRow = partResultData?.[0];
     }
 
+    // Dispatch push notifications to initial invited participants (non-blocking)
+    if (inviteeUuids.length > 0) {
+      supabase.functions
+        .invoke("send-push", {
+          body: {
+            event: "PLAN_INVITATION",
+            planId: insertedPlanUuid,
+            userIds: inviteeUuids,
+            appUrl: typeof window !== "undefined" ? window.location.origin : undefined,
+          },
+        })
+        .then(({ data: pushRes, error: pushErr }) => {
+          if (pushErr) {
+            console.warn("[createPlan] Push invitation dispatch failed:", pushErr.message || pushErr);
+          } else if (pushRes?.deliveredCount !== undefined) {
+            console.log(`[createPlan] Push invitations delivered to ${pushRes.deliveredCount} devices.`);
+          }
+        })
+        .catch((pushErr) => {
+          console.warn("[createPlan] Push invitation invocation network error:", pushErr);
+        });
+    }
+
     // Insert plan_created activity log (temporarily disabled)
     /*
     try {
@@ -1075,40 +1131,18 @@ export const PlansProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const myParticipantRecords = dbPlanParticipants.filter(pp => pp.user_id === userUuid || pp.user_id === userIdStr);
 
     const filtered = plans.filter(plan => {
-      // Plan must be active
-      const statusNorm = (plan.status || "").toLowerCase();
-      if (statusNorm !== "active" && statusNorm !== "live") return false;
-
-      // Respect response deadline for pending invitations if present
-      if (plan.response_deadline_at) {
-        const deadline = new Date(plan.response_deadline_at).getTime();
-        const now = new Date().getTime();
-        if (now > deadline) return false;
-      }
-
       const planUuid = plan.dbUuid || plan.id;
       const ppRecord = myParticipantRecords.find(pp => pp.plan_id === planUuid);
-      if (!ppRecord) return false;
-
-      const rsvp = normalizeStatus(ppRecord.rsvp_status);
-      const isHostRole = ppRecord.role === "HOST";
-
-      // Home screen visibility strictly determined by plan_participants: role = PARTICIPANT & rsvp_status = INVITED or WAITLISTED
-      if (isHostRole || (rsvp !== "INVITED" && rsvp !== "WAITLISTED")) return false;
-
-      // Exclude plans that have reached the hard maximum of 50 joined participants (dynamic capacity)
-      const isNoLimit = plan.plan_size === null || plan.plan_size === undefined;
       const counts = getParticipantCounts(planUuid);
       const joinedCount = counts.host + counts.going;
 
-      if (isNoLimit && joinedCount >= 50) {
-        return false;
-      }
-      if (!isNoLimit && joinedCount >= 50) {
-        return false;
-      }
-
-      return true;
+      return isPlanEligibleForHomeDiscovery({
+        plan,
+        userId: userIdStr,
+        userUuid,
+        participantRecord: ppRecord,
+        joinedCount,
+      });
     });
 
     return filtered.sort((a, b) => {

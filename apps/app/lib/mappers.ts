@@ -319,6 +319,7 @@ export const mapPlansToLegacyPlans = (
       title: p.title,
       groupId: null,
       hostId: hostIdVal,
+      isOwner: isOwner,
       members: members,
       capacity: (p as any).plan_size === null ? null : planSizeVal,
       planSize: (p as any).plan_size === null ? null : planSizeVal,

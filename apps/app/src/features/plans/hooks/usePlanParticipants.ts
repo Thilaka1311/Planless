@@ -1030,9 +1030,33 @@ export function usePlanParticipants({
       console.warn("[PlansContext removeParticipant] Team assignment cleanup warning (non-blocking):", teamErr);
     }
 
+    const targetGroup = targetParticipant?.assigned_group || (targetMember as any)?.assigned_group;
+    const isGoingOrUnassigned = !targetGroup || targetGroup === 'GOING';
+
+    // Optimistically decrement plan_size for Assigned mode if removing from GOING/unassigned
+    if (!isAutomatic && isGoingOrUnassigned) {
+      setDbPlans(prev => prev.map(p => {
+        if (p.id === planUuid || p.id === planId) {
+          const currentSize = p.plan_size !== undefined && p.plan_size !== null ? p.plan_size : currentPlanSize;
+          const nextSize = currentSize !== null && currentSize !== undefined ? Math.max(1, currentSize - 1) : currentSize;
+          return { ...p, plan_size: nextSize };
+        }
+        return p;
+      }));
+    }
+
     // 2. Persist removal via trusted SECURITY DEFINER RPC
     try {
-      await api.removeParticipantRPC(planUuid, resolvedParticipantUuid);
+      const rpcResult = await api.removeParticipantRPC(planUuid, resolvedParticipantUuid);
+
+      if (rpcResult?.plan_size !== undefined && rpcResult?.plan_size !== null) {
+        setDbPlans(prev => prev.map(p => {
+          if (p.id === planUuid || p.id === planId) {
+            return { ...p, plan_size: rpcResult.plan_size };
+          }
+          return p;
+        }));
+      }
 
       renumberWaitlistPositions(planUuid).catch(() => {});
       // Recalculate wallet expenses when a participant is removed
@@ -1137,6 +1161,7 @@ export function usePlanParticipants({
     const trulyNewInvitees = inviteeUuids.filter(id => !existingActiveUserIds.has(id));
 
     const previousDbPlans = dbPlans;
+    const previousPlanParticipants = dbPlanParticipants;
 
     // Optimistic updates for participants
     inviteeUuids.forEach((inviteeUuid) => {
@@ -1217,7 +1242,7 @@ export function usePlanParticipants({
       await refreshPlans(["plan_participants", "plans"]);
     } catch (err: any) {
       console.error("[addParticipantsToPlan] Failed to persist invites, rolling back optimistic state:", err);
-      setDbPlanParticipants(prev => prev.filter(pp => !(pp.plan_id === planUuid && inviteeUuids.includes(pp.user_id))));
+      setDbPlanParticipants(previousPlanParticipants);
       if (setDbPlans) {
         setDbPlans(previousDbPlans);
       }
@@ -1461,6 +1486,23 @@ export function usePlanParticipants({
       if (updateErr) {
         throw updateErr;
       }
+
+      if (isWaitlisted && nextRsvp === 'JOINED') {
+        void (async () => {
+          try {
+            await supabase.functions.invoke("send-push", {
+              body: {
+                event: "WAITLIST_PROMOTION",
+                planId: planUuid,
+                targetUserId: resolvedUserUuid,
+              },
+            });
+          } catch (pushErr) {
+            console.warn("[moveParticipantToGoing] Push promotion dispatch failed:", pushErr);
+          }
+        })();
+      }
+
 
       await renumberWaitlistPositions(planUuid).catch(err =>
         console.warn("[moveParticipantToGoing] renumberWaitlistPositions warning:", err)

@@ -26,6 +26,7 @@ import { PlanSettingsScreen } from "../../../plans/screens/PlansScreen/PlansPrev
 import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../../navigation/appRouter";
 import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../../plans/utils/planUtils";
+import { getPlanSlug } from "../../../plans/utils/planSlugUtils";
 import { getPlanPreviewCtaState } from "../../../plans/utils/planPreviewCtaUtils";
 import { lazyWithRetry } from "../../../../shared/utils/lazyWithRetry";
 
@@ -63,6 +64,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   onOpenExpenses,
 }) => {
   const {
+    plans,
     dbPlans,
     dbPlanParticipants,
     joinPlan,
@@ -110,7 +112,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
   const allHosts = useMemo(() => {
     if (!selectedPlan) return [];
-    const activeHosts = selectedPlan.members.filter((m) => m.isHost);
+    const membersList = selectedPlan.members || [];
+    const activeHosts = membersList.filter((m) => m.isHost);
     if (activeHosts.length > 0) {
       return activeHosts.map((h) => ({
         id: h.userUuid || h.userId,
@@ -200,7 +203,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
   const currentCount = useMemo(() => {
     if (!selectedPlan) return 0;
-    return selectedPlan.members.filter((m) => {
+    const membersList = selectedPlan.members || [];
+    return membersList.filter((m) => {
       const status = normalizeStatus(m.joinState || (m as any).rsvp_status);
       return status === "JOINED" || m.role === "HOST" || m.isHost === true;
     }).length;
@@ -208,7 +212,8 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
 
   const myMemberEntry = useMemo(() => {
     if (!selectedPlan) return null;
-    return selectedPlan.members.find(
+    const membersList = selectedPlan.members || [];
+    return membersList.find(
       (m) =>
         m.userId === userProfile.user_id ||
         (userProfile.dbUuid && m.userUuid === userProfile.dbUuid) ||
@@ -541,8 +546,24 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
           await demoteHostToParticipant(selectedPlan.id, userId);
         }}
         onEditTitle={async (newTitle) => {
-          await updatePlanDetails(selectedPlan.id, { title: newTitle });
+          const targetPlanId = cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
+          const newSlug = getPlanSlug(
+            { id: targetPlanId, dbUuid: targetPlanId, title: newTitle, publicId: selectedPlan.publicId },
+            plans
+          );
+          await updatePlanDetails(targetPlanId, { title: newTitle });
+          const current = parseCurrentRoute();
+          navigateToRoute(
+            {
+              tab: 'home',
+              ...current,
+              selectedPlanId: newSlug,
+              subScreen: 'plan-settings',
+            },
+            { replace: true }
+          );
         }}
+
         onEditCoverImage={async (newCoverUrl, blob) => {
           const targetPlanId = cleanPlanId(selectedPlan.dbUuid || selectedPlan.id);
           if (blob) {

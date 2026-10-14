@@ -29,6 +29,16 @@ export async function markPlanChatAsRead(
     if (error) {
       console.warn("[chatReads] Error calling mark_plan_chat_read:", error);
     }
+
+    // 4. Instruct active Service Worker to clear or update the Android notification shade for this plan
+    if (typeof navigator !== "undefined" && "serviceWorker" in navigator && navigator.serviceWorker.controller) {
+      try {
+        navigator.serviceWorker.controller.postMessage({
+          type: "CLEAR_CHAT_NOTIFICATION",
+          planId: planUuid,
+        });
+      } catch {}
+    }
   } catch (err) {
     console.warn("[chatReads] Exception in markPlanChatAsRead:", err);
   }

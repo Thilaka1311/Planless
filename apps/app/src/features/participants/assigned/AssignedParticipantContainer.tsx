@@ -1333,27 +1333,35 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
   const handleConfirmDecreaseCapacityForRemoveGoing = useCallback(async () => {
     if (!pendingRemoveGoing) return;
     const friend = pendingRemoveGoing;
-    const targetCapacity = Math.max(2, capacity - 1);
     const targetUserId = friend.dbUuid || friend.id;
     setPendingRemoveGoing(null);
     setIsForcedDecreaseRemoval(false);
+
+    const prevCapacity = capacity;
+    if (capacity !== null && capacity !== undefined) {
+      setLocalCapacity(Math.max(1, capacity - 1));
+    }
 
     try {
       if (onRemoveParticipant) {
         await onRemoveParticipant(plan.id, targetUserId);
       }
-      if (onUpdatePlanCapacity) {
-        await onUpdatePlanCapacity(plan.id, targetCapacity, { autoPromote: false });
-      }
     } catch (err: any) {
       console.error('[AssignedParticipantContainer handleConfirmDecreaseCapacityForRemoveGoing] error:', err);
+      setLocalCapacity(prevCapacity);
+      showToast(err?.message || 'Failed to remove participant. Please try again.', 'error');
     }
-  }, [pendingRemoveGoing, capacity, onUpdatePlanCapacity, plan.id, onRemoveParticipant]);
+  }, [pendingRemoveGoing, capacity, plan.id, onRemoveParticipant, showToast]);
 
   const handleConfirmRemoveGoingDirect = useCallback(async () => {
     if (!pendingRemoveGoing || isRemovingGoing) return;
     const friend = pendingRemoveGoing;
     setIsRemovingGoing(true);
+
+    const prevCapacity = capacity;
+    if (capacity !== null && capacity !== undefined) {
+      setLocalCapacity(Math.max(1, capacity - 1));
+    }
 
     try {
       await onRemoveParticipant(plan.id, friend.dbUuid || friend.id);
@@ -1361,11 +1369,12 @@ export const AssignedParticipantContainer: React.FC<PlanParticipantManagementWra
       setIsForcedDecreaseRemoval(false);
     } catch (err: any) {
       console.error('[AssignedParticipantContainer handleConfirmRemoveGoingDirect] error:', err);
+      setLocalCapacity(prevCapacity);
       showToast(err?.message || 'Failed to remove participant. Please try again.', 'error');
     } finally {
       setIsRemovingGoing(false);
     }
-  }, [pendingRemoveGoing, isRemovingGoing, onRemoveParticipant, plan.id, showToast]);
+  }, [pendingRemoveGoing, isRemovingGoing, onRemoveParticipant, plan.id, showToast, capacity]);
 
   const handleOpenRemoveGoingReplacePickerFull = useCallback(() => {
     if (!pendingRemoveGoing) return;

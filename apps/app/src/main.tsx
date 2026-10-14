@@ -113,11 +113,38 @@ export class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBounda
     try {
       sessionStorage.removeItem("planless_chunk_auto_reload");
       sessionStorage.removeItem("planless_preload_reload");
+      sessionStorage.removeItem("planless_error_reload_count");
     } catch {}
     if (pwaManager.getHasUpdate()) {
       await pwaManager.updateApp();
     } else {
       await pwaManager.forceHardUpdate();
+    }
+  };
+
+  private handleNormalReload = () => {
+    this.setState({ isUpdating: true });
+    if (typeof window !== "undefined") {
+      try {
+        const reloadCount = parseInt(sessionStorage.getItem("planless_error_reload_count") || "0", 10);
+        if (reloadCount >= 1) {
+          sessionStorage.removeItem("planless_error_reload_count");
+          window.location.href = "/";
+          return;
+        }
+        sessionStorage.setItem("planless_error_reload_count", String(reloadCount + 1));
+      } catch {}
+      window.location.reload();
+    }
+  };
+
+  private handleReturnHome = () => {
+    this.setState({ isUpdating: true });
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.removeItem("planless_error_reload_count");
+      } catch {}
+      window.location.href = "/";
     }
   };
 
@@ -130,6 +157,7 @@ export class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBounda
       }
       sessionStorage.removeItem("planless_chunk_auto_reload");
       sessionStorage.removeItem("planless_preload_reload");
+      sessionStorage.removeItem("planless_error_reload_count");
     } catch {}
     await pwaManager.forceHardUpdate();
   };
@@ -165,31 +193,51 @@ export class RootErrorBoundary extends Component<ErrorBoundaryProps, ErrorBounda
             <p className="text-zinc-400 text-sm leading-relaxed mb-6">
               {isUpdateAvailable
                 ? "A new version of Planless was deployed. Tap Update to load the latest build and continue."
-                : "Planless encountered an unexpected issue. Reload to clear the local cache and recover."}
+                : "Planless encountered an unexpected issue. Tap Reload to refresh the screen, or return to Home."}
             </p>
 
             <div className="w-full flex flex-col space-y-2.5">
-              <button
-                type="button"
-                onClick={this.handleHardReload}
-                disabled={this.state.isUpdating}
-                className="w-full py-3.5 px-6 rounded-xl bg-[#ff5e3a] hover:bg-[#e05230] text-white font-semibold text-sm transition-all shadow-lg shadow-[#ff5e3a]/25 active:scale-[0.98] disabled:opacity-50 cursor-pointer"
-              >
-                {this.state.isUpdating
-                  ? "Updating Planless..."
-                  : isUpdateAvailable
-                  ? "Update to Latest Version"
-                  : "Reload & Clear Cache"}
-              </button>
+              {isUpdateAvailable ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={this.handleHardReload}
+                    disabled={this.state.isUpdating}
+                    className="w-full py-3.5 px-6 rounded-xl bg-[#ff5e3a] hover:bg-[#e05230] text-white font-semibold text-sm transition-all shadow-lg shadow-[#ff5e3a]/25 active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                  >
+                    {this.state.isUpdating ? "Updating Planless..." : "Update to Latest Version"}
+                  </button>
 
-              <button
-                type="button"
-                onClick={this.handleResetSession}
-                disabled={this.state.isUpdating}
-                className="w-full py-3 px-6 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-medium text-sm transition-all border border-zinc-800 active:scale-[0.98] cursor-pointer"
-              >
-                Reset Session & Sign In
-              </button>
+                  <button
+                    type="button"
+                    onClick={this.handleResetSession}
+                    disabled={this.state.isUpdating}
+                    className="w-full py-3 px-6 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-medium text-sm transition-all border border-zinc-800 active:scale-[0.98] cursor-pointer"
+                  >
+                    Reset Session & Sign In
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={this.handleNormalReload}
+                    disabled={this.state.isUpdating}
+                    className="w-full py-3.5 px-6 rounded-xl bg-[#ff5e3a] hover:bg-[#e05230] text-white font-semibold text-sm transition-all shadow-lg shadow-[#ff5e3a]/25 active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                  >
+                    {this.state.isUpdating ? "Reloading..." : "Reload Planless"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={this.handleReturnHome}
+                    disabled={this.state.isUpdating}
+                    className="w-full py-3 px-6 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white font-medium text-sm transition-all border border-zinc-800 active:scale-[0.98] cursor-pointer"
+                  >
+                    Return to Home
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

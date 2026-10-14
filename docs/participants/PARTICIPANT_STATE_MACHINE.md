@@ -106,7 +106,7 @@ The table below defines every supported transition across Automatic and Assigned
 | **Resolve Leave: Replace** | Any | `JOINED` (`leave_requested = true`) | `SKIPPED` (`skip_reason = 'REPLACED'`) | `NULL` | Outgoing leaving member removed from wallet. | Replacement participant invited into vacated spot. | `public.resolve_paid_plan_leave_request` |
 | **Resolve Leave: Keep Payment** | Any | `JOINED` (`leave_requested = true`) | `SKIPPED` (`skip_reason = 'PAYMENT_KEPT'`) | `NULL` | Outgoing member marked payment kept. | Triggers vacancy promotion for next candidate. | `public.resolve_paid_plan_leave_request` |
 | **Remove Participant** | `AUTOMATIC` | `JOINED` or `WAITLISTED` | `SKIPPED` (`skip_reason = 'REMOVED'`) | `NULL` | If `JOINED`: Joined count - 1. `invited_participants - 1`. | If `JOINED`: Promotes earliest FCFS. Clears queue time. | `public.remove_participant` |
-| **Remove Participant** | `ASSIGNED` | `GOING` or `WAITLIST` | `SKIPPED` (`skip_reason = 'REMOVED'`) | `NULL` | If `GOING`: Joined count - 1. `invited_participants - 1`. | Promotes Pos #1 to GOING. Renumbers waitlist 1..N. | `public.remove_participant` |
+| **Remove Participant** | `ASSIGNED` | `GOING` or `WAITLIST` | `SKIPPED` (`skip_reason = 'REMOVED'`) | `NULL` | If `GOING`: `plan_size = plan_size - 1` atomically! Joined count - 1. `invited_participants - 1`. If `WAITLIST`: `plan_size` unchanged. | If `GOING`: closes the spot without waitlist promotion. If `WAITLIST`: renumbers waitlist 1..N. | `public.remove_participant` |
 | **Request to Rejoin** | Any | `SKIPPED` (`skip_reason` set) | `REJOINED` | `NULL` | Count unchanged. Frozen awaiting host. | Placed into Skipped tab with amber `!` badge. | `public.rejoin_plan` |
 | **Resolve Rejoin: Add to Plan** | `AUTOMATIC` (Spots available / No-Limit) | `REJOINED`, `NULL` | `JOINED` | `NULL` | Joined count increments by 1. Plan size unchanged. | Clears `skip_reason`, `leave_requested`. | `public.resolve_rejoined_participant` |
 | **Resolve Rejoin: Increase Size** | `AUTOMATIC` (Plan is full) | `REJOINED`, `NULL` | `JOINED` | `NULL` | Host increases size (`update_plan_capacity`) then adds. | Admitted into newly opened spot. | `update_plan_capacity` + `resolve_rejoined_participant` |
@@ -179,7 +179,7 @@ The table below defines every supported transition across Automatic and Assigned
    - When the host taps a leave-requested attendee (`leave_requested === true`), the UI directly mounts `RemoveGoingParticipantBottomSheet` (bypassing any intermediate "Wants to leave" dialog).
    - Host chooses:
      - **Replace Participant**: Executes `public.resolve_paid_plan_leave_request(..., 'REPLACED', p_replacement_user_id)`. Outgoing member becomes `SKIPPED` (`skip_reason = 'REPLACED'`), and replacement candidate enters `INVITED`.
-     - **Remove Participant**: Executes `public.remove_participant(p_plan_id, p_target_user_id)`. Outgoing member becomes `SKIPPED` (`skip_reason = 'REMOVED'`), and a vacancy opens for waitlist promotion.
+     - **Remove Participant**: Executes `public.remove_participant(p_plan_id, p_target_user_id)`. Outgoing member becomes `SKIPPED` (`skip_reason = 'REMOVED'`). In Assigned mode, atomically decreases `plan_size = plan_size - 1` and closes the spot without waitlist promotion. In Automatic mode, opens a vacancy for FCFS waitlist promotion.
      - **Keep Payment**: Outgoing member becomes `SKIPPED` (`skip_reason = 'PAYMENT_KEPT'`), and next waitlist candidate is promoted.
 
 ### C. Rejoin Flow
@@ -301,12 +301,12 @@ For every state transition, the frontend and backend coordinate through eight di
 |---|---|---|
 | `public.join_plan(p_plan_id uuid)` | `20261007182500_fix_join_plan_remove_nonexistent_created_by.sql` | Transactional join RPC enforcing plan capacity, No-Limit 50 cap, and queue timestamps. |
 | `public.claim_plan_invite(p_plan_id uuid)` | `20261009181500_fix_assigned_waitlist_position_for_invited_participants.sql` | Resolves invite link claims, placing Assigned invitees into waitlist with next sequential position. |
-| `public.invite_participants(p_plan_id uuid, p_invitee_user_ids uuid[], p_assigned_group assigned_group_enum)` | `20261009183500_fix_invite_participants_found_clobber.sql` | Atomic batch invitation RPC with explicit boolean `FOUND` protection. |
+| `public.invite_participants(p_plan_id uuid, p_invitee_user_ids uuid[], p_assigned_group assigned_group_enum)` | `20261014170000_fix_deadlock_on_invite_participants.sql` | Atomic batch invitation RPC with canonical ascending UUID sort & deduplication, plans FOR UPDATE serialization, and deadlock elimination. |
 | `public.leave_plan(p_plan_id uuid)` | `20261010140000_fix_host_leave_with_replacement_paid_plan.sql` | Immediate voluntary leave RPC for regular attendees and waitlisted participants. |
 | `public.request_paid_plan_leave(p_plan_id uuid)` | `20260904200000_baseline_current_production.sql` | Submits pending leave request on paid plans (`leave_requested = true`). |
 | `public.cancel_paid_plan_leave_request(p_plan_id uuid)` | `20260904200000_baseline_current_production.sql` | Cancels pending leave request on paid plans. |
 | `public.resolve_paid_plan_leave_request(p_plan_id uuid, p_target_user_id uuid, p_resolution text, p_replacement_user_id uuid)` | `20260904200000_baseline_current_production.sql` | Resolves leave request via `REPLACED` or `KEEP_PAYMENT`. |
-| `public.remove_participant(p_plan_id uuid, p_target_user_id uuid)` | `20261010103000_fix_assigned_remove_participant_and_promotion.sql` | Host removal setting `SKIPPED`/`REMOVED` and triggering vacancy promotion. |
+| `public.remove_participant(p_plan_id uuid, p_target_user_id uuid)` | `20261014160000_decrease_plan_size_on_assigned_remove_participant.sql` | Host removal setting `SKIPPED`/`REMOVED`. In Assigned mode, atomically decrements `plan_size = plan_size - 1` on GOING removal. In Automatic mode, promotes FCFS waitlist. |
 | `public.replace_participant(p_plan_id uuid, p_target_user_id uuid, p_replacement_user_id uuid)` | `20260904200000_baseline_current_production.sql` | Direct participant replacement without active leave request. |
 | `public.rejoin_plan(p_plan_id uuid)` | `20260904200000_baseline_current_production.sql` | Skipped participant requests to return (`rsvp_status = 'REJOINED'`). |
 | `public.resolve_rejoined_participant(p_plan_id uuid, p_target_user_id uuid, p_decision text)` | `20261010111500_fix_rejoin_plan_size_and_assignment.sql` | Resolves rejoin request. In Assigned mode, increments `plan_size + 1` on `'JOINED'`. |
@@ -332,7 +332,7 @@ For every state transition, the frontend and backend coordinate through eight di
 
 ## 7. Regression Test Suite & Verification Commands
 
-All participant state machine behaviors are protected by 15 test files comprising 132 automated tests.
+All participant state machine behaviors are protected by 17 test files comprising 151 automated tests.
 
 ### Running Participant Regression Tests
 Execute from `Projects/Planless/apps/app`:
@@ -370,6 +370,8 @@ npm run lint
 | `src/features/participants/assigned/__tests__/swapParticipants.test.ts` | Swapping participants between Going and Waitlist, preserving waitlist position ranks. |
 | `src/features/participants/assigned/__tests__/assignedCapacityLogic.test.ts` | Pure functions for group allocation, draft capacity boundaries, and reordering. |
 | `src/features/participants/assigned/__tests__/skippedPlacementSheetUI.test.tsx` | UI rendering and options for skipped participants. |
+| `src/features/participants/assigned/__tests__/decreasePlanSizeOnRemoveParticipant.test.ts` | Atomic `plan_size = plan_size - 1` decrement on removing participant from Going in Assigned mode, idempotency, and rollback. |
+| `src/features/plans/__tests__/inviteParticipantsDeadlockPrevention.test.ts` | Deadlock elimination, deterministic lock ordering, bounded retry with backoff, idempotent duplicate handling, and state rollback on invitation failure. |
 | `src/features/participants/automatic/__tests__/automaticWaitlistNumbering.test.tsx` | Numbering waitlist badges strictly for `WAITLISTED`, never for `INVITED`, in FCFS queue order. |
 | `src/features/participants/automatic/__tests__/rejoinFlowNoLimit.test.tsx` | Direct admission for rejoin requests on No-Limit plans without capacity error. |
 

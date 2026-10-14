@@ -346,6 +346,7 @@ export interface Plan {
   min_participants?: number;
   groupId: string | null;
   hostId: string;
+  isOwner?: boolean;
   members: PlanMember[];
   capacity?: number;
   date: string;
