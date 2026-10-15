@@ -211,9 +211,23 @@ export const FriendProfileViewerBottomSheet: React.FC<FriendProfileViewerBottomS
             </div>
 
             {loadingProfile ? (
-              <div className="py-12 flex flex-col items-center justify-center space-y-3">
-                <div className="w-8 h-8 rounded-full border-2 border-[#FF6B2C] border-t-transparent animate-spin" />
-                <p className="text-zinc-500 font-sans font-medium text-xs">Loading profile...</p>
+              <div className="py-4 flex flex-col items-center text-center animate-pulse select-none pointer-events-none">
+                {/* 1. Large Circular Avatar */}
+                <div className="mb-3.5">
+                  <div className="w-[140px] h-[140px] rounded-full bg-white/[0.08] border border-white/10" />
+                </div>
+
+                {/* 2. Full Name */}
+                <div className="h-5 w-36 bg-white/[0.1] rounded-md mb-2" />
+
+                {/* 3. Bio */}
+                <div className="space-y-1.5 flex flex-col items-center mt-1">
+                  <div className="h-3 w-48 bg-white/[0.05] rounded" />
+                  <div className="h-3 w-32 bg-white/[0.04] rounded" />
+                </div>
+
+                {/* 4. Action button placeholder */}
+                <div className="w-full mt-6 h-11 rounded-2xl bg-white/[0.06] border border-white/[0.08]" />
               </div>
             ) : profile ? (
               <div className="flex flex-col items-center text-center">

@@ -4,7 +4,7 @@ import { renderToString } from "react-dom/server";
 import { HeroHeader, HostInfo } from "../components/HeroHeader";
 
 describe("HeroHeader Host Layout Regression Suite", () => {
-  it("renders 1 host with title and 'Hosted by [host]' text directly below, without host avatars", () => {
+  it("renders 1 host with title, host profile picture, and 'Hosted by [host]' name", () => {
     const singleHost: HostInfo[] = [
       { id: "h1", name: "Thilak", avatar: "https://example.com/thilak.jpg" },
     ];
@@ -19,10 +19,11 @@ describe("HeroHeader Host Layout Regression Suite", () => {
 
     // Title renders
     expect(html).toContain("Dinner at Indiranagar");
-    // No host avatar image rendered
-    expect(html).not.toContain("https://example.com/thilak.jpg");
-    expect(html).not.toContain("-space-x-1.5");
-    // Attribution text directly below title
+    // Host avatar image rendered
+    expect(html).toContain("https://example.com/thilak.jpg");
+    // Host avatars group container rendered
+    expect(html).toContain("data-testid=\"host-avatars-group\"");
+    // Attribution text alongside/directly below title
     expect(html).toContain("Hosted by <span");
     expect(html).toContain("Thilak");
     // Attribution has truncate and max-w-full px-14 to guarantee single line
@@ -31,7 +32,7 @@ describe("HeroHeader Host Layout Regression Suite", () => {
     expect(html).toContain("px-14");
   });
 
-  it("renders 2-3 hosts with comma-separated names directly below title and no host avatars", () => {
+  it("renders 2-3 hosts with compact aligned avatar group and comma-separated names", () => {
     const multiHosts: HostInfo[] = [
       { id: "h1", name: "You", avatar: "https://example.com/you.jpg" },
       { id: "h2", name: "Maanastej", avatar: "https://example.com/maanastej.jpg" },
@@ -47,16 +48,17 @@ describe("HeroHeader Host Layout Regression Suite", () => {
       />
     );
 
-    // No avatars rendered
-    expect(html).not.toContain("https://example.com/you.jpg");
-    expect(html).not.toContain("https://example.com/maanastej.jpg");
-    expect(html).not.toContain("https://example.com/thilaka.jpg");
-    expect(html).not.toContain("-space-x-1.5");
-    // Attribution string joined with commas
+    // All 3 avatars rendered
+    expect(html).toContain("https://example.com/you.jpg");
+    expect(html).toContain("https://example.com/maanastej.jpg");
+    expect(html).toContain("https://example.com/thilaka.jpg");
+    // Compact aligned overlapping group
+    expect(html).toContain("-space-x-1.5");
+    // Attribution string joined with commas, current user as "You"
     expect(html).toContain("You, Maanastej, Thilaka");
   });
 
-  it("renders many hosts (> 4 hosts) with comma-separated text on single line and no avatars or +N badge", () => {
+  it("renders many hosts (> 4 hosts) with up to 4 avatars, +N badge, and comma-separated text on single line", () => {
     const manyHosts: HostInfo[] = [
       { id: "h1", name: "You", avatar: "https://example.com/h1.jpg" },
       { id: "h2", name: "Maanastej", avatar: "https://example.com/h2.jpg" },
@@ -75,9 +77,14 @@ describe("HeroHeader Host Layout Regression Suite", () => {
       />
     );
 
-    // No avatars or +N badge
-    expect(html).not.toContain("+<!-- -->2");
-    expect(html).not.toContain("-space-x-1.5");
+    // First 4 avatars rendered
+    expect(html).toContain("https://example.com/h1.jpg");
+    expect(html).toContain("https://example.com/h2.jpg");
+    expect(html).toContain("https://example.com/h3.jpg");
+    expect(html).toContain("https://example.com/h4.jpg");
+    // +2 badge rendered for 6 total hosts
+    expect(html).toContain("+2");
+    expect(html).toContain("-space-x-1.5");
     // Host attribution contains all names, truncated via CSS
     expect(html).toContain("You, Maanastej, Thilaka, Renjith, Vaishakh, Aznan");
     expect(html).toContain("title=\"Hosted by You, Maanastej, Thilaka, Renjith, Vaishakh, Aznan\"");
@@ -141,5 +148,23 @@ describe("HeroHeader Host Layout Regression Suite", () => {
     expect(html).not.toContain("tracking-[0.08em]");
     expect(html).not.toContain("tracking-[0.06em]");
   });
-});
 
+  it("deduplicates hosts if same host appears with multiple records", () => {
+    const duplicateHosts: HostInfo[] = [
+      { id: "h1", name: "Renjith", avatar: "https://example.com/renjith.jpg" },
+      { id: "h1", name: "Renjith", avatar: "https://example.com/renjith.jpg" },
+      { id: "h2", name: "Thilaka", avatar: "https://example.com/thilaka.jpg" },
+    ];
+
+    const html = renderToString(
+      <HeroHeader
+        title="Badminton Match"
+        hosts={duplicateHosts}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(html).toContain("Renjith, Thilaka");
+    expect(html).not.toContain("Renjith, Renjith");
+  });
+});

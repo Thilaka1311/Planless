@@ -432,9 +432,19 @@ export const PlanOverallCost: React.FC<PlanOverallCostProps> = ({
         </h4>
 
         {loadingParticipants ? (
-          <div className="p-8 text-center bg-zinc-950/20 border border-dashed border-zinc-900 rounded-[24px]">
-            <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <p className="text-xs text-zinc-500 font-sans">Loading participants...</p>
+          <div className="divide-y divide-white/[0.04] animate-pulse select-none pointer-events-none">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center justify-between py-4 px-1">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-11 h-11 rounded-full bg-white/[0.07] shrink-0" />
+                  <div className="space-y-1.5">
+                    <div className="h-3.5 w-28 bg-white/[0.08] rounded" />
+                    <div className="h-2.5 w-16 bg-white/[0.04] rounded" />
+                  </div>
+                </div>
+                <div className="h-4 w-16 bg-white/[0.08] rounded shrink-0" />
+              </div>
+            ))}
           </div>
         ) : participantsWhoOwe.length === 0 ? (
           <div className="p-8 text-center bg-zinc-950/20 border border-dashed border-zinc-900 rounded-[24px]">

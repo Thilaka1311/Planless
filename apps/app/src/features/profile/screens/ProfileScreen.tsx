@@ -45,10 +45,10 @@ export const NOTIFICATION_STATUS_TEXT: Record<NotificationUiState, string> = {
   permission_not_requested: 'Tap to enable notifications',
   requesting_permission: 'Requesting permission…',
   setting_up: 'Setting up notifications…',
-  active: 'On · Active on this device',
-  denied: 'Blocked · Enable in browser settings',
+  active: 'Enabled on this device',
+  denied: 'Blocked in browser settings',
   failed: 'Setup failed · Tap to retry',
-  disabled: 'Off · Tap to enable',
+  disabled: 'Tap to enable notifications',
 };
 
 interface ProfileScreenProps {
@@ -121,7 +121,7 @@ export const ProfileScreen = ({
       return;
     }
 
-    const perm = pwaManager.getPushPermissionState();
+    const perm = await pwaManager.getDetailedPermissionState();
     if (perm === 'denied') {
       setNotificationUiState('denied');
       return;
@@ -155,6 +155,7 @@ export const ProfileScreen = ({
 
     if (browserSub && dbHasActiveSub) {
       setNotificationUiState('active');
+      setActiveSheet((prev) => (prev === 'notificationsBlocked' ? null : prev));
       return;
     }
 
@@ -164,6 +165,7 @@ export const ProfileScreen = ({
         const synced = await pwaManager.syncPushSubscription(targetUid);
         if (synced) {
           setNotificationUiState('active');
+          setActiveSheet((prev) => (prev === 'notificationsBlocked' ? null : prev));
           return;
         }
       } catch {}
@@ -172,7 +174,7 @@ export const ProfileScreen = ({
     setNotificationUiState('disabled');
   };
 
-  // Reconcile on mount and whenever the app regains focus or visibility
+  // Reconcile on mount and whenever the app regains focus, visibility, or permission state changes
   useEffect(() => {
     reconcileNotificationState(false);
 
@@ -191,11 +193,31 @@ export const ProfileScreen = ({
     }
     window.addEventListener('focus', handleFocus);
 
+    let permStatus: PermissionStatus | null = null;
+    if (
+      typeof navigator !== 'undefined' &&
+      'permissions' in navigator &&
+      typeof navigator.permissions.query === 'function'
+    ) {
+      navigator.permissions
+        .query({ name: 'notifications' as PermissionName })
+        .then((status) => {
+          permStatus = status;
+          status.onchange = () => {
+            reconcileNotificationState(false);
+          };
+        })
+        .catch(() => {});
+    }
+
     return () => {
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibility);
       }
       window.removeEventListener('focus', handleFocus);
+      if (permStatus) {
+        permStatus.onchange = null;
+      }
     };
   }, [activeUserUuid, activeUserId]);
 
@@ -224,7 +246,7 @@ export const ProfileScreen = ({
       return;
     }
 
-    const currentPerm = pwaManager.getPushPermissionState();
+    const currentPerm = await pwaManager.getDetailedPermissionState();
     if (currentPerm === 'denied' || notificationUiState === 'denied') {
       setActiveSheet('notificationsBlocked');
       return;
@@ -514,42 +536,23 @@ export const ProfileScreen = ({
               id="profile_notifications_row"
               onClick={handleNotificationRowClick}
               disabled={notificationUiState === 'requesting_permission' || notificationUiState === 'setting_up'}
-              className="w-full flex items-center justify-between gap-4 px-1 py-2.5 rounded-xl hover:bg-zinc-900/20 transition text-left group cursor-pointer bg-transparent border-none outline-none active:scale-[0.99] transition-transform disabled:opacity-75 disabled:cursor-wait"
+              className="w-full flex items-center gap-4 px-1 py-2.5 rounded-xl hover:bg-zinc-900/20 active:scale-[0.99] transition text-left cursor-pointer group bg-transparent border-none outline-none disabled:opacity-75 disabled:cursor-wait"
               aria-label={`Notifications: ${NOTIFICATION_STATUS_TEXT[notificationUiState]}`}
             >
-              <div className="flex items-center gap-4 min-w-0 flex-1">
-                <div className={`w-9 h-9 rounded-xl bg-zinc-900/60 border border-white/[0.02] flex items-center justify-center transition flex-shrink-0 ${
-                  notificationUiState === 'active'
-                    ? 'text-emerald-400 group-hover:text-emerald-300'
-                    : 'text-zinc-400 group-hover:text-white'
-                }`}>
-                  {notificationUiState === 'requesting_permission' || notificationUiState === 'setting_up' ? (
-                    <Loader2 className="w-4.5 h-4.5 animate-spin" />
-                  ) : (
-                    <Bell className="w-4.5 h-4.5" />
-                  )}
-                </div>
-                <div className="flex-1 text-left min-w-0">
-                  <span className="text-sm font-sans font-medium text-zinc-200 block">
-                    Notifications
-                  </span>
-                  <span className="text-[11px] font-sans text-zinc-500 block truncate">
-                    {NOTIFICATION_STATUS_TEXT[notificationUiState]}
-                  </span>
-                </div>
-              </div>
-
-              {/* Clear Enabled/Disabled Status Indicator */}
-              <div className="shrink-0 flex items-center">
-                {notificationUiState === 'active' ? (
-                  <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    ON
-                  </span>
+              <div className="w-9 h-9 rounded-xl bg-zinc-900/60 border border-white/[0.02] flex items-center justify-center text-zinc-400 transition group-hover:text-white flex-shrink-0">
+                {notificationUiState === 'requesting_permission' || notificationUiState === 'setting_up' ? (
+                  <Loader2 className="w-4.5 h-4.5 animate-spin" />
                 ) : (
-                  <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-white/[0.04]">
-                    OFF
-                  </span>
+                  <Bell className="w-4.5 h-4.5" />
                 )}
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <span className="text-sm font-sans font-medium text-zinc-200 block">
+                  Notifications
+                </span>
+                <span className="text-[11px] font-sans text-zinc-500 block truncate">
+                  {NOTIFICATION_STATUS_TEXT[notificationUiState]}
+                </span>
               </div>
             </button>
 
@@ -843,153 +846,231 @@ export const ProfileScreen = ({
         )}
 
         {/* 7. NOTIFICATIONS BLOCKED INSTRUCTIONS SHEET */}
-        {activeSheet === 'notificationsBlocked' && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={() => setActiveSheet(null)}
-              className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 pointer-events-auto"
-            />
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 28, stiffness: 260 }}
-              className="fixed bottom-0 left-0 right-0 w-full z-50 pointer-events-auto select-none"
-              style={{
-                background: "#18181B",
-                borderTopLeftRadius: 24,
-                borderTopRightRadius: 24,
-                borderTop: "1px solid rgba(255, 255, 255, 0.08)",
-                padding: "16px 20px 24px",
-                boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.4)",
-                paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex justify-center mb-4">
-                <div
-                  style={{
-                    width: 36,
-                    height: 5,
-                    borderRadius: 2.5,
-                    background: "rgba(255, 255, 255, 0.2)",
-                  }}
-                />
-              </div>
+        {activeSheet === 'notificationsBlocked' && (() => {
+          const detectedPlatform = pwaManager.getDevicePlatform();
+          const isAppStandalone = pwaManager.isStandalone();
 
-              <div className="mb-5 text-left">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-3">
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-                <h3 className="font-sans font-bold text-lg text-white mb-1 tracking-tight">
-                  Enable in Browser Settings
-                </h3>
-                <p className="text-zinc-400 font-sans text-xs leading-relaxed">
-                  Notifications are blocked for Planless in this browser. You can re-enable them in your device settings.
-                </p>
-              </div>
+          let blockedSheetTitle = 'Enable in Browser Settings';
+          let blockedSheetDesc = 'Notifications are blocked for Planless in this browser. You can re-enable them in your device settings.';
 
-              {pwaManager.getDevicePlatform() === 'android' ? (
-                <div className="space-y-3 mb-6 text-left">
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
-                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
-                      1
-                    </div>
-                    <div className="text-xs font-sans text-zinc-300 leading-normal">
-                      Tap the <span className="text-white font-medium">Page Info / Lock icon</span> in Chrome's top address bar.
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
-                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
-                      2
-                    </div>
-                    <div className="text-xs font-sans text-zinc-300 leading-normal">
-                      Tap <span className="text-white font-medium">Permissions</span> or <span className="text-white font-medium">Site settings</span>.
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
-                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
-                      3
-                    </div>
-                    <div className="text-xs font-sans text-zinc-300 leading-normal">
-                      Select <span className="text-white font-medium">Notifications</span> and set to <span className="text-white font-medium">Allow</span>, then return to Planless.
-                    </div>
-                  </div>
-                </div>
-              ) : pwaManager.getDevicePlatform() === 'ios' ? (
-                <div className="space-y-3 mb-6 text-left">
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
-                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
-                      1
-                    </div>
-                    <div className="text-xs font-sans text-zinc-300 leading-normal">
-                      Open the <span className="text-white font-medium">Settings</span> app on your iPhone or iPad.
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
-                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
-                      2
-                    </div>
-                    <div className="text-xs font-sans text-zinc-300 leading-normal">
-                      Tap <span className="text-white font-medium">Notifications</span> and select <span className="text-white font-medium">Planless</span>.
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
-                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
-                      3
-                    </div>
-                    <div className="text-xs font-sans text-zinc-300 leading-normal">
-                      Turn on <span className="text-white font-medium">Allow Notifications</span>, then switch back to Planless.
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3 mb-6 text-left">
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
-                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
-                      1
-                    </div>
-                    <div className="text-xs font-sans text-zinc-300 leading-normal">
-                      Click the <span className="text-white font-medium">Site settings or padlock icon</span> beside the address bar URL.
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
-                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
-                      2
-                    </div>
-                    <div className="text-xs font-sans text-zinc-300 leading-normal">
-                      Change <span className="text-white font-medium">Notifications</span> permission from Block to <span className="text-white font-medium">Allow</span>.
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
-                    <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
-                      3
-                    </div>
-                    <div className="text-xs font-sans text-zinc-300 leading-normal">
-                      Reload this page or return to the app to activate alerts.
-                    </div>
-                  </div>
-                </div>
-              )}
+          if (detectedPlatform === 'android') {
+            blockedSheetTitle = 'Enable Notifications in Settings';
+            blockedSheetDesc = isAppStandalone
+              ? 'Notifications are blocked for Planless in your Android settings. You can re-enable them in App Info.'
+              : 'Notifications are blocked for Planless in your browser settings. You can re-enable them in site permissions.';
+          } else if (detectedPlatform === 'ios') {
+            blockedSheetTitle = 'Enable Notifications in Settings';
+            blockedSheetDesc = isAppStandalone
+              ? 'Notifications are disabled for Planless in iOS Settings. You can re-enable them to receive plan updates.'
+              : 'On iPhone, notifications require adding Planless to your Home Screen.';
+          }
 
-              <button
-                type="button"
-                id="btn_dismiss_blocked_notifications_sheet"
-                onClick={() => {
-                  setActiveSheet(null);
-                  reconcileNotificationState(false);
+          return (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                onClick={() => setActiveSheet(null)}
+                className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 pointer-events-auto"
+              />
+              <motion.div
+                initial={{ y: "100%" }}
+                animate={{ y: 0 }}
+                exit={{ y: "100%" }}
+                transition={{ type: "spring", damping: 28, stiffness: 260 }}
+                className="fixed bottom-0 left-0 right-0 w-full z-50 pointer-events-auto select-none"
+                style={{
+                  background: "#18181B",
+                  borderTopLeftRadius: 24,
+                  borderTopRightRadius: 24,
+                  borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+                  padding: "16px 20px 24px",
+                  boxShadow: "0 -8px 24px rgba(0, 0, 0, 0.4)",
+                  paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
                 }}
-                className="w-full py-3.5 rounded-xl font-sans font-semibold text-sm text-black bg-white hover:bg-zinc-200 active:scale-[0.98] transition cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
               >
-                Got it
-              </button>
-            </motion.div>
-          </>
-        )}
+                <div className="flex justify-center mb-4">
+                  <div
+                    style={{
+                      width: 36,
+                      height: 5,
+                      borderRadius: 2.5,
+                      background: "rgba(255, 255, 255, 0.2)",
+                    }}
+                  />
+                </div>
+
+                <div className="mb-5 text-left">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-3">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-sans font-bold text-lg text-white mb-1 tracking-tight">
+                    {blockedSheetTitle}
+                  </h3>
+                  <p className="text-zinc-400 font-sans text-xs leading-relaxed">
+                    {blockedSheetDesc}
+                  </p>
+                </div>
+
+                {detectedPlatform === 'android' ? (
+                  isAppStandalone ? (
+                    <div className="space-y-3 mb-6 text-left">
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          1
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Open your phone's <span className="text-white font-medium">Settings</span> and tap <span className="text-white font-medium">Apps</span> (or <span className="text-white font-medium">App Management</span>).
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          2
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Find and select <span className="text-white font-medium">Planless</span> from your installed apps.
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          3
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Tap <span className="text-white font-medium">Notifications</span> and turn on <span className="text-white font-medium">Allow notifications</span>, then return to Planless.
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 mb-6 text-left">
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          1
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Tap the <span className="text-white font-medium">Page Info or Lock icon</span> (or <span className="text-white font-medium">⋮</span> menu) beside the address bar.
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          2
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Tap <span className="text-white font-medium">Permissions</span> or <span className="text-white font-medium">Site settings</span>.
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          3
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Select <span className="text-white font-medium">Notifications</span> and set to <span className="text-white font-medium">Allow</span>, then return to Planless.
+                        </div>
+                      </div>
+                    </div>
+                  )
+                ) : detectedPlatform === 'ios' ? (
+                  isAppStandalone ? (
+                    <div className="space-y-3 mb-6 text-left">
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          1
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Open the <span className="text-white font-medium">Settings</span> app on your iPhone or iPad.
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          2
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Tap <span className="text-white font-medium">Notifications</span> or scroll down to select <span className="text-white font-medium">Planless</span>.
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          3
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Turn on <span className="text-white font-medium">Allow Notifications</span>, then return to Planless.
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 mb-6 text-left">
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          1
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Tap the <span className="text-white font-medium">Share</span> button in Safari's bottom toolbar.
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          2
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Scroll down and tap <span className="text-white font-medium">Add to Home Screen</span>.
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                          3
+                        </div>
+                        <div className="text-xs font-sans text-zinc-300 leading-normal">
+                          Open Planless from your Home Screen and tap <span className="text-white font-medium">Enable Notifications</span>.
+                        </div>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="space-y-3 mb-6 text-left">
+                    <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                      <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                        1
+                      </div>
+                      <div className="text-xs font-sans text-zinc-300 leading-normal">
+                        Click the <span className="text-white font-medium">Site settings or padlock icon</span> beside the address bar URL.
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                      <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                        2
+                      </div>
+                      <div className="text-xs font-sans text-zinc-300 leading-normal">
+                        Change <span className="text-white font-medium">Notifications</span> permission from Block to <span className="text-white font-medium">Allow</span>.
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-900/60 border border-white/[0.04]">
+                      <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-amber-400 shrink-0 mt-0.5">
+                        3
+                      </div>
+                      <div className="text-xs font-sans text-zinc-300 leading-normal">
+                        Reload this page or return to the app to activate alerts.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  id="btn_dismiss_blocked_notifications_sheet"
+                  onClick={() => {
+                    setActiveSheet(null);
+                    reconcileNotificationState(false);
+                  }}
+                  className="w-full py-3.5 rounded-xl font-sans font-semibold text-sm text-black bg-white hover:bg-zinc-200 active:scale-[0.98] transition cursor-pointer"
+                >
+                  Got it
+                </button>
+              </motion.div>
+            </>
+          );
+        })()}
 
       </AnimatePresence>
 

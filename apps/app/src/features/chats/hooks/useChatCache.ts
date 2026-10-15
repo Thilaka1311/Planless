@@ -208,6 +208,81 @@ export const markPlanChatReadInCache = (planUuid: string, latestMessageId?: stri
   }
 };
 
+// In-flight preload promises to avoid duplicate fetches
+const inFlightChatPreloads = new Map<string, Promise<void>>();
+
+/**
+ * Pre-warms messages for a given plan in the background before the user navigates to it.
+ * When the user opens PlanChatScreen, messages are already in cache, rendering immediately.
+ */
+export const preloadPlanChat = async (targetPlanUuid: string): Promise<void> => {
+  if (!targetPlanUuid) return;
+
+  const existing = planCache.messages.get(targetPlanUuid);
+  const now = Date.now();
+  // If already loaded and synced recently (< 30s), it's already warm
+  if (existing && existing.data.length > 0 && now - existing.lastSynced < 30000) {
+    return;
+  }
+
+  const inFlight = inFlightChatPreloads.get(targetPlanUuid);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const preloadPromise = (async () => {
+    try {
+      const { data, error } = await supabase
+        .from("plan_messages")
+        .select("id, plan_id, sender_id, message_type, content, created_at, updated_at, system_message_type")
+        .eq("plan_id", targetPlanUuid)
+        .order("created_at", { ascending: false })
+        .limit(CHAT_MESSAGES_PAGE_SIZE);
+
+      if (error) {
+        console.warn("[preloadPlanChat] Error preloading plan messages:", error);
+        return;
+      }
+
+      if (data) {
+        const serverMsgs = (data as ChatMessage[]).reverse();
+        const current = planCache.messages.get(targetPlanUuid);
+        const optimisticMsgs = (current?.data || []).filter((m) => !m.id.startsWith("temp-"));
+        const merged = [...serverMsgs, ...optimisticMsgs];
+        const hasMore = (data as ChatMessage[]).length === CHAT_MESSAGES_PAGE_SIZE;
+
+        planCache.messages.set(targetPlanUuid, {
+          data: merged,
+          loading: false,
+          loadingOlder: false,
+          hasMoreOlder: hasMore,
+          lastSynced: Date.now(),
+        });
+        notifyListeners("messages", targetPlanUuid);
+      }
+    } catch (err) {
+      console.warn("[preloadPlanChat] Unexpected error during chat pre-warm:", err);
+    } finally {
+      inFlightChatPreloads.delete(targetPlanUuid);
+    }
+  })();
+
+  inFlightChatPreloads.set(targetPlanUuid, preloadPromise);
+  return preloadPromise;
+};
+
+/**
+ * Clears all in-memory chat and plan caches upon logout or account switch.
+ */
+export const clearAllPlanCaches = () => {
+  planCache.messages.clear();
+  planCache.participants.clear();
+  planCache.activities.clear();
+  planCache.unreadInfo.clear();
+  chatSummariesCache.clear();
+  inFlightChatPreloads.clear();
+};
+
 /**
  * Append or update a message in cache in realtime (called globally across the app)
  */

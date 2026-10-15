@@ -118,11 +118,11 @@ describe('Cross-Platform Push Notification Permissions & Profile UI', () => {
     expect(NOTIFICATION_STATUS_TEXT.permission_not_requested).toBe('Tap to enable notifications');
     expect(NOTIFICATION_STATUS_TEXT.requesting_permission).toBe('Requesting permission…');
     expect(NOTIFICATION_STATUS_TEXT.setting_up).toBe('Setting up notifications…');
-    expect(NOTIFICATION_STATUS_TEXT.active).toBe('On · Active on this device');
-    expect(NOTIFICATION_STATUS_TEXT.denied).toBe('Blocked · Enable in browser settings');
+    expect(NOTIFICATION_STATUS_TEXT.active).toBe('Enabled on this device');
+    expect(NOTIFICATION_STATUS_TEXT.denied).toBe('Blocked in browser settings');
     expect(NOTIFICATION_STATUS_TEXT.unsupported).toBe('Notifications unavailable in this browser');
     expect(NOTIFICATION_STATUS_TEXT.failed).toBe('Setup failed · Tap to retry');
-    expect(NOTIFICATION_STATUS_TEXT.disabled).toBe('Off · Tap to enable');
+    expect(NOTIFICATION_STATUS_TEXT.disabled).toBe('Tap to enable notifications');
     expect(NOTIFICATION_STATUS_TEXT.ios_pwa_required).toBe('Add to Home Screen required on iPhone');
   });
 
@@ -300,5 +300,178 @@ describe('Cross-Platform Push Notification Permissions & Profile UI', () => {
     // 5. Visibility and focus reconciliation listeners present
     expect(content).toContain("document.addEventListener('visibilitychange'");
     expect(content).toContain("window.addEventListener('focus'");
+
+    // 6. Permissions API change listener present
+    expect(content).toContain("navigator.permissions.query");
+
+    // 7. Platform-adaptive sheet content present
+    expect(content).toContain("pwaManager.getDevicePlatform()");
+    expect(content).toContain("pwaManager.isStandalone()");
+    expect(content).toContain("Enable Notifications in Settings");
+    expect(content).toContain("Enable in Browser Settings");
+
+    // 8. Neutral styling verified: no green styling or ON/OFF badge in notifications row
+    expect(content).not.toContain('text-emerald-');
+    expect(content).not.toContain('>ON</span>');
+    expect(content).not.toContain('>OFF</span>');
+  });
+
+  // 13. Scenario 1 & 2: Android Chrome permission denied
+  it('Scenario 2: flags permissionDenied when Android Chrome user blocks notifications in site settings', async () => {
+    setMockNavigator({
+      userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+    });
+    setMockNotification({
+      permission: 'denied',
+    });
+
+    const detailedPerm = await pwaManager.getDetailedPermissionState();
+    expect(detailedPerm).toBe('denied');
+
+    const result = await pwaManager.subscribeToPush('test-user-uuid');
+    expect(result.success).toBe(false);
+    expect(result.permissionDenied).toBe(true);
+    expect(pwaManager.getDevicePlatform()).toBe('android');
+    expect(pwaManager.isStandalone()).toBe(false);
+  });
+
+  // 14. Scenario 3: Installed Android PWA with notifications disabled at OS level
+  it('Scenario 3: handles installed Android PWA when Android 13+ OS notification permission is blocked', async () => {
+    setMockNavigator({
+      userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+      serviceWorker: {
+        ready: Promise.resolve({
+          active: {} as any,
+          pushManager: {
+            getSubscription: vi.fn().mockResolvedValue(null),
+            // When OS notifications are blocked on Android 13+, subscribe throws NotAllowedError
+            subscribe: vi.fn().mockRejectedValue(new DOMException('Registration failed - permission denied', 'NotAllowedError')),
+          },
+        }),
+      },
+    });
+    (globalThis as any).window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    setMockNotification({
+      permission: 'granted', // Browser permission may appear granted while OS blocks it
+    });
+
+    expect(pwaManager.getDevicePlatform()).toBe('android');
+    expect(pwaManager.isStandalone()).toBe(true);
+
+    const result = await pwaManager.subscribeToPush('test-user-uuid');
+    expect(result.success).toBe(false);
+    expect(result.permissionDenied).toBe(true);
+    expect(result.error).toContain('Notification permission was denied or blocked by device settings');
+  });
+
+  // 15. Scenario 4: iOS Home Screen PWA with permission denied
+  it('Scenario 4: handles iOS Home Screen PWA permission denied and routes to settings guidance', async () => {
+    setMockNavigator({
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+      standalone: true,
+    });
+    (globalThis as any).window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    setMockNotification({
+      permission: 'denied',
+      requestPermission: vi.fn().mockResolvedValue('denied'),
+    });
+
+    expect(pwaManager.getDevicePlatform()).toBe('ios');
+    expect(pwaManager.isStandalone()).toBe(true);
+    expect(pwaManager.isIosSafariWithoutPwa()).toBe(false);
+
+    const detailedPerm = await pwaManager.getDetailedPermissionState();
+    expect(detailedPerm).toBe('denied');
+
+    const result = await pwaManager.subscribeToPush('test-user-uuid');
+    expect(result.success).toBe(false);
+    expect(result.permissionDenied).toBe(true);
+  });
+
+  // 16. Scenario 6: Permission granted but subscription missing — registration is attempted
+  it('Scenario 6: attempts pushManager.subscribe when permission is granted but subscription is missing', async () => {
+    const subscribeSpy = vi.fn().mockResolvedValue(mockPushSubscription);
+    setMockNavigator({
+      serviceWorker: {
+        ready: Promise.resolve({
+          active: {} as any,
+          pushManager: {
+            getSubscription: vi.fn().mockResolvedValue(null),
+            subscribe: subscribeSpy,
+          },
+        }),
+      },
+    });
+    setMockNotification({
+      permission: 'granted',
+    });
+
+    const result = await pwaManager.subscribeToPush('test-user-uuid');
+    expect(subscribeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userVisibleOnly: true,
+      })
+    );
+    expect(result.success).toBe(true);
+  });
+
+  // 17. Scenario 8: Registration failure does not mark notifications enabled
+  it('Scenario 8: ensures registration failure returns error without claiming active status', async () => {
+    setMockNavigator({
+      serviceWorker: {
+        ready: Promise.resolve({
+          active: {} as any,
+          pushManager: {
+            getSubscription: vi.fn().mockResolvedValue(null),
+            subscribe: vi.fn().mockRejectedValue(new Error('Network error connecting to push service')),
+          },
+        }),
+      },
+    });
+    setMockNotification({
+      permission: 'granted',
+    });
+
+    const result = await pwaManager.subscribeToPush('test-user-uuid');
+    expect(result.success).toBe(false);
+    expect(result.permissionDenied).toBeFalsy();
+    expect(result.error).toContain('Network error connecting to push service');
+  });
+
+  // 18. Scenario 9: Permissions API query cross-check where supported
+  it('Scenario 9: getDetailedPermissionState cross-checks navigator.permissions.query', async () => {
+    setMockNotification({
+      permission: 'default',
+    });
+
+    const mockPermissionsQuery = vi.fn().mockResolvedValue({ state: 'denied', onchange: null });
+    (globalThis as any).navigator.permissions = {
+      query: mockPermissionsQuery,
+    };
+
+    const state = await pwaManager.getDetailedPermissionState();
+    expect(mockPermissionsQuery).toHaveBeenCalledWith({ name: 'notifications' });
+    expect(state).toBe('denied');
+  });
+
+  // 19. Scenario 10: Existing notification delivery payload structure preserved
+  it('Scenario 10: preserves existing database payload format with endpoint, auth, p256dh, and platform', async () => {
+    setMockNotification({
+      permission: 'granted',
+    });
+
+    await pwaManager.subscribeToPush('test-user-uuid');
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'test-user-uuid',
+        endpoint: mockPushSubscription.endpoint,
+        p256dh: 'mock-p256dh-key',
+        auth: 'mock-auth-secret',
+        platform: expect.stringMatching(/^(ios|android|desktop)$/),
+        is_active: true,
+        last_seen_at: expect.any(String),
+      }),
+      { onConflict: 'endpoint' }
+    );
   });
 });

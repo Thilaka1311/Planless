@@ -17,6 +17,12 @@ import {
 import { isValidRoute } from "./features/navigation/appRouter";
 import { lazyWithRetry } from "./shared/utils/lazyWithRetry";
 
+import { AnimatePresence } from "motion/react";
+import { SplashScreen } from "./components/SplashScreen";
+import { clearAllPlanCaches } from "./features/chats/hooks/useChatCache";
+import { invalidateQuickPlansFetchCache } from "./features/create/hooks/useQuickPlans";
+import { invalidateFriendshipsUsersCache } from "./features/friendships/screens/FriendshipsScreen";
+
 const PlansProviderComp = PlansProvider as React.ComponentType<{ children: React.ReactNode; userId?: string }>;
 
 const OnboardingFlow = lazyWithRetry(
@@ -26,16 +32,7 @@ const OnboardingFlow = lazyWithRetry(
 const MainApp = lazyWithRetry(() => import("./MainApp"), "MainApp");
 
 const FlowLoadingFallback = (
-  <div className="h-[100dvh] w-screen bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
-    <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#ff5e3a]/10 blur-[120px] pointer-events-none" />
-    <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
-    <div className="flex flex-col items-center space-y-6 z-10">
-      <h1 className="text-white text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-zinc-200 to-zinc-400">
-        Planless
-      </h1>
-      <div className="w-6 h-6 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
-    </div>
-  </div>
+  <div className="h-[100dvh] w-screen bg-[#000000] flex items-center justify-center relative overflow-hidden" />
 );
 
 export default function App() {
@@ -143,6 +140,15 @@ function AppContent({
 }) {
   const { userProfile, setUserProfile } = useProfileStore();
   const [appState, setAppState] = useState<"initializing" | "unauthenticated" | "ready" | "startupError" | "retrying">("initializing");
+  const [showSplash, setShowSplash] = useState(true);
+
+  const isAppReady = appState === "ready" || appState === "unauthenticated";
+
+  useEffect(() => {
+    if (appState === "startupError") {
+      setShowSplash(false);
+    }
+  }, [appState]);
   
   const isRestoringRef = useRef(false);
   const lastInitializedUserIdRef = useRef<string | null>(null);
@@ -354,6 +360,9 @@ function AppContent({
     } catch (e) {
       console.warn("Failed to sign out via Supabase auth:", e);
     }
+    clearAllPlanCaches();
+    invalidateQuickPlansFetchCache();
+    invalidateFriendshipsUsersCache();
     setUserProfile(null);
     localStorage.removeItem(localStorageKey);
     localStorage.removeItem("planless_active_tab");
@@ -370,23 +379,16 @@ function AppContent({
 
   return (
     <>
-      {appState === "initializing" || appState === "retrying" ? (
-        <div className="h-full w-full min-h-full bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
-          {/* Sleek Gradient Glows */}
-          <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#ff5e3a]/10 blur-[120px] pointer-events-none" />
-          <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
-          
-          <div className="flex flex-col items-center space-y-6 z-10">
-            <h1 className="text-white text-4xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-zinc-200 to-zinc-400">
-              Planless
-            </h1>
-            <div className="w-6 h-6 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
-            <p className="text-zinc-400 text-xs tracking-widest uppercase font-bold animate-pulse">
-              {appState === "retrying" ? "Reconnecting..." : "Setting things up..."}
-            </p>
-          </div>
-        </div>
-      ) : appState === "startupError" ? (
+      <AnimatePresence>
+        {showSplash && (
+          <SplashScreen
+            isReady={isAppReady}
+            onDismiss={() => setShowSplash(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {appState === "startupError" ? (
         <div className="h-full w-full min-h-full bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden p-6">
           <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-[#ff5e3a]/10 blur-[120px] pointer-events-none" />
           <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-violet-600/10 blur-[120px] pointer-events-none" />
@@ -422,6 +424,14 @@ function AppContent({
               </button>
             </div>
           </div>
+        </div>
+      ) : appState === "initializing" || appState === "retrying" ? (
+        <div className="h-full w-full min-h-full bg-[#000000] flex items-center justify-center font-sans relative overflow-hidden">
+          {appState === "retrying" && (
+            <p className="text-zinc-400 text-xs tracking-widest uppercase font-bold animate-pulse">
+              Reconnecting...
+            </p>
+          )}
         </div>
       ) : (
         <div className="h-full w-full min-h-full bg-[#050505] flex flex-col font-sans selection:bg-[#ff5e3a]/35 overflow-hidden">

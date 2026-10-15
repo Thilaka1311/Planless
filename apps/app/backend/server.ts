@@ -694,7 +694,7 @@ self.addEventListener('notificationclose', (event) => {
     console.log(`Planless Fullstack App server booted on http://localhost:${PORT}`);
     // seedDefaultUsers();
     if (env.NODE_ENV !== "production") {
-      ensureNgrokTunnel(PORT);
+      ensureCloudflareTunnel(PORT);
       ensureEdgeFunctions();
     }
   });
@@ -754,97 +754,129 @@ async function ensureEdgeFunctions() {
   }
 }
 
-let ngrokProcess: ChildProcess | null = null;
+let cloudflareTunnelUrl: string | null = null;
 
-async function getNgrokTunnelUrl(): Promise<string | null> {
-  for (const p of [4040, 4041]) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${p}/api/tunnels`);
-      if (res.ok) {
-        const data: any = await res.json();
-        const tunnel = data.tunnels?.find((t: any) => t.proto === "https") || data.tunnels?.[0];
-        if (tunnel?.public_url) return tunnel.public_url;
+async function getRunningCloudflareTunnelUrl(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const proc = spawn("docker", ["logs", "cf_tunnel"], { stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    proc.stdout?.on("data", (d) => { output += d.toString(); });
+    proc.stderr?.on("data", (d) => { output += d.toString(); });
+    proc.on("close", (code) => {
+      if (code === 0 && output) {
+        const matches = output.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/g);
+        if (matches && matches.length > 0) {
+          return resolve(matches[matches.length - 1]);
+        }
       }
-    } catch {}
-  }
-  return null;
+      resolve(null);
+    });
+    proc.on("error", () => resolve(null));
+  });
 }
 
-async function ensureNgrokTunnel(port: number) {
-  if (process.env.DISABLE_NGROK === "true") return;
-
-  // 1. Check if ngrok is already running on 4040/4041
-  let url = await getNgrokTunnelUrl();
-  if (url) {
-    console.log(`\n🚀 [ngrok] Public tunnel active: ${url}\n`);
-    return;
-  }
-
-
-  // 2. Spawn ngrok process with explicit authtoken if provided
-  try {
-    const authtoken = process.env.NGROK_AUTHTOKEN;
-    const ngrokArgs = ["http", String(port)];
-    if (authtoken) {
-      ngrokArgs.push("--authtoken", authtoken);
-    }
-
-    const ngrokBin = process.env.NGROK_BIN || "ngrok";
-    ngrokProcess = spawn(ngrokBin, ngrokArgs, {
+async function isCloudflareContainerRunning(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proc = spawn("docker", ["ps", "--filter", "name=cf_tunnel", "--format", "{{.Names}}"], {
       stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        PATH: `${process.env.PATH || ""}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`,
-      },
     });
+    let output = "";
+    proc.stdout?.on("data", (d) => { output += d.toString(); });
+    proc.on("close", (code) => {
+      resolve(code === 0 && output.trim().includes("cf_tunnel"));
+    });
+    proc.on("error", () => resolve(false));
+  });
+}
 
-    ngrokProcess.stderr?.on("data", (chunk: Buffer) => {
-      const msg = chunk.toString();
-      if (msg.includes("ERR_") || msg.toLowerCase().includes("authentication failed")) {
-        console.warn(`[ngrok] ${msg.trim()}`);
+async function syncTunnelUrlToFunctions(url: string) {
+  try {
+    const envPath = path.resolve(__dirname, "../../../supabase/functions/.env");
+    if (fs.existsSync(envPath)) {
+      let content = fs.readFileSync(envPath, "utf-8");
+      if (content.includes("PUBLIC_BASE_URL=")) {
+        content = content.replace(/PUBLIC_BASE_URL=.*(\r?\n|$)/, `PUBLIC_BASE_URL=${url}$1`);
+      } else {
+        content += `\nPUBLIC_BASE_URL=${url}\n`;
       }
-    });
+      fs.writeFileSync(envPath, content, "utf-8");
+    }
+  } catch {}
+}
 
-    ngrokProcess.on("error", (err) => {
-      console.warn(`[ngrok] Could not launch ngrok: ${err.message}`);
-    });
+async function ensureCloudflareTunnel(port: number) {
+  if (process.env.DISABLE_CLOUDFLARE === "true") return;
 
-    ngrokProcess.on("exit", (code) => {
-      if (code !== 0 && code !== null) {
-        console.warn(`[ngrok] Process exited with code ${code}`);
-      }
-      ngrokProcess = null;
-    });
-
-    const cleanup = () => {
-      if (ngrokProcess && !ngrokProcess.killed) {
-        try {
-          ngrokProcess.kill("SIGTERM");
-        } catch {}
-      }
-    };
-    process.once("SIGINT", () => {
-      cleanup();
-      process.exit(0);
-    });
-    process.once("SIGTERM", () => {
-      cleanup();
-      process.exit(0);
-    });
-    process.once("exit", cleanup);
-
-    // 3. Poll for the tunnel URL up to 10 seconds
-    for (let i = 0; i < 20; i++) {
-      await new Promise((r) => setTimeout(r, 500));
-      url = await getNgrokTunnelUrl();
-      if (url) {
-        console.log(`\n🚀 [ngrok] Public tunnel active: ${url}\n`);
+  try {
+    const isRunning = await isCloudflareContainerRunning();
+    if (isRunning) {
+      const existingUrl = await getRunningCloudflareTunnelUrl();
+      if (existingUrl) {
+        cloudflareTunnelUrl = existingUrl;
+        await syncTunnelUrlToFunctions(existingUrl);
+        console.log(`\n🚀 [Cloudflare] Persistent tunnel active: ${existingUrl}`);
+        console.log(`⚡ [Cloudflare] Connected to localhost:${port} and local Supabase (/auth/v1, /rest/v1, /storage/v1, /realtime/v1, /functions/v1)\n`);
         return;
       }
     }
-    console.warn("[ngrok] Tunnel started but public URL not resolved yet. Check http://127.0.0.1:4040");
+
+    // Check if stopped container exists, start it to retain persistent tunnel link
+    const hasExisting = await new Promise<boolean>((resolve) => {
+      const proc = spawn("docker", ["ps", "-a", "--filter", "name=cf_tunnel", "--format", "{{.Names}}"], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let output = "";
+      proc.stdout?.on("data", (d) => { output += d.toString(); });
+      proc.on("close", (code) => resolve(code === 0 && output.trim().includes("cf_tunnel")));
+      proc.on("error", () => resolve(false));
+    });
+
+    if (hasExisting) {
+      console.log("⚡ [Cloudflare] Starting existing cf_tunnel container...");
+      await new Promise((resolve) => {
+        const proc = spawn("docker", ["start", "cf_tunnel"]);
+        proc.on("close", resolve);
+      });
+    } else {
+      console.log("⚡ [Cloudflare] Spawning new persistent cf_tunnel container...");
+      const token = process.env.CLOUDFLARE_TUNNEL_TOKEN;
+      const dockerArgs = [
+        "run",
+        "-d",
+        "--name",
+        "cf_tunnel",
+        "--restart",
+        "always",
+        "--add-host=host.docker.internal:host-gateway",
+        "cloudflare/cloudflared:latest",
+        "tunnel",
+      ];
+      if (token) {
+        dockerArgs.push("run", "--token", token);
+      } else {
+        dockerArgs.push("--url", `http://host.docker.internal:${port}`);
+      }
+
+      await new Promise((resolve) => {
+        const proc = spawn("docker", dockerArgs);
+        proc.on("close", resolve);
+      });
+    }
+
+    // Poll for the URL
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const url = await getRunningCloudflareTunnelUrl();
+      if (url) {
+        cloudflareTunnelUrl = url;
+        await syncTunnelUrlToFunctions(url);
+        console.log(`\n🚀 [Cloudflare] Persistent tunnel active: ${url}`);
+        console.log(`⚡ [Cloudflare] Connected to localhost:${port} and local Supabase (/auth/v1, /rest/v1, /storage/v1, /realtime/v1, /functions/v1)\n`);
+        return;
+      }
+    }
   } catch (err: any) {
-    console.warn(`[ngrok] Failed to launch ngrok: ${err.message}`);
+    console.warn(`[Cloudflare] Could not ensure tunnel: ${err.message}`);
   }
 }
 

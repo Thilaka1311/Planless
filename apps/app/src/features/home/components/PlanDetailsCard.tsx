@@ -250,11 +250,7 @@ const ParticipantToggleBarComponent: React.FC<ParticipantToggleBarProps> = ({
         <div className="flex flex-col text-left min-w-0 w-full font-sans">
           <h2
             title={planTitle || plan.title}
-            className={`font-sans font-black text-[22px] text-white tracking-tight leading-tight mb-1.5 drop-shadow-sm ${
-              isExpanded
-                ? "line-clamp-2 whitespace-normal break-words"
-                : "truncate"
-            }`}
+            className="font-sans font-black text-[22px] text-white tracking-tight leading-tight mb-1.5 drop-shadow-sm whitespace-normal break-words"
           >
             {planTitle || plan.title}
           </h2>

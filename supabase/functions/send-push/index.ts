@@ -461,7 +461,7 @@ Deno.serve(async (req: Request) => {
     }
     // If empty or local, default to active public Cloudflare tunnel
     if (!publicBaseUrl || publicBaseUrl.includes("localhost") || publicBaseUrl.includes("127.0.0.1")) {
-      publicBaseUrl = Deno.env.get("PUBLIC_BASE_URL") || "https://highlighted-rubber-agriculture-cure.trycloudflare.com";
+      publicBaseUrl = Deno.env.get("PUBLIC_BASE_URL") || "https://vegetarian-bangkok-leu-project.trycloudflare.com";
     }
 
     // SCENARIO 1: Automated Scheduled Reminders Check (Disabled per requirement)

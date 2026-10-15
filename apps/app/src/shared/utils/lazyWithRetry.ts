@@ -57,16 +57,40 @@ export function createRetryableLoader<T extends React.ComponentType<any>>(
   };
 }
 
+export type PreloadableComponent<T extends React.ComponentType<any>> =
+  React.LazyExoticComponent<T> & {
+    preload: () => Promise<{ default: T } | any>;
+  };
+
 /**
  * Resilient wrapper around React.lazy for code-split chunks.
  * If a chunk fails to load due to a stale hash after a new Vercel deployment:
  * 1. Checks if a recovery reload was already attempted for this module.
  * 2. If not, performs a controlled ONE-TIME recovery into the latest deployment.
  * 3. If already attempted, rethrows the error to the ErrorBoundary to prevent infinite reload loops.
+ *
+ * Exposes a .preload() method so high-probability navigation targets can be fetched in advance.
  */
 export function lazyWithRetry<T extends React.ComponentType<any>>(
   factory: () => Promise<{ default: T } | any>,
   chunkName = 'chunk'
-): React.LazyExoticComponent<T> {
-  return React.lazy(createRetryableLoader(factory, chunkName));
+): PreloadableComponent<T> {
+  const retryableLoader = createRetryableLoader(factory, chunkName);
+  let preloadPromise: Promise<{ default: T } | any> | null = null;
+
+  const load = () => {
+    if (!preloadPromise) {
+      preloadPromise = retryableLoader().catch((err) => {
+        // Clear cached promise on failure so subsequent attempts can retry
+        preloadPromise = null;
+        throw err;
+      });
+    }
+    return preloadPromise;
+  };
+
+  const Component = React.lazy(load) as PreloadableComponent<T>;
+  Component.preload = load;
+  return Component;
 }
+

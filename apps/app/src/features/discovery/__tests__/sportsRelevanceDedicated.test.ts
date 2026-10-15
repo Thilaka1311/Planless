@@ -434,6 +434,37 @@ describe("Sports Relevance Dedicated Suite (Section 17 Requirements)", () => {
         expect(scoreSportsVenueRelevance(venue, "all").isRelevant).toBe(true);
       }
     });
+
+    it("strictly rejects water purifiers, aqua systems, pet stores, and pool equipment contractors from All Sports and specific categories", () => {
+      const irrelevantBusinesses = [
+        createPlace({ title: "Hi World Aqua System", types: ["swimming_pool", "establishment"] }),
+        createPlace({ title: "Aqua Pet Store", types: ["pet_store", "store"] }),
+        createPlace({ title: "Aqua Pure RO Plant", subcategory: "RO Water Purifier" }),
+        createPlace({ title: "Crystal Pool Systems & Maintenance", types: ["swimming_pool"] }),
+        createPlace({ title: "Neer Aqua Care & Filtration", types: ["establishment"] }),
+        createPlace({ title: "Fish Aquarium & Pet Shop", types: ["aquarium", "store"] }),
+        createPlace({ title: "Bangalore Borewell Water Supply", types: ["establishment"] }),
+      ];
+
+      for (const place of irrelevantBusinesses) {
+        expect(isSportVenueRelevant(place, "all")).toBe(false);
+        expect(isSportVenueRelevant(place, "other")).toBe(false);
+        expect(scoreSportsVenueRelevance(place, "all").score).toBeLessThan(0);
+      }
+    });
+
+    it("accepts genuine swimming pools and academies in 'all' and 'other' sport categories", () => {
+      const genuinePools = [
+        createPlace({ title: "AquaFit Swimming Pool Centre", types: ["swimming_pool"] }),
+        createPlace({ title: "Koramangala Swimming Pool", types: ["swimming_pool"] }),
+      ];
+
+      for (const pool of genuinePools) {
+        expect(isSportVenueRelevant(pool, "all")).toBe(true);
+        expect(isSportVenueRelevant(pool, "other")).toBe(true);
+        expect(scoreSportsVenueRelevance(pool, "all").isRelevant).toBe(true);
+      }
+    });
   });
 });
 

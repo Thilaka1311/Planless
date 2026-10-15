@@ -3,6 +3,7 @@ import {
   VenueMetadataLike,
   isGeneralPurposeGym,
   isPublicGround,
+  isPlayableSportsVenue,
 } from "./venueRelevance";
 
 export function extractSportsList(sub: string[] | string | null | undefined): string[] {
@@ -354,7 +355,9 @@ export const SPORTS_CONFIGS: Record<SportCategoryId, SportSearchConfig> = {
     strongPositiveKeywords: [
       "swim",
       "swimming pool",
-      "aquatic",
+      "aquatic centre",
+      "aquatic center",
+      "aquatics centre",
       "squash",
       "golf",
       "volleyball",
@@ -464,6 +467,18 @@ const RETAIL_KEYWORDS = [
   "t-shirt",
   "sales",
   "opticals",
+  "pet store",
+  "pet shop",
+  "pet supplies",
+  "pet food",
+  "aquarium shop",
+  "aquarium store",
+  "aquatics store",
+  "fish store",
+  "water purifier",
+  "water plant",
+  "aqua system",
+  "ro water",
 ];
 
 const OFFICE_KEYWORDS = [
@@ -523,7 +538,9 @@ export function normalizeSportCategory(sub: string): SportCategoryId | null {
   if (
     s.includes("swimming") ||
     s.includes("pool") ||
-    s.includes("aquatic") ||
+    s.includes("aquatic centre") ||
+    s.includes("aquatic center") ||
+    s.includes("aquatics centre") ||
     s.includes("squash") ||
     s.includes("golf") ||
     s.includes("skate")
@@ -556,7 +573,13 @@ export function scoreSportsVenueRelevance(
   let score = 0;
   const breakdown: string[] = [];
 
-  // ── 1. NEGATIVE SCORING & HARD REJECTIONS (Gyms, Public Grounds, Offices, Retail, Clinics) ──
+  // ── 1. NEGATIVE SCORING & HARD REJECTIONS (Playable Venue, Gyms, Public Grounds, Offices, Retail, Clinics) ──
+  if (!isPlayableSportsVenue(place)) {
+    score -= 100;
+    breakdown.push("Not a playable sports venue (-100)");
+    return { score, isRelevant: false, isStronglyRelevant: false, breakdown };
+  }
+
   if (isGeneralPurposeGym(place)) {
     score -= 100;
     breakdown.push("General-purpose gym / fitness centre (-100)");
@@ -578,6 +601,21 @@ export function scoreSportsVenueRelevance(
       "shopping_mall",
       "home_goods_store",
       "store",
+      "pet_store",
+      "aquarium",
+      "hardware_store",
+      "electronics_store",
+      "convenience_store",
+      "supermarket",
+      "grocery_or_supermarket",
+      "liquor_store",
+      "pharmacy",
+      "furniture_store",
+      "wholesaler",
+      "general_contractor",
+      "plumber",
+      "electrician",
+      "roofing_contractor",
     ].includes(t)
   );
 

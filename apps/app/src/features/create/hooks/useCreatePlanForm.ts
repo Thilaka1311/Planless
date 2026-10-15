@@ -282,8 +282,8 @@ export function useCreatePlanForm() {
 
   const handleSetTotalCapacity = useCallback((val: number | undefined | null) => {
     const nextVal = (val === null || val === undefined) ? undefined : val;
-    setTotalCapacity(nextVal);
-    setIsCapacityManuallySet(nextVal !== undefined);
+    setTotalCapacity((prev) => (prev === nextVal ? prev : nextVal));
+    setIsCapacityManuallySet((prev) => (prev === (nextVal !== undefined) ? prev : nextVal !== undefined));
   }, []);
 
   const handleSetWaitlistMode = useCallback((newMode: 'automatic' | 'assigned') => {
@@ -305,8 +305,24 @@ export function useCreatePlanForm() {
   const handleSetSelectedFriends = useCallback((updater: any[] | ((prev: any[]) => any[])) => {
     setSelectedFriends((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (
+        prev.length === next.length &&
+        prev.every((f, i) => (f.id || f.dbUuid) === (next[i]?.id || next[i]?.dbUuid))
+      ) {
+        return prev;
+      }
       const ids = next.map((f: any) => f.id || f.dbUuid).filter(Boolean);
       setIndividuallySelectedFriendIds(ids);
+      return next;
+    });
+  }, []);
+
+  const handleSetPriorityGuestIds = useCallback((updater: string[] | ((prev: string[]) => string[])) => {
+    setPriorityGuestIds((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (prev.length === next.length && prev.every((id, i) => id === next[i])) {
+        return prev;
+      }
       return next;
     });
   }, []);
@@ -412,7 +428,7 @@ export function useCreatePlanForm() {
     customOriginalImage, customOriginalBlob,
     setCustomPlanImages,
     isHostSelected, setIsHostSelected,
-    priorityGuestIds, setPriorityGuestIds,
+    priorityGuestIds, setPriorityGuestIds: handleSetPriorityGuestIds,
     placeId, setPlaceId,
     latitude, setLatitude,
     longitude, setLongitude,

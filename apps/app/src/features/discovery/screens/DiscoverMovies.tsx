@@ -35,6 +35,23 @@ import type { MoviePortraitCardProps } from "../components/MoviePortraitCard";
 export { MoviePortraitCard };
 export type { MoviePortraitCardProps };
 
+export const MovieGridSkeleton: React.FC = () => (
+  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pointer-events-none select-none">
+    {[1, 2, 3, 4, 5, 6].map((i) => (
+      <div
+        key={i}
+        className="flex flex-col rounded-2xl overflow-hidden bg-[#121216] border border-white/[0.06] animate-pulse"
+      >
+        <div className="w-full aspect-[2/3] bg-white/[0.04]" />
+        <div className="p-2.5 space-y-2">
+          <div className="h-3.5 w-3/4 bg-white/[0.07] rounded" />
+          <div className="h-3 w-1/2 bg-white/[0.04] rounded" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
 export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
   sections = [],
   isAdmin: propIsAdmin = false,
@@ -470,28 +487,8 @@ export const DiscoverMovies: React.FC<DiscoverMoviesProps> = ({
       {/* ── 4. COMPACT TWO-COLUMN MOVIE GRID ── */}
       <div className="flex-1 px-5 pt-1 pb-8">
         {/* Loading state */}
-        {isSearching ? (
-          <div className="flex flex-col items-center justify-center py-20 space-y-3">
-            <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
-            <p className="text-xs text-zinc-400 font-medium">
-              Searching 2026 movies...
-            </p>
-          </div>
-        ) : isLoadingFeeds && displayedMovies.length === 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div
-                key={i}
-                className="flex flex-col rounded-2xl overflow-hidden bg-[#121216] border border-white/[0.06] animate-pulse"
-              >
-                <div className="w-full aspect-[2/3] bg-white/[0.04]" />
-                <div className="p-2.5 space-y-2">
-                  <div className="h-3.5 w-3/4 bg-white/[0.07] rounded" />
-                  <div className="h-3 w-1/2 bg-white/[0.04] rounded" />
-                </div>
-              </div>
-            ))}
-          </div>
+        {isSearching || (isLoadingFeeds && displayedMovies.length === 0) ? (
+          <MovieGridSkeleton />
         ) : loadError && displayedMovies.length === 0 ? (
           <div className="py-16 flex flex-col items-center justify-center text-center space-y-3">
             <AlertCircle className="w-8 h-8 text-rose-400/80" />

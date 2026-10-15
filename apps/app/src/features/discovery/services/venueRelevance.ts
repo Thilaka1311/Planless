@@ -473,7 +473,7 @@ export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
   ].includes(sub);
   const cleanSub = isSyntheticSub ? "" : sub;
 
-  // 2. HARD EXCLUSIONS: Retail stores, equipment shops, merchandise, offices, medical
+  // 2. HARD EXCLUSIONS: Retail stores, pet shops, trade services, equipment shops, merchandise, offices, medical
   const isRetailStore = types.some((t) =>
     [
       "sporting_goods_store",
@@ -483,6 +483,21 @@ export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
       "shopping_mall",
       "home_goods_store",
       "store",
+      "pet_store",
+      "aquarium",
+      "hardware_store",
+      "electronics_store",
+      "convenience_store",
+      "supermarket",
+      "grocery_or_supermarket",
+      "liquor_store",
+      "pharmacy",
+      "furniture_store",
+      "wholesaler",
+      "general_contractor",
+      "plumber",
+      "electrician",
+      "roofing_contractor",
     ].includes(t)
   );
 
@@ -513,8 +528,97 @@ export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
     "outlet",
     "opticals",
     "sales",
+    "pet store",
+    "pet shop",
+    "pet supplies",
+    "pet food",
+    "aquarium shop",
+    "aquarium store",
+    "aquatics store",
+    "fish store",
   ];
-  const hasRetailKeyword = retailKeywords.some((k) => name.includes(k));
+  const hasRetailKeyword = retailKeywords.some((k) => name.includes(k) || cleanSub.includes(k));
+
+  const hardExcludedSportsKeywords = [
+    // Water purification, RO plants, water treatment, water suppliers, kiosks
+    "water plant",
+    "water supply",
+    "water supplier",
+    "water supplies",
+    "packaged drinking water",
+    "mineral water",
+    "drinking water",
+    "water tanker",
+    "water station",
+    "water purifiers",
+    "water purifier",
+    "ro water",
+    "neerina ghataka",
+    "kudiyuva neeru",
+    "pure water",
+    "aqua pure",
+    "aqua water",
+    "water technology",
+    "water technologies",
+    "water solutions",
+    "water treatment",
+    "water filter",
+    "water can",
+    "borewell",
+    "aqua system",
+    "aqua systems",
+    "water system",
+    "water systems",
+    "purification",
+    "filtration plant",
+    "filtration system",
+    "aqua care",
+
+    // Pet stores, aquariums, fish shops, pet supplies
+    "pet store",
+    "pet shop",
+    "pet clinic",
+    "pet food",
+    "pet care",
+    "pet supply",
+    "pet supplies",
+    "aquarium shop",
+    "aquarium store",
+    "aquatics store",
+    "aquatics shop",
+    "aqua pet",
+    "aquapet",
+    "fish store",
+    "fish aquarium",
+    "bird shop",
+    "dog food",
+
+    // Commercial pool contractors, maintenance, equipment dealers (NOT playable pools)
+    "pool contractor",
+    "pool contractors",
+    "pool construction",
+    "pool maintenance",
+    "pool equipment",
+    "pool service",
+    "pool services",
+    "pool system",
+    "pool systems",
+    "swimming pool contractor",
+    "swimming pool construction",
+    "swimming pool equipment",
+    "swimming pool maintenance",
+
+    // Industrial traders, distributors, machinery
+    "traders",
+    "trading",
+    "distributors",
+    "manufacturing",
+    "fabrication",
+    "machinery",
+  ];
+  if (hardExcludedSportsKeywords.some((k) => name.includes(k) || cleanSub.includes(k))) {
+    return false;
+  }
 
   const officeKeywords = [
     "association office",
@@ -638,6 +742,21 @@ export function isPlayableSportsVenue(place: VenueMetadataLike): boolean {
     "sports_coaching",
     "ice_skating_rink",
   ];
+
+  // Validate swimming_pool type: reject commercial pool contractors, filtration dealers, and maintenance services
+  const isSwimmingPoolType = types.includes("swimming_pool");
+  if (isSwimmingPoolType) {
+    const isCommercialPoolService = [
+      "system", "systems", "purifier", "purifiers", "filtration", "treatment",
+      "contractor", "contractors", "construction", "maintenance", "repair",
+      "dealer", "dealers", "equipment", "supplies", "supplier", "suppliers",
+      "service", "services", "solutions",
+    ].some((w) => name.includes(w) || desc.includes(w));
+    if (isCommercialPoolService) {
+      return false;
+    }
+  }
+
   const hasPlayableType = types.some((t) => playableTypes.includes(t));
 
   if (hasPlayableType || hasPlayableKeyword) {

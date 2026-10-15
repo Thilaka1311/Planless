@@ -484,6 +484,67 @@ class PwaManager {
   }
 
   /**
+   * Checks if the app is currently running in standalone PWA mode (installed to Home Screen / WebAPK).
+   */
+  isStandalone(): boolean {
+    if (typeof window === 'undefined') return false;
+    return (
+      (window.navigator as any).standalone === true ||
+      (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches)
+    );
+  }
+
+  /**
+   * Returns current Notification permission state, checking Notification.permission
+   * and cross-checking navigator.permissions.query({ name: 'notifications' }) where supported.
+   */
+  async getDetailedPermissionState(): Promise<NotificationPermission> {
+    if (typeof window === 'undefined') return 'default';
+
+    // 1. Direct synchronous Notification.permission check
+    if ('Notification' in window && Notification.permission) {
+      if (Notification.permission === 'denied') return 'denied';
+      if (Notification.permission === 'granted') {
+        // Cross-check Permissions API if available (especially on Android where system settings can block)
+        if (
+          typeof navigator !== 'undefined' &&
+          'permissions' in navigator &&
+          typeof navigator.permissions.query === 'function'
+        ) {
+          try {
+            const status = await navigator.permissions.query({ name: 'notifications' as PermissionName });
+            if (status?.state === 'denied') return 'denied';
+            if (status?.state === 'prompt') return 'default';
+          } catch {
+            // Some browsers throw when querying 'notifications'
+          }
+        }
+        return 'granted';
+      }
+    }
+
+    // 2. Query Permissions API if Notification is 'default' or not in window
+    if (
+      typeof navigator !== 'undefined' &&
+      'permissions' in navigator &&
+      typeof navigator.permissions.query === 'function'
+    ) {
+      try {
+        const status = await navigator.permissions.query({ name: 'notifications' as PermissionName });
+        if (status?.state === 'denied') return 'denied';
+        if (status?.state === 'granted') return 'granted';
+        if (status?.state === 'prompt') return 'default';
+      } catch {}
+    }
+
+    if ('Notification' in window && Notification.permission) {
+      return Notification.permission;
+    }
+
+    return 'default';
+  }
+
+  /**
    * Detects if the user is on an iOS device in Safari without having installed the PWA.
    * On iOS, Web Push is ONLY supported when added to the Home Screen (standalone PWA).
    */
@@ -493,10 +554,7 @@ class PwaManager {
     const isIos =
       /iphone|ipad|ipod/.test(ua) ||
       (typeof navigator.platform === 'string' && navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
-    const isStandalone =
-      (window.navigator as any).standalone === true ||
-      (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches);
-    return isIos && !isStandalone;
+    return isIos && !this.isStandalone();
   }
 
   /**
@@ -578,7 +636,8 @@ class PwaManager {
       return false;
     }
 
-    if (this.getPushPermissionState() !== 'granted') {
+    const perm = await this.getDetailedPermissionState();
+    if (perm !== 'granted') {
       return false;
     }
 
@@ -633,14 +692,24 @@ class PwaManager {
 
     try {
       // 1. Request user permission if not already granted
-      let permission = this.getPushPermissionState();
-      if (permission !== 'granted') {
-        permission = await Notification.requestPermission();
-      }
-      if (permission !== 'granted') {
+      let permission = await this.getDetailedPermissionState();
+      if (permission === 'denied') {
         return {
           success: false,
           permissionDenied: true,
+          error: 'Notification permission is blocked in browser or device settings.',
+        };
+      }
+      if (permission !== 'granted') {
+        if ('Notification' in window && typeof Notification.requestPermission === 'function') {
+          permission = await Notification.requestPermission();
+        }
+      }
+      if (permission !== 'granted') {
+        const finalPerm = await this.getDetailedPermissionState();
+        return {
+          success: false,
+          permissionDenied: finalPerm === 'denied' || permission === 'denied',
           error: 'Notification permission was not granted.',
         };
       }
@@ -712,10 +781,31 @@ class PwaManager {
       }
 
       if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: convertedVapidKey as unknown as BufferSource,
-        });
+        try {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: convertedVapidKey as unknown as BufferSource,
+          });
+        } catch (subErr: any) {
+          const errMsg = (subErr?.message || '').toLowerCase();
+          const errName = subErr?.name || '';
+          const isDenied =
+            errName === 'NotAllowedError' ||
+            errName === 'PermissionDeniedError' ||
+            errMsg.includes('denied') ||
+            errMsg.includes('permission') ||
+            errMsg.includes('not allowed') ||
+            errMsg.includes('blocked');
+
+          if (isDenied) {
+            return {
+              success: false,
+              permissionDenied: true,
+              error: 'Notification permission was denied or blocked by device settings.',
+            };
+          }
+          throw subErr;
+        }
       }
 
       const subJson = subscription.toJSON();

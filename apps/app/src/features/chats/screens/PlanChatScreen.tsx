@@ -14,12 +14,14 @@ import { PlanSettingsScreen } from "../../plans/screens/PlansScreen/PlansPreview
 import { uploadPlanImage } from "../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../plans/utils/planUtils";
 import { findPlanBySlugOrId } from "../../plans/utils/planSlugUtils";
+import { getPlanHosts } from "../../plans/utils/planHostUtils";
 import { PlanParticipantManagementWrapper } from "../../plans/screens/PlansScreen/PlansPreview/PlanParticipantManagementWrapper";
 import { getPlanCover } from "../../plans/config/planCoverImages";
 import { useHorizontalPager } from "../hooks/useHorizontalPager";
 import { useChatCache, ChatMessage, getCachedUnreadInfo, setCachedUnreadInfo } from "../hooks/useChatCache";
 import { markPlanChatAsRead } from "../utils/chatReads";
 import { useDismissibleOverlay, navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../navigation/appRouter";
+import { ChatMessageListSkeleton } from "../../../shared/components/skeletons/ChatScreenSkeleton";
 
 interface PlanChatScreenProps {
   planId: string;
@@ -472,35 +474,11 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
   const isCancelled = Boolean((plan?.status || "").toUpperCase() === "CANCELLED");
 
   const allHosts = useMemo(() => {
-    if (!plan) return [];
-    const members = plan.members || [];
-
-    const hostMembers = members
-      .filter((m) => {
-        const isHostRole = (m as any).role === "HOST" || m.isHost === true;
-        const status = normalizeStatus(m.joinState);
-        return isHostRole && status === "JOINED";
-      })
-      .map((m) => {
-        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
-        const isCurrentUser = Boolean(currentUserId && mId === currentUserId);
-        return {
-          id: mId,
-          name: isCurrentUser ? "You" : m.name || "Host",
-          avatar: m.avatar || "",
-        };
-      });
-
-    const sortAlpha = (list: typeof hostMembers) =>
-      [...list].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
-
-    const currentUserHost = hostMembers.find(
-      (h) => h.name === "You" || (currentUserId && h.id === currentUserId)
-    );
-    const remainingHosts = sortAlpha(hostMembers.filter((h) => h !== currentUserHost));
-
-    return [...(currentUserHost ? [currentUserHost] : []), ...remainingHosts];
-  }, [plan, currentUserId]);
+    return getPlanHosts(plan, {
+      viewerUserId: currentUserId,
+      currentUserProfile: userProfile,
+    });
+  }, [plan, currentUserId, userProfile]);
 
   // Send message implementation with optimistic UI update
   const handleSendMessage = async (e?: React.FormEvent) => {
@@ -1187,9 +1165,7 @@ export const PlanChatScreen: React.FC<PlanChatScreenProps> = ({
               className="flex-1 overflow-y-auto touch-pan-y pl-6 pr-4 pt-4 pb-3 flex flex-col"
             >
               {loading ? (
-                <div className="flex-1 flex items-center justify-center text-zinc-500 text-xs">
-                  Loading messages...
-                </div>
+                <ChatMessageListSkeleton />
               ) : timelineItems.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center">
                   <EmptyState
