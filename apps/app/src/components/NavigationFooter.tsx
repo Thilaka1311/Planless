@@ -59,6 +59,30 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
     }
   }, [activeTab]);
 
+  // Dynamic navigation / route change reset: ensure keyboard and scroll state always reset
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const resetStatesIfNoInput = () => {
+      setIsNavHiddenByScroll(false);
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement;
+      if (!isInput) {
+        setIsKeyboardOpen(false);
+      }
+    };
+
+    window.addEventListener("planless-navigation", resetStatesIfNoInput);
+    window.addEventListener("popstate", resetStatesIfNoInput);
+
+    return () => {
+      window.removeEventListener("planless-navigation", resetStatesIfNoInput);
+      window.removeEventListener("popstate", resetStatesIfNoInput);
+    };
+  }, []);
+
   React.useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -70,6 +94,8 @@ export const NavigationFooter: React.FC<NavigationFooterProps> = ({
 
       if (!isInput) {
         initialHeightRef.current = Math.max(initialHeightRef.current, window.innerHeight);
+        setIsKeyboardOpen(false);
+        return;
       }
 
       const vv = window.visualViewport;

@@ -678,7 +678,7 @@ export default function MainApp({
       // Synchronize selectedChatPlanId with route (preserve when viewing plan details opened from chat)
       const targetChatId =
         route.selectedChatPlanId ||
-        (route.entryPoint === "chat"
+        (route.entryPoint === "chat" && route.tab !== "chats"
           ? route.originChatPlanId || selectedChatPlanIdRef.current
           : null);
       if (targetChatId !== selectedChatPlanIdRef.current) {
@@ -1057,12 +1057,12 @@ export default function MainApp({
   // Derive bottom navigation visibility strictly from current active route/screen
   const shouldShowBottomNav = React.useMemo(() => {
     // 1. Fullscreen modal overlays hide bottom navigation across the entire app
-    // Note: A plan detail modal is ONLY open if selectedPlanId is actively set.
-    // When returning to Plans or Home, a lagging route param must never suppress bottom nav.
+    // Note: Fullscreen modals (plan details, plan chat) are ONLY open if their active state
+    // (selectedPlanId, selectedChatPlanId) is actively set.
+    // When returning to Plans, Home, or Chats, a lagging route param must never suppress bottom nav.
     if (
       selectedPlanId ||
       selectedChatPlanId ||
-      currentRoute.selectedChatPlanId ||
       showPlansSearchScreen ||
       showHostedPlansScreen ||
       showPastPlansScreen ||

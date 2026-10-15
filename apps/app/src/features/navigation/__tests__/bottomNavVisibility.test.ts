@@ -26,11 +26,12 @@ function computeShouldShowBottomNav({
   childrenWantBottomNavHidden?: boolean;
 }): boolean {
   // 1. Fullscreen modal overlays hide bottom navigation across the entire app
-  // Note: A plan detail modal is ONLY open if selectedPlanId is actively set.
+  // Note: Fullscreen modals (plan details, plan chat) are ONLY open if their active state
+  // (selectedPlanId, selectedChatPlanId) is actively set.
+  // When returning to Plans, Home, or Chats, a lagging route param must never suppress bottom nav.
   if (
     selectedPlanId ||
     selectedChatPlanId ||
-    currentRoute.selectedChatPlanId ||
     showPlansSearchScreen ||
     showHostedPlansScreen ||
     showPastPlansScreen ||
@@ -351,6 +352,76 @@ describe('Bottom Navigation Visibility State', () => {
         computeShouldShowBottomNav({
           currentRoute: { tab: 'plans' },
           activeTab: 'plans',
+        })
+      ).toBe(true);
+    });
+
+    it('7. Chats list always shows bottom navigation even if currentRoute.selectedChatPlanId lags', () => {
+      // Lagging route param from previous chat must not suppress bottom nav on main Chats screen
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'chats', selectedChatPlanId: 'timezone-phoenix-mall' },
+          activeTab: 'chats',
+          selectedChatPlanId: null, // modal is closed
+        })
+      ).toBe(true);
+    });
+
+    it('8. Full flow: Home/Plans -> Plan Preview -> Plan Chat -> Back -> Chats list keeps bottom nav visible', () => {
+      // 1. User on Home
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'home' },
+          activeTab: 'home',
+        })
+      ).toBe(true);
+
+      // 2. Taps Plan -> Plan Preview opens
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans', selectedPlanId: 'doomsday' },
+          activeTab: 'home',
+          selectedPlanId: 'doomsday',
+        })
+      ).toBe(false);
+
+      // 3. From Plan Preview opens Chat
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans', selectedPlanId: 'doomsday', selectedChatPlanId: 'doomsday' },
+          activeTab: 'home',
+          selectedPlanId: 'doomsday',
+          selectedChatPlanId: 'doomsday',
+        })
+      ).toBe(false);
+
+      // 4. Closes Chat -> back in Plan Preview
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'plans', selectedPlanId: 'doomsday' },
+          activeTab: 'home',
+          selectedPlanId: 'doomsday',
+          selectedChatPlanId: null,
+        })
+      ).toBe(false);
+
+      // 5. Closes Plan Preview -> back on Home
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'home' },
+          activeTab: 'home',
+          selectedPlanId: null,
+          selectedChatPlanId: null,
+        })
+      ).toBe(true);
+
+      // 6. User switches to Chats directory screen (even if transition or history has lingering chat param)
+      expect(
+        computeShouldShowBottomNav({
+          currentRoute: { tab: 'chats', selectedChatPlanId: 'doomsday' },
+          activeTab: 'chats',
+          selectedPlanId: null,
+          selectedChatPlanId: null,
         })
       ).toBe(true);
     });
