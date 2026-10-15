@@ -826,6 +826,21 @@ function isPlayableSportsVenue(p: any): boolean {
       "shopping_mall",
       "home_goods_store",
       "store",
+      "pet_store",
+      "aquarium",
+      "hardware_store",
+      "electronics_store",
+      "convenience_store",
+      "supermarket",
+      "grocery_or_supermarket",
+      "liquor_store",
+      "pharmacy",
+      "furniture_store",
+      "wholesaler",
+      "general_contractor",
+      "plumber",
+      "electrician",
+      "roofing_contractor",
     ].includes(t)
   );
 
@@ -835,9 +850,41 @@ function isPlayableSportsVenue(p: any): boolean {
     "fitness equipment", "cycle store", "bicycle shop", "jersey",
     "t-shirt", "shoe store", "footwear", "racquet stringing",
     "equipment dealer", "wholesaler", "distributor", "retailer",
-    "showroom", "outlet", "sales", "opticals"
+    "showroom", "outlet", "sales", "opticals",
+    "pet store", "pet shop", "pet supplies", "pet food",
+    "aquarium shop", "aquarium store", "aquatics store", "fish store"
   ];
   const hasRetailKeyword = retailKeywords.some((k) => name.includes(k));
+
+  const hardExcludedSportsKeywords = [
+    // Water purification, RO plants, water treatment, water suppliers, kiosks
+    "water plant", "water supply", "water supplier", "water supplies",
+    "packaged drinking water", "mineral water", "drinking water", "water tanker",
+    "water station", "water purifiers", "water purifier", "ro water",
+    "neerina ghataka", "kudiyuva neeru", "pure water", "aqua pure", "aqua water",
+    "water technology", "water technologies", "water solutions", "water treatment",
+    "water filter", "water can", "borewell", "aqua system", "aqua systems",
+    "water system", "water systems", "purification", "filtration plant",
+    "filtration system", "aqua care",
+
+    // Pet stores, aquariums, fish shops, pet supplies
+    "pet store", "pet shop", "pet clinic", "pet food", "pet care",
+    "pet supply", "pet supplies", "aquarium shop", "aquarium store",
+    "aquatics store", "aquatics shop", "aqua pet", "aquapet", "fish store",
+    "fish aquarium", "bird shop", "dog food",
+
+    // Commercial pool contractors, maintenance, equipment dealers (NOT playable pools)
+    "pool contractor", "pool contractors", "pool construction", "pool maintenance",
+    "pool equipment", "pool service", "pool services", "pool system", "pool systems",
+    "swimming pool contractor", "swimming pool construction", "swimming pool equipment",
+    "swimming pool maintenance",
+
+    // Industrial traders, distributors, machinery
+    "traders", "trading", "distributors", "manufacturing", "fabrication", "machinery"
+  ];
+  if (hardExcludedSportsKeywords.some((k) => name.includes(k))) {
+    return false;
+  }
 
   const officeKeywords = [
     "association office", "federation office", "board of control",
@@ -868,7 +915,25 @@ function isPlayableSportsVenue(p: any): boolean {
   const playableTypes = [
     "stadium", "sports_complex", "athletic_field", "sports_club", "swimming_pool", "golf_course"
   ];
-  if (types.some((t) => playableTypes.includes(t)) || hasPlayableKeyword) {
+
+  // Validate swimming_pool type: reject commercial pool contractors, filtration dealers, and maintenance services
+  const isSwimmingPoolType = types.includes("swimming_pool");
+  if (isSwimmingPoolType) {
+    const desc = (p.description || "").toLowerCase();
+    const isCommercialPoolService = [
+      "system", "systems", "purifier", "purifiers", "filtration", "treatment",
+      "contractor", "contractors", "construction", "maintenance", "repair",
+      "dealer", "dealers", "equipment", "supplies", "supplier", "suppliers",
+      "service", "services", "solutions",
+    ].some((w) => name.includes(w) || desc.includes(w));
+    if (isCommercialPoolService) {
+      return false;
+    }
+  }
+
+  const hasPlayableType = types.some((t) => playableTypes.includes(t));
+
+  if (hasPlayableType || hasPlayableKeyword) {
     return true;
   }
 

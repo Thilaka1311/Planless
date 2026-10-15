@@ -101,6 +101,40 @@ describe("Strict Venue Relevance Layer Unit & Integration Tests", () => {
         expect(isRelevantVenueForCategory(place, "SPORTS")).toBe(true);
       }
     });
+
+    it("strictly rejects water purifiers, aqua systems, pet stores, aquariums, and pool equipment contractors from Sports", () => {
+      const irrelevantBusinesses = [
+        { title: "Hi World Aqua System", types: ["swimming_pool", "establishment"] },
+        { title: "Aqua Pet Store", types: ["pet_store", "store"] },
+        { title: "Aqua Pure RO Water Plant", types: ["establishment"] },
+        { title: "Crystal Pool Systems & Maintenance", types: ["swimming_pool"] },
+        { title: "Neer Aqua Care & Filtration", types: ["establishment"] },
+        { title: "City Aquarium & Pet Shop", types: ["aquarium", "store"] },
+        { title: "National Swimming Pool Equipment & Contractor", types: ["swimming_pool"] },
+        { title: "Bangalore Borewell & Water Supply", types: ["point_of_interest"] },
+      ];
+
+      for (const place of irrelevantBusinesses) {
+        expect(isPlayableSportsVenue(place)).toBe(false);
+        expect(isRelevantVenueForCategory(place, "SPORTS")).toBe(false);
+      }
+    });
+
+    it("accepts genuine swimming pools and sports facilities regardless of online booking integration", () => {
+      const genuineFacilities = [
+        { title: "AquaFit Swimming Pool Centre", types: ["swimming_pool"] },
+        { title: "Koramangala Swimming Pool", types: ["swimming_pool"] },
+        { title: "Koramangala Cricket Ground", types: ["athletic_field"] },
+        { title: "Greenfield Sports Turf", types: ["sports_complex"] },
+        { title: "Baseline Badminton Academy", types: ["sports_coaching"] },
+        { title: "NetZone Cricket Box Nets", types: ["sports_activity_location"] },
+      ];
+
+      for (const place of genuineFacilities) {
+        expect(isPlayableSportsVenue(place)).toBe(true);
+        expect(isRelevantVenueForCategory(place, "SPORTS")).toBe(true);
+      }
+    });
   });
 
   describe("DINING / PLACES TO EAT Relevance", () => {

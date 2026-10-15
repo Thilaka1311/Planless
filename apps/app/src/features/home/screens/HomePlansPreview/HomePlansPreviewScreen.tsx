@@ -28,7 +28,10 @@ import { uploadPlanImage } from "../../../../shared/utils/imageUtils";
 import { cleanPlanId } from "../../../plans/utils/planUtils";
 import { getPlanSlug } from "../../../plans/utils/planSlugUtils";
 import { getPlanPreviewCtaState } from "../../../plans/utils/planPreviewCtaUtils";
+import { getPlanHosts } from "../../../plans/utils/planHostUtils";
 import { lazyWithRetry } from "../../../../shared/utils/lazyWithRetry";
+import { ChatScreenSkeleton } from "../../../../shared/components/skeletons/ChatScreenSkeleton";
+import { preloadPlanChat } from "../../../chats/hooks/useChatCache";
 
 const PlanChatScreen = lazyWithRetry(
   () => import("../../../chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen })),
@@ -97,6 +100,15 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       setShowPlanSettingsScreen(route.subScreen === 'plan-settings' || route.subScreen === 'plan-settings-cover');
     });
   }, []);
+
+  // Pre-warm PlanChatScreen code chunk and chat messages for instant transition
+  useEffect(() => {
+    PlanChatScreen.preload().catch(() => {});
+    const targetUuid = selectedPlan?.dbUuid || selectedPlan?.id || planId;
+    if (targetUuid) {
+      preloadPlanChat(targetUuid).catch(() => {});
+    }
+  }, [selectedPlan, planId]);
   const [showCompletionFlow, setShowCompletionFlow] = useState(false);
   const [showManageTeams, setShowManageTeams] = useState(false);
   const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
@@ -111,26 +123,11 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
   }, [dbPlans, selectedPlan]);
 
   const allHosts = useMemo(() => {
-    if (!selectedPlan) return [];
-    const membersList = selectedPlan.members || [];
-    const activeHosts = membersList.filter((m) => m.isHost);
-    if (activeHosts.length > 0) {
-      return activeHosts.map((h) => ({
-        id: h.userUuid || h.userId,
-        name: h.name || "Host",
-        avatar: h.avatar,
-        isCreator: (h.userUuid || h.userId) === selectedPlan.hostId,
-      }));
-    }
-    return [
-      {
-        id: selectedPlan.hostId,
-        name: selectedPlan.creatorName || "Host",
-        avatar: selectedPlan.creatorAvatar,
-        isCreator: true,
-      },
-    ];
-  }, [selectedPlan]);
+    return getPlanHosts(selectedPlan, {
+      viewerUserId: resolvedUserUuid,
+      currentUserProfile: userProfile,
+    });
+  }, [selectedPlan, resolvedUserUuid, userProfile]);
 
   const isHost = selectedPlan?.members
     ? selectedPlan.members.some(m => (m.userId === resolvedUserUuid || m.userUuid === resolvedUserUuid) && m.isHost)
@@ -881,11 +878,7 @@ export const PlansPreviewScreen: React.FC<PlansPreviewScreenProps> = ({
       {/* 💬 PLAN CHAT OVERLAY */}
       {selectedChatPlanId && (
         <div className="fixed inset-0 z-[80] bg-[#050505]">
-          <React.Suspense fallback={
-            <div className="w-full h-full flex items-center justify-center bg-[#050505]">
-              <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
-            </div>
-          }>
+          <React.Suspense fallback={<ChatScreenSkeleton />}>
             <PlanChatScreen
               planId={selectedChatPlanId}
               onBack={() => setSelectedChatPlanId(null)}

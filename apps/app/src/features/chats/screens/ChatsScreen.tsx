@@ -22,6 +22,7 @@ import {
   setCachedChatSummary,
   ChatSummaryItem,
   ChatMessage,
+  preloadPlanChat,
 } from "../hooks/useChatCache";
 import { getVisibleChatPlans } from "../hooks/useUnreadChatsCount";
 
@@ -191,6 +192,19 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
       plan.title.toLowerCase().includes(query)
     );
   }, [userPlanChats, searchQuery]);
+
+  // Pre-warm messages for the top visible chats so opening any of them feels instant
+  useEffect(() => {
+    if (filteredChats && filteredChats.length > 0) {
+      const topChats = filteredChats.slice(0, 3);
+      topChats.forEach((plan) => {
+        const uuid = plan.dbUuid || plan.id;
+        if (uuid) {
+          preloadPlanChat(uuid).catch(() => {});
+        }
+      });
+    }
+  }, [filteredChats]);
 
   // Fetch unread counts and latest message preview for all involved plans
   useEffect(() => {
@@ -506,6 +520,14 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         onClick={() => onSelectChatPlan(plan.id)}
+        onMouseEnter={() => {
+          const uuid = plan.dbUuid || plan.id;
+          if (uuid) preloadPlanChat(uuid).catch(() => {});
+        }}
+        onTouchStart={() => {
+          const uuid = plan.dbUuid || plan.id;
+          if (uuid) preloadPlanChat(uuid).catch(() => {});
+        }}
         className="w-full h-[70px] px-2 py-2 flex items-center hover:bg-white/[0.03] active:bg-white/[0.05] rounded-xl transition-all duration-150 cursor-pointer group active:scale-[0.99] select-none text-left"
       >
         <div className="flex items-center gap-3.5 min-w-0 flex-1 h-full">

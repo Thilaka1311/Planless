@@ -279,12 +279,7 @@ export const DiscoverDining: React.FC<DiscoverDiningProps> = ({
       <div className="space-y-8 pt-4 pb-8 flex-1">
         {isSearching ? (
           isSearchLoading && searchPlaces.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 space-y-3">
-              <Loader2 className="w-6 h-6 animate-spin text-rose-500" />
-              <p className="text-xs text-zinc-400 font-medium">
-                Searching Google Places...
-              </p>
-            </div>
+            <DiscoveryFeedSkeleton />
           ) : searchSection.length > 0 ? (
             <div className="space-y-8">
               {searchSection.map((sec) => (

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import {
   Bell, Users, Plus, Home, Calendar, X
@@ -55,6 +55,7 @@ import {
 import { tabVariants, screenModalVariants } from "./shared/transitions/motionTokens";
 import { lazyWithRetry } from "./shared/utils/lazyWithRetry";
 import { DiscoverySkeleton } from "./features/discovery/components/DiscoverySkeleton";
+import { ChatScreenSkeleton } from "./shared/components/skeletons/ChatScreenSkeleton";
 
 const CreatePlanScreen = lazyWithRetry(
   () => import("./features/create/screens/Create").then((m) => ({ default: m.CreatePlanScreen })),
@@ -64,12 +65,8 @@ const PlanChatScreen = lazyWithRetry(
   () => import("./features/chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen })),
   "PlanChatScreen"
 );
+import { clearAllPlanCaches } from "./features/chats/hooks/useChatCache";
 
-const ScreenLoadingFallback = (
-  <div className="w-full h-full flex items-center justify-center bg-[#050505]">
-    <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
-  </div>
-);
 
 interface MainAppProps {
   userProfile: UserProfile;
@@ -101,6 +98,49 @@ export default function MainApp({
     if (initialRoute.tab && initialRoute.tab !== "wallet") return initialRoute.tab;
     return "home";
   });
+
+  const activeMajorTab = (
+    activeTab === "sports" ||
+    activeTab === "dining" ||
+    activeTab === "movies" ||
+    activeTab === "activities"
+  ) ? "create" : activeTab;
+
+  // Track visited tabs to retain their mounted state and scroll geometry
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([activeMajorTab, "home"]));
+
+  useEffect(() => {
+    setVisitedTabs((prev) => {
+      if (prev.has(activeMajorTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeMajorTab);
+      return next;
+    });
+  }, [activeMajorTab]);
+
+  // Idle preloading of high-probability heavy chunks (Create and Chat)
+  useEffect(() => {
+    const idleCallback =
+      typeof window !== "undefined" && "requestIdleCallback" in window
+        ? (window as any).requestIdleCallback
+        : (cb: () => void) => setTimeout(cb, 1200);
+
+    const handle = idleCallback(() => {
+      CreatePlanScreen.preload().catch(() => {});
+      PlanChatScreen.preload().catch(() => {});
+    });
+
+    return () => {
+      if (typeof window !== "undefined" && "cancelIdleCallback" in window && typeof handle === "number") {
+        (window as any).cancelIdleCallback(handle);
+      }
+    };
+  }, []);
+
+  const handleLogoutWithCleanup = React.useCallback(() => {
+    clearAllPlanCaches();
+    onLogout();
+  }, [onLogout]);
   // Determine whether the initial route should be a full-screen flow without bottom nav
   const isFullScreenRoute = React.useCallback((route: typeof initialRoute): boolean => {
     if (route.selectedPlanId) return true;
@@ -1192,137 +1232,148 @@ export default function MainApp({
         id="app_tab_content_wrapper"
         className="flex-1 min-h-0 relative overflow-hidden p-0"
       >
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={
-              activeTab === "sports" ||
-              activeTab === "dining" ||
-              activeTab === "movies" ||
-              activeTab === "activities"
-                ? "create"
-                : activeTab
-            }
-            variants={tabVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="w-full h-full min-h-0 flex flex-col flex-1 relative overflow-hidden"
+        {/* TAB 1: HOME PANEL */}
+        {visitedTabs.has("home") && (
+          <div
+            key="tab-panel-home"
+            style={{ display: activeMajorTab === "home" ? "flex" : "none" }}
+            className="w-full h-full min-h-0 flex-col flex-1 relative overflow-hidden"
+            aria-hidden={activeMajorTab !== "home"}
           >
-            {/* TAB 1: HOME PANEL */}
-            {activeTab === "home" && (
-              <HomeScreen
-                discoverablePlans={discoverablePlans}
-                userProfile={userProfile}
-                interestedPlanIds={interestedPlanIds}
-                setSelectedPlan={(id) => {
-                  if (id) {
-                    handleOpenPlan(id, "home", null, "home");
-                  } else {
-                    handleClosePlanPreview();
-                  }
-                }}
-                selectedPlan={selectedPlanId}
-                setPaymentConfirmationPlan={setPaymentConfirmationPlanId}
-                walletBalance={0}
-                handleToggleJoin={handleToggleJoin}
-                setShowPaymentSuccess={setShowPaymentSuccessId}
-                setShowWaitlistSuccess={setShowWaitlistSuccessId}
-                setShowLeftSuccess={setShowLeftSuccessId}
-                setNotifications={setNotifications}
-                activeCardId={activeCardId}
-                setActiveCardId={setActiveCardId}
-                handleSnoozePlan={handleSnoozePlan}
-                handleWaitlistPlan={(planId) => waitlistPlan(planId, userProfile)}
-                homeFeedRef={homeFeedRef}
-                selectedPlanId={selectedPlanId}
-                onNavigateToCreate={() => handleTabChange("create")}
-                onNavigateToPlans={() => handleTabChange("plans")}
-              />
-            )}
+            <HomeScreen
+              discoverablePlans={discoverablePlans}
+              userProfile={userProfile}
+              interestedPlanIds={interestedPlanIds}
+              setSelectedPlan={(id) => {
+                if (id) {
+                  handleOpenPlan(id, "home", null, "home");
+                } else {
+                  handleClosePlanPreview();
+                }
+              }}
+              selectedPlan={selectedPlanId}
+              setPaymentConfirmationPlan={setPaymentConfirmationPlanId}
+              walletBalance={0}
+              handleToggleJoin={handleToggleJoin}
+              setShowPaymentSuccess={setShowPaymentSuccessId}
+              setShowWaitlistSuccess={setShowWaitlistSuccessId}
+              setShowLeftSuccess={setShowLeftSuccessId}
+              setNotifications={setNotifications}
+              activeCardId={activeCardId}
+              setActiveCardId={setActiveCardId}
+              handleSnoozePlan={handleSnoozePlan}
+              handleWaitlistPlan={(planId) => waitlistPlan(planId, userProfile)}
+              homeFeedRef={homeFeedRef}
+              selectedPlanId={selectedPlanId}
+              onNavigateToCreate={() => handleTabChange("create")}
+              onNavigateToPlans={() => handleTabChange("plans")}
+            />
+          </div>
+        )}
 
-            {/* TAB 2: PLANS — PREMIUM ACTIVITY HUB & HOSTED DESTINATION */}
-            {activeTab === "plans" && (
-              <PlansScreen
-                setSelectedPlanId={(id) => {
-                  if (id) {
-                    handleOpenPlan(id, "plans", null, "plans");
-                  } else {
-                    handleClosePlanPreview();
-                  }
-                }}
-                skippedByPlanId={skippedByPlanId}
-                plansFilter={plansFilter}
-                setPlansFilter={handlePlansFilterChange}
-              />
-            )}
+        {/* TAB 2: PLANS — PREMIUM ACTIVITY HUB & HOSTED DESTINATION */}
+        {visitedTabs.has("plans") && (
+          <div
+            key="tab-panel-plans"
+            style={{ display: activeMajorTab === "plans" ? "flex" : "none" }}
+            className="w-full h-full min-h-0 flex-col flex-1 relative overflow-hidden"
+            aria-hidden={activeMajorTab !== "plans"}
+          >
+            <PlansScreen
+              setSelectedPlanId={(id) => {
+                if (id) {
+                  handleOpenPlan(id, "plans", null, "plans");
+                } else {
+                  handleClosePlanPreview();
+                }
+              }}
+              skippedByPlanId={skippedByPlanId}
+              plansFilter={plansFilter}
+              setPlansFilter={handlePlansFilterChange}
+            />
+          </div>
+        )}
 
-            {/* TAB 3: SPONTANEOUS CREATOR & DISCOVERY CATEGORIES */}
-            {(activeTab === "create" ||
-              activeTab === "sports" ||
-              activeTab === "dining" ||
-              activeTab === "movies" ||
-              activeTab === "activities") && (
-              <React.Suspense fallback={<DiscoverySkeleton />}>
-                <CreatePlanScreen
-                  setActiveTab={handleTabChange}
-                  onToggleBottomNav={setChildrenWantBottomNavHidden}
-                  setPlansFilter={handlePlansFilterChange}
-                  setSelectedPlanId={(id) => {
-                    if (id) {
-                      handleOpenPlan(id, activeTab, null, "create");
-                    } else {
-                      handleClosePlanPreview();
-                    }
-                  }}
-                  initialDiscoveryCategory={
-                    activeTab === "sports" ||
-                    activeTab === "dining" ||
-                    activeTab === "movies" ||
-                    activeTab === "activities"
-                      ? activeTab
-                      : undefined
-                  }
-                />
-              </React.Suspense>
-            )}
-
-            {/* TAB 4: CHATS — PLAN CONVERSATIONS */}
-            {activeTab === "chats" && (
-              <ChatsScreen
+        {/* TAB 3: SPONTANEOUS CREATOR & DISCOVERY CATEGORIES */}
+        {visitedTabs.has("create") && (
+          <div
+            key="tab-panel-create"
+            style={{ display: activeMajorTab === "create" ? "flex" : "none" }}
+            className="w-full h-full min-h-0 flex-col flex-1 relative overflow-hidden"
+            aria-hidden={activeMajorTab !== "create"}
+          >
+            <React.Suspense fallback={<DiscoverySkeleton />}>
+              <CreatePlanScreen
                 setActiveTab={handleTabChange}
-                onSelectChatPlan={(planId) => {
-                  handleOpenChat(planId);
-                }}
-              />
-            )}
-
-            {/* TAB: WALLET (Disabled) */}
-
-            {/* TAB 5: PROFILE & ACCOUNT MANAGEMENT */}
-            {activeTab === "profile" && (
-              <ProfileScreen
-                onLogout={onLogout}
+                onToggleBottomNav={setChildrenWantBottomNavHidden}
+                setPlansFilter={handlePlansFilterChange}
                 setSelectedPlanId={(id) => {
                   if (id) {
-                    handleOpenPlan(id, "profile", null, "profile");
+                    handleOpenPlan(id, activeTab, null, "create");
                   } else {
                     handleClosePlanPreview();
                   }
                 }}
-                setShowDepositModal={setShowDepositModal}
-                onToggleBottomNav={setChildrenWantBottomNavHidden}
-                onOpenPastPlans={() => {
-                  setPastPlansOrigin("profile");
-                  navigateToRoute({ tab: "profile", subScreen: "past-plans" });
-                }}
-                onOpenFriends={() => {
-                  navigateToRoute({ tab: "profile", subScreen: "friends" });
-                }}
-                setSelectedPlanSource={setSelectedPlanSource}
+                initialDiscoveryCategory={
+                  activeTab === "sports" ||
+                  activeTab === "dining" ||
+                  activeTab === "movies" ||
+                  activeTab === "activities"
+                    ? activeTab
+                    : undefined
+                }
               />
-            )}
-          </motion.div>
-        </AnimatePresence>
+            </React.Suspense>
+          </div>
+        )}
+
+        {/* TAB 4: CHATS — PLAN CONVERSATIONS */}
+        {visitedTabs.has("chats") && (
+          <div
+            key="tab-panel-chats"
+            style={{ display: activeMajorTab === "chats" ? "flex" : "none" }}
+            className="w-full h-full min-h-0 flex-col flex-1 relative overflow-hidden"
+            aria-hidden={activeMajorTab !== "chats"}
+          >
+            <ChatsScreen
+              setActiveTab={handleTabChange}
+              onSelectChatPlan={(planId) => {
+                handleOpenChat(planId);
+              }}
+            />
+          </div>
+        )}
+
+        {/* TAB 5: PROFILE & ACCOUNT MANAGEMENT */}
+        {visitedTabs.has("profile") && (
+          <div
+            key="tab-panel-profile"
+            style={{ display: activeMajorTab === "profile" ? "flex" : "none" }}
+            className="w-full h-full min-h-0 flex-col flex-1 relative overflow-hidden"
+            aria-hidden={activeMajorTab !== "profile"}
+          >
+            <ProfileScreen
+              onLogout={handleLogoutWithCleanup}
+              setSelectedPlanId={(id) => {
+                if (id) {
+                  handleOpenPlan(id, "profile", null, "profile");
+                } else {
+                  handleClosePlanPreview();
+                }
+              }}
+              setShowDepositModal={setShowDepositModal}
+              onToggleBottomNav={setChildrenWantBottomNavHidden}
+              onOpenPastPlans={() => {
+                setPastPlansOrigin("profile");
+                navigateToRoute({ tab: "profile", subScreen: "past-plans" });
+              }}
+              onOpenFriends={() => {
+                navigateToRoute({ tab: "profile", subScreen: "friends" });
+              }}
+              setSelectedPlanSource={setSelectedPlanSource}
+            />
+          </div>
+        )}
       </main>
 
       {/* ---------------- ACTIVE DETAILED OVERLAY POPUP (PLAN DETAILS) ---------------- */}
@@ -1479,7 +1530,7 @@ export default function MainApp({
             exit="exit"
             className="fixed inset-0 z-[70] overflow-hidden bg-[#050505]"
           >
-            <React.Suspense fallback={ScreenLoadingFallback}>
+            <React.Suspense fallback={<ChatScreenSkeleton />}>
               <PlanChatScreen
                 planId={selectedChatPlanId}
                 onBack={handleCloseChat}

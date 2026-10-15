@@ -49,17 +49,21 @@ import { HeroMetadataCard } from "../../../components/HeroMetadataCard";
 import { useGooglePlacesAutocomplete } from "../../../../../shared/hooks/useGooglePlacesAutocomplete";
 import { getPlanAreaName } from "../../../../discovery/services/addressUtils";
 import { lazyWithRetry } from "../../../../../shared/utils/lazyWithRetry";
+import { preloadPlanChat } from "../../../../chats/hooks/useChatCache";
 
 const PlanChatScreen = lazyWithRetry(
   () => import("../../../../chats/screens/PlanChatScreen").then((m) => ({ default: m.PlanChatScreen })),
   "PlanChatScreen"
 );
 import { PlanParticipantManagementWrapper } from "./PlanParticipantManagementWrapper";
+import { ChatScreenSkeleton } from "../../../../../shared/components/skeletons/ChatScreenSkeleton";
+import { PlanDetailsSkeleton } from "../../../../../shared/components/skeletons/PlanDetailsSkeleton";
 import { PlanSettingsScreen } from "./PlanSettingsScreen";
 import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../../../navigation/appRouter";
 import { uploadPlanImage } from "../../../../../shared/utils/imageUtils";
 import { cleanPlanId, parsePlanDateTime, isUuid, isPlanTimeEnded } from "../../../utils/planUtils";
 import { getPlanSlug } from "../../../utils/planSlugUtils";
+import { getPlanHosts } from "../../../utils/planHostUtils";
 import { useToast } from "../../../../../shared/contexts/ToastContext";
 import { LiveActionButton } from "../../../components/LiveActionButton";
 import { WhoIsComingScreen } from "../../../../create/screens/WhoIsComingScreen";
@@ -992,6 +996,15 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       setShowPlanSettingsScreen(route.subScreen === 'plan-settings' || route.subScreen === 'plan-settings-cover');
     });
   }, []);
+
+  // Pre-warm PlanChatScreen code chunk and chat messages for instant transition
+  useEffect(() => {
+    PlanChatScreen.preload().catch(() => {});
+    const targetUuid = selectedPlan?.dbUuid || selectedPlan?.id || planId;
+    if (targetUuid) {
+      preloadPlanChat(targetUuid).catch(() => {});
+    }
+  }, [selectedPlan, planId]);
   const [selectedChatPlanId, setSelectedChatPlanId] = useState<string | null>(null);
   const planStartIso = (selectedPlan as any)?.scheduled_at || selectedPlan?.datetime || selectedPlan?.time || selectedPlan?.createdAt;
   const rawRsvpDeadline = (selectedPlan as any)?.rsvp_deadline || selectedPlan?.response_deadline_at;
@@ -1111,36 +1124,11 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   const isCreatorHost = isHost;
 
   const allHosts = useMemo(() => {
-    if (!selectedPlan) return [];
-    const members = selectedPlan.members || [];
-
-    const hostMembers = members
-      .filter((m) => {
-        const isHostRole = (m as any).role === "HOST" || m.isHost === true;
-        const status = normalizeStatus(m.joinState);
-        return isHostRole && status === "JOINED";
-      })
-      .map((m) => {
-        const mId = m.userId || m.userUuid || (m as any).user_id || (m as any).id;
-        const isCurrentUser = Boolean(resolvedUserUuid && mId === resolvedUserUuid);
-        return {
-          id: mId,
-          name: isCurrentUser ? "You" : (m.name || "Host"),
-          avatar: m.avatar || "",
-        };
-      });
-
-    const sortAlpha = (list: typeof hostMembers) =>
-      [...list].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
-
-    const currentUserHost = hostMembers.find(h => h.name === "You" || (resolvedUserUuid && h.id === resolvedUserUuid));
-    const remainingHosts = sortAlpha(hostMembers.filter(h => h !== currentUserHost));
-
-    return [
-      ...(currentUserHost ? [currentUserHost] : []),
-      ...remainingHosts,
-    ];
-  }, [selectedPlan, resolvedUserUuid]);
+    return getPlanHosts(selectedPlan, {
+      viewerUserId: resolvedUserUuid,
+      currentUserProfile: userProfile,
+    });
+  }, [selectedPlan, resolvedUserUuid, userProfile]);
 
   const isSoleHost = isHost && allHosts.length <= 1;
 
@@ -2247,11 +2235,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
   }, [selectedPlan, removeParticipant]);
 
   if (!selectedPlan) {
-    return (
-      <div className="h-full w-full bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden">
-        <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
-      </div>
-    );
+    return <PlanDetailsSkeleton />;
   }
 
   if (showPlanSettingsScreen) {
@@ -3012,11 +2996,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
       {/* 💬 PLAN CHAT OVERLAY */}
       {selectedChatPlanId && (
         <div className="fixed inset-0 z-[80] bg-[#050505]">
-          <React.Suspense fallback={
-            <div className="w-full h-full flex items-center justify-center bg-[#050505]">
-              <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
-            </div>
-          }>
+          <React.Suspense fallback={<ChatScreenSkeleton />}>
             <PlanChatScreen
               planId={selectedChatPlanId}
               onBack={() => setSelectedChatPlanId(null)}

@@ -15,38 +15,33 @@ import { QuickPlan } from "../../../core/types";
 import { DiscoveryItem } from "../../../core/types/discovery";
 import { lazyWithRetry } from "../../../shared/utils/lazyWithRetry";
 
-const CreateCategoryScreen = lazyWithRetry(
-  () => import("./CreateCategoryScreen").then((m) => ({ default: m.CreateCategoryScreen })),
-  "CreateCategoryScreen"
-);
-const CreatePlanReview = lazyWithRetry(
-  () => import("./CreatePlanReview").then((m) => ({ default: m.CreatePlanReview })),
-  "CreatePlanReview"
-);
-const WhenIsPlanScreen = lazyWithRetry(
-  () => import("./WhenIsPlanScreen").then((m) => ({ default: m.WhenIsPlanScreen })),
-  "WhenIsPlanScreen"
-);
-const WhoIsComingScreen = lazyWithRetry(
-  () => import("./WhoIsComingScreen").then((m) => ({ default: m.WhoIsComingScreen })),
-  "WhoIsComingScreen"
-);
-const WhoIsActuallyComing = lazyWithRetry(
-  () => import("./WhoIsActuallyComing").then((m) => ({ default: m.WhoIsActuallyComing })),
-  "WhoIsActuallyComing"
-);
-const CreatePlanConfirmation = lazyWithRetry(
-  () => import("../components/CreatePlanConfirmation").then((m) => ({ default: m.CreatePlanConfirmation })),
-  "CreatePlanConfirmation"
-);
+import { CreateCategoryScreen } from "./CreateCategoryScreen";
+import { CreatePlanReview } from "./CreatePlanReview";
+import { WhenIsPlanScreen } from "./WhenIsPlanScreen";
+import { WhoIsComingScreen } from "./WhoIsComingScreen";
+import { WhoIsActuallyComing } from "./WhoIsActuallyComing";
+import { CreatePlanConfirmation } from "../components/CreatePlanConfirmation";
 const FriendshipsScreen = lazyWithRetry(
   () => import("../../friendships/screens/FriendshipsScreen").then((m) => ({ default: m.FriendshipsScreen })),
   "FriendshipsScreen"
 );
 
+import { PlanDetailsSkeleton } from "../../../shared/components/skeletons/PlanDetailsSkeleton";
+import { ParticipantRosterSkeleton } from "../../../shared/components/skeletons/ParticipantRosterSkeleton";
+
 const ScreenLoadingFallback = (
-  <div className="w-full h-full flex items-center justify-center bg-[#050505]">
-    <div className="w-6 h-6 border-2 border-zinc-700 border-t-[#FF6B2C] rounded-full animate-spin" />
+  <div className="w-full h-full flex flex-col bg-[#050505] p-5 select-none pointer-events-none animate-pulse">
+    <div className="flex items-center justify-between h-10 mb-6">
+      <div className="w-8 h-8 rounded-full bg-white/[0.08]" />
+      <div className="h-4 w-32 bg-white/[0.1] rounded" />
+      <div className="w-8 h-8 rounded-full bg-transparent" />
+    </div>
+    <div className="flex-1 space-y-4">
+      <div className="w-full h-44 rounded-2xl bg-white/[0.04] border border-white/[0.06]" />
+      <div className="h-4 w-40 bg-white/[0.08] rounded" />
+      <div className="h-10 w-full rounded-xl bg-white/[0.04]" />
+    </div>
+    <div className="h-12 w-full rounded-2xl bg-[#FF6B2C]/20 border border-[#FF6B2C]/30 mt-4" />
   </div>
 );
 import { createQuickPlan } from "../services/quickPlanService";
@@ -593,7 +588,7 @@ export const CreatePlanScreen = ({
   // WHO PHASE
   if (createPhase === 'who') {
     return (
-      <React.Suspense fallback={ScreenLoadingFallback}>
+      <React.Suspense fallback={<ParticipantRosterSkeleton />}>
         <WhoIsComingScreen
           form={form}
           onBack={() => {
@@ -648,7 +643,7 @@ export const CreatePlanScreen = ({
       return null;
     }
     return (
-      <React.Suspense fallback={ScreenLoadingFallback}>
+      <React.Suspense fallback={<ParticipantRosterSkeleton />}>
         <WhoIsActuallyComing
           form={form}
           selectedCategory={selectedCategory}
@@ -676,7 +671,7 @@ export const CreatePlanScreen = ({
   if (createPhase === 'review') {
     return (
       <div className="flex-1 flex flex-col relative h-full bg-[#050505] overflow-hidden text-left">
-        <React.Suspense fallback={ScreenLoadingFallback}>
+        <React.Suspense fallback={<PlanDetailsSkeleton />}>
           <CreatePlanReview
             form={form}
             selectedCategory={selectedCategory}

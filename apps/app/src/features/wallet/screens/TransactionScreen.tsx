@@ -118,10 +118,29 @@ export const TransactionScreen: React.FC<TransactionScreenProps> = ({
         </div>
       </div>
 
-      {/* Loading state */}
+      {/* Loading skeleton */}
       {loading && groupedTransactions.length === 0 && (
-        <div className="flex-1 flex items-center justify-center py-20">
-          <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        <div className="mt-6 space-y-6 animate-pulse select-none pointer-events-none">
+          {[1, 2].map((g) => (
+            <div key={g} className="space-y-3">
+              <div className="h-3 w-20 bg-white/[0.06] rounded px-1" />
+              <div className="divide-y divide-white/[0.04] bg-zinc-950/40 rounded-2xl border border-white/[0.04] overflow-hidden">
+                {[1, 2].map((i) => (
+                  <div key={i} className="flex items-center justify-between p-4">
+                    <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                      <div className="w-11 h-11 rounded-xl bg-white/[0.07] shrink-0" />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="h-3.5 w-24 bg-white/[0.08] rounded" />
+                        <div className="h-3 w-36 bg-white/[0.05] rounded" />
+                        <div className="h-2.5 w-16 bg-white/[0.03] rounded" />
+                      </div>
+                    </div>
+                    <div className="h-4 w-14 bg-white/[0.08] rounded shrink-0 ml-4" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

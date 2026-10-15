@@ -50,11 +50,11 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
   isHostSelected = false,
   userProfile,
   selectedFriends = [],
-  priorityGuestIds,
-  externalGoingList,
-  externalWaitlist,
-  externalInvitedList,
-  externalSkippedList,
+  priorityGuestIds = [],
+  externalGoingList = [],
+  externalWaitlist = [],
+  externalInvitedList = [],
+  externalSkippedList = [],
   mode = 'wizard',
   managementMode,
   continueText,
@@ -134,10 +134,21 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
   const totalInvitedCount = useMemo(() => {
     if (mode === 'wizard') {
-      return (hostItem ? 1 : 0) + selectedFriends.length;
+      return (hostItem ? 1 : 0) + (selectedFriends?.length || 0);
     }
-    return externalGoingList.length + externalWaitlist.length + (externalInvitedList?.length || 0);
-  }, [mode, hostItem, selectedFriends.length, externalGoingList.length, externalWaitlist.length, externalInvitedList?.length]);
+    return (
+      (externalGoingList?.length || 0) +
+      (externalWaitlist?.length || 0) +
+      (externalInvitedList?.length || 0)
+    );
+  }, [
+    mode,
+    hostItem,
+    selectedFriends?.length,
+    externalGoingList?.length,
+    externalWaitlist?.length,
+    externalInvitedList?.length,
+  ]);
 
   const [internalGoingList, setInternalGoingList] = useState<Friend[]>(() => {
     if (mode !== 'wizard') return [];
@@ -165,6 +176,11 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
   const isInitializedRef = React.useRef(false);
 
+  const internalGoingListRef = React.useRef(internalGoingList);
+  internalGoingListRef.current = internalGoingList;
+  const internalWaitlistRef = React.useRef(internalWaitlist);
+  internalWaitlistRef.current = internalWaitlist;
+
   const persistParticipantState = React.useCallback(
     (going: Friend[], wait: Friend[]) => {
       if (mode !== 'wizard') return;
@@ -189,6 +205,12 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     [mode, onParticipantsChange]
   );
 
+  const persistParticipantStateRef = React.useRef(persistParticipantState);
+  persistParticipantStateRef.current = persistParticipantState;
+
+  const onAdjustCapacityRef = React.useRef(onAdjustCapacity);
+  onAdjustCapacityRef.current = onAdjustCapacity;
+
   const prevSelectedFriendsRef = React.useRef<Friend[]>(selectedFriends);
 
   useEffect(() => {
@@ -200,7 +222,6 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
       return;
     }
 
-    const currentSelectedIds = new Set(selectedFriends.map((f) => f.id));
     const currentFriendMap = new Map<string, Friend>();
     selectedFriends.forEach((f) => {
       if (f.id) currentFriendMap.set(String(f.id), f);
@@ -211,25 +232,47 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     const currIds = selectedFriends.map((f) => f.id).sort().join(',');
 
     if (prevIds === currIds) {
-      // Selection set unchanged: safely enrich existing entries with latest profile info
-      setInternalGoingList((prev) =>
-        prev.map((f) => (f.isHost ? f : currentFriendMap.get(f.id) || currentFriendMap.get(f.dbUuid) || f))
-      );
-      setInternalWaitlist((prev) =>
-        prev.map((f) => currentFriendMap.get(f.id) || currentFriendMap.get(f.dbUuid) || f)
-      );
+      // Selection set unchanged: only enrich existing entries if profile data actually changed
+      let hasChanges = false;
+      const currentGoing = internalGoingListRef.current;
+      const currentWait = internalWaitlistRef.current;
+
+      const nextGoing = currentGoing.map((f) => {
+        if (f.isHost) return f;
+        const fresh = currentFriendMap.get(f.id) || currentFriendMap.get(f.dbUuid);
+        if (fresh && (fresh.name !== f.name || fresh.avatar !== f.avatar)) {
+          hasChanges = true;
+          return { ...f, ...fresh };
+        }
+        return f;
+      });
+
+      const nextWait = currentWait.map((f) => {
+        const fresh = currentFriendMap.get(f.id) || currentFriendMap.get(f.dbUuid);
+        if (fresh && (fresh.name !== f.name || fresh.avatar !== f.avatar)) {
+          hasChanges = true;
+          return { ...f, ...fresh };
+        }
+        return f;
+      });
+
+      if (hasChanges) {
+        setInternalGoingList(nextGoing);
+        setInternalWaitlist(nextWait);
+      }
       return;
     }
     prevSelectedFriendsRef.current = selectedFriends;
 
     // Selection changed: reconcile new and removed participants
     const hostPart = isHostSelected && hostItem ? [hostItem] : [];
-    const nonHostGoing = internalGoingList
+    const currentSelectedIds = new Set(selectedFriends.map((f) => f.id));
+    const nonHostGoing = internalGoingListRef.current
       .filter((f) => !f.isHost && currentSelectedIds.has(f.id))
       .map((f) => currentFriendMap.get(f.id) || currentFriendMap.get(f.dbUuid) || f);
     const goingIdSet = new Set(nonHostGoing.map((f) => f.id));
 
-    const waitRemaining = internalWaitlist
+    const waitRemaining = internalWaitlistRef.current
       .filter((f) => !f.isHost && currentSelectedIds.has(f.id) && !goingIdSet.has(f.id))
       .map((f) => currentFriendMap.get(f.id) || currentFriendMap.get(f.dbUuid) || f);
 
@@ -265,8 +308,8 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
     setInternalGoingList(finalGoing);
     setInternalWaitlist(finalWait);
-    persistParticipantState(finalGoing, finalWait);
-  }, [selectedFriends, isHostSelected, mode, hostItem, capacity, internalGoingList, internalWaitlist, persistParticipantState]);
+    persistParticipantStateRef.current(finalGoing, finalWait);
+  }, [selectedFriends, isHostSelected, mode, hostItem, capacity]);
 
   // Reconcile capacity changes reactively in wizard mode
   const prevCapacityRef = React.useRef<number | null | undefined>(capacity);
@@ -275,52 +318,55 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
     if (capacity === null || capacity === undefined) {
       prevCapacityRef.current = capacity;
-      if (internalWaitlist.length > 0) {
+      if (internalWaitlistRef.current.length > 0) {
         // "No Limit": Everyone joins (up to 50 max), no waitlist
-        const allGuests = [...internalGoingList, ...internalWaitlist].filter((f) => !f.isHost);
-        const hostPart = internalGoingList.filter((f) => f.isHost);
+        const allGuests = [...internalGoingListRef.current, ...internalWaitlistRef.current].filter((f) => !f.isHost);
+        const hostPart = internalGoingListRef.current.filter((f) => f.isHost);
         const nextGoing = [...hostPart, ...sortGoingFriends(allGuests)];
         setInternalGoingList(nextGoing);
         setInternalWaitlist([]);
-        persistParticipantState(nextGoing, []);
+        persistParticipantStateRef.current(nextGoing, []);
       }
       return;
     }
 
-    const targetCap = Math.min(capacity, totalInvitedCount);
-    const capacityExceedsInvited = mode === 'wizard' && capacity > totalInvitedCount;
+    const targetCap = Math.max(2, Math.min(capacity, totalInvitedCount));
+    const capacityExceedsInvited = capacity > totalInvitedCount;
     const capacityChanged = prevCapacityRef.current !== capacity;
-    const underfilledWithWaitlist = internalGoingList.length < targetCap && internalWaitlist.length > 0;
-    const overfilled = internalGoingList.length > targetCap;
+    const underfilledWithWaitlist =
+      internalGoingListRef.current.length < targetCap && internalWaitlistRef.current.length > 0;
+    const overfilled = internalGoingListRef.current.length > targetCap;
 
-    if (capacityExceedsInvited && onAdjustCapacity) {
-      onAdjustCapacity(targetCap);
+    if (capacityExceedsInvited && onAdjustCapacityRef.current && targetCap !== capacity) {
+      onAdjustCapacityRef.current(targetCap);
     }
 
-    if (capacityChanged || underfilledWithWaitlist || overfilled || capacityExceedsInvited) {
+    if (capacityChanged || underfilledWithWaitlist || overfilled || (capacityExceedsInvited && targetCap !== capacity)) {
       prevCapacityRef.current = capacity;
       const res = adjustAssignedCapacity(
-        internalGoingList,
-        internalWaitlist,
+        internalGoingListRef.current,
+        internalWaitlistRef.current,
         targetCap,
         totalInvitedCount
       );
       if (res) {
+        const currentGoing = internalGoingListRef.current;
+        const currentWait = internalWaitlistRef.current;
         const goingChanged =
-          res.nextGoing.length !== internalGoingList.length ||
-          res.nextGoing.some((f, i) => f.id !== internalGoingList[i]?.id);
+          res.nextGoing.length !== currentGoing.length ||
+          res.nextGoing.some((f, i) => f.id !== currentGoing[i]?.id);
         const waitChanged =
-          res.nextWaitlist.length !== internalWaitlist.length ||
-          res.nextWaitlist.some((f, i) => f.id !== internalWaitlist[i]?.id);
+          res.nextWaitlist.length !== currentWait.length ||
+          res.nextWaitlist.some((f, i) => f.id !== currentWait[i]?.id);
 
         if (goingChanged || waitChanged) {
           setInternalGoingList(res.nextGoing);
           setInternalWaitlist(res.nextWaitlist);
-          persistParticipantState(res.nextGoing, res.nextWaitlist);
+          persistParticipantStateRef.current(res.nextGoing, res.nextWaitlist);
         }
       }
     }
-  }, [capacity, mode, totalInvitedCount, internalGoingList, internalWaitlist, persistParticipantState, onAdjustCapacity]);
+  }, [capacity, mode, totalInvitedCount]);
 
   const rawDisplayGoing = mode === 'editor' ? (externalGoingList ?? []) : internalGoingList;
   const rawDisplayWaitlist = mode === 'editor' ? (externalWaitlist ?? []) : internalWaitlist;
@@ -408,11 +454,11 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
 
   const allAssignedMembers = useMemo(() => {
     if (mode === 'wizard') {
-      return (hostItem ? [hostItem] : []).concat(selectedFriends);
+      return (hostItem ? [hostItem] : []).concat(selectedFriends || []);
     }
     return [
-      ...externalGoingList,
-      ...externalWaitlist,
+      ...(externalGoingList || []),
+      ...(externalWaitlist || []),
       ...(externalInvitedList || []),
       ...(externalSkippedList || []),
     ];
@@ -449,9 +495,10 @@ export const AssignedParticipantScreen: React.FC<AssignedParticipantScreenProps>
     return t;
   }, [displayGoing.length, displayWaitlist.length, displaySkipped.length, mode, isCompletedPlan, isNoLimit]);
 
-  const [activeTab, setActiveTab] = useState<ParticipantTab>(
-    (mode === 'wizard' && isNoLimit) ? 'invited' : 'going'
-  );
+  const [activeTab, setActiveTab] = useState<ParticipantTab>(() => {
+    if (initialTab && initialTab !== 'invited') return initialTab;
+    return (mode === 'wizard' && isNoLimit) ? 'invited' : 'going';
+  });
   const initialMountRef = React.useRef(true);
 
   useEffect(() => {

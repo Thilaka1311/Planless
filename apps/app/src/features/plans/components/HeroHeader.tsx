@@ -1,6 +1,7 @@
 import React from "react";
 import { ArrowLeft, X, Edit, MoreVertical, Settings, Users, Activity, MessageSquare, AlertCircle, Share2, Zap } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { UserAvatar } from "../../../IMGfromDB/UserAvatar";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 
 interface OverflowMenuItem {
@@ -149,7 +150,18 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
 
   // Standardized Host Ordering & Formatting
   const hostList: HostInfo[] = React.useMemo(() => {
-    if (hosts && hosts.length > 0) return hosts;
+    if (hosts && hosts.length > 0) {
+      const seen = new Set<string>();
+      const deduped: HostInfo[] = [];
+      for (const h of hosts) {
+        const key = h.id || h.name;
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push(h);
+        }
+      }
+      return deduped;
+    }
     return [{ id: "", name: creatorName || "Host", avatar: creatorAvatar }];
   }, [hosts, creatorName, creatorAvatar]);
 
@@ -157,6 +169,12 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
     const formattedNames = hostList.map(h => (h.id && h.id === viewerId ? "You" : h.name || "Host"));
     return formattedNames.join(", ");
   }, [hostList, viewerId]);
+
+  const visibleHostAvatars = React.useMemo(() => {
+    return hostList.slice(0, 4);
+  }, [hostList]);
+
+  const remainingHostCount = Math.max(0, hostList.length - 4);
 
   if (hideHostAttribution) {
     return (
@@ -396,7 +414,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
         {/* Circular Plan Avatar & Centered Title */}
         <div
           onClick={!isEditingTitle && onHeaderPress ? onHeaderPress : undefined}
-          className={`flex flex-col items-center max-w-full min-w-0 ${onHeaderPress ? "cursor-pointer pointer-events-auto" : "pointer-events-none"}`}
+          className={`w-full flex flex-col items-center max-w-full min-w-0 ${onHeaderPress ? "cursor-pointer pointer-events-auto" : "pointer-events-none"}`}
         >
           {headerBadge && (
             <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#FF6B2C]/20 border border-[#FF6B2C]/40 text-[#FF6B2C] text-[11px] font-bold tracking-wider uppercase mb-1.5 shadow-sm">
@@ -450,7 +468,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
                   setIsEditingTitle(true);
                 }
               }}
-              className={`text-[17px] font-bold leading-tight select-text text-center px-14 max-w-full flex items-center justify-center gap-1.5 min-w-0 ${
+              className={`w-full text-[17px] font-bold leading-tight select-text text-center px-14 max-w-full flex items-center justify-center gap-1.5 min-w-0 ${
                 isHost && onEditTitle ? "cursor-pointer pointer-events-auto hover:opacity-90 active:opacity-75" : ""
               } ${!title || title === "Set a title" || title === "Enter Title" ? "text-white/60 font-semibold" : "text-white"}`}
             >
@@ -469,14 +487,38 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           )}
         </div>
 
-        {/* Centered Hosted By directly below Plan title (Plan Details Mode) */}
+        {/* Centered Hosted By directly below Plan title with Host Avatars (Plan Details Mode) */}
         {!hideHostAttribution && (
           <div className="w-full flex flex-col items-center mt-1 select-none min-w-0">
-            {/* Cleanly Truncated Single-Line Host Attribution Text */}
-            <div className="w-full max-w-full px-14 flex items-center justify-center min-w-0">
+            {/* Cleanly Truncated Single-Line Host Attribution Row */}
+            <div className="w-full max-w-full px-14 flex items-center justify-center gap-1.5 min-w-0">
+              {/* Host avatar(s): 1 host or multiple hosts in compact aligned group */}
+              <div className="flex items-center -space-x-1.5 flex-shrink-0" data-testid="host-avatars-group">
+                {visibleHostAvatars.map((h, idx) => (
+                  <UserAvatar
+                    key={h.id || idx}
+                    src={h.avatar}
+                    alt={h.name || "Host"}
+                    size="w-4.5 h-4.5"
+                    className="border border-black/80 rounded-full relative"
+                    style={{ zIndex: visibleHostAvatars.length - idx }}
+                  />
+                ))}
+                {remainingHostCount > 0 && (
+                  <div
+                    className="w-4.5 h-4.5 rounded-full bg-zinc-800 border border-black/80 flex items-center justify-center text-[9px] text-zinc-300 font-bold leading-none shrink-0 relative"
+                    style={{ zIndex: 0 }}
+                    title={`+${remainingHostCount} more`}
+                  >
+                    +{remainingHostCount}
+                  </div>
+                )}
+              </div>
+
+              {/* Cleanly Truncated Single-Line Host Attribution Text */}
               <span
                 id="immersive-host-attribution"
-                className="text-[12px] text-white/60 font-medium select-none truncate text-center block max-w-full"
+                className="text-[12px] text-white/60 font-medium select-none truncate text-center block max-w-full min-w-0"
                 title={`Hosted by ${hostedByText}`}
               >
                 Hosted by <span className="text-white/90 font-semibold">{hostedByText}</span>

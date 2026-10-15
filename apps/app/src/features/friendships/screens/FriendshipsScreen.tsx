@@ -17,6 +17,16 @@ interface FriendshipsScreenProps {
   initialScreen?: "hub" | "requests" | "discover";
 }
 
+// In-memory cache for all users to enable instant navigation without repeat network roundtrips
+let cachedAllUsers: any[] = [];
+let lastAllUsersFetchedAt = 0;
+const ALL_USERS_TTL_MS = 60000;
+
+export function invalidateFriendshipsUsersCache() {
+  cachedAllUsers = [];
+  lastAllUsersFetchedAt = 0;
+}
+
 export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({
   onBack,
   initialScreen = "hub",
@@ -37,30 +47,51 @@ export const FriendshipsScreen: React.FC<FriendshipsScreenProps> = ({
   const [zoomedPhoto, setZoomedPhoto] = useState<{ src: string; name: string } | null>(null);
   const [selectedFriendForViewer, setSelectedFriendForViewer] = useState<{ friendshipId: string; userId: string } | null>(null);
 
-  // Discovery states
-  const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState<boolean>(false);
+  // Discovery states - initialize synchronously from cache for zero-delay rendering
+  const [allUsers, setAllUsers] = useState<any[]>(() => cachedAllUsers);
+  const [loadingUsers, setLoadingUsers] = useState<boolean>(() => cachedAllUsers.length === 0);
 
-  // Fetch all users once on mount
+  // Fetch all users with 60s TTL caching
   useEffect(() => {
-    async function loadAllUsers() {
+    const isFresh = cachedAllUsers.length > 0 && Date.now() - lastAllUsersFetchedAt < ALL_USERS_TTL_MS;
+    if (isFresh) {
+      setAllUsers(cachedAllUsers);
+      setLoadingUsers(false);
+      return;
+    }
+
+    let isMounted = true;
+    if (cachedAllUsers.length === 0) {
       setLoadingUsers(true);
+    }
+
+    async function loadAllUsers() {
       try {
         const { data, error } = await supabase
           .from("users")
           .select("id, public_id, full_name, profile_photo_path, bio");
         if (error) {
           console.error("Failed to load users for discovery:", error.message);
-        } else {
-          setAllUsers(data || []);
+        } else if (data) {
+          cachedAllUsers = data;
+          lastAllUsersFetchedAt = Date.now();
+          if (isMounted) {
+            setAllUsers(data);
+          }
         }
       } catch (err) {
         console.error("Failed to load users for discovery:", err);
       } finally {
-        setLoadingUsers(false);
+        if (isMounted) {
+          setLoadingUsers(false);
+        }
       }
     }
     loadAllUsers();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Compute discoverable users client-side: show EVERYONE except active user

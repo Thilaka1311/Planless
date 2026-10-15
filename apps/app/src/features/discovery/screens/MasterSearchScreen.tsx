@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Search, Loader2 } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
 import { DiscoveryItem } from "../../../core/types/discovery";
 import { searchCoordinator } from "../search";
 import { SearchBar } from "../../../shared/components/SearchBar";
 import { DiscoverySection } from "../components/DiscoverySection";
+import { DiscoveryFeedSkeleton } from "../components/DiscoveryFeedSkeleton";
 import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
 import { AdminPlaceEditSheet } from "../components/AdminPlaceEditSheet";
 import { extractCleanPlaceId } from "../services/venueRelevance";
@@ -342,13 +343,8 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
 
       {/* ── 3. SEARCH CONTENT / SECTIONS ── */}
       <div className="flex-1 space-y-7 pt-4 pb-12">
-        {/* Loading Spinner */}
-        {isSearching && (
-          <div className="flex flex-col items-center justify-center py-24 space-y-3">
-            <Loader2 className="w-6 h-6 animate-spin text-[#FF6B2C]" />
-            <p className="text-xs text-zinc-400 font-medium">Searching all places & movies...</p>
-          </div>
-        )}
+        {/* Loading Skeletons */}
+        {isSearching && <DiscoveryFeedSkeleton />}
 
         {/* Empty / Idle State when no query is typed */}
         {!debouncedQuery && !isSearching && (

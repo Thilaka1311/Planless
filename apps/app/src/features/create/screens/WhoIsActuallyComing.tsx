@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { ParticipantManagementScreen, Friend } from '../../participants/screens/ParticipantManagementScreen';
 import {
   getSavedDraftParticipants,
@@ -88,22 +88,24 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
       : null;
   const currentWaitlistMode: 'automatic' | 'assigned' = form.waitlistMode || 'automatic';
 
-  const handleWaitlistModeChange = (newMode: 'automatic' | 'assigned') => {
+  const handleWaitlistModeChange = useCallback((newMode: 'automatic' | 'assigned') => {
     form.setWaitlistMode(newMode);
     if (newMode === 'assigned') {
       if (form.totalCapacity !== undefined && form.totalCapacity !== null) {
-        if (form.totalCapacity > totalInvitedCount) {
-          form.setTotalCapacity(Math.max(2, totalInvitedCount));
+        const target = Math.max(2, totalInvitedCount);
+        if (form.totalCapacity > totalInvitedCount && form.totalCapacity !== target) {
+          form.setTotalCapacity(target);
         }
       }
     }
-  };
+  }, [form.setWaitlistMode, form.totalCapacity, totalInvitedCount, form.setTotalCapacity]);
 
   useEffect(() => {
     if (currentWaitlistMode === 'assigned') {
       if (form.totalCapacity !== undefined && form.totalCapacity !== null) {
-        if (form.totalCapacity > totalInvitedCount) {
-          form.setTotalCapacity(Math.max(2, totalInvitedCount));
+        const target = Math.max(2, totalInvitedCount);
+        if (form.totalCapacity > totalInvitedCount && form.totalCapacity !== target) {
+          form.setTotalCapacity(target);
         }
       }
     }
@@ -121,7 +123,7 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
    * Remove handler — must update the form so that when the user goes back and
    * returns, the removed participant is permanently gone.
    */
-  const handleRemoveParticipant = (item: Friend) => {
+  const handleRemoveParticipant = useCallback((item: Friend) => {
     const updatedFriends = selectedFriends.filter((f) => f.id !== item.id && f.dbUuid !== item.id);
     form.setSelectedFriends(updatedFriends);
     if (item.isHost) {
@@ -145,12 +147,12 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
         waitlistFriends: (savedDraft.waitlistFriends || []).filter((f: Friend) => f.id !== item.id && f.dbUuid !== item.id),
       });
     }
-  };
+  }, [selectedFriends, form.setSelectedFriends, form.setIsHostSelected, form.setPriorityGuestIds, form.priorityGuestIds]);
 
   /**
    * Sync form priority and friend queue whenever participant states change
    */
-  const handleParticipantsChange = (going: Friend[], waitlist: Friend[]) => {
+  const handleParticipantsChange = useCallback((going: Friend[], waitlist: Friend[]) => {
     const nonHostGoing = going.filter((f) => !f.isHost);
     const nonHostWait = waitlist.filter((f) => !f.isHost);
     form.setPriorityGuestIds(nonHostGoing.map((item) => item.id));
@@ -161,13 +163,13 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
       joinedFriends: nonHostGoing,
       waitlistFriends: nonHostWait,
     });
-  };
+  }, [form.setPriorityGuestIds, form.setSelectedFriends]);
 
   /**
    * Continue handler — persist the final Going order and full participant queue so that if the user returns
    * to this screen, the same order is restored.
    */
-  const handleContinue = (going: Friend[], waitlist: Friend[]) => {
+  const handleContinue = useCallback((going: Friend[], waitlist: Friend[]) => {
     const fullOrderedList = [...going, ...waitlist].filter((f) => !f.isHost);
     form.setSelectedFriends(fullOrderedList);
     form.setPriorityGuestIds(going.filter((f) => !f.isHost).map((item) => item.id));
@@ -180,7 +182,15 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
     });
 
     onContinue();
-  };
+  }, [form.setSelectedFriends, form.setPriorityGuestIds, onContinue]);
+
+  const handleAdjustCapacity = useCallback((val: number | null | undefined) => {
+    if (val === null || val === undefined) {
+      form.setTotalCapacity(undefined);
+    } else {
+      form.setTotalCapacity(Math.max(2, val));
+    }
+  }, [form.setTotalCapacity]);
 
   return (
     <ParticipantManagementScreen
@@ -195,17 +205,16 @@ export const WhoIsActuallyComing: React.FC<WhoIsActuallyComingProps> = ({
       userProfile={form.userProfile}
       selectedFriends={selectedFriends}
       priorityGuestIds={form.priorityGuestIds}
+      externalGoingList={[]}
+      externalWaitlist={[]}
+      externalInvitedList={[]}
+      externalSkippedList={[]}
       mode="wizard"
       onBack={onBack}
+      onContinue={onContinue ? handleContinue : undefined}
       onParticipantsChange={handleParticipantsChange}
       onAddFriends={onAddFriends}
-      onAdjustCapacity={(val) => {
-        if (val === null || val === undefined) {
-          form.setTotalCapacity(undefined);
-        } else {
-          form.setTotalCapacity(Math.max(2, val));
-        }
-      }}
+      onAdjustCapacity={handleAdjustCapacity}
       waitlistMode={currentWaitlistMode}
       onWaitlistModeChange={handleWaitlistModeChange}
       showWaitlistMode={true}

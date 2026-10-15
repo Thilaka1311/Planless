@@ -181,8 +181,8 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
   const isConfigured = Boolean(isCapacityConfigured && capacity !== undefined && capacity !== null);
   const isFull = Boolean(capacity && capacity > 0 && actualJoinedCount >= capacity);
   const totalInvitedCount = mode === 'wizard'
-    ? (hostItem ? 1 : 0) + selectedFriends.length
-    : (externalGoingList.length + externalWaitlist.length + externalInvitedList.length);
+    ? (hostItem ? 1 : 0) + (selectedFriends?.length || 0)
+    : ((externalGoingList?.length || 0) + (externalWaitlist?.length || 0) + (externalInvitedList?.length || 0));
 
   const visibleTabs = useMemo<ParticipantTab[]>(() => {
     if (isCompletedPlan) {
@@ -482,9 +482,9 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
       <EditCapacityBottomSheet
         isOpen={effectiveIsHost && isCapacitySheetOpen}
         capacity={capacity ?? null}
-        invitedCount={mode === 'wizard' ? totalInvitedCount : (externalGoingList.length + externalWaitlist.length + externalInvitedList.length)}
-        joinedCount={mode === 'wizard' ? undefined : externalGoingList.length}
-        waitlistedCount={mode === 'wizard' ? undefined : externalWaitlist.length}
+        invitedCount={mode === 'wizard' ? totalInvitedCount : ((externalGoingList?.length || 0) + (externalWaitlist?.length || 0) + (externalInvitedList?.length || 0))}
+        joinedCount={mode === 'wizard' ? undefined : (externalGoingList?.length || 0)}
+        waitlistedCount={mode === 'wizard' ? undefined : (externalWaitlist?.length || 0)}
         minCapacity={2}
         maxCapacity={50}
         limitToInvitedCount={false}
