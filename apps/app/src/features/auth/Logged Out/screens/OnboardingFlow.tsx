@@ -164,13 +164,12 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
 
   // Handlers for Planless entry screen
   const handleStart = () => {
-    // Eagerly prefetch and decode one-time onboarding illustration in background while animations play
+    // Eagerly prefetch and decode one-time onboarding illustration in background
     preloadImage(onboardingCups);
-    persistScreen("complicated");
-    setAuthSource("LANDING");
-    setOnboardingIndex(0);
+    persistScreen("login");
+    setAuthSource("ENTRY");
     setErrorMessage("");
-    setStep("LANDING");
+    setStep("EMAIL_INPUT");
   };
 
   const handleAlreadyHaveAccount = () => {
@@ -251,6 +250,12 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
   };
 
   const handleEmailBack = () => {
+    if (authSource === "ENTRY") {
+      persistScreen("planless");
+      setErrorMessage("");
+      setStep("ENTRY");
+      return;
+    }
     resetJoinPlanAnimation();
     persistScreen("join_plan");
     setErrorMessage("");
@@ -476,9 +481,11 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
         className={`flex-1 flex flex-col z-10 w-full ${
           step === "EMAIL_INPUT" || step === "OTP_INPUT" || step === "PROFILE_SETUP"
             ? "justify-start items-center w-full min-h-0 overflow-hidden"
-            : step === "LANDING" || step === "ENTRY"
+            : step === "LANDING"
               ? "justify-between w-full min-h-0 overflow-hidden"
-              : "justify-start pt-8 sm:pt-12 md:pt-16 max-w-sm mx-auto px-6 sm:px-8 pb-8 overflow-y-auto"
+              : step === "ENTRY"
+                ? "w-full h-full min-h-0 overflow-y-auto"
+                : "justify-start pt-8 sm:pt-12 md:pt-16 max-w-sm mx-auto px-6 sm:px-8 pb-8 overflow-y-auto"
         }`}
       >
 

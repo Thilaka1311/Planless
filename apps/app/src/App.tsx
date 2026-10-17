@@ -155,7 +155,12 @@ function AppContent({
   const [appState, setAppState] = useState<"initializing" | "unauthenticated" | "ready" | "startupError" | "retrying">("initializing");
   const [currentRoute, setCurrentRoute] = useState<AppRoute>(() => parseCurrentRoute());
   const isLegalScreen = currentRoute.subScreen === "privacy" || currentRoute.subScreen === "terms";
-  const [showSplash, setShowSplash] = useState(() => !isLegalScreen);
+  const isPublicScreen =
+    isLegalScreen ||
+    (typeof window !== "undefined" &&
+      !localStorage.getItem(localStorageKey) &&
+      (window.location.pathname === "/" || window.location.pathname === ""));
+  const [showSplash, setShowSplash] = useState(() => !isPublicScreen);
 
   useEffect(() => {
     return listenToNavigation((newRoute) => {
@@ -166,10 +171,10 @@ function AppContent({
   const isAppReady = appState === "ready" || appState === "unauthenticated" || isLegalScreen;
 
   useEffect(() => {
-    if (appState === "startupError") {
+    if (appState === "startupError" || (appState === "unauthenticated" && isPublicScreen)) {
       setShowSplash(false);
     }
-  }, [appState]);
+  }, [appState, isPublicScreen]);
   
   const isRestoringRef = useRef(false);
   const lastInitializedUserIdRef = useRef<string | null>(null);
