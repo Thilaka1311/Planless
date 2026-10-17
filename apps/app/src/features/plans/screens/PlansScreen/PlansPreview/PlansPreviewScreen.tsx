@@ -2361,10 +2361,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             className="relative w-full h-[280px] flex flex-col justify-end overflow-visible flex-shrink-0 rounded-b-[2.5rem] border-b border-white/10"
           >
             {/* Cover Image */}
-            <div
-              onClick={createMode && onEditCoverImage ? onEditCoverImage : undefined}
-              className={`absolute inset-0 w-full h-full ${createMode && onEditCoverImage ? 'cursor-pointer' : ''}`}
-            >
+            <div className="absolute inset-0 w-full h-full pointer-events-none">
               <DiscoveryImages
                 id="immersive-plan-hero-image"
                 src={selectedPlan.coverImage || (selectedPlan as any).cover_image}
@@ -2378,8 +2375,7 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
             </div>
             {/* Immersive gradient overlay for bottom readability */}
             <div
-              onClick={createMode && onEditCoverImage ? onEditCoverImage : undefined}
-              className={`absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 ${createMode && onEditCoverImage ? 'cursor-pointer pointer-events-auto' : 'pointer-events-none'} z-10`}
+              className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 pointer-events-none z-10"
             />
 
             {/* Hero Header component */}
@@ -2393,7 +2389,6 @@ export const PlansDetailsScreen: React.FC<PlansDetailsScreenProps> = ({
               isCloseIcon={createMode}
               isHost={isHost && !isCancelled && !isCompleted}
               onEditTitle={createMode ? onEditTitle : undefined}
-              onEditCoverImage={createMode ? onEditCoverImage : undefined}
               titleError={showValidationErrors && !isTitleSet}
               validationShakeKey={validationShakeKey}
               onOpenChat={

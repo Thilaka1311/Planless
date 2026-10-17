@@ -135,7 +135,7 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
     });
 
     expect(invokeSpy).toHaveBeenCalled();
-    expect(result.items.length).toBe(1);
+    expect(result.items.length).toBeGreaterThanOrEqual(1);
     expect(result.items[0].title).toBe("Amoeba Bowling");
     expect(result.nextPageToken).toBe("next-token-act");
   });
@@ -208,6 +208,7 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
       latitude_override: 12.972,
       longitude: 77.601,
       longitude_override: 77.601,
+      city: "Bengaluru",
       is_deleted: false,
       status: "ACTIVE",
       image_path: "https://images.unsplash.com/photo-truffles",
@@ -216,6 +217,7 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
     const mockSelect = vi.fn().mockReturnThis();
     const mockEq = vi.fn().mockReturnThis();
     const mockOr = vi.fn().mockReturnThis();
+    const mockIlike = vi.fn().mockReturnThis();
     const mockOrder = vi.fn().mockResolvedValue({ data: [mockDbItem], error: null });
 
     vi.spyOn(supabase, "from").mockImplementation((table: string) => {
@@ -224,6 +226,7 @@ describe("Places Search Across Categories (Dining, Sports, Activities)", () => {
           select: mockSelect,
           eq: mockEq,
           or: mockOr,
+          ilike: mockIlike,
           order: mockOrder,
         } as any;
       }

@@ -92,6 +92,32 @@ const CITY_ALIASES: Record<string, string[]> = {
   chennai: [
     "chennai",
     "madras",
+    "potheri",
+    "kattankulathur",
+    "maraimalai nagar",
+    "guduvanchery",
+    "vandalur",
+    "tambaram",
+    "chromepet",
+    "pallavaram",
+    "guindy",
+    "porur",
+    "avadi",
+    "ambattur",
+    "sholinganallur",
+    "thiruvanmiyur",
+    "omr",
+    "ecr",
+    "siruseri",
+    "navalur",
+    "kelambakkam",
+    "sriperumbudur",
+    "poonamallee",
+    "chengalpattu",
+    "perambur",
+    "egmore",
+    "triplicane",
+    "saidapet",
     "anna nagar",
     "t nagar",
     "adyar",
@@ -104,6 +130,32 @@ const CITY_ALIASES: Record<string, string[]> = {
   madras: [
     "chennai",
     "madras",
+    "potheri",
+    "kattankulathur",
+    "maraimalai nagar",
+    "guduvanchery",
+    "vandalur",
+    "tambaram",
+    "chromepet",
+    "pallavaram",
+    "guindy",
+    "porur",
+    "avadi",
+    "ambattur",
+    "sholinganallur",
+    "thiruvanmiyur",
+    "omr",
+    "ecr",
+    "siruseri",
+    "navalur",
+    "kelambakkam",
+    "sriperumbudur",
+    "poonamallee",
+    "chengalpattu",
+    "perambur",
+    "egmore",
+    "triplicane",
+    "saidapet",
     "anna nagar",
     "t nagar",
     "adyar",
@@ -182,27 +234,92 @@ const DISTINCT_ADJACENT_CITIES: Record<string, string[]> = {
   mumbai: ["pune", "nashik", "surat"],
 };
 
-// In-memory cache for resolved city bounding boxes
-const cityBoundsCache = new Map<string, CityBoundingBox>([
-  [
-    "bengaluru",
-    {
-      north: 13.1425,
-      south: 12.8335,
-      east: 77.7841,
-      west: 77.4599,
-    },
-  ],
-  [
-    "bangalore",
-    {
-      north: 13.1425,
-      south: 12.8335,
-      east: 77.7841,
-      west: 77.4599,
-    },
-  ],
-]);
+// Pre-defined bounding boxes for major metropolitan cities in India
+const DEFAULT_CITY_BOUNDS: Record<string, CityBoundingBox> = {
+  bengaluru: {
+    north: 13.1425,
+    south: 12.8335,
+    east: 77.7841,
+    west: 77.4599,
+  },
+  bangalore: {
+    north: 13.1425,
+    south: 12.8335,
+    east: 77.7841,
+    west: 77.4599,
+  },
+  mumbai: {
+    north: 19.3000,
+    south: 18.8800,
+    east: 72.9900,
+    west: 72.7500,
+  },
+  bombay: {
+    north: 19.3000,
+    south: 18.8800,
+    east: 72.9900,
+    west: 72.7500,
+  },
+  chennai: {
+    north: 13.3500,
+    south: 12.6500,
+    east: 80.3500,
+    west: 79.8500,
+  },
+  madras: {
+    north: 13.3500,
+    south: 12.6500,
+    east: 80.3500,
+    west: 79.8500,
+  },
+  hyderabad: {
+    north: 17.6000,
+    south: 17.2000,
+    east: 78.6500,
+    west: 78.2000,
+  },
+  secunderabad: {
+    north: 17.6000,
+    south: 17.2000,
+    east: 78.6500,
+    west: 78.2000,
+  },
+  delhi: {
+    north: 28.8800,
+    south: 28.4000,
+    east: 77.3500,
+    west: 76.8400,
+  },
+  "new delhi": {
+    north: 28.8800,
+    south: 28.4000,
+    east: 77.3500,
+    west: 76.8400,
+  },
+  pune: {
+    north: 18.6500,
+    south: 18.4000,
+    east: 74.0000,
+    west: 73.7000,
+  },
+  kolkata: {
+    north: 22.7000,
+    south: 22.4000,
+    east: 88.5000,
+    west: 88.2500,
+  },
+  calcutta: {
+    north: 22.7000,
+    south: 22.4000,
+    east: 88.5000,
+    west: 88.2500,
+  },
+};
+
+// In-memory cache for resolved city bounding boxes initialized with pre-cached boxes
+const cityBoundsCache = new Map<string, CityBoundingBox>(
+  Object.entries(DEFAULT_CITY_BOUNDS)
+);
 
 export function cleanCityString(str: string): string {
   return (str || "")
@@ -222,10 +339,39 @@ export function getCityAliases(cityName: string): string[] {
 }
 
 /**
- * Resolve the official geographic bounding box for any city via Google Geocoding.
- * Results are cached in memory so each city is resolved at most once per session.
+ * Returns distinct neighborhood/district names associated with a city (excluding city name).
  */
-export async function getCityBoundingBox(cityName: string): Promise<CityBoundingBox | null> {
+export function getCityNeighborhoods(cityName: string): string[] {
+  const aliases = getCityAliases(cityName);
+  const clean = cleanCityString(cityName);
+  const canonicalNames = new Set([
+    "bengaluru",
+    "bangalore",
+    "bangalore urban",
+    "bangalore rural",
+    "mumbai",
+    "bombay",
+    "mumbai suburban",
+    "chennai",
+    "madras",
+    "hyderabad",
+    "secunderabad",
+    "cyberabad",
+    "delhi",
+    "new delhi",
+    "nct of delhi",
+    "kolkata",
+    "calcutta",
+    "pune",
+    "poona",
+  ]);
+  return aliases.filter((a) => !canonicalNames.has(a) && a !== clean);
+}
+
+/**
+ * Synchronous lookup for city bounding box from memory cache.
+ */
+export function getCityBoundingBoxSync(cityName: string): CityBoundingBox | null {
   const clean = cleanCityString(cityName);
   if (!clean) return cityBoundsCache.get("bengaluru") || null;
 
@@ -233,7 +379,6 @@ export async function getCityBoundingBox(cityName: string): Promise<CityBounding
     return cityBoundsCache.get(clean)!;
   }
 
-  // Check aliases in cache
   const aliases = getCityAliases(clean);
   for (const alias of aliases) {
     if (cityBoundsCache.has(alias)) {
@@ -242,6 +387,253 @@ export async function getCityBoundingBox(cityName: string): Promise<CityBounding
       return found;
     }
   }
+
+  return null;
+}
+
+const CIVIC_CITY_CENTERS: Record<string, { latitude: number; longitude: number }> = {
+  bengaluru: { latitude: 12.9880, longitude: 77.6220 },
+  bangalore: { latitude: 12.9880, longitude: 77.6220 },
+  chennai: { latitude: 13.0400, longitude: 80.2250 },
+  madras: { latitude: 13.0400, longitude: 80.2250 },
+  mumbai: { latitude: 19.0760, longitude: 72.8777 },
+  bombay: { latitude: 19.0760, longitude: 72.8777 },
+  hyderabad: { latitude: 17.3850, longitude: 78.4867 },
+  secunderabad: { latitude: 17.3850, longitude: 78.4867 },
+  delhi: { latitude: 28.6400, longitude: 77.0950 },
+  "new delhi": { latitude: 28.6400, longitude: 77.0950 },
+};
+
+/**
+ * Returns the geographic center coordinate of a city.
+ * Falls back to Bengaluru center if city is unknown.
+ */
+export function getCityCenter(cityName: string): { latitude: number; longitude: number } {
+  const clean = cleanCityString(cityName);
+  if (CIVIC_CITY_CENTERS[clean]) {
+    return CIVIC_CITY_CENTERS[clean];
+  }
+  const box = getCityBoundingBoxSync(cityName) || cityBoundsCache.get("bengaluru")!;
+  return {
+    latitude: Number(((box.north + box.south) / 2).toFixed(6)),
+    longitude: Number(((box.east + box.west) / 2).toFixed(6)),
+  };
+}
+
+export interface ResolvedDiscoveryRegion {
+  discoveryCity: string;
+  startingLocality: string;
+  cityBounds: CityBoundingBox;
+  cityCenter: { latitude: number; longitude: number };
+}
+
+/**
+ * Separates the user's starting location (e.g. Potheri, Indiranagar, Whitefield)
+ * from its parent metropolitan discovery region (e.g. Chennai, Bengaluru).
+ */
+export function resolveDiscoveryRegion(input: {
+  cityName?: string | null;
+  locality?: string | null;
+  address?: string | null;
+  coordinates?: { latitude: number; longitude: number } | null;
+}): ResolvedDiscoveryRegion {
+  const normCity = cleanCityString(input.cityName || "");
+  const normLocality = cleanCityString(input.locality || "");
+  const normAddress = cleanCityString(input.address || "");
+  const coords = input.coordinates;
+
+  let resolvedCity = "";
+
+  // 1. Coordinate-based metropolitan matching
+  if (coords && typeof coords.latitude === "number" && typeof coords.longitude === "number") {
+    const supportedCities = ["chennai", "bengaluru", "mumbai", "hyderabad", "delhi"];
+    for (const c of supportedCities) {
+      const bounds = DEFAULT_CITY_BOUNDS[c];
+      if (
+        bounds &&
+        coords.latitude >= bounds.south &&
+        coords.latitude <= bounds.north &&
+        coords.longitude >= bounds.west &&
+        coords.longitude <= bounds.east
+      ) {
+        resolvedCity = c;
+        break;
+      }
+    }
+  }
+
+  // 2. Text / Suburb / Alias matching
+  if (!resolvedCity) {
+    const textPool = `${normLocality} ${normAddress} ${normCity}`;
+    const supportedCities = ["chennai", "bengaluru", "mumbai", "hyderabad", "delhi"];
+    for (const c of supportedCities) {
+      const aliases = CITY_ALIASES[c] || [];
+      if (aliases.some((a) => textPool.includes(a))) {
+        resolvedCity = c;
+        break;
+      }
+    }
+  }
+
+  // 3. Explicit input city matching
+  if (!resolvedCity && normCity) {
+    resolvedCity = normCity;
+  }
+
+  // Default to Bengaluru if completely unrecognized
+  if (!resolvedCity) {
+    resolvedCity = "bengaluru";
+  }
+
+  // Canonicalize display name
+  let canonicalCity = "Bengaluru";
+  if (resolvedCity === "chennai" || resolvedCity === "madras") canonicalCity = "Chennai";
+  else if (resolvedCity === "bengaluru" || resolvedCity === "bangalore") canonicalCity = "Bengaluru";
+  else if (resolvedCity === "mumbai" || resolvedCity === "bombay") canonicalCity = "Mumbai";
+  else if (resolvedCity === "hyderabad" || resolvedCity === "secunderabad") canonicalCity = "Hyderabad";
+  else if (resolvedCity === "delhi" || resolvedCity === "new delhi") canonicalCity = "Delhi";
+  else canonicalCity = input.cityName ? (input.cityName.charAt(0).toUpperCase() + input.cityName.slice(1)) : "Bengaluru";
+
+  const cityBounds = getCityBoundingBoxSync(canonicalCity) || DEFAULT_CITY_BOUNDS.bengaluru;
+  const cityCenter = getCityCenter(canonicalCity);
+
+  return {
+    discoveryCity: canonicalCity,
+    startingLocality: input.locality || input.cityName || "Nearby",
+    cityBounds,
+    cityCenter,
+  };
+}
+
+export interface RegionalSearchAnchor {
+  name: string;
+  coords: { latitude: number; longitude: number };
+  radiusMeters: number;
+}
+
+/**
+ * Calculates progressive regional search anchors across a discovery region.
+ *
+ * For suburban starting locations (e.g. Potheri > 12km from Chennai center),
+ * generates multi-area regional anchors:
+ * Anchor 1: Local proximity anchor (starting location, ~12km)
+ * Anchor 2: Metropolitan core anchor (city center, ~25km)
+ * Anchor 3: Intermediate corridor anchor (~20km)
+ */
+export function getRegionalSearchAnchors(
+  city: string,
+  userCoords?: { latitude: number; longitude: number } | null
+): RegionalSearchAnchor[] {
+  const cityCenter = getCityCenter(city);
+  const anchors: RegionalSearchAnchor[] = [];
+
+  const hasUserCoords =
+    userCoords &&
+    typeof userCoords.latitude === "number" &&
+    typeof userCoords.longitude === "number";
+
+  const isUserInTargetCity =
+    hasUserCoords && isCoordinateInCity(userCoords.latitude, userCoords.longitude, city);
+
+  if (isUserInTargetCity) {
+    const lat1 = (userCoords.latitude * Math.PI) / 180;
+    const lat2 = (cityCenter.latitude * Math.PI) / 180;
+    const dLat = ((cityCenter.latitude - userCoords.latitude) * Math.PI) / 180;
+    const dLon = ((cityCenter.longitude - userCoords.longitude) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const distToCenter = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    // Anchor 1: Immediate local starting location
+    anchors.push({
+      name: "local",
+      coords: userCoords,
+      radiusMeters: 12000,
+    });
+
+    if (distToCenter > 12) {
+      // User is far from metropolitan center (e.g. Potheri is ~28 km from Chennai center)
+      anchors.push({
+        name: "metropolitan_core",
+        coords: cityCenter,
+        radiusMeters: 25000,
+      });
+
+      anchors.push({
+        name: "corridor_connector",
+        coords: {
+          latitude: Number(((userCoords.latitude + cityCenter.latitude) / 2).toFixed(6)),
+          longitude: Number(((userCoords.longitude + cityCenter.longitude) / 2).toFixed(6)),
+        },
+        radiusMeters: 20000,
+      });
+    } else {
+      anchors.push({
+        name: "metropolitan_core",
+        coords: cityCenter,
+        radiusMeters: 25000,
+      });
+      anchors.push({
+        name: "metro_expanded",
+        coords: cityCenter,
+        radiusMeters: 50000,
+      });
+    }
+  } else {
+    // GPS disabled or user GPS is in a different city: use civic center
+    anchors.push({
+      name: "city_center",
+      coords: cityCenter,
+      radiusMeters: 20000,
+    });
+    anchors.push({
+      name: "metro_expanded",
+      coords: cityCenter,
+      radiusMeters: 50000,
+    });
+  }
+
+  return anchors;
+}
+
+/**
+ * Checks whether a given latitude/longitude falls inside a city's boundary.
+ */
+export function isCoordinateInCity(
+  latitude: number,
+  longitude: number,
+  cityName: string,
+  tolerance = 0.02
+): boolean {
+  if (
+    typeof latitude !== "number" ||
+    typeof longitude !== "number" ||
+    isNaN(latitude) ||
+    isNaN(longitude)
+  ) {
+    return false;
+  }
+  const box = getCityBoundingBoxSync(cityName);
+  if (!box) return true; // If bounding box is unavailable, don't reject
+  return (
+    latitude >= box.south - tolerance &&
+    latitude <= box.north + tolerance &&
+    longitude >= box.west - tolerance &&
+    longitude <= box.east + tolerance
+  );
+}
+
+/**
+ * Resolve the official geographic bounding box for any city via Google Geocoding.
+ * Results are cached in memory so each city is resolved at most once per session.
+ */
+export async function getCityBoundingBox(cityName: string): Promise<CityBoundingBox | null> {
+  const clean = cleanCityString(cityName);
+  if (!clean) return cityBoundsCache.get("bengaluru") || null;
+
+  const syncBox = getCityBoundingBoxSync(clean);
+  if (syncBox) return syncBox;
 
   try {
     const { data } = await supabase.functions.invoke("maps", {

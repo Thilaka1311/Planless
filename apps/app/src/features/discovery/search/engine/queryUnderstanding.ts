@@ -24,7 +24,60 @@ export const DINING_CATEGORY_KEYWORDS = new Set([
   "coffee",
   "dessert",
   "fast food",
+  "biryani",
+  "biriyani",
+  "briyani",
+  "shawarma",
+  "sushi",
+  "pasta",
+  "dosa",
+  "chaat",
+  "tandoori",
+  "steak",
+  "noodles",
+  "ramen",
+  "ice cream",
+  "bbq",
+  "barbecue",
+  "barbeque",
+  "roastery",
+  "patisserie",
+  "cocktail",
+  "cocktails",
+  "craft beer",
+  "microbrewery",
 ]);
+
+export const INTENT_FILLER_PREFIXES = [
+  "places to play",
+  "place to play",
+  "where to play",
+  "spots to play",
+  "spot to play",
+  "places to bowl",
+  "place to bowl",
+  "where to bowl",
+  "spots to bowl",
+  "places to eat",
+  "place to eat",
+  "where to eat",
+  "restaurants serving",
+  "restaurant serving",
+  "places serving",
+  "places for",
+  "place for",
+  "spots for",
+  "spot for",
+  "best places for",
+  "best place for",
+  "best spots for",
+  "top places for",
+  "good places for",
+  "where can i play",
+  "where can i find",
+  "looking for",
+  "find me",
+];
 
 const ACTIVITY_KEYWORDS = new Set([
   "bowling",
@@ -126,9 +179,31 @@ export function understandQuery(
     });
   }
 
+  // Strip common conversational filler prefixes (e.g. "places to play badminton" -> "badminton")
+  let queryWithoutFiller = trimmed;
+  const normTrimmed = normalizeSearchText(trimmed);
+  for (const prefix of INTENT_FILLER_PREFIXES) {
+    if (normTrimmed === prefix) {
+      if (prefix.includes("bowl")) {
+        queryWithoutFiller = "bowling";
+      } else if (prefix.includes("eat") || prefix.includes("serving")) {
+        queryWithoutFiller = "restaurants";
+      }
+      break;
+    }
+    if (normTrimmed.startsWith(prefix + " ")) {
+      queryWithoutFiller = trimmed.slice(prefix.length).trim();
+      break;
+    }
+  }
+
   // 2. Extract location anchors ("near Koramangala", "in Indiranagar", etc.)
   let { hasLocationQualifier, cleanSearchTerm, locationQualifier, isPureLocation } =
-    extractQueryLocation(trimmed);
+    extractQueryLocation(queryWithoutFiller);
+
+  if (cleanSearchTerm.toLowerCase() === "bowl") {
+    cleanSearchTerm = "bowling";
+  }
 
   // Check if query is a category keyword + known locality (e.g. "food indiranagar", "turf indiranagar")
   if (!hasLocationQualifier) {

@@ -67,6 +67,7 @@ export async function deleteItem(id: string) {
 export interface SearchDbItemsParams {
   query: string;
   category?: string;
+  city?: string;
 }
 
 /**
@@ -74,7 +75,7 @@ export interface SearchDbItemsParams {
  * Queries across name, address, description, and subcategory.
  */
 export async function searchDiscoveryItems(params: SearchDbItemsParams) {
-  const { query, category = "ALL" } = params;
+  const { query, category = "ALL", city } = params;
   const trimmed = query.trim();
   if (!trimmed) return [];
 
@@ -82,6 +83,10 @@ export async function searchDiscoveryItems(params: SearchDbItemsParams) {
     .from("discovery_place_overrides")
     .select("*")
     .eq("is_deleted", false);
+
+  if (city && typeof queryBuilder.ilike === "function") {
+    queryBuilder = queryBuilder.ilike("city", `%${city.trim()}%`);
+  }
 
   if (category && category.toUpperCase() !== "ALL") {
     const cat = category.toUpperCase();

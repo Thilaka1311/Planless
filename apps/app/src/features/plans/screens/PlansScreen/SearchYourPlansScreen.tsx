@@ -212,55 +212,8 @@ export const SearchYourPlansScreen: React.FC<SearchYourPlansScreenProps> = ({
     }
   };
 
-  const renderPlanRow = (plan: Plan, relationship: "CANCELLED" | "HOST" | "GOING" | "WAITLIST" | "SKIPPED" | "INVITED") => {
+  const renderPlanRow = (plan: Plan, _relationship?: "CANCELLED" | "HOST" | "GOING" | "WAITLIST" | "SKIPPED" | "INVITED") => {
     const timeLabel = formatPlanDate(plan.datetime || plan.createdAt);
-
-    if (relationship === "CANCELLED") {
-      return (
-        <motion.div
-          key={plan.id}
-          layout
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          onClick={() => setSelectedPlanId(plan.id)}
-          className="w-full py-2.5 px-1 transition-all duration-150 cursor-pointer flex items-center justify-between group active:scale-[0.99] select-none text-left"
-        >
-          <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
-            {/* Thumbnail circle avatar matching CancelledPlans.tsx */}
-            <div className="w-[44px] h-[44px] rounded-full overflow-hidden border border-[#DC2626]/30 shadow-md flex-shrink-0 relative bg-zinc-955">
-              <div className="absolute inset-0 bg-black/40 z-10" />
-              <DiscoveryImages
-                src={plan.coverImage}
-                planId={plan.dbUuid || plan.id}
-                category={plan.category}
-                subcategory={(plan as any).subcategory}
-                screen="Search Cancelled Plans"
-                alt={plan.title}
-                className="w-full h-full object-cover relative z-0 scale-100 group-hover:scale-105 transition-transform duration-200 grayscale opacity-80"
-              />
-            </div>
-
-            {/* Content details */}
-            <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-              <h3 className="font-sans font-semibold text-[14px] text-white/80 truncate line-through">
-                {plan.title}
-              </h3>
-              <span className="text-[11px] text-[#8E8E93] font-sans font-medium">
-                {timeLabel}
-              </span>
-            </div>
-          </div>
-
-          {/* Right-aligned Status Badge */}
-          <div className="flex items-center flex-shrink-0">
-            <span className="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-md bg-[#DC2626]/10 border border-[#DC2626]/20 text-[#F87171] text-[11px] font-medium leading-none shrink-0">
-              <X className="w-3 h-3 text-[#F87171]" /> Cancelled
-            </span>
-          </div>
-        </motion.div>
-      );
-    }
 
     const hasPendingAction = pendingActionPlanIds.has(plan.id) || Boolean(plan.dbUuid && pendingActionPlanIds.has(plan.dbUuid));
 

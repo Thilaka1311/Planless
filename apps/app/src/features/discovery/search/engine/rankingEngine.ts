@@ -256,8 +256,15 @@ export class IntentAwareRankingEngine {
         return b.signals.qualityScore - a.signals.qualityScore;
       }
 
-      // ─── 4. FINAL TIE-BREAKER: FINAL SCORE ──────────────────────────────────
-      return b.signals.finalScore - a.signals.finalScore;
+      // ─── 4. TIE-BREAKER: FINAL SCORE ──────────────────────────────────────
+      if (b.signals.finalScore !== a.signals.finalScore) {
+        return b.signals.finalScore - a.signals.finalScore;
+      }
+
+      // ─── 5. STABLE CANONICAL TIE-BREAKER ─────────────────────────────────────
+      const idA = a.item.place_id || a.item.id || "";
+      const idB = b.item.place_id || b.item.id || "";
+      return idA.localeCompare(idB);
     });
 
     return scoredItems.map((s, index) => {

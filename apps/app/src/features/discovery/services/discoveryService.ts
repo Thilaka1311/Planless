@@ -42,26 +42,34 @@ export function getCacheKey(coords?: DiscoveryLocationParams, city?: string): st
 }
 
 export function getCachedSections(coords?: DiscoveryLocationParams, city?: string): DiscoverySection[] | null {
-  let raw: DiscoverySection[] | null = null;
   const effectiveCity = coords?.city || city;
+  if (!effectiveCity) return null;
+  const clean = cleanCityString(effectiveCity);
+
+  let raw: DiscoverySection[] | null = null;
   if (coords) {
-    raw = sectionsCache.get(getCacheKey(coords, effectiveCity)) || sectionsCache.get(getCacheKey(coords)) || null;
+    raw = sectionsCache.get(getCacheKey(coords, clean)) || null;
   }
-  if (!raw && effectiveCity && sectionsCache.has(`default_${effectiveCity.toLowerCase()}`)) {
-    raw = sectionsCache.get(`default_${effectiveCity.toLowerCase()}`) || null;
-  }
-  if (!raw && sectionsCache.has("default")) {
-    raw = sectionsCache.get("default") || null;
-  }
-  if (!raw && sectionsCache.has("default_bengaluru")) {
-    raw = sectionsCache.get("default_bengaluru") || null;
-  }
-  if (!raw && sectionsCache.size > 0) {
-    raw = Array.from(sectionsCache.values())[0] || null;
+  if (!raw && clean && sectionsCache.has(`default_${clean}`)) {
+    raw = sectionsCache.get(`default_${clean}`) || null;
   }
 
   if (!raw || raw.length === 0) return null;
   return raw;
+}
+
+export function setCachedSections(
+  sections: DiscoverySection[],
+  coords?: DiscoveryLocationParams,
+  city?: string
+): void {
+  const effectiveCity = coords?.city || city;
+  const clean = effectiveCity ? cleanCityString(effectiveCity) : undefined;
+  const key = getCacheKey(coords, clean);
+  sectionsCache.set(key, sections);
+  if (clean) {
+    sectionsCache.set(`default_${clean}`, sections);
+  }
 }
 
 export function clearCachedSections(): void {
@@ -139,14 +147,20 @@ export async function getSectionsByCategory(
               loadedSections = data.sections as DiscoverySection[];
             }
 
-            // Apply Planless strict relevance filter AND city boundary filter to every loaded section
-            loadedSections = loadedSections.map((sec) => ({
-              ...sec,
-              items: (sec.items || []).filter((item) =>
-                isRelevantVenueForCategory(item, sec.category || "ALL") &&
-                (!effectiveCity || isPlaceInCity(item, effectiveCity, effectiveBounds))
-              ),
-            }));
+            // Filter out standalone Nearby sections and apply Planless strict relevance filter AND city boundary filter
+            loadedSections = loadedSections
+              .filter((sec) => {
+                const cat = (sec.category || "").toUpperCase();
+                const title = (sec.title || "").trim().toLowerCase();
+                return cat !== "NEARBY" && title !== "nearby" && title !== "nearby places";
+              })
+              .map((sec) => ({
+                ...sec,
+                items: (sec.items || []).filter((item) =>
+                  isRelevantVenueForCategory(item, sec.category || "ALL") &&
+                  (!effectiveCity || isPlaceInCity(item, effectiveCity, effectiveBounds))
+                ),
+              }));
 
             // Apply place overrides and exclusion filtering (is_deleted === true)
             for (const sec of loadedSections) {
@@ -189,7 +203,11 @@ export async function getSectionsByCategory(
       }
     }
 
-    const mappedSections = sectionsCache.get(cacheKey) || [];
+    const mappedSections = (sectionsCache.get(cacheKey) || []).filter((sec) => {
+      const cat = (sec.category || "").toUpperCase();
+      const title = (sec.title || "").trim().toLowerCase();
+      return cat !== "NEARBY" && title !== "nearby" && title !== "nearby places";
+    });
 
     // If "all", we return sections belonging to primary categories
     if (category.toLowerCase() === "all") {

@@ -150,6 +150,7 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
   };
 
   const pastPlans = useMemo(() => {
+    const seen = new Set<string>();
     const list = plans.filter((p) => {
       const statusUpper = (p.status || "").toUpperCase();
       const isCompleted = statusUpper === "COMPLETED";
@@ -162,21 +163,21 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
         return (
           (activeUserUuid && mId === activeUserUuid) ||
           (activeUserId && mId === activeUserId) ||
-          (userProfile?.dbUuid && mId === userProfile.dbUuid)
+          (userProfile?.dbUuid && mId === userProfile.dbUuid) ||
+          ((userProfile as any)?.id && mId === (userProfile as any).id) ||
+          (userProfile?.user_id && mId === userProfile.user_id)
         );
       });
 
-      const isHost = Boolean(
-        (p.hostId && activeUserUuid && p.hostId === activeUserUuid) ||
-        ((p as any).host_id && activeUserUuid && (p as any).host_id === activeUserUuid) ||
-        (p.hostId && activeUserId && p.hostId === activeUserId) ||
-        ((p as any).host_id && activeUserId && (p as any).host_id === activeUserId) ||
-        (userProfile?.dbUuid && p.hostId === userProfile.dbUuid) ||
-        myMember?.isHost ||
-        myMember?.role === "HOST"
-      );
+      const isHost = isPlanHost(p);
 
-      return Boolean(myMember || isHost);
+      if (!myMember && !isHost) return false;
+
+      const key = p.dbUuid || p.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+
+      return true;
     });
 
     return [...list].sort((a, b) => {
@@ -187,7 +188,7 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
       }
       return (a.title || "").localeCompare(b.title || "");
     });
-  }, [plans, activeUserUuid, activeUserId, userProfile]);
+  }, [plans, activeUserUuid, activeUserId, userProfile, isPlanHost]);
 
   const renderPlanItem = (plan: any) => {
     const statusUpper = (plan.status || "").toUpperCase();
@@ -198,7 +199,9 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
       return (
         (activeUserUuid && mId === activeUserUuid) ||
         (activeUserId && mId === activeUserId) ||
-        (userProfile?.dbUuid && mId === userProfile.dbUuid)
+        (userProfile?.dbUuid && mId === userProfile.dbUuid) ||
+        ((userProfile as any)?.id && mId === (userProfile as any).id) ||
+        (userProfile?.user_id && mId === userProfile.user_id)
       );
     });
 
@@ -208,7 +211,7 @@ export const PastPlans: React.FC<PastPlansProps> = React.memo(({
     let statusColor = "text-rose-400";
 
     if (isCanceled) {
-      statusText = "Canceled";
+      statusText = "Cancelled";
       statusColor = "text-rose-400";
     } else if (isHost) {
       statusText = "Hosted";

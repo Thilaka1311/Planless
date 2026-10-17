@@ -293,7 +293,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
           }
         }
         const isAccepted =
-          effectiveStatus !== 'INVITED' && effectiveStatus !== 'SKIPPED';
+          isHostRole || (effectiveStatus !== 'INVITED' && effectiveStatus !== 'SKIPPED');
 
         // 4. Read waitlist_position directly from database row or member
         const rawPos =
@@ -452,7 +452,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         const isAttended = finalState === 'JOINED' || (finalState === null && effectiveStatus === 'JOINED');
         effectiveStatus = isAttended ? 'JOINED' : 'SKIPPED';
       }
-      const isAccepted = effectiveStatus !== 'INVITED' && effectiveStatus !== 'SKIPPED' && effectiveStatus !== 'REJOINED';
+      const isAccepted = isHostRole || (effectiveStatus !== 'INVITED' && effectiveStatus !== 'SKIPPED' && effectiveStatus !== 'REJOINED');
       const isActivelyJoined = effectiveStatus === 'JOINED' || effectiveStatus === 'WAITLISTED' || effectiveStatus === 'REJOINED' || isHostRole;
       const joinedQueueAt = isActivelyJoined
         ? (dbRow?.joined_queue_at || (m as any).joined_queue_at || (m as any).joinedQueueAt || (m as any).join_queue_at || null)
@@ -534,15 +534,17 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
         if (key === 'going') {
           label = `Joined`;
           count = effectiveJoinedCount;
-          const noLimitDenominator = calculateNoLimitDenominator([
-            ...groups.going,
-            ...groups.waitlist,
-            ...groups.skipped,
-          ]);
-          const denominator = isNoLimit ? noLimitDenominator : maxCapacity;
-          countLabel = (denominator !== undefined && denominator !== null) ? `${effectiveJoinedCount} / ${denominator}` : `${effectiveJoinedCount}`;
+          countLabel = (!isNoLimit && maxCapacity > 0)
+            ? `${effectiveJoinedCount} / ${maxCapacity}`
+            : `${effectiveJoinedCount}`;
         }
-        if (key === 'waitlist') { label = `Waitlist`; count = groups.waitlist.length; countLabel = `${groups.waitlist.length}`; }
+        if (key === 'waitlist') {
+          label = `Waitlist`;
+          count = groups.waitlist.length;
+          countLabel = (isAssignedMode && !isNoLimit && maxCapacity > 0)
+            ? `${groups.waitlist.length} / ${maxCapacity}`
+            : `${groups.waitlist.length}`;
+        }
         if (key === 'skipped') { label = `Skipped`; count = groups.skipped.length; countLabel = `${groups.skipped.length}`; }
       }
       return { key: key as InlineTab, label, count, countLabel };
@@ -643,7 +645,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                         }
                       }}
                     className={`flex items-center gap-3 py-1.5 px-2 rounded-xl cursor-pointer hover:bg-white/[0.06] active:scale-[0.98] transition-all duration-150 select-none ${
-                      person.isAccepted ? 'opacity-100' : 'opacity-70'
+                      person.isAccepted ? 'opacity-100' : 'opacity-55'
                     }`}
                   >
                     {getParticipantQueueNumberDisplay(person, idx) && (
@@ -651,7 +653,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                         {getParticipantQueueNumberDisplay(person, idx)}
                       </span>
                     )}
-                    <div className="relative flex-shrink-0">
+                    <div className="relative flex-shrink-0" style={{ opacity: person.isAccepted ? 1 : 0.6 }}>
                       <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800">
                         <UserAvatar src={person.avatar} alt={person.name} size="w-full h-full" />
                       </div>
@@ -851,7 +853,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                             }
                           }}
                         className={`flex items-center gap-3 py-2 px-2 rounded-xl cursor-pointer hover:bg-white/[0.06] active:scale-[0.98] transition-all duration-150 select-none ${
-                          person.isAccepted ? 'opacity-100' : 'opacity-70'
+                          person.isAccepted ? 'opacity-100' : 'opacity-55'
                         }`}
                       >
                         {getParticipantQueueNumberDisplay(person, idx) && (
@@ -859,7 +861,7 @@ export function InlineParticipantView({ plan, activeUserId, isHost: isHostProp, 
                             {getParticipantQueueNumberDisplay(person, idx)}
                           </span>
                         )}
-                        <div className="relative flex-shrink-0">
+                        <div className="relative flex-shrink-0" style={{ opacity: person.isAccepted ? 1 : 0.6 }}>
                           <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-800">
                             <UserAvatar src={person.avatar} alt={person.name} size="w-full h-full" />
                           </div>

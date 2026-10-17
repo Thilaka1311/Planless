@@ -27,5 +27,11 @@ export const SUPABASE_KEY =
   (typeof process !== "undefined" ? (process.env?.VITE_SUPABASE_ANON_KEY || process.env?.SUPABASE_ANON_KEY) : undefined) ||
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlY21wbmNpeG9wZXR2dW5ra3lkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MDc0NzAsImV4cCI6MjEwMDE4MzQ3MH0.I6qblnYASnO9BGkrfKJr97nj7lmwkdgNAkHgdv0xsCo";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_KEY);
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    experimental: {
+      passkey: true,
+    },
+  },
+});
 

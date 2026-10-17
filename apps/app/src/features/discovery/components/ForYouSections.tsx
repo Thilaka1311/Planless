@@ -513,13 +513,20 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
     const apiActivities = Array.isArray(searchResults)
       ? searchResults.filter((item) => (item.category || "").toUpperCase() === "ACTIVITIES")
       : [];
+    const apiMovies = Array.isArray(searchResults)
+      ? searchResults.filter((item) => (item.category || "").toUpperCase() === "MOVIES" || item.provider === "tmdb")
+      : [];
 
-    const dining = apiDining.length > 0 ? (apiDining as DiscoveryItem[]) : filterByQuery(sortedRawDining);
-    const sports = apiSports.length > 0 ? (apiSports as DiscoveryItem[]) : filterByQuery(sortedRawSports);
-    const activities = apiActivities.length > 0 ? (apiActivities as DiscoveryItem[]) : filterByQuery(sortedRawActivities);
+    const hasApiResults =
+      apiDining.length > 0 || apiSports.length > 0 || apiActivities.length > 0 || apiMovies.length > 0;
+
+    const dining = hasApiResults ? (apiDining as DiscoveryItem[]) : filterByQuery(sortedRawDining);
+    const sports = hasApiResults ? (apiSports as DiscoveryItem[]) : filterByQuery(sortedRawSports);
+    const activities = hasApiResults ? (apiActivities as DiscoveryItem[]) : filterByQuery(sortedRawActivities);
+    const movies = hasApiResults ? (apiMovies as DiscoveryItem[]) : filterByQuery(movieItems);
 
     const hasAnyResults =
-      dining.length > 0 || sports.length > 0 || activities.length > 0;
+      dining.length > 0 || sports.length > 0 || activities.length > 0 || movies.length > 0;
 
     if (!hasAnyResults) {
       return (
@@ -560,6 +567,15 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
         items: activities,
         colorAccent: "text-pink-500",
         adminConfig: ADMIN_CONFIGS.activities,
+      });
+    }
+    if (movies.length > 0) {
+      searchSecs.push({
+        id: "search_sec_movies",
+        title: "Movies",
+        items: movies,
+        colorAccent: "text-amber-500",
+        adminConfig: ADMIN_CONFIGS.movies,
       });
     }
 
@@ -697,15 +713,38 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
   // Interleave repeating cycles: Sports -> Movies -> Restaurants -> Activities
   const interleavedSections = useMemo((): InterleavedFeedSection[] => {
     const result: InterleavedFeedSection[] = [];
-    const maxCycles = Math.max(
+    const maxVenueChunks = Math.max(
       sportsChunks.length,
-      moviesChunks.length,
       diningChunks.length,
-      activityChunks.length,
+      activityChunks.length
+    );
+    const anyVenueLoading =
+      sportsStream.isLoadingMore ||
+      diningStream.isLoadingMore ||
+      activitiesStream.isLoadingMore ||
+      sportsStream.isLoadingInitial ||
+      diningStream.isLoadingInitial ||
+      activitiesStream.isLoadingInitial;
+    const anyVenueHasMore =
+      sportsStream.hasMore || diningStream.hasMore || activitiesStream.hasMore;
+
+    // A cycle is valid if it contains physical venue chunks, or if venues are still loading,
+    // or cycle 0 (always initialize with movies). We cap movie-only runoff when physical venues terminate.
+    const maxCycles = Math.max(
+      maxVenueChunks,
+      anyVenueLoading || anyVenueHasMore
+        ? Math.min(moviesChunks.length, maxVenueChunks + 1)
+        : Math.min(moviesChunks.length, maxVenueChunks || 1),
       1
     );
 
     for (let c = 0; c < maxCycles; c++) {
+      const hasVenuesInCycle = Boolean(
+        (sportsChunks[c] && sportsChunks[c].length > 0) ||
+        (diningChunks[c] && diningChunks[c].length > 0) ||
+        (activityChunks[c] && activityChunks[c].length > 0)
+      );
+
       // 1. Sports
       if (sportsChunks[c] && sportsChunks[c].length > 0) {
         result.push({
@@ -720,7 +759,14 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
       }
 
       // 2. Movies
-      if (moviesChunks[c] && moviesChunks[c].length > 0) {
+      // Include movie rail if this cycle has physical venues, or if venues are actively loading,
+      // or at cycle 0. Never render consecutive orphan movie rails when physical venues are exhausted.
+      const shouldRenderMovieInCycle =
+        moviesChunks[c] &&
+        moviesChunks[c].length > 0 &&
+        (hasVenuesInCycle || c === 0 || anyVenueLoading || anyVenueHasMore || c < maxVenueChunks);
+
+      if (shouldRenderMovieInCycle) {
         result.push({
           key: `foryou_movies_cycle_${c}`,
           category: "MOVIES",
@@ -728,7 +774,7 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
           items: moviesChunks[c],
           colorAccent: "text-purple-500",
           adminConfig: ADMIN_CONFIGS.movies,
-          isLastOfCategory: c === moviesChunks.length - 1,
+          isLastOfCategory: c === moviesChunks.length - 1 || c >= maxCycles - 1,
         });
       } else if (c === 0 && moviesStream.isLoadingInitial && movieItems.length === 0) {
         // Reserve cycle 0 movie skeleton while initial TMDB page loads
@@ -776,6 +822,15 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
     moviesChunks,
     diningChunks,
     activityChunks,
+    sportsStream.isLoadingMore,
+    sportsStream.isLoadingInitial,
+    sportsStream.hasMore,
+    diningStream.isLoadingMore,
+    diningStream.isLoadingInitial,
+    diningStream.hasMore,
+    activitiesStream.isLoadingMore,
+    activitiesStream.isLoadingInitial,
+    activitiesStream.hasMore,
     moviesStream.isLoadingInitial,
     movieItems.length,
   ]);
@@ -825,12 +880,6 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
                 isLoadingMore={isLastMovies ? moviesStream.isLoadingMore : false}
                 onLoadMore={isLastMovies ? moviesStream.loadMore : undefined}
               />
-              {isLastMovies && (
-                <ApproachingSentinel
-                  onNearEnd={moviesStream.loadMore}
-                  enabled={moviesStream.hasMore && !moviesStream.isLoadingMore}
-                />
-              )}
             </React.Fragment>
           );
         }
@@ -892,13 +941,30 @@ export const ForYouSections: React.FC<ForYouSectionsProps> = ({
         );
       })}
 
-      {/* Bottom Sentinel to ensure seamless endless streaming when reaching feed bottom */}
+      {/* Bottom Sentinel to ensure seamless progressive streaming across all categories */}
       <ApproachingSentinel
         onNearEnd={() => {
           if (sportsStream.hasMore && !sportsStream.isLoadingMore) sportsStream.loadMore();
-          if (moviesStream.hasMore && !moviesStream.isLoadingMore) moviesStream.loadMore();
           if (diningStream.hasMore && !diningStream.isLoadingMore) diningStream.loadMore();
           if (activitiesStream.hasMore && !activitiesStream.isLoadingMore) activitiesStream.loadMore();
+
+          // Pace movies pagination with physical venue discovery:
+          // Only pull the next TMDB page when movies aren't racing far ahead of physical venues
+          const maxVenueChunks = Math.max(
+            sportsChunks.length,
+            diningChunks.length,
+            activityChunks.length
+          );
+          const anyVenueHasMore =
+            sportsStream.hasMore || diningStream.hasMore || activitiesStream.hasMore;
+
+          if (
+            moviesStream.hasMore &&
+            !moviesStream.isLoadingMore &&
+            (moviesChunks.length <= maxVenueChunks || (!anyVenueHasMore && moviesChunks.length <= 2))
+          ) {
+            moviesStream.loadMore();
+          }
         }}
         enabled={
           (sportsStream.hasMore && !sportsStream.isLoadingMore) ||

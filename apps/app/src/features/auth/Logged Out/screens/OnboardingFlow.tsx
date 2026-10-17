@@ -533,11 +533,13 @@ export function OnboardingFlow({ onComplete, initialStep = "ENTRY", existingProf
         {(step === "EMAIL_INPUT" || step === "OTP_INPUT") && (
           <EmailVerification
             onComplete={onComplete}
-            onProfileSetup={({ tempUserId, tempPublicId, sessionToken, email }) => {
+            onProfileSetup={({ tempUserId, tempPublicId, sessionToken, email, initialName, initialAvatar }) => {
               setTempUserId(tempUserId);
               setTempPublicId(tempPublicId);
               setSessionToken(sessionToken);
               if (email) setUserEmail(email);
+              if (initialName) setProfileName(initialName);
+              if (initialAvatar) setAvatar(initialAvatar);
               setErrorMessage("");
               setStep("PROFILE_SETUP");
             }}

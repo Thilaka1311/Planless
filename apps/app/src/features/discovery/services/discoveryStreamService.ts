@@ -11,7 +11,13 @@ import {
   areVenuesIdentical,
   mergeDuplicateVenues,
 } from "./venueRelevance";
-import { isPlaceInCity } from "./cityBoundary";
+import {
+  isPlaceInCity,
+  getCityBoundingBoxSync,
+  getCityCenter,
+  isCoordinateInCity,
+  getRegionalSearchAnchors,
+} from "./cityBoundary";
 import { calculateDistanceKm, formatDistanceKm } from "../components/DiscoveryCard";
 import {
   fetchPlaceOverrides,
@@ -82,8 +88,9 @@ export function isVenueRelevantForCategory(item: any, category: DiscoveryStreamC
 
 export interface StreamBatchParams {
   category: DiscoveryStreamCategory;
-  originCoords: GeoPoint;
+  originCoords?: GeoPoint | null;
   city?: string;
+  anchorIndex?: number;
   queryIndex: number;
   pageToken?: string | null;
   radiusMeters?: number;
@@ -94,6 +101,7 @@ export interface StreamBatchParams {
 
 export interface StreamBatchResult {
   items: DiscoveryItem[];
+  nextAnchorIndex: number;
   nextQueryIndex: number;
   nextPageToken: string | null;
   hasMore: boolean;
@@ -103,6 +111,7 @@ export interface StreamBatchResult {
 /**
  * Fetches a single progressive batch of authentic venues from Google Places
  * combined with matching database overrides, ordered strictly by proximity.
+ * Supports city-wide discovery up to 50km with stable city center fallback.
  */
 export async function fetchProgressiveDiscoveryBatch(
   params: StreamBatchParams
@@ -111,22 +120,55 @@ export async function fetchProgressiveDiscoveryBatch(
     category,
     originCoords,
     city = "Bengaluru",
+    anchorIndex = 0,
     queryIndex,
     pageToken,
     radiusMeters = 10000,
     seenPlaceIds,
     minDistanceKm = 0,
-    maxDistanceKm = 50,
+    maxDistanceKm = 70,
   } = params;
+
+  // Resolve stable geographic reference point for discovery:
+  // 1. Starting location: User's actual GPS / selected locality (used for distance ranking & badges)
+  // 2. Discovery region: Resolved city / metropolitan area (e.g. Chennai, Bengaluru)
+  const cityBounds = getCityBoundingBoxSync(city);
+  const cityCenter = getCityCenter(city);
+  const hasUserCoords =
+    originCoords &&
+    typeof originCoords.latitude === "number" &&
+    typeof originCoords.longitude === "number";
+  const isUserInCity =
+    hasUserCoords &&
+    isCoordinateInCity(originCoords.latitude, originCoords.longitude, city);
+  const userStartingOrigin: GeoPoint = isUserInCity ? originCoords : cityCenter;
+
+  // Retrieve regional search anchors across the metropolitan area
+  const regionalAnchors = getRegionalSearchAnchors(city, originCoords);
+  const currentAnchorIndex = Math.min(Math.max(0, anchorIndex), regionalAnchors.length - 1);
+  const currentAnchor = regionalAnchors[currentAnchorIndex] || {
+    name: "local",
+    coords: userStartingOrigin,
+    radiusMeters,
+  };
 
   const photoBaseUrl = `${SUPABASE_URL}/functions/v1/maps`;
   const progressionQueries = getCategoryProgressionQueries(category);
   const currentQuery = progressionQueries[queryIndex] || progressionQueries[0];
 
+  // For non-local anchors or broader radius queries, ensure query is contextualized with the city name
+  const isMetropolitanSearch = currentAnchor.name !== "local" || radiusMeters >= 25000;
+  const textQuery =
+    isMetropolitanSearch && !currentQuery.toLowerCase().includes(city.toLowerCase())
+      ? `${currentQuery} in ${city}`
+      : currentQuery;
+
+  const searchRadius = currentAnchor.radiusMeters || radiusMeters;
+
   // 1. Ensure fresh database overrides are loaded in memory
   await fetchPlaceOverrides();
 
-  // 2. Fetch Google Places for the current single query + pageToken
+  // 2. Fetch Google Places for current query + pageToken at current regional anchor
   let rawCandidates: any[] = [];
   let returnedNextPageToken: string | null = null;
 
@@ -144,14 +186,15 @@ export async function fetchProgressiveDiscoveryBatch(
     const { data, error } = await supabase.functions.invoke("maps", {
       body: {
         action: "places-discovery",
-        query: currentQuery,
+        query: textQuery,
         pageToken: pageToken || undefined,
         category,
         includedType,
-        latitude: originCoords.latitude,
-        longitude: originCoords.longitude,
+        latitude: currentAnchor.coords.latitude,
+        longitude: currentAnchor.coords.longitude,
         city,
-        radius: radiusMeters,
+        cityBounds,
+        radius: searchRadius,
         photoBaseUrl,
       },
     });
@@ -177,7 +220,16 @@ export async function fetchProgressiveDiscoveryBatch(
   for (const raw of rawCandidates) {
     if (!raw) continue;
     const cleanId = extractCleanPlaceId(raw.place_id || raw.id);
-    if (!cleanId || seenPlaceIds.has(cleanId)) continue;
+    const rawPlaceId = raw.place_id || raw.id;
+    const dedupeKeys = getVenueDeduplicationKeys(raw);
+    if (
+      !cleanId ||
+      seenPlaceIds.has(cleanId) ||
+      (rawPlaceId && seenPlaceIds.has(rawPlaceId)) ||
+      dedupeKeys.some((k) => seenPlaceIds.has(k))
+    ) {
+      continue;
+    }
 
     // Check database override
     const override = cache.get(cleanId) || (raw.place_id ? cache.get(raw.place_id) : undefined);
@@ -241,7 +293,7 @@ export async function fetchProgressiveDiscoveryBatch(
     if (!isVenueRelevantForCategory(merged, category)) continue;
 
     // City boundary filter
-    if (city && !isPlaceInCity(merged, city)) continue;
+    if (city && !isPlaceInCity(merged, city, cityBounds)) continue;
 
     // Must have authentic owner photo or valid DB photo resolved via pipeline (never a fallback/placeholder)
     if (!hasValidRealVenuePhoto(merged, photoBaseUrl)) continue;
@@ -259,6 +311,7 @@ export async function fetchProgressiveDiscoveryBatch(
     const lat = rawLat != null ? Number(rawLat) : undefined;
     const lng = rawLng != null ? Number(rawLng) : undefined;
 
+    // Distance is ALWAYS calculated relative to user's starting location (e.g. Potheri)
     let distKm: number | undefined =
       typeof merged._distanceKm === "number" && !isNaN(merged._distanceKm)
         ? merged._distanceKm
@@ -270,14 +323,17 @@ export async function fetchProgressiveDiscoveryBatch(
       typeof lng === "number" &&
       !isNaN(lng)
     ) {
-      distKm = calculateDistanceKm(originCoords.latitude, originCoords.longitude, lat, lng);
+      distKm = calculateDistanceKm(userStartingOrigin.latitude, userStartingOrigin.longitude, lat, lng);
     }
 
     seenPlaceIds.add(cleanId);
     getVenueDeduplicationKeys(merged).forEach((k) => seenPlaceIds.add(k));
 
+    const venueName = merged.name || merged.title || "";
     eligibleGooglePlaces.push({
       ...merged,
+      name: venueName,
+      title: venueName,
       place_id: cleanId,
       latitude: lat,
       longitude: lng,
@@ -286,14 +342,18 @@ export async function fetchProgressiveDiscoveryBatch(
     });
   }
 
-  // 4. Inject any database-only venues matching this distance tier
+  // 4. Inject database-only venues matching the entire metropolitan region (0 to maxDistanceKm)
   const dbVenuesInTier = getDatabasePlacesForCategoryAndDistanceBand(
     category,
-    originCoords,
+    userStartingOrigin,
     0,
     maxDistanceKm,
-    seenPlaceIds
-  ).filter((v) => hasValidRealVenuePhoto(v, photoBaseUrl));
+    seenPlaceIds,
+    city,
+    cityBounds
+  )
+    .filter((v) => isPlaceInCity(v, city, cityBounds))
+    .filter((v) => hasValidRealVenuePhoto(v, photoBaseUrl));
 
   // 5. Merge Google Places and database results into one unique result set first
   const combined = [...eligibleGooglePlaces, ...dbVenuesInTier];
@@ -313,15 +373,17 @@ export async function fetchProgressiveDiscoveryBatch(
     return da - db;
   });
 
-  // 6. Calculate next pagination state
+  // 6. Calculate next pagination state across progression queries and regional anchors
+  let nextAnchorIdx = currentAnchorIndex;
   let nextQueryIdx = queryIndex;
   let nextToken: string | null = returnedNextPageToken;
-  let nextRadius = radiusMeters;
+  let nextRadius = searchRadius;
   let hasMoreResults = true;
 
   // If Google Places returned a next-page token, preserve it and continue fetching next page for this query.
   // Only advance to the next progression query when the current query's pages are exhausted.
   if (returnedNextPageToken) {
+    nextAnchorIdx = currentAnchorIndex;
     nextQueryIdx = queryIndex;
     nextToken = returnedNextPageToken;
     hasMoreResults = true;
@@ -329,20 +391,41 @@ export async function fetchProgressiveDiscoveryBatch(
     nextQueryIdx = queryIndex + 1;
     nextToken = null;
 
-    if (nextQueryIdx >= progressionQueries.length) {
-      // If all queries have completed, expand radius once (up to 25km) or mark exhausted
-      if (radiusMeters < 25000) {
-        nextQueryIdx = 0; // Loop queries once at expanded radius
-        nextRadius = 25000;
-        hasMoreResults = true;
+    if (nextQueryIdx < progressionQueries.length) {
+      nextAnchorIdx = currentAnchorIndex;
+      hasMoreResults = true;
+    } else {
+      // All progression queries exhausted for this pass!
+      if (params.anchorIndex !== undefined) {
+        nextAnchorIdx = currentAnchorIndex + 1;
+        if (nextAnchorIdx < regionalAnchors.length) {
+          nextQueryIdx = 0; // Restart query suite at next anchor (e.g. Metropolitan Core)
+          nextRadius = regionalAnchors[nextAnchorIdx].radiusMeters;
+          hasMoreResults = true;
+        } else {
+          // All regional search anchors exhausted across the entire city
+          hasMoreResults = false;
+        }
       } else {
-        hasMoreResults = false;
+        // Fallback radius tier progression when caller does not track anchors explicitly
+        if (radiusMeters < 25000) {
+          nextQueryIdx = 0;
+          nextRadius = 25000;
+          hasMoreResults = true;
+        } else if (radiusMeters < 50000) {
+          nextQueryIdx = 0;
+          nextRadius = 50000;
+          hasMoreResults = true;
+        } else {
+          hasMoreResults = false;
+        }
       }
     }
   }
 
   return {
     items: uniqueCombined,
+    nextAnchorIndex: nextAnchorIdx,
     nextQueryIndex: nextQueryIdx,
     nextPageToken: nextToken,
     hasMore: hasMoreResults,

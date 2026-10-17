@@ -53,6 +53,7 @@ export type Database = {
           description_override: string | null
           category_override: string | null
           subcategory: string | null
+          city: string | null
           provider: string
           is_deleted: boolean
           updated_by: string | null
@@ -72,6 +73,7 @@ export type Database = {
           description_override?: string | null
           category_override?: string | null
           subcategory?: string | null
+          city?: string | null
           provider?: string
           is_deleted?: boolean
           updated_by?: string | null
@@ -91,6 +93,7 @@ export type Database = {
           description_override?: string | null
           category_override?: string | null
           subcategory?: string | null
+          city?: string | null
           provider?: string
           is_deleted?: boolean
           updated_by?: string | null

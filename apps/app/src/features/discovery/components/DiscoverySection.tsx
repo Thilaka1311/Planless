@@ -2,7 +2,7 @@ import React from "react";
 import { ChevronRight } from "lucide-react";
 import { DiscoveryItem } from "../../../core/types/discovery";
 import { RestaurantCard, SportsCard, MovieCard, ActivityCard, DiscoveryCard } from "./DiscoveryCard";
-import { extractCleanPlaceId } from "../services/venueRelevance";
+import { extractCleanPlaceId, isPlaceholderImageUrl, isPhotoUrlBroken } from "../services/venueRelevance";
 
 export interface DiscoverySectionProps {
   id?: string;
@@ -37,7 +37,34 @@ export const DiscoverySection = React.memo<DiscoverySectionProps>(({
   isLoadingMore,
   onLoadMore,
 }) => {
-  if (!items || items.length === 0) return null;
+  // Guard: Completely exclude any standalone "Nearby" section
+  if (
+    title &&
+    (title.trim().toLowerCase() === "nearby" ||
+      title.trim().toLowerCase() === "nearby places")
+  ) {
+    return null;
+  }
+
+  const renderableItems = React.useMemo(() => {
+    if (!items || items.length === 0) return [];
+    return items.filter((item) => {
+      const cat = (item.category || "").toUpperCase();
+      const isStrict = cat === "SPORTS" || cat === "DINING" || cat === "ACTIVITIES" || cat === "MOVIES";
+      if (isStrict) {
+        if (!item.cover_image_url) return false;
+        if (isPlaceholderImageUrl(item.cover_image_url)) return false;
+        if (isPhotoUrlBroken(item.cover_image_url)) return false;
+      }
+      return true;
+    });
+  }, [items]);
+
+  if (renderableItems.length === 0) return null;
+
+  const displaySubtitle = subtitle
+    ? subtitle.replace(/\b\d+\b/, String(renderableItems.length))
+    : undefined;
 
   return (
     <div id={id} className="space-y-3">
@@ -48,9 +75,9 @@ export const DiscoverySection = React.memo<DiscoverySectionProps>(({
             <h4 className="text-sm font-bold text-white tracking-wide">
               {title}
             </h4>
-            {subtitle && (
+            {displaySubtitle && (
               <p className="text-[11px] text-zinc-400 font-normal">
-                {subtitle}
+                {displaySubtitle}
               </p>
             )}
           </div>
@@ -78,7 +105,7 @@ export const DiscoverySection = React.memo<DiscoverySectionProps>(({
           }
         }}
       >
-        {items.map((item) => {
+        {renderableItems.map((item) => {
           const cat = item.category?.toUpperCase();
           const itemKey = extractCleanPlaceId(item.place_id || item.id) || item.place_id || item.id;
           const cardProps = {

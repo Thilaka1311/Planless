@@ -300,7 +300,7 @@ Before modifying the Home feature, verify:
 1. **Feed Invariant**: Never alter `getHomeFeedPlans()` without verifying that only `role = 'PARTICIPANT'` and `rsvp_status = 'INVITED'` are returned. Allowing `JOINED` or `HOST` plans into Home breaks the separation between Home (invitation feed) and Plans (coordination hub).
 2. **Gesture Isolation**: Any new interactive elements added to `PlanCard` or `ParticipantToggleBar` must include the `.no-hold` CSS class or handle event propagation (`e.stopPropagation()`); otherwise, tapping them will inadvertently trigger pointer capture for the hold-to-accept gesture.
 3. **Modal Routing**: Remember that tapping a card opens `DetailedPlanModal`, which branches based on `activeTab === "home"` to mount `HomePlansPreviewScreen` rather than `PlansDetailsScreen`. Ensure changes are reflected in the correct screen component.
-4. **Cover Image Hierarchy**: Respect the image resolution hierarchy: prefer `plan.cover_card_image` (9:16 crop) -> `plan.cover_image` -> category default via `getPlanCover()`.
+4. **Cover Image Resolution**: Single canonical cover image: prefer `plan.coverImage` (card crop derived via CSS `object-fit: cover`), falling back to legacy `plan.cardCoverImage` during migration, then category default via `getPlanCover()`.
 
 ### Post-Modification Verification
 After modifying the Home feature, test the following:

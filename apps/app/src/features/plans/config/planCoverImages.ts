@@ -1,4 +1,4 @@
-import defaultPlanCover from "../../../assets/planimagedefault.webp";
+import defaultPlanCover from "../../../assets/placeholder.webp";
 import sportsCover from "../../../assets/sports.webp";
 import movieCover from "../../../assets/Movies.webp";
 import diningCover from "../../../assets/dining.webp";

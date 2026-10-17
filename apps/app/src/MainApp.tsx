@@ -107,7 +107,7 @@ export default function MainApp({
   ) ? "create" : activeTab;
 
   // Track visited tabs to retain their mounted state and scroll geometry
-  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([activeMajorTab, "home"]));
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set(["home", "plans", "create", "chats", "profile"]));
 
   useEffect(() => {
     setVisitedTabs((prev) => {
@@ -1172,60 +1172,42 @@ export default function MainApp({
   return (
     <div className="w-full h-full min-h-0 bg-[#050505] flex flex-col relative overflow-hidden select-none">
 
-      {/* ---------------- FIGMA ALIGNED HEADER ---------------- */}
-      <AnimatePresence mode="wait" initial={false}>
-        {activeTab === "home" && (
-          <motion.div
-            key="header-home"
-            variants={tabVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-          >
-            <HomeHeader
-              userProfile={userProfile}
-              setActiveTab={handleTabChange}
-              pendingMemoryCount={pendingMemoryCount}
-              showFriendsIcon={true}
-              onToggleFriends={() => {
-                navigateToRoute({ tab: activeTab, subScreen: "friends" });
-              }}
-            />
-          </motion.div>
-        )}
-
-        {activeTab === "plans" && (
-          <motion.div
-            key="header-plans"
-            variants={tabVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-          >
-            <HomeHeader
-              userProfile={userProfile}
-              setActiveTab={handleTabChange}
-              pendingMemoryCount={pendingMemoryCount}
-              showSearch={true}
-              onToggleSearch={() => {
-                setPlansSearchOrigin("plans");
-                navigateToRoute({ tab: "plans", subScreen: "search-plans" });
-              }}
-              showHostedIcon={true}
-              onToggleHosted={() => {
-                if (showHostedPlansScreen) {
-                  navigateBack({ tab: "plans" });
-                } else {
-                  navigateToRoute({ tab: "plans", subScreen: "hosted-plans" });
-                }
-              }}
-              isHostedActive={showHostedPlansScreen}
-              title={showHostedPlansScreen ? "Hosted Plans" : "Plans"}
-              hideNotificationsIcon={true}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ---------------- PERSISTENT MAIN APP HEADER ---------------- */}
+      {(activeMajorTab === "home" || activeMajorTab === "plans" || activeMajorTab === "chats") && (
+        <HomeHeader
+          userProfile={userProfile}
+          setActiveTab={handleTabChange}
+          pendingMemoryCount={pendingMemoryCount}
+          showFriendsIcon={activeMajorTab === "home"}
+          onToggleFriends={() => {
+            navigateToRoute({ tab: activeTab, subScreen: "friends" });
+          }}
+          showSearch={activeMajorTab === "plans"}
+          onToggleSearch={() => {
+            setPlansSearchOrigin("plans");
+            navigateToRoute({ tab: "plans", subScreen: "search-plans" });
+          }}
+          showHostedIcon={activeMajorTab === "plans"}
+          onToggleHosted={() => {
+            if (showHostedPlansScreen) {
+              navigateBack({ tab: "plans" });
+            } else {
+              navigateToRoute({ tab: "plans", subScreen: "hosted-plans" });
+            }
+          }}
+          isHostedActive={showHostedPlansScreen}
+          title={
+            activeMajorTab === "home"
+              ? "Planless"
+              : activeMajorTab === "chats"
+              ? "Chats"
+              : showHostedPlansScreen
+              ? "Hosted Plans"
+              : "Plans"
+          }
+          hideNotificationsIcon={true}
+        />
+      )}
 
       {/* ---------------- MAIN APP SCREEN FRAME BODY ---------------- */}
       <main

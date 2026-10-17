@@ -8,9 +8,18 @@ export function normalizeSearchText(text: string): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "") // strip diacritics
-    .replace(/[^\w\s-]/g, " ")        // replace punctuation with space (preserves hyphens)
+    .replace(/[^\w\s]|_/g, " ")       // treat all punctuation, hyphens, underscores, slashes as spaces
     .replace(/\s+/g, " ")            // collapse whitespace
     .trim();
+}
+
+export function normalizeCollapsedText(text: string): string {
+  if (!text) return "";
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w]/g, ""); // completely stripped of all spaces and punctuation
 }
 
 export function tokenizeSearchText(text: string): string[] {
@@ -20,18 +29,20 @@ export function tokenizeSearchText(text: string): string[] {
 }
 
 /**
- * Checks if normalized titles are identical.
+ * Checks if normalized or collapsed titles are identical.
  * E.g. "Truffles" === "Truffles," -> true
+ * E.g. "Spider-Man" === "spider man" === "spiderman" -> true
+ * E.g. "Play Arena" === "playarena" -> true
  */
 export function isExactTitleMatch(title: string, query: string): boolean {
   const normTitle = normalizeSearchText(title);
   const normQuery = normalizeSearchText(query);
   if (!normTitle || !normQuery) return false;
   if (normTitle === normQuery) return true;
-  // Whitespace and hyphen collapsed exact match (e.g. "match day" === "matchday", "match-point" === "match point")
-  const collapsedTitle = normTitle.replace(/[\s-]+/g, "");
-  const collapsedQuery = normQuery.replace(/[\s-]+/g, "");
-  return collapsedTitle === collapsedQuery;
+  // Whitespace and hyphen collapsed exact match
+  const collTitle = normalizeCollapsedText(title);
+  const collQuery = normalizeCollapsedText(query);
+  return collTitle.length >= 3 && collTitle === collQuery;
 }
 
 export enum TextMatchTier {
@@ -69,6 +80,99 @@ function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export const CANONICAL_SYNONYMS: Record<string, string[]> = {
+  // Dining
+  bbq: ["barbecue", "barbeque"],
+  barbecue: ["bbq", "barbeque"],
+  barbeque: ["bbq", "barbecue"],
+  cafe: ["coffee", "café"],
+  café: ["cafe", "coffee"],
+  coffee: ["cafe"],
+  pizzeria: ["pizza"],
+  pizza: ["pizzeria"],
+  bakery: ["bakes", "bakehouse"],
+  bakehouse: ["bakery"],
+  bakes: ["bakery"],
+  biryani: ["biriyani", "briyani"],
+  biriyani: ["biryani", "briyani"],
+  briyani: ["biryani", "biriyani"],
+  shawarma: ["shwarma"],
+  shwarma: ["shawarma"],
+  pub: ["brewery", "bar"],
+  brewery: ["pub", "microbrewery"],
+  microbrewery: ["brewery", "pub"],
+
+  // Activities & Sports
+  kart: ["karting", "go-karting", "gokart"],
+  karting: ["kart", "go-karting", "gokart"],
+  gokart: ["kart", "karting", "go-karting"],
+  bowling: ["tenpin"],
+  tenpin: ["bowling"],
+  pool: ["billiards", "snooker"],
+  snooker: ["pool", "billiards"],
+  billiards: ["pool", "snooker"],
+  tt: ["table tennis", "ping pong"],
+  futsal: ["football", "turf"],
+  arcade: ["gaming", "video games"],
+  gaming: ["arcade"],
+  trampoline: ["bounce"],
+  lasertag: ["laser tag"],
+  paintball: ["paint ball"],
+  badminton: ["shuttle"],
+  climbing: ["bouldering"],
+  bouldering: ["climbing"],
+};
+
+export function isSynonymMatch(a: string, b: string): boolean {
+  const normA = normalizeSearchText(a);
+  const normB = normalizeSearchText(b);
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+  const collA = normalizeCollapsedText(a);
+  const collB = normalizeCollapsedText(b);
+  if (collA.length >= 3 && collA === collB) return true;
+
+  const getSynonyms = (keyNorm: string, keyColl: string): string[] => {
+    const list: string[] = [];
+    if (CANONICAL_SYNONYMS[keyNorm]) list.push(...CANONICAL_SYNONYMS[keyNorm]);
+    if (CANONICAL_SYNONYMS[keyColl]) list.push(...CANONICAL_SYNONYMS[keyColl]);
+    return list;
+  };
+
+  const synsA = getSynonyms(normA, collA);
+  if (
+    synsA.some((s) => {
+      const sNorm = normalizeSearchText(s);
+      const sColl = normalizeCollapsedText(s);
+      return (
+        sNorm === normB ||
+        sColl === collB ||
+        (normB.length >= 3 && (normB.startsWith(sNorm) || sNorm.startsWith(normB))) ||
+        (collB.length >= 3 && (collB.startsWith(sColl) || sColl.startsWith(collB)))
+      );
+    })
+  ) {
+    return true;
+  }
+
+  const synsB = getSynonyms(normB, collB);
+  if (
+    synsB.some((s) => {
+      const sNorm = normalizeSearchText(s);
+      const sColl = normalizeCollapsedText(s);
+      return (
+        sNorm === normA ||
+        sColl === collA ||
+        (normA.length >= 3 && (normA.startsWith(sNorm) || sNorm.startsWith(normA))) ||
+        (collA.length >= 3 && (collA.startsWith(sColl) || sColl.startsWith(collA)))
+      );
+    })
+  ) {
+    return true;
+  }
+  return false;
+}
+
 const KNOWN_BANGALORE_LOCALITIES = [
   "koramangala", "indiranagar", "hsr layout", "hsr", "whitefield",
   "jp nagar", "jayanagar", "mg road", "brigade road", "church street",
@@ -95,20 +199,23 @@ const KNOWN_BANGALORE_LOCALITIES = [
  */
 export function analyzeTextMatchTier(
   query: string,
-  candidate: {
-    title?: string;
-    name?: string;
-    place_address?: string;
-    location?: string;
-    description?: string;
-    subcategory?: string;
-    displayLabel?: string;
-    types?: string[];
-  },
+  candidate:
+    | string
+    | {
+        title?: string;
+        name?: string;
+        place_address?: string;
+        location?: string;
+        description?: string;
+        subcategory?: string;
+        displayLabel?: string;
+        types?: string[];
+      },
   locationQuery?: string
 ): TextMatchAnalysis {
   const normQuery = normalizeSearchText(query);
-  const rawTitle = candidate.title || candidate.name || "";
+  const candidateObj = typeof candidate === "string" ? { title: candidate } : candidate;
+  const rawTitle = candidateObj.title || candidateObj.name || "";
   const normFullTitle = normalizeSearchText(rawTitle);
 
   const result: TextMatchAnalysis = {
@@ -146,7 +253,7 @@ export function analyzeTextMatchTier(
   }
 
   // Check locality match in address / location
-  const rawAddress = [candidate.place_address, candidate.location].filter(Boolean).join(" ");
+  const rawAddress = [candidateObj.place_address, candidateObj.location].filter(Boolean).join(" ");
   const normAddress = normalizeSearchText(rawAddress);
   const addressTokens = new Set(tokenizeSearchText(normAddress));
 
@@ -161,6 +268,7 @@ export function analyzeTextMatchTier(
   // e.g. "BEL cricket ground (KSCA matches)" -> primary: "BEL cricket ground", parenthetical: "KSCA matches"
   const primaryTitle = rawTitle.replace(/\s*\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
   const normPrimaryTitle = normalizeSearchText(primaryTitle) || normFullTitle;
+  const collPrimaryTitle = normalizeCollapsedText(primaryTitle) || normalizeCollapsedText(normFullTitle);
   const parentheticalMatches = rawTitle.match(/\(([^)]+)\)/g);
   const parentheticalText = parentheticalMatches
     ? parentheticalMatches.map((m) => m.replace(/[()]/g, "")).join(" ")
@@ -172,11 +280,15 @@ export function analyzeTextMatchTier(
 
   for (const q of queriesToCheck) {
     const qTokens = tokenizeSearchText(q);
+    const collQ = normalizeCollapsedText(q);
     const primaryTokens = tokenizeSearchText(normPrimaryTitle);
     const primaryTokenSet = new Set(primaryTokens);
 
     // ─── 1. EXACT FULL NAME MATCH ───────────────────────────────────────────
-    if (normPrimaryTitle && isExactTitleMatch(normPrimaryTitle, q)) {
+    if (
+      (normPrimaryTitle && isExactTitleMatch(normPrimaryTitle, q)) ||
+      (collPrimaryTitle.length >= 3 && collPrimaryTitle === collQ)
+    ) {
       result.tier = TextMatchTier.EXACT_NAME;
       result.tierScore = 100000;
       result.matchPosition = 0;
@@ -194,12 +306,9 @@ export function analyzeTextMatchTier(
         normPrimaryTitle.startsWith(q + " ") ||
         new RegExp(`^${escapeRegex(q)}(\\s|$)`).test(normPrimaryTitle);
 
-      const collTitle = normPrimaryTitle.replace(/[\s-]+/g, "");
-      const collQ = q.replace(/[\s-]+/g, "");
       const isStartCollapsed =
-        q.length >= 4 &&
-        collTitle.startsWith(collQ) &&
-        (collTitle.length === collQ.length || normPrimaryTitle.startsWith(q));
+        collQ.length >= 4 &&
+        collPrimaryTitle.startsWith(collQ);
 
       if (isStartPhrase || isStartCollapsed) {
         result.tier = TextMatchTier.PHRASE_AT_START;
@@ -214,7 +323,11 @@ export function analyzeTextMatchTier(
 
       // ─── 3. EXACT QUERY PHRASE ANYWHERE IN NAME ─────────────────────────────
       const phraseRegex = new RegExp(`(^|\\s)${escapeRegex(q)}(\\s|$)`);
-      if (phraseRegex.test(normPrimaryTitle)) {
+      const isAnywhereCollapsed =
+        collQ.length >= 4 &&
+        collPrimaryTitle.includes(collQ);
+
+      if (phraseRegex.test(normPrimaryTitle) || isAnywhereCollapsed) {
         const rawIdx = normPrimaryTitle.indexOf(q);
         const matchPos = rawIdx >= 0 ? rawIdx : 5;
         result.tier = TextMatchTier.PHRASE_ANYWHERE;
@@ -280,7 +393,7 @@ export function analyzeTextMatchTier(
         }
       }
 
-      // ─── 7. PREFIX / PARTIAL WORD MATCHES ─────────────────────────────────
+      // ─── 7. PREFIX / PARTIAL WORD / TYPO MATCHES ───────────────────────────
       // A: Single-word query matches prefix of a title token
       if (qTokens.length === 1 && q.length >= 3) {
         const prefixIdx = primaryTokens.findIndex((tok) => tok.startsWith(q));
@@ -309,10 +422,51 @@ export function analyzeTextMatchTier(
         }
       }
 
-      // C: Typo tolerance / Levenshtein (strict, min length 4, sim >= 0.88)
-      if (q.length >= 4) {
-        const sim = levenshteinSimilarity(normPrimaryTitle, q);
-        if (sim >= 0.88) {
+      // C: Single-word or multi-word Typo Tolerance (Jaro-Winkler >= 0.84 or Levenshtein <= 2)
+      if (qTokens.length === 1 && q.length >= 4) {
+        const distThreshold = q.length >= 5 ? 2 : 1;
+        const matchesTokenTypo = primaryTokens.some(
+          (t) =>
+            t === q ||
+            t.startsWith(q) ||
+            levenshteinDistance(t, q) <= distThreshold ||
+            jaroWinklerSimilarity(t, q) >= 0.84 ||
+            isSynonymMatch(t, q)
+        );
+        const matchesTitleTypo =
+          levenshteinDistance(collPrimaryTitle, collQ) <= distThreshold ||
+          jaroWinklerSimilarity(collPrimaryTitle, collQ) >= 0.84;
+
+        if (matchesTokenTypo || matchesTitleTypo) {
+          result.tier = TextMatchTier.PREFIX_PARTIAL_IN_NAME;
+          result.tierScore = 39000;
+          result.matchPosition = 15;
+          result.isPrefixTokenInName = true;
+          return result;
+        }
+      }
+
+      // D: Multi-token typo tolerance & synonyms
+      if (qTokens.length >= 2) {
+        const matchesAllWithTypos = qTokens.every((qTok) => {
+          if (qTok.length < 4) {
+            return (
+              primaryTokenSet.has(qTok) ||
+              primaryTokens.some((t) => t.startsWith(qTok) || isSynonymMatch(t, qTok))
+            );
+          }
+          const distThreshold = qTok.length >= 5 ? 2 : 1;
+          return primaryTokens.some(
+            (t) =>
+              t === qTok ||
+              t.startsWith(qTok) ||
+              levenshteinDistance(t, qTok) <= distThreshold ||
+              jaroWinklerSimilarity(t, qTok) >= 0.84 ||
+              isSynonymMatch(t, qTok)
+          );
+        });
+
+        if (matchesAllWithTypos) {
           result.tier = TextMatchTier.PREFIX_PARTIAL_IN_NAME;
           result.tierScore = 38000;
           result.matchPosition = 20;
@@ -343,11 +497,11 @@ export function analyzeTextMatchTier(
   }
 
   // ─── 9. OTHER WEAKER SEARCHABLE TEXT ──────────────────────────────────────
-  const typesStr = Array.isArray(candidate.types) ? candidate.types.join(" ") : "";
+  const typesStr = Array.isArray(candidateObj.types) ? candidateObj.types.join(" ") : "";
   const metaText = [
-    candidate.subcategory,
-    candidate.displayLabel,
-    candidate.description,
+    candidateObj.subcategory,
+    candidateObj.displayLabel,
+    candidateObj.description,
     typesStr,
     normParenthetical,
   ].filter(Boolean).join(" ");
@@ -356,7 +510,14 @@ export function analyzeTextMatchTier(
   if (normMeta && normQuery.length >= 3) {
     const metaTokens = new Set(tokenizeSearchText(normMeta));
     const qTokens = tokenizeSearchText(normQuery);
-    const allMetaTokensMatch = qTokens.length > 0 && qTokens.every((tok) => metaTokens.has(tok));
+    const allMetaTokensMatch =
+      qTokens.length > 0 &&
+      qTokens.every(
+        (tok) =>
+          metaTokens.has(tok) ||
+          isSynonymMatch(tok, normMeta) ||
+          Array.from(metaTokens).some((mt) => isSynonymMatch(tok, mt))
+      );
     if (allMetaTokensMatch || normMeta.includes(normQuery)) {
       result.tier = TextMatchTier.WEAKER_SEARCHABLE_TEXT;
       result.tierScore = 10000;
@@ -470,6 +631,55 @@ export function levenshteinSimilarity(a: string, b: string): number {
 
   const dist = levenshteinDistance(normA, normB);
   return Math.max(0, 1.0 - dist / maxLen);
+}
+
+/**
+ * Jaro-Winkler similarity score (0.0 to 1.0).
+ * Highly effective for typo tolerance, missing letters, and name matching.
+ */
+export function jaroWinklerSimilarity(a: string, b: string): number {
+  const normA = normalizeSearchText(a);
+  const normB = normalizeSearchText(b);
+  if (!normA || !normB) return 0;
+  if (normA === normB) return 1.0;
+
+  const lenA = normA.length;
+  const lenB = normB.length;
+  const matchDistance = Math.floor(Math.max(lenA, lenB) / 2) - 1;
+  const aMatches = new Array(lenA).fill(false);
+  const bMatches = new Array(lenB).fill(false);
+
+  let matches = 0;
+  for (let i = 0; i < lenA; i++) {
+    const start = Math.max(0, i - matchDistance);
+    const end = Math.min(i + matchDistance + 1, lenB);
+    for (let j = start; j < end; j++) {
+      if (bMatches[j] || normA[i] !== normB[j]) continue;
+      aMatches[i] = true;
+      bMatches[j] = true;
+      matches++;
+      break;
+    }
+  }
+
+  if (matches === 0) return 0;
+
+  let k = 0;
+  let transpositions = 0;
+  for (let i = 0; i < lenA; i++) {
+    if (!aMatches[i]) continue;
+    while (!bMatches[k]) k++;
+    if (normA[i] !== normB[k]) transpositions++;
+    k++;
+  }
+
+  const jaro = (matches / lenA + matches / lenB + (matches - transpositions / 2) / matches) / 3;
+  let prefix = 0;
+  for (let i = 0; i < Math.min(4, Math.min(lenA, lenB)); i++) {
+    if (normA[i] === normB[i]) prefix++;
+    else break;
+  }
+  return Math.min(1.0, jaro + prefix * 0.1 * (1 - jaro));
 }
 
 /**

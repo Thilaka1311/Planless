@@ -115,14 +115,14 @@ export const PlanStack: React.FC<PlanStackProps> = ({
       <motion.div
         {...pagerProps}
         style={{ y: pageY, touchAction: "pan-x" }}
-        className="w-full flex flex-col"
+        className="w-full h-full flex flex-col"
       >
         {plansToRender.map((plan) => (
           <div
             key={plan.id}
-            id={`plan-card-${plan.id}`}
+            id={`plan-card-wrapper-${plan.id}`}
             style={{ height: containerHeight > 0 ? `${containerHeight}px` : "100%" }}
-            className="w-full relative flex-shrink-0"
+            className="w-full h-full relative flex-shrink-0"
           >
             <PlanCard
               planId={plan.id}

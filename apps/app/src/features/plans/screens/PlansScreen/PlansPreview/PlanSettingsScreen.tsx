@@ -1229,9 +1229,12 @@ export const PlanSettingsScreen: React.FC<PlanSettingsScreenProps> = ({
           }}
           onImageUpdated={(newImage, newCardImage) => {
             setCurrentCoverImage(newImage);
-            // If the parent wants to know about the card image update, pass it along
-            if (onUpdatePlanDetails && newCardImage !== undefined) {
-              onUpdatePlanDetails({ cover_card_image: newCardImage, skipDbWrite: true });
+            if (onUpdatePlanDetails) {
+              onUpdatePlanDetails({
+                cover_image: newImage,
+                cover_card_image: newCardImage !== undefined ? newCardImage : null,
+                skipDbWrite: true,
+              });
             }
           }}
           onUpdatePlanDetails={onUpdatePlanDetails}

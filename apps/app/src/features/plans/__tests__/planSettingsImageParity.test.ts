@@ -29,7 +29,7 @@ describe("Plan Settings Image Parity & Canonical Resolution", () => {
 
     // 2. Home Plan card (PlanCard.tsx lines 561-564, 665-670)
     const homeCard = {
-      src: plan.cardCoverImage || plan.coverImage || getPlanCover(plan.category, plan.subcategory || plan.sports_type),
+      src: plan.coverImage || plan.cardCoverImage || getPlanCover(plan.category, plan.subcategory || plan.sports_type),
       planId: plan.dbUuid || plan.id,
       category: plan.category,
       subcategory: plan.subcategory || plan.sports_type,

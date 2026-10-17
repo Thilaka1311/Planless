@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { ArrowLeft, ChevronRight, Crown, Sparkles, History, Search } from "lucide-react";
+import { ArrowLeft, Crown, Sparkles, History, Search } from "lucide-react";
 import { motion } from "motion/react";
 import { Plan, DbPlanParticipant } from "../../../../core/types";
 import { normalizeStatus } from "../../../../../lib/participantStatus";
@@ -9,8 +9,6 @@ import { useProfileStore } from "../../../profile/state/ProfileContext";
 import { EmptyState } from "../../../home/components/EmptyState";
 import { getPlanCover } from "../../config/planCoverImages";
 import { DiscoveryImages } from "../../../../IMGfromDB/PlanImages";
-import { CancelledPlans } from "./CancelledPlans";
-import { navigateToRoute, navigateBack, parseCurrentRoute, listenToNavigation } from "../../../navigation/appRouter";
 
 import { getPendingHostActionPlanIds } from "../../utils/planHostActions";
 
@@ -109,6 +107,12 @@ export const HostedPlansScreen = React.memo(({
     });
 
     for (const plan of sortedPlans) {
+      const isCancelled = (plan.status || "").toUpperCase() === "CANCELLED" || (plan.status || "").toUpperCase() === "CANCELED";
+      if (isCancelled) {
+        groups.past.push(plan);
+        continue;
+      }
+
       const planDate = getPlanDateTime(plan);
       const planTime = planDate.getTime();
 
@@ -166,14 +170,6 @@ export const HostedPlansScreen = React.memo(({
     });
   }, [plans, participantMap]);
 
-  const cancelledPlansCount = useMemo(() => {
-    return plans.filter((p) => {
-      if ((p.status || "").toUpperCase() !== "CANCELLED") return false;
-      const myParticipant = participantMap.get(p.id) || (p.dbUuid ? participantMap.get(p.dbUuid) : undefined);
-      const isHostRole = myParticipant?.role === "HOST";
-      return isHostRole;
-    }).length;
-  }, [plans, participantMap]);
 
   const renderPlanRow = (plan: Plan, section: string) => {
     const timeLabel = formatPlanDate(plan.datetime || plan.createdAt);
@@ -288,31 +284,8 @@ export const HostedPlansScreen = React.memo(({
     );
   };
 
-  const [showCancelledPlans, setShowCancelledPlans] = React.useState(() => {
-    const route = parseCurrentRoute();
-    return route.subScreen === 'cancelled-plans';
-  });
-
-  React.useEffect(() => {
-    return listenToNavigation((route) => {
-      setShowCancelledPlans(route.subScreen === 'cancelled-plans');
-    });
-  }, []);
-
-  if (showCancelledPlans) {
-    return (
-      <CancelledPlans
-        onBack={() => {
-          setShowCancelledPlans(false);
-          navigateBack({ tab: 'plans', subScreen: 'hosted-plans' });
-        }}
-        setSelectedPlanId={setSelectedPlanId}
-      />
-    );
-  }
-
   return (
-    <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none justify-between">
+    <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col h-full overflow-hidden text-left font-sans select-none">
       {/* Header matching main screen black background */}
       <div className="bg-[#050505] px-6 py-3.5 flex items-center gap-3 flex-shrink-0 pt-[calc(0.875rem+env(safe-area-inset-top,0px))]">
         <button
@@ -333,23 +306,6 @@ export const HostedPlansScreen = React.memo(({
       >
         {renderGroupedPlans(hostedPlans)}
       </div>
-
-      {/* Fixed Bottom Footer Action — Only rendered when cancelled plans exist */}
-      {cancelledPlansCount > 0 && (
-        <div className="flex-shrink-0 border-t border-white/[0.08] bg-[#050505]/95 backdrop-blur-md px-6 py-3.5 z-20">
-          <button
-            type="button"
-            onClick={() => {
-              setShowCancelledPlans(true);
-              navigateToRoute({ tab: 'plans', subScreen: 'cancelled-plans' });
-            }}
-            className="w-full group flex items-center justify-between py-1 text-[13px] font-sans font-medium text-white/50 hover:text-white/80 active:text-white transition-colors cursor-pointer select-none text-left"
-          >
-            <span>View Cancelled Plans</span>
-            <ChevronRight className="w-4 h-4 text-white/40 group-hover:text-white/70 group-hover:translate-x-0.5 transition-all" />
-          </button>
-        </div>
-      )}
     </div>
   );
 });

@@ -62,7 +62,7 @@ The **Create** feature is the plan authoring, customization, and publishing engi
   1. Calls `createPlan` in `PlansContext.tsx`, inserting a new row into Supabase `plans`.
   2. Database trigger `trg_auto_insert_plan_host_participant` automatically records the creator as `HOST` / `JOINED`.
   3. Client calls `api.upsertParticipants` with initial invitees marked `PARTICIPANT` / `INVITED` (and assigns group/position in Assigned mode).
-  4. Client uploads original cover image and cropped card image to the `plan-images` Supabase storage bucket via `uploadPlanImage` and `uploadPlanCardImage`.
+  4. Client uploads canonical cover image to the `plan-images` Supabase storage bucket via `uploadPlanImage`. Card presentation is derived via frontend CSS cropping (`object-fit: cover`).
   5. If total cost > 0, client calls `recalculate_wallet_expenses` RPC to initialize plan expense splits.
   6. Client clears local storage and IndexedDB drafts.
   7. Client transitions `createPhase` to `"confirmation"`.
@@ -235,10 +235,9 @@ The **Create** feature is the plan authoring, customization, and publishing engi
          │        └── trg_maintain_plan_invited_participants fires:
          │              Updates plans.invited_participants count
          │
-         ├──► 3. Supabase Storage: uploadPlanImage & uploadPlanCardImage
-         │        ├── Uploads full cover to bucket 'plan-images' (<planId>/plancoverimage1.webp)
-         │        ├── Uploads cropped card to bucket 'plan-images' (<planId>/plancardimage1.webp)
-         │        └── Updates plans.cover_card_image in database
+         ├──► 3. Supabase Storage: uploadPlanImage
+         │        ├── Uploads canonical cover to bucket 'plan-images' (<planId>/plancoverimage1.webp)
+         │        └── Updates plans.cover_image in database (card crop derived via CSS)
          │
          ├──► 4. Supabase RPC: recalculate_wallet_expenses(p_plan_id)
          │        └── If total_cost > 0: computes per-person split, creates wallet_expenses row

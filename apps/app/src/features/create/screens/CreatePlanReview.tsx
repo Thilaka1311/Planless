@@ -415,7 +415,6 @@ export const CreatePlanReview: React.FC<CreatePlanReviewProps> = ({
         onEditParticipants={onEditParticipants}
         onAddParticipants={onAddParticipants}
         onEditTitle={(newTitle) => form.setLocalTitle(newTitle)}
-        onEditCoverImage={handlePickCoverImage}
         onAdjustDate={(eventDate, rsvpDate) => {
           form.setEventDateTime(eventDate);
           if (rsvpDate) {

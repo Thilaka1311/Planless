@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { resolveDiscoveryRegion } from "../services/cityBoundary";
 
 export interface UserCoordinates {
   latitude: number;
@@ -59,21 +60,21 @@ let inMemoryLocation: DiscoveryLocation = (() => {
           typeof parsed.longitude === "number" &&
           !isNaN(parsed.longitude)
         ) {
+          const region = resolveDiscoveryRegion({
+            cityName: parsed.city || parsed.name,
+            locality: parsed.locality,
+            address: parsed.address,
+            coordinates: { latitude: Number(parsed.latitude), longitude: Number(parsed.longitude) },
+          });
+
           return {
-            name: parsed.name || parsed.city || "Bengaluru",
+            name: parsed.name || region.startingLocality || region.discoveryCity,
             address: parsed.address || "",
             latitude: Number(parsed.latitude),
             longitude: Number(parsed.longitude),
-            city: parsed.city || parsed.name || "Bengaluru",
-            locality: parsed.locality || "Nearby",
-            cityBounds: parsed.cityBounds
-              ? {
-                  north: Number(parsed.cityBounds.north),
-                  south: Number(parsed.cityBounds.south),
-                  east: Number(parsed.cityBounds.east),
-                  west: Number(parsed.cityBounds.west),
-                }
-              : DEFAULT_DISCOVERY_LOCATION.cityBounds,
+            city: region.discoveryCity,
+            locality: parsed.locality || region.startingLocality,
+            cityBounds: region.cityBounds,
           };
         }
       }
@@ -128,21 +129,21 @@ export function setStoredDiscoveryLocation(location: DiscoveryLocation): void {
     return;
   }
 
+  const region = resolveDiscoveryRegion({
+    cityName: location.city || location.name,
+    locality: location.locality,
+    address: location.address,
+    coordinates: { latitude: Number(location.latitude), longitude: Number(location.longitude) },
+  });
+
   const normalized: DiscoveryLocation = {
-    name: location.name || location.city || "Bengaluru",
+    name: location.name || region.startingLocality || region.discoveryCity,
     address: location.address || "",
     latitude: Number(location.latitude),
     longitude: Number(location.longitude),
-    city: location.city || location.name || "Bengaluru",
-    locality: location.locality || "Nearby",
-    cityBounds: location.cityBounds
-      ? {
-          north: Number(location.cityBounds.north),
-          south: Number(location.cityBounds.south),
-          east: Number(location.cityBounds.east),
-          west: Number(location.cityBounds.west),
-        }
-      : undefined,
+    city: location.city || region.discoveryCity,
+    locality: location.locality || region.startingLocality,
+    cityBounds: region.cityBounds,
   };
 
   inMemoryLocation = normalized;

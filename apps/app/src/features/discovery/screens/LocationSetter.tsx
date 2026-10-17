@@ -3,7 +3,7 @@ import { ArrowLeft, MapPin, Loader2, AlertCircle } from "lucide-react";
 import { useGooglePlacesAutocomplete } from "../../../shared/hooks/useGooglePlacesAutocomplete";
 import { SearchBar } from "../../../shared/components/SearchBar";
 
-import { getCityBoundingBox, CityBoundingBox } from "../services/cityBoundary";
+import { getCityBoundingBox, CityBoundingBox, resolveDiscoveryRegion } from "../services/cityBoundary";
 
 export interface DiscoveryLocation {
   name: string;
@@ -95,23 +95,26 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
 
           try {
             const resolved = await reverseGeocode(lat, lng);
-            const city = resolved?.city || currentCity || "Bengaluru";
-            const locality = resolved?.locality || resolved?.name || currentLocality || "Nearby";
-            const readableName =
-              locality && city && locality !== city
-                ? `${locality}, ${city}`
-                : resolved?.name || locality || city || "Current Location";
+            const region = resolveDiscoveryRegion({
+              cityName: resolved?.city || currentCity,
+              locality: resolved?.locality || resolved?.name || currentLocality,
+              address: resolved?.formatted_address,
+              coordinates: { latitude: lat, longitude: lng },
+            });
 
-            const cityBounds = resolved?.cityBounds || (await getCityBoundingBox(city)) || undefined;
+            const readableName =
+              region.startingLocality && region.discoveryCity && region.startingLocality !== region.discoveryCity
+                ? `${region.startingLocality}, ${region.discoveryCity}`
+                : resolved?.name || region.startingLocality || region.discoveryCity || "Current Location";
 
             const loc: DiscoveryLocation = {
               name: readableName,
               address: resolved?.formatted_address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
               latitude: lat,
               longitude: lng,
-              city,
-              locality,
-              cityBounds,
+              city: region.discoveryCity,
+              locality: region.startingLocality,
+              cityBounds: region.cityBounds,
             };
 
             setDetectedLocation(loc);
@@ -123,13 +126,19 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
             }
           } catch (err: any) {
             console.warn("[LocationSetter] Reverse geocode error, fallback to coordinates:", err);
+            const region = resolveDiscoveryRegion({
+              cityName: currentCity,
+              locality: currentLocality,
+              coordinates: { latitude: lat, longitude: lng },
+            });
             const fallbackLoc: DiscoveryLocation = {
-              name: currentCity ? `${currentCity}, Karnataka` : "Current Location",
+              name: region.startingLocality ? `${region.startingLocality}, ${region.discoveryCity}` : "Current Location",
               address: `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
               latitude: lat,
               longitude: lng,
-              city: currentCity || "Bengaluru",
-              locality: currentLocality || "Nearby",
+              city: region.discoveryCity,
+              locality: region.startingLocality,
+              cityBounds: region.cityBounds,
             };
             setDetectedLocation(fallbackLoc);
             setCardStatus("AVAILABLE");
@@ -273,30 +282,38 @@ export const LocationSetter: React.FC<LocationSetterProps> = ({
       const resolvedLat = typeof lat === "number" ? lat : (currentCoordinates?.latitude || 12.9716);
       const resolvedLng = typeof lng === "number" ? lng : (currentCoordinates?.longitude || 77.5946);
 
-      // Resolve city boundary box for strict geographical restriction
-      const cityBounds = await getCityBoundingBox(city);
+      const region = resolveDiscoveryRegion({
+        cityName: city || currentCity,
+        locality: locality || mainText,
+        address: details?.formatted_address || suggestion.description,
+        coordinates: { latitude: resolvedLat, longitude: resolvedLng },
+      });
 
       onSelectLocation({
         name: mainText,
         address: details?.formatted_address || suggestion.description,
         latitude: resolvedLat,
         longitude: resolvedLng,
-        city,
-        locality: locality || "Nearby",
-        cityBounds: cityBounds || undefined,
+        city: region.discoveryCity,
+        locality: region.startingLocality,
+        cityBounds: region.cityBounds,
       });
     } catch (err: any) {
       console.error("[LocationSetter] Failed to resolve place details:", err);
-      const fallbackCity = currentCity || "Bengaluru";
-      const cityBounds = await getCityBoundingBox(fallbackCity);
+      const region = resolveDiscoveryRegion({
+        cityName: currentCity,
+        locality: suggestion.structured_formatting?.main_text || "Nearby",
+        address: suggestion.description,
+        coordinates: currentCoordinates,
+      });
       onSelectLocation({
         name: suggestion.structured_formatting?.main_text || suggestion.description,
         address: suggestion.description,
-        latitude: currentCoordinates?.latitude || 12.9716,
-        longitude: currentCoordinates?.longitude || 77.5946,
-        city: fallbackCity,
-        locality: suggestion.structured_formatting?.main_text || "Nearby",
-        cityBounds: cityBounds || undefined,
+        latitude: currentCoordinates?.latitude || region.cityCenter.latitude,
+        longitude: currentCoordinates?.longitude || region.cityCenter.longitude,
+        city: region.discoveryCity,
+        locality: region.startingLocality,
+        cityBounds: region.cityBounds,
       });
     } finally {
       setIsResolvingPlaceId(null);
