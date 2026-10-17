@@ -26,7 +26,9 @@ export type SubScreen =
   | 'plan-settings'
   | 'plan-settings-cover'
   | 'profile-name'
-  | 'profile-about';
+  | 'profile-about'
+  | 'privacy'
+  | 'terms';
 
 export interface AppRoute {
   tab: AppTab;
@@ -206,8 +208,9 @@ export function canGoBack(): boolean {
 export function isValidRoute(pathname: string): boolean {
   if (!pathname) return false;
   const [cleanPath] = pathname.split('?');
-  const clean = cleanPath.replace(/\/+$/, '') || '/';
+  const clean = (cleanPath.replace(/\/+$/, '') || '/').toLowerCase();
   if (clean === '/' || clean === '/home') return true;
+  if (clean === '/privacy' || clean === '/terms') return true;
   if (clean === '/friends') return true;
   if (clean === '/create' || clean.startsWith('/create/')) return true;
   if (clean === '/search' || clean === '/quick-plans') return true;
@@ -230,6 +233,14 @@ function parseRoutePath(pathname: string, search?: string): AppRoute {
   }
 
   const primary = parts[0].toLowerCase();
+
+  // Top-level legal routes: /privacy, /terms
+  if (primary === 'privacy') {
+    return { tab: 'home', subScreen: 'privacy' };
+  }
+  if (primary === 'terms') {
+    return { tab: 'home', subScreen: 'terms' };
+  }
 
   // Top-level friends route: /friends
   if (primary === 'friends') {
@@ -352,6 +363,8 @@ function parseRoutePath(pathname: string, search?: string): AppRoute {
     if (sub === 'past') return { tab: 'profile', subScreen: 'past-plans' };
     if (sub === 'name' || sub === 'edit-name') return { tab: 'profile', subScreen: 'profile-name' };
     if (sub === 'about' || sub === 'edit-about' || sub === 'bio') return { tab: 'profile', subScreen: 'profile-about' };
+    if (sub === 'privacy') return { tab: 'profile', subScreen: 'privacy' };
+    if (sub === 'terms') return { tab: 'profile', subScreen: 'terms' };
     return { tab: 'profile' };
   }
 
@@ -394,6 +407,16 @@ export function getCanonicalPathForAlias(pathname: string): string | null {
   // /profile/edit-about or /profile/bio -> /profile/about
   if (primary === 'profile' && (parts[1]?.toLowerCase() === 'edit-about' || parts[1]?.toLowerCase() === 'bio')) {
     return '/profile/about';
+  }
+
+  // /profile/privacy -> /privacy
+  if (primary === 'profile' && parts[1]?.toLowerCase() === 'privacy') {
+    return '/privacy';
+  }
+
+  // /profile/terms -> /terms
+  if (primary === 'profile' && parts[1]?.toLowerCase() === 'terms') {
+    return '/terms';
   }
 
   // /plan/:id -> /plans/:id
@@ -493,6 +516,12 @@ export function getRoutePath(route: AppRoute): string {
     return `/join/${encodeURIComponent(route.inviteToken)}`;
   }
 
+  if (route.subScreen === 'privacy') {
+    return '/privacy';
+  }
+  if (route.subScreen === 'terms') {
+    return '/terms';
+  }
   if (route.subScreen === 'friends') {
     return '/friends';
   }

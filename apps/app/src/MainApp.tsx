@@ -155,7 +155,9 @@ export default function MainApp({
     if (
       route.subScreen === "cancelled-plans" ||
       route.subScreen === "profile-name" ||
-      route.subScreen === "profile-about"
+      route.subScreen === "profile-about" ||
+      route.subScreen === "privacy" ||
+      route.subScreen === "terms"
     ) return true;
     if (route.tab === "create") {
       // In Create flow: category screen has bottom nav; wizard screens (who, who-actually, when, review, confirmation) do not
@@ -1106,7 +1108,9 @@ export default function MainApp({
       showPlansSearchScreen ||
       showHostedPlansScreen ||
       showPastPlansScreen ||
-      showFriendsScreen
+      showFriendsScreen ||
+      currentRoute.subScreen === "privacy" ||
+      currentRoute.subScreen === "terms"
     ) {
       return false;
     }

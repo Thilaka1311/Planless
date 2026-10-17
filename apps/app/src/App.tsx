@@ -14,7 +14,17 @@ import {
   setStoredPendingInviteToken,
   clearStoredPendingInviteToken,
 } from "./features/plans/services/planInviteService";
-import { isValidRoute } from "./features/navigation/appRouter";
+import {
+  isValidRoute,
+  parseCurrentRoute,
+  listenToNavigation,
+  navigateToRoute,
+  navigateBack,
+  getInAppNavigationDepth,
+  AppRoute,
+} from "./features/navigation/appRouter";
+import { PrivacyPolicy } from "./features/legal/screens/PrivacyPolicy";
+import { TermsOfService } from "./features/legal/screens/TermsOfService";
 import { lazyWithRetry } from "./shared/utils/lazyWithRetry";
 
 import { AnimatePresence } from "motion/react";
@@ -53,16 +63,19 @@ export default function App() {
   });
 
   const [initialProfile, setInitialProfile] = useState<UserProfile | null>(() => {
-    const saved = localStorage.getItem(localStorageKey);
-    if (saved) {
-      try {
+    if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
+    try {
+      const saved = localStorage.getItem(localStorageKey);
+      if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.user_id) {
           return parsed;
         }
-      } catch (e) {
-        localStorage.removeItem(localStorageKey);
       }
+    } catch (e) {
+      try {
+        localStorage.removeItem(localStorageKey);
+      } catch {}
     }
     return null;
   });
@@ -140,9 +153,17 @@ function AppContent({
 }) {
   const { userProfile, setUserProfile } = useProfileStore();
   const [appState, setAppState] = useState<"initializing" | "unauthenticated" | "ready" | "startupError" | "retrying">("initializing");
-  const [showSplash, setShowSplash] = useState(true);
+  const [currentRoute, setCurrentRoute] = useState<AppRoute>(() => parseCurrentRoute());
+  const isLegalScreen = currentRoute.subScreen === "privacy" || currentRoute.subScreen === "terms";
+  const [showSplash, setShowSplash] = useState(() => !isLegalScreen);
 
-  const isAppReady = appState === "ready" || appState === "unauthenticated";
+  useEffect(() => {
+    return listenToNavigation((newRoute) => {
+      setCurrentRoute(newRoute);
+    });
+  }, []);
+
+  const isAppReady = appState === "ready" || appState === "unauthenticated" || isLegalScreen;
 
   useEffect(() => {
     if (appState === "startupError") {
@@ -401,6 +422,37 @@ function AppContent({
     }
     setAppState("unauthenticated");
   };
+
+  // Dedicated, publicly accessible legal routes (/privacy, /terms).
+  // These routes MUST be completely accessible without requiring authentication,
+  // session tokens, splash animation delays, or user sign-in.
+  if (currentRoute.subScreen === "privacy") {
+    return (
+      <PrivacyPolicy
+        onBack={() => {
+          if (getInAppNavigationDepth() > 0 && typeof window !== "undefined" && window.history.length > 1) {
+            navigateBack({ tab: userProfile ? "profile" : "home" });
+          } else {
+            navigateToRoute({ tab: userProfile ? "profile" : "home" });
+          }
+        }}
+      />
+    );
+  }
+
+  if (currentRoute.subScreen === "terms") {
+    return (
+      <TermsOfService
+        onBack={() => {
+          if (getInAppNavigationDepth() > 0 && typeof window !== "undefined" && window.history.length > 1) {
+            navigateBack({ tab: userProfile ? "profile" : "home" });
+          } else {
+            navigateToRoute({ tab: userProfile ? "profile" : "home" });
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <>
