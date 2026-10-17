@@ -175,8 +175,30 @@ function AppContent({
         return;
       }
 
+      // Extract Google OAuth profile metadata if present
+      const googleName =
+        authUser.user_metadata?.full_name ||
+        authUser.user_metadata?.name ||
+        authUser.user_metadata?.display_name ||
+        "";
+      const googleAvatar =
+        authUser.user_metadata?.avatar_url ||
+        authUser.user_metadata?.picture ||
+        null;
+
       if (existingProfile) {
-        dbProfile = existingProfile;
+        // Preserve user-customized profile for existing users who already completed onboarding.
+        // Never overwrite customized display names or profile photos with Google metadata!
+        if (existingProfile.profile_completed) {
+          dbProfile = existingProfile;
+        } else {
+          // If onboarding is incomplete, seed missing fields from Google metadata for setup
+          dbProfile = {
+            ...existingProfile,
+            full_name: existingProfile.full_name || (googleName ? googleName.slice(0, 30) : ""),
+            profile_photo_path: existingProfile.profile_photo_path || googleAvatar,
+          };
+        }
       } else {
         // Double-check that the auth user actually exists on the server before inserting public profile
         const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -199,13 +221,16 @@ function AppContent({
           return;
         }
         if (publicId) {
+          const initialName = googleName ? googleName.slice(0, 30) : "";
+          const initialPhoto = googleAvatar || null;
+
           const { data: newProfile, error: insertError } = await supabase
             .from("users")
             .upsert({
               id: authUser.id,
               public_id: publicId,
-              full_name: "",
-              profile_photo_path: null,
+              full_name: initialName,
+              profile_photo_path: initialPhoto,
               bio: "",
               profile_completed: false
             }, { onConflict: "id", ignoreDuplicates: true })

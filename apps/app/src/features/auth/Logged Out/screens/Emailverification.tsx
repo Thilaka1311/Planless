@@ -50,6 +50,8 @@ export interface EmailVerificationProps {
     tempPublicId: string | null;
     sessionToken: string;
     email?: string;
+    initialName?: string;
+    initialAvatar?: string | null;
   }) => void;
   onBack?: () => void;
   initialSubStep?: "EMAIL" | "OTP";
@@ -112,7 +114,17 @@ export function EmailVerification({
 
   // Status & Error
   const [checkingUser, setCheckingUser] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [supportsPasskey, setSupportsPasskey] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  // Check WebAuthn passkey browser support
+  useEffect(() => {
+    if (typeof window !== "undefined" && Boolean(window.PublicKeyCredential)) {
+      setSupportsPasskey(true);
+    }
+  }, []);
 
   // Touch gesture state for swipe back on EMAIL screen
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
@@ -505,72 +517,161 @@ export function EmailVerification({
       setOtpExpiresAt(null);
       clearStoredOtpSession();
 
-      const authUser = session.user;
-
-      // Check if this authenticated user already has a completed Planless profile
-      const { data: dbProfile, error: profileError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", authUser.id)
-        .maybeSingle();
-
-      if (profileError) {
-        console.error("[EmailVerification] Error checking profile status:", profileError);
-      }
-
-      if (dbProfile && dbProfile.profile_completed) {
-        try {
-          localStorage.removeItem("planless_onboarding_screen");
-        } catch {}
-
-        onComplete({
-          name: dbProfile.full_name,
-          phone: authUser.email || "",
-          bio: dbProfile.bio || "",
-          avatar: dbProfile.profile_photo_path || defaultAvatar,
-          joined: true,
-          college_or_work: "SRM Chennai",
-          user_id: dbProfile.public_id,
-          dbUuid: dbProfile.id,
-          token: session.access_token,
-          profile_completed: true,
-          role: dbProfile.role || "user",
-        });
-      } else {
-        let publicId = dbProfile?.public_id;
-        if (!dbProfile) {
-          const { data: generatedId } = await supabase.rpc("generate_user_public_id");
-          publicId = generatedId;
-          const { data: newProfile } = await supabase
-            .from("users")
-            .upsert({
-              id: authUser.id,
-              public_id: publicId,
-              full_name: "",
-              profile_photo_path: null,
-              bio: "",
-              profile_completed: false,
-            }, { onConflict: "id", ignoreDuplicates: true })
-            .select("*")
-            .single();
-          if (newProfile?.public_id) {
-            publicId = newProfile.public_id;
-          }
-        }
-
-        setErrorMessage("");
-        onProfileSetup({
-          tempUserId: authUser.id,
-          tempPublicId: publicId || null,
-          sessionToken: session.access_token,
-          email: authUser.email || verifyEmail || "",
-        });
-      }
+      await handleAuthenticatedSession(session, verifyEmail);
     } catch (err) {
       console.warn("[EmailVerification] OTP verification exception:", err);
       setErrorMessage("That code doesn’t look right. Try again.");
     } finally {
       setCheckingUser(false);
+    }
+  };
+
+  // Reusable handler for authenticated Supabase sessions (OTP, Google OAuth, Passkey)
+  const handleAuthenticatedSession = async (session: any, fallbackEmail?: string) => {
+    const authUser = session.user;
+
+    // Check if this authenticated user already has a completed Planless profile
+    const { data: dbProfile, error: profileError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", authUser.id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.error("[EmailVerification] Error checking profile status:", profileError);
+    }
+
+    if (dbProfile && dbProfile.profile_completed) {
+      try {
+        localStorage.removeItem("planless_onboarding_screen");
+      } catch {}
+
+      onComplete({
+        name: dbProfile.full_name,
+        phone: authUser.email || fallbackEmail || "",
+        bio: dbProfile.bio || "",
+        avatar: dbProfile.profile_photo_path || defaultAvatar,
+        joined: true,
+        college_or_work: "SRM Chennai",
+        user_id: dbProfile.public_id,
+        dbUuid: dbProfile.id,
+        token: session.access_token,
+        profile_completed: true,
+        role: dbProfile.role || "user",
+      });
+    } else {
+      let publicId = dbProfile?.public_id;
+      const googleName =
+        authUser.user_metadata?.full_name ||
+        authUser.user_metadata?.name ||
+        authUser.user_metadata?.display_name ||
+        "";
+      const googleAvatar =
+        authUser.user_metadata?.avatar_url ||
+        authUser.user_metadata?.picture ||
+        null;
+
+      if (!dbProfile) {
+        const { data: generatedId } = await supabase.rpc("generate_user_public_id");
+        publicId = generatedId;
+        const initialName = googleName ? googleName.slice(0, 30) : "";
+        const { data: newProfile } = await supabase
+          .from("users")
+          .upsert({
+            id: authUser.id,
+            public_id: publicId,
+            full_name: initialName,
+            profile_photo_path: googleAvatar,
+            bio: "",
+            profile_completed: false,
+          }, { onConflict: "id", ignoreDuplicates: true })
+          .select("*")
+          .single();
+        if (newProfile?.public_id) {
+          publicId = newProfile.public_id;
+        }
+      }
+
+      setErrorMessage("");
+      onProfileSetup({
+        tempUserId: authUser.id,
+        tempPublicId: publicId || null,
+        sessionToken: session.access_token,
+        email: authUser.email || fallbackEmail || "",
+        initialName: googleName || dbProfile?.full_name || "",
+        initialAvatar: googleAvatar || dbProfile?.profile_photo_path || null,
+      });
+    }
+  };
+
+  // Handle Google OAuth Sign-In via Supabase
+  const handleGoogleSignIn = async () => {
+    if (checkingUser || googleLoading || passkeyLoading) return;
+    setErrorMessage("");
+    setGoogleLoading(true);
+
+    try {
+      const redirectOrigin = typeof window !== "undefined" ? window.location.origin : undefined;
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: redirectOrigin,
+          queryParams: {
+            prompt: "select_account",
+            access_type: "offline",
+          },
+        },
+      });
+
+      if (error) {
+        console.error("[EmailVerification] Google OAuth error:", error);
+        setErrorMessage(error.message || "Failed to start Google sign-in. Please try again.");
+        setGoogleLoading(false);
+        return;
+      }
+
+      // If running in a web environment where URL redirection isn't automatically triggered
+      if (data?.url && typeof window !== "undefined") {
+        window.location.assign(data.url);
+      }
+    } catch (err: any) {
+      console.warn("[EmailVerification] Google sign-in exception:", err);
+      setErrorMessage("Unable to connect to Google. Please check your connection or use email.");
+      setGoogleLoading(false);
+    }
+  };
+
+  // Handle Passkey Sign-In via Supabase WebAuthn
+  const handlePasskeySignIn = async () => {
+    if (checkingUser || googleLoading || passkeyLoading) return;
+    setErrorMessage("");
+    setPasskeyLoading(true);
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPasskey();
+      if (error) {
+        console.warn("[EmailVerification] Passkey sign-in error:", error);
+        const isCanceled =
+          error.name === "NotAllowedError" ||
+          error.message?.includes("cancel") ||
+          error.message?.includes("abort");
+        if (isCanceled) {
+          setErrorMessage("Passkey sign-in was canceled.");
+        } else {
+          setErrorMessage(error.message || "No matching passkey found on this device.");
+        }
+        setPasskeyLoading(false);
+        return;
+      }
+
+      if (data?.session) {
+        await handleAuthenticatedSession(data.session);
+      }
+    } catch (err: any) {
+      console.warn("[EmailVerification] Passkey sign-in exception:", err);
+      setErrorMessage("Passkey authentication failed. Please try email or Google.");
+    } finally {
+      setPasskeyLoading(false);
     }
   };
 
@@ -609,12 +710,59 @@ export function EmailVerification({
               </div>
 
               {/* Main heading and input content group */}
-              <div className="w-full space-y-4 xs:space-y-5 sm:space-y-6">
+              <div className="w-full space-y-3.5 xs:space-y-4">
                 {/* Heading: Centered, matching helper titles in the animation screens */}
                 <div>
                   <h2 className="text-[18px] xs:text-[20px] sm:text-[22px] md:text-[24px] font-sans font-bold tracking-tight text-white leading-[1.25] text-center">
                     Welcome to Planless
                   </h2>
+                </div>
+
+                {/* Google Sign-In Button */}
+                <button
+                  type="button"
+                  id="google_signin_btn"
+                  onClick={handleGoogleSignIn}
+                  disabled={checkingUser || googleLoading || passkeyLoading}
+                  className="w-full h-[52px] bg-[#141416] hover:bg-[#1a1a1d] active:bg-[#111113] rounded-[15px] px-4 sm:px-[18px] text-[15px] sm:text-[15.5px] font-medium text-white transition-all duration-150 border border-white/[0.09] hover:border-white/[0.20] active:scale-[0.99] flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 shadow-sm"
+                >
+                  {googleLoading ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="20"
+                      height="20"
+                      className="shrink-0"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                      />
+                    </svg>
+                  )}
+                  <span>{googleLoading ? "Connecting to Google..." : "Continue with Google"}</span>
+                </button>
+
+                {/* Subtle Divider */}
+                <div className="relative flex items-center justify-center my-1">
+                  <div className="w-full border-t border-white/[0.08]" />
+                  <span className="absolute bg-[#000000] px-3 text-[11.5px] uppercase tracking-wider text-zinc-500 font-medium">
+                    or
+                  </span>
                 </div>
 
                 {/* Email Input Field & Inline Error - Full Width */}
@@ -637,6 +785,22 @@ export function EmailVerification({
                         : "border-white/[0.09] hover:border-white/[0.16] focus:border-white"
                     }`}
                   />
+                  {supportsPasskey && (
+                    <div className="pt-2 flex justify-center">
+                      <button
+                        type="button"
+                        id="passkey_signin_btn"
+                        onClick={handlePasskeySignIn}
+                        disabled={checkingUser || googleLoading || passkeyLoading}
+                        className="flex items-center gap-1.5 text-[12.5px] text-zinc-400 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                        </svg>
+                        <span>{passkeyLoading ? "Authenticating passkey..." : "Sign in with a passkey"}</span>
+                      </button>
+                    </div>
+                  )}
                   <div className="min-h-[20px] pt-1.5 pl-1">
                     {errorMessage && (
                       <p className="text-[13px] text-red-500 font-sans leading-tight">

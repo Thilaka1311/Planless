@@ -9,7 +9,8 @@ import {
   AlertCircle,
   Bell,
   Share2,
-  Smartphone
+  Smartphone,
+  Key
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useProfileStore } from "../state/ProfileContext";
@@ -96,6 +97,38 @@ export const ProfileScreen = ({
   const currentUser = dbUsers.find(u => u.id === activeUserUuid || u.user_id === activeUserId);
 
   const { showToast } = useToast();
+  const [isRegisteringPasskey, setIsRegisteringPasskey] = useState(false);
+
+  const handlePasskeyRegistration = async () => {
+    if (isRegisteringPasskey) return;
+    if (typeof window === "undefined" || !window.PublicKeyCredential) {
+      showToast("Passkeys are not supported on this browser or device.", "error");
+      return;
+    }
+
+    setIsRegisteringPasskey(true);
+    try {
+      const { error } = await supabase.auth.registerPasskey();
+      if (error) {
+        const isCanceled =
+          error.name === "NotAllowedError" ||
+          error.message?.includes("cancel") ||
+          error.message?.includes("abort");
+        if (isCanceled) {
+          showToast("Passkey registration was canceled.", "info");
+        } else {
+          showToast(error.message || "Failed to register passkey.", "error");
+        }
+        return;
+      }
+      showToast("Passkey registered successfully! You can now use it to sign in.", "success");
+    } catch (err: any) {
+      console.warn("[ProfileScreen] Passkey registration exception:", err);
+      showToast("Unable to complete passkey setup. Please try again.", "error");
+    } finally {
+      setIsRegisteringPasskey(false);
+    }
+  };
   const [notificationUiState, setNotificationUiState] = useState<NotificationUiState>(() => {
     if (pwaManager.isIosSafariWithoutPwa()) return 'ios_pwa_required';
     if (!pwaManager.isPushSupported()) return 'unsupported';
@@ -552,6 +585,33 @@ export const ProfileScreen = ({
                 </span>
                 <span className="text-[11px] font-sans text-zinc-500 block truncate">
                   {NOTIFICATION_STATUS_TEXT[notificationUiState]}
+                </span>
+              </div>
+            </button>
+
+            {/* Passkeys Option */}
+            <button
+              type="button"
+              id="profile_passkeys_row"
+              onClick={handlePasskeyRegistration}
+              disabled={isRegisteringPasskey}
+              className="w-full flex items-center gap-4 px-1 py-2.5 rounded-xl hover:bg-zinc-900/20 active:scale-[0.99] transition text-left cursor-pointer group disabled:opacity-60"
+            >
+              <div className="w-9 h-9 rounded-xl bg-zinc-900/60 border border-white/[0.02] flex items-center justify-center text-zinc-400 transition group-hover:text-white flex-shrink-0">
+                {isRegisteringPasskey ? (
+                  <Loader2 className="w-4.5 h-4.5 animate-spin" />
+                ) : (
+                  <Key className="w-4.5 h-4.5" />
+                )}
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <span className="text-sm font-sans font-medium text-zinc-200 block">
+                  Passkeys
+                </span>
+                <span className="text-[11px] font-sans text-zinc-500 block truncate">
+                  {isRegisteringPasskey
+                    ? "Setting up passkey..."
+                    : "Sign in securely without passwords or codes"}
                 </span>
               </div>
             </button>
