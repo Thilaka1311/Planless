@@ -208,7 +208,7 @@ export function canGoBack(): boolean {
 export function isValidRoute(pathname: string): boolean {
   if (!pathname) return false;
   const [cleanPath] = pathname.split('?');
-  const clean = cleanPath.replace(/\/+$/, '') || '/';
+  const clean = (cleanPath.replace(/\/+$/, '') || '/').toLowerCase();
   if (clean === '/' || clean === '/home') return true;
   if (clean === '/privacy' || clean === '/terms') return true;
   if (clean === '/friends') return true;

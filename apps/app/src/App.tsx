@@ -63,16 +63,19 @@ export default function App() {
   });
 
   const [initialProfile, setInitialProfile] = useState<UserProfile | null>(() => {
-    const saved = localStorage.getItem(localStorageKey);
-    if (saved) {
-      try {
+    if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
+    try {
+      const saved = localStorage.getItem(localStorageKey);
+      if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.user_id) {
           return parsed;
         }
-      } catch (e) {
-        localStorage.removeItem(localStorageKey);
       }
+    } catch (e) {
+      try {
+        localStorage.removeItem(localStorageKey);
+      } catch {}
     }
     return null;
   });
@@ -420,6 +423,37 @@ function AppContent({
     setAppState("unauthenticated");
   };
 
+  // Dedicated, publicly accessible legal routes (/privacy, /terms).
+  // These routes MUST be completely accessible without requiring authentication,
+  // session tokens, splash animation delays, or user sign-in.
+  if (currentRoute.subScreen === "privacy") {
+    return (
+      <PrivacyPolicy
+        onBack={() => {
+          if (getInAppNavigationDepth() > 0 && typeof window !== "undefined" && window.history.length > 1) {
+            navigateBack({ tab: userProfile ? "profile" : "home" });
+          } else {
+            navigateToRoute({ tab: userProfile ? "profile" : "home" });
+          }
+        }}
+      />
+    );
+  }
+
+  if (currentRoute.subScreen === "terms") {
+    return (
+      <TermsOfService
+        onBack={() => {
+          if (getInAppNavigationDepth() > 0 && typeof window !== "undefined" && window.history.length > 1) {
+            navigateBack({ tab: userProfile ? "profile" : "home" });
+          } else {
+            navigateToRoute({ tab: userProfile ? "profile" : "home" });
+          }
+        }}
+      />
+    );
+  }
+
   return (
     <>
       <AnimatePresence>
@@ -430,30 +464,6 @@ function AppContent({
           />
         )}
       </AnimatePresence>
-
-      {currentRoute.subScreen === "privacy" && (
-        <PrivacyPolicy
-          onBack={() => {
-            if (getInAppNavigationDepth() > 0 && typeof window !== "undefined" && window.history.length > 1) {
-              navigateBack({ tab: userProfile ? "profile" : "home" });
-            } else {
-              navigateToRoute({ tab: userProfile ? "profile" : "home" });
-            }
-          }}
-        />
-      )}
-
-      {currentRoute.subScreen === "terms" && (
-        <TermsOfService
-          onBack={() => {
-            if (getInAppNavigationDepth() > 0 && typeof window !== "undefined" && window.history.length > 1) {
-              navigateBack({ tab: userProfile ? "profile" : "home" });
-            } else {
-              navigateToRoute({ tab: userProfile ? "profile" : "home" });
-            }
-          }}
-        />
-      )}
 
       {appState === "startupError" ? (
         <div className="h-full w-full min-h-full bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden p-6">

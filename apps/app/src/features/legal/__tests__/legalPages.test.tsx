@@ -10,6 +10,7 @@ import {
 import { PrivacyPolicy } from "../screens/PrivacyPolicy";
 import { TermsOfService } from "../screens/TermsOfService";
 import { EmailVerification } from "../../auth/Logged Out/screens/Emailverification";
+import App from "../../../App";
 
 // Mock Supabase client
 vi.mock("../../../../../lib/supabaseClient", () => ({
@@ -21,8 +22,20 @@ vi.mock("../../../../../lib/supabaseClient", () => ({
       signInWithOAuth: vi.fn(),
       signInWithPasskey: vi.fn(),
       registerPasskey: vi.fn(),
+      getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
       getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
+      onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+      signOut: vi.fn().mockResolvedValue({}),
     },
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          single: () => Promise.resolve({ data: null, error: null }),
+        }),
+      }),
+    }),
+    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
   },
 }));
 
@@ -54,11 +67,15 @@ describe("Legal Routes & Pages Specification", () => {
   });
 
   describe("Router Integration", () => {
-    it("recognizes /privacy and /terms as valid application routes", () => {
+    it("recognizes /privacy and /terms as valid application routes (case-insensitive with trailing slashes)", () => {
       expect(isValidRoute("/privacy")).toBe(true);
       expect(isValidRoute("/terms")).toBe(true);
       expect(isValidRoute("/privacy/")).toBe(true);
       expect(isValidRoute("/terms/")).toBe(true);
+      expect(isValidRoute("/Privacy")).toBe(true);
+      expect(isValidRoute("/TERMS")).toBe(true);
+      expect(isValidRoute("/Privacy/")).toBe(true);
+      expect(isValidRoute("/Terms/")).toBe(true);
     });
 
     it("parses /privacy and /terms routes into AppRoute objects with subScreen", () => {
@@ -85,6 +102,32 @@ describe("Legal Routes & Pages Specification", () => {
     it("resolves /profile/privacy and /profile/terms to canonical top-level URLs", () => {
       expect(getCanonicalPathForAlias("/profile/privacy")).toBe("/privacy");
       expect(getCanonicalPathForAlias("/profile/terms")).toBe("/terms");
+    });
+  });
+
+  describe("Public Accessibility Without Authentication", () => {
+    it("renders Privacy Policy directly in App when on /privacy without requiring session or sign-in", () => {
+      mockWindow.location = new URL("http://localhost:3000/privacy");
+      const html = renderToString(<App />);
+
+      expect(html).toContain("Privacy Policy");
+      expect(html).toContain("Planless Privacy Policy");
+      expect(html).toContain("support@planless.life");
+      // Does not render login screen or splash screen
+      expect(html).not.toContain("Continue with Google");
+      expect(html).not.toContain("Enter your email");
+    });
+
+    it("renders Terms of Service directly in App when on /terms without requiring session or sign-in", () => {
+      mockWindow.location = new URL("http://localhost:3000/terms");
+      const html = renderToString(<App />);
+
+      expect(html).toContain("Terms of Service");
+      expect(html).toContain("Planless Terms of Service");
+      expect(html).toContain("support@planless.life");
+      // Does not render login screen or splash screen
+      expect(html).not.toContain("Continue with Google");
+      expect(html).not.toContain("Enter your email");
     });
   });
 
