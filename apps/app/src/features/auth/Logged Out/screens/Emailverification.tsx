@@ -6,6 +6,7 @@ import planlessLogo from "../../../../assets/planless_logo.webp";
 import onboardingCups from "../../../../assets/Onboarding_cups.webp";
 import defaultAvatar from "../../../../assets/default_avatar.webp";
 import { preloadImage } from "../../../../shared/imaging/preloadImage";
+import { navigateToRoute } from "../../../navigation/appRouter";
 
 // Session Persistence for OTP flow in localStorage
 const OTP_STORAGE_KEY = "planless_otp_auth_session";
@@ -823,7 +824,7 @@ export function EmailVerification({
               />
             </div>
 
-            {/* Bottom Section: Primary CTA - ALWAYS at the bottom of the screen */}
+            {/* Bottom Section: Primary CTA & Legal Notice - ALWAYS at the bottom of the screen */}
             <div className="w-full shrink-0 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
               <div className="h-[46px] w-full flex items-center">
                 <button
@@ -835,6 +836,35 @@ export function EmailVerification({
                   {checkingUser ? "Sending OTP..." : "Continue"}
                 </button>
               </div>
+
+              {/* Legal Notice */}
+              <p className="mt-2.5 text-[11px] xs:text-[11.5px] text-zinc-500 text-center leading-normal select-none">
+                By continuing, you agree to our{" "}
+                <a
+                  href="/terms"
+                  id="auth_terms_link"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigateToRoute({ tab: "home", subScreen: "terms" });
+                  }}
+                  className="text-zinc-400 hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
+                >
+                  Terms of Service
+                </a>{" "}
+                and acknowledge our{" "}
+                <a
+                  href="/privacy"
+                  id="auth_privacy_link"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigateToRoute({ tab: "home", subScreen: "privacy" });
+                  }}
+                  className="text-zinc-400 hover:text-white underline underline-offset-2 transition-colors cursor-pointer"
+                >
+                  Privacy Policy
+                </a>
+                .
+              </p>
             </div>
           </form>
         </motion.div>

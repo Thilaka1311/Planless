@@ -14,7 +14,17 @@ import {
   setStoredPendingInviteToken,
   clearStoredPendingInviteToken,
 } from "./features/plans/services/planInviteService";
-import { isValidRoute } from "./features/navigation/appRouter";
+import {
+  isValidRoute,
+  parseCurrentRoute,
+  listenToNavigation,
+  navigateToRoute,
+  navigateBack,
+  getInAppNavigationDepth,
+  AppRoute,
+} from "./features/navigation/appRouter";
+import { PrivacyPolicy } from "./features/legal/screens/PrivacyPolicy";
+import { TermsOfService } from "./features/legal/screens/TermsOfService";
 import { lazyWithRetry } from "./shared/utils/lazyWithRetry";
 
 import { AnimatePresence } from "motion/react";
@@ -140,9 +150,17 @@ function AppContent({
 }) {
   const { userProfile, setUserProfile } = useProfileStore();
   const [appState, setAppState] = useState<"initializing" | "unauthenticated" | "ready" | "startupError" | "retrying">("initializing");
-  const [showSplash, setShowSplash] = useState(true);
+  const [currentRoute, setCurrentRoute] = useState<AppRoute>(() => parseCurrentRoute());
+  const isLegalScreen = currentRoute.subScreen === "privacy" || currentRoute.subScreen === "terms";
+  const [showSplash, setShowSplash] = useState(() => !isLegalScreen);
 
-  const isAppReady = appState === "ready" || appState === "unauthenticated";
+  useEffect(() => {
+    return listenToNavigation((newRoute) => {
+      setCurrentRoute(newRoute);
+    });
+  }, []);
+
+  const isAppReady = appState === "ready" || appState === "unauthenticated" || isLegalScreen;
 
   useEffect(() => {
     if (appState === "startupError") {
@@ -412,6 +430,30 @@ function AppContent({
           />
         )}
       </AnimatePresence>
+
+      {currentRoute.subScreen === "privacy" && (
+        <PrivacyPolicy
+          onBack={() => {
+            if (getInAppNavigationDepth() > 0 && typeof window !== "undefined" && window.history.length > 1) {
+              navigateBack({ tab: userProfile ? "profile" : "home" });
+            } else {
+              navigateToRoute({ tab: userProfile ? "profile" : "home" });
+            }
+          }}
+        />
+      )}
+
+      {currentRoute.subScreen === "terms" && (
+        <TermsOfService
+          onBack={() => {
+            if (getInAppNavigationDepth() > 0 && typeof window !== "undefined" && window.history.length > 1) {
+              navigateBack({ tab: userProfile ? "profile" : "home" });
+            } else {
+              navigateToRoute({ tab: userProfile ? "profile" : "home" });
+            }
+          }}
+        />
+      )}
 
       {appState === "startupError" ? (
         <div className="h-full w-full min-h-full bg-[#050505] flex items-center justify-center font-sans relative overflow-hidden p-6">

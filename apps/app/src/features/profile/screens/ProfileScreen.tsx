@@ -10,7 +10,9 @@ import {
   Bell,
   Share2,
   Smartphone,
-  Key
+  Key,
+  ShieldCheck,
+  FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useProfileStore } from "../state/ProfileContext";
@@ -635,6 +637,44 @@ export const ProfileScreen = ({
               <div className="flex-1 text-left min-w-0">
                 <span className="text-sm font-sans font-medium text-zinc-200 block">
                   Past Plans
+                </span>
+              </div>
+            </button>
+
+            {/* Privacy Policy */}
+            <button
+              type="button"
+              id="profile_privacy_row"
+              onClick={() => {
+                navigateToRoute({ tab: 'profile', subScreen: 'privacy' });
+              }}
+              className="w-full flex items-center gap-4 px-1 py-2.5 rounded-xl hover:bg-zinc-900/20 active:scale-[0.99] transition text-left cursor-pointer group"
+            >
+              <div className="w-9 h-9 rounded-xl bg-zinc-900/60 border border-white/[0.02] flex items-center justify-center text-zinc-400 transition group-hover:text-white flex-shrink-0">
+                <ShieldCheck className="w-4.5 h-4.5" />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <span className="text-sm font-sans font-medium text-zinc-200 block">
+                  Privacy Policy
+                </span>
+              </div>
+            </button>
+
+            {/* Terms of Service */}
+            <button
+              type="button"
+              id="profile_terms_row"
+              onClick={() => {
+                navigateToRoute({ tab: 'profile', subScreen: 'terms' });
+              }}
+              className="w-full flex items-center gap-4 px-1 py-2.5 rounded-xl hover:bg-zinc-900/20 active:scale-[0.99] transition text-left cursor-pointer group"
+            >
+              <div className="w-9 h-9 rounded-xl bg-zinc-900/60 border border-white/[0.02] flex items-center justify-center text-zinc-400 transition group-hover:text-white flex-shrink-0">
+                <FileText className="w-4.5 h-4.5" />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <span className="text-sm font-sans font-medium text-zinc-200 block">
+                  Terms of Service
                 </span>
               </div>
             </button>
