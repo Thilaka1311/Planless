@@ -14,14 +14,22 @@
  */
 
 import React, { useState, useRef } from "react";
-import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { DiscoveryImages } from "../../../../../IMGfromDB/PlanImages";
 import { PlanImageEditorModal } from "../../../../create/components/PlanImageEditorModal";
+import { uploadOriginalPlanImage } from "../../../../../shared/utils/imageUtils";
+import { supabase } from "../../../../../../lib/supabaseClient";
+import { PlanPhotoGalleryModal } from "../../../components/PlanPhotoGalleryModal";
 import {
-  uploadOriginalPlanImage,
-  uploadPlanCardImage,
-  deleteCustomPlanImage,
-} from "../../../../../shared/utils/imageUtils";
+  selectExistingPlanPhoto,
+  updatePlanCardCrop,
+  PlanPhotoItem,
+} from "../../../utils/planPhotos";
+import {
+  setPlanCachedImage,
+  evictImageCache,
+  ImageType,
+} from "../../../../../shared/imaging/imageResolver";
 
 interface EditPlanImageScreenProps {
   planId: string;
@@ -50,9 +58,15 @@ export const EditPlanImageScreen: React.FC<EditPlanImageScreenProps> = ({
   const [coverImage, setCoverImage] = useState<string | null | undefined>(initialCoverImage);
   const [editorImageFile, setEditorImageFile] = useState<File | Blob | string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isGalleryOpen, setIsGalleryOpen] = useState(false);
+  const [isEditingExistingCrop, setIsEditingExistingCrop] = useState(false);
+  const [selectedPhotoForCrop, setSelectedPhotoForCrop] = useState<PlanPhotoItem | null>(null);
   const [isSavingImage, setIsSavingImage] = useState(false);
+
+  // Open photo gallery when user clicks the Pencil/Edit button
+  const handleOpenGallery = () => {
+    setIsGalleryOpen(true);
+  };
 
   // Trigger device photo picker
   const handleOpenPicker = () => {
@@ -65,20 +79,83 @@ export const EditPlanImageScreen: React.FC<EditPlanImageScreenProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!file.type.startsWith("image/")) {
+        console.warn("[EditPlanImageScreen] Selected file is not an image:", file.type);
+        return;
+      }
+      setIsEditingExistingCrop(false);
+      setSelectedPhotoForCrop(null);
       setEditorImageFile(file);
       setIsEditorOpen(true);
     }
   };
 
+  // User commits a photo selection when closing the bottom sheet
+  const handleCommitPhotoSelection = async (photo: PlanPhotoItem) => {
+    const updatedPath = photo.fullDbPath;
+
+    // ── Step 1: Update the local application state immediately ──
+    // Zero network delay: updates the image preview and parent Plan state instantly
+    setCoverImage(updatedPath);
+    onImageUpdated(updatedPath, null);
+
+    if (onUpdatePlanDetails) {
+      try {
+        await onUpdatePlanDetails({
+          cover_image: updatedPath,
+          cover_card_image: null,
+          skipDbWrite: true,
+        });
+      } catch (stateErr) {
+        console.warn("[EditPlanImageScreen] Local state update warning:", stateErr);
+      }
+    }
+
+    // ── Step 2: Update the local cache ──
+    // Persist new committed selection into local memory/cache layer
+    setPlanCachedImage(planId, updatedPath);
+    setPlanCachedImage(planId, photo.storagePath);
+    evictImageCache(updatedPath, ImageType.PlanCover);
+    evictImageCache(photo.storagePath, ImageType.PlanCover);
+
+    // ── Step 3: Synchronize with Supabase ──
+    try {
+      await selectExistingPlanPhoto(planId, photo);
+    } catch (err: any) {
+      // In case of network or Supabase failure:
+      // - Keep the user's committed selection visible locally
+      // - Preserve the updated local cache
+      // - Do NOT revert the UI to the previous image
+      console.error("[EditPlanImageScreen] Failed to synchronize photo selection to Supabase:", err);
+    }
+  };
+
+  // User taps "Edit Crop" on an existing photo in the gallery
+  const handleEditCrop = (photo: PlanPhotoItem) => {
+    setIsGalleryOpen(false);
+    setIsEditingExistingCrop(true);
+    setSelectedPhotoForCrop(photo);
+    setEditorImageFile(photo.url);
+    setIsEditorOpen(true);
+  };
+
+  // User taps "Add New Photo" in the gallery
+  const handleAddNewPhoto = () => {
+    setIsGalleryOpen(false);
+    setIsEditingExistingCrop(false);
+    setSelectedPhotoForCrop(null);
+    handleOpenPicker();
+  };
+
   /**
    * Called when the user taps Save in the crop editor.
-   * Uploads:
-   *   originalBlob → cover_image (Plan Preview / Hero)
-   *   blob (crop)  → cover_card_image (Home Plan Card)
+   * - If editing an existing photo's crop: updates crop config without re-uploading file.
+   * - If adding a new photo: uploads canonical WebP image and stores crop config.
    */
   const handleSaveCrop = async ({
     blob,
     originalBlob,
+    cropConfig,
   }: {
     previewUrl: string;
     blob: Blob;
@@ -86,49 +163,85 @@ export const EditPlanImageScreen: React.FC<EditPlanImageScreenProps> = ({
     originalPreviewUrl: string;
     width: number;
     height: number;
+    cropConfig?: {
+      objectPosition: string;
+      scale: number;
+    };
   }) => {
-    if (!blob) {
+    if (!blob && !originalBlob) {
       return;
     }
 
     setIsSavingImage(true);
     try {
-      let finalCoverPath: string | null = null;
-      let finalCardPath: string | null = null;
+      if (isEditingExistingCrop && selectedPhotoForCrop) {
+        // Software crop update for existing photo: original image is single source of truth
+        let cropString: string | null = null;
+        if (cropConfig) {
+          const cropRes = await updatePlanCardCrop(planId, cropConfig);
+          cropString = cropRes.cropString;
+        }
+        const activeCover = selectedPhotoForCrop.fullDbPath;
 
-      // 1. Upload the original (full) image → cover_image
-      if (originalBlob) {
-        const { path } = await uploadOriginalPlanImage(planId, originalBlob);
-        finalCoverPath = path;
+        // Step 1: Update local application state immediately (zero delay)
+        setCoverImage(activeCover);
+        onImageUpdated(activeCover, cropString);
+
+        if (onUpdatePlanDetails) {
+          await onUpdatePlanDetails({
+            cover_image: activeCover,
+            cover_card_image: cropString,
+            skipDbWrite: true,
+          });
+        }
+
+        // Step 2: Update local cache
+        setPlanCachedImage(planId, activeCover);
+        setPlanCachedImage(planId, selectedPhotoForCrop.storagePath);
+        evictImageCache(activeCover, ImageType.PlanCover);
+        evictImageCache(selectedPhotoForCrop.storagePath, ImageType.PlanCover);
+
+        // Step 3: Synchronize with Supabase — ensure both cover_image and cover_card_image are persisted together
+        try {
+          await (supabase as any)
+            .from("plans")
+            .update({
+              cover_image: activeCover,
+              cover_card_image: cropString,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", planId);
+        } catch (dbErr) {
+          console.error("[EditPlanImageScreen] Failed to synchronize crop and cover to Supabase:", dbErr);
+        }
       } else {
-        // No original blob (e.g. string URL source) — upload the cropped blob as cover_image fallback
-        const { path } = await uploadOriginalPlanImage(planId, blob);
-        finalCoverPath = path;
-      }
+        // New photo upload
+        const imageBlobToUpload = originalBlob || blob;
+        const { path } = await uploadOriginalPlanImage(planId, imageBlobToUpload);
+        const finalCoverPath = path;
 
-      // 2. Upload the cropped portrait → cover_card_image (only if original was separate)
-      if (originalBlob) {
-        const { path } = await uploadPlanCardImage(planId, blob);
-        finalCardPath = path;
-      }
+        let cropString: string | null = null;
+        if (cropConfig) {
+          const cropRes = await updatePlanCardCrop(planId, cropConfig);
+          cropString = cropRes.cropString;
+        }
 
-      // 3. Update local preview state (show original in the preview canvas)
-      if (finalCoverPath) {
         setCoverImage(finalCoverPath);
-      }
+        onImageUpdated(finalCoverPath, cropString);
 
-      // 4. Notify parent — pass both paths
-      onImageUpdated(finalCoverPath, finalCardPath);
-
-      // 5. Optionally notify the parent's updatePlanDetails handler
-      if (onUpdatePlanDetails && finalCoverPath) {
-        const updates: any = { cover_image: finalCoverPath, skipDbWrite: true };
-        if (finalCardPath) updates.cover_card_image = finalCardPath;
-        await onUpdatePlanDetails(updates);
+        if (onUpdatePlanDetails) {
+          await onUpdatePlanDetails({
+            cover_image: finalCoverPath,
+            cover_card_image: cropString,
+            skipDbWrite: true,
+          });
+        }
       }
 
       setIsEditorOpen(false);
       setEditorImageFile(null);
+      setIsEditingExistingCrop(false);
+      setSelectedPhotoForCrop(null);
 
       // Return to Plan Settings
       onBack();
@@ -136,27 +249,6 @@ export const EditPlanImageScreen: React.FC<EditPlanImageScreenProps> = ({
       console.error("[EditPlanImageScreen] Failed to update plan image:", err);
     } finally {
       setIsSavingImage(false);
-    }
-  };
-
-  // Handle Delete Confirmation — clears both cover_image and cover_card_image
-  const handleConfirmDelete = async () => {
-    setIsDeleting(true);
-    try {
-      await deleteCustomPlanImage(planId);
-
-      setCoverImage(null);
-      onImageUpdated(null, null);
-
-      if (onUpdatePlanDetails) {
-        await onUpdatePlanDetails({ cover_image: null, cover_card_image: null, skipDbWrite: true });
-      }
-
-      setShowDeleteConfirm(false);
-    } catch (err: any) {
-      console.error("[EditPlanImageScreen] Failed to delete plan image:", err);
-    } finally {
-      setIsDeleting(false);
     }
   };
 
@@ -188,30 +280,16 @@ export const EditPlanImageScreen: React.FC<EditPlanImageScreenProps> = ({
           </h1>
         </div>
 
-        {/* Right Actions: Minimalist Edit & Delete icons */}
-        <div className="flex items-center gap-1 -mr-1 flex-shrink-0">
-          {/* Edit Action */}
-          <button
-            type="button"
-            onClick={handleOpenPicker}
-            disabled={isSavingImage}
-            className="w-10 h-10 flex items-center justify-center rounded-full text-white/90 hover:text-white hover:bg-white/10 active:scale-95 transition cursor-pointer disabled:opacity-50"
-            title="Choose a new image"
-          >
-            <Pencil className="w-5 h-5" />
-          </button>
-
-          {/* Delete Action */}
-          <button
-            type="button"
-            onClick={() => setShowDeleteConfirm(true)}
-            disabled={isSavingImage}
-            className="w-10 h-10 flex items-center justify-center rounded-full text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 active:scale-95 transition cursor-pointer disabled:opacity-50"
-            title="Delete custom image"
-          >
-            <Trash2 className="w-5 h-5" />
-          </button>
-        </div>
+        {/* Right Action: Edit icon at the far right */}
+        <button
+          type="button"
+          onClick={handleOpenGallery}
+          disabled={isSavingImage}
+          className="w-10 h-10 -mr-2 flex items-center justify-center rounded-full text-white/90 hover:text-white hover:bg-white/10 active:scale-95 transition cursor-pointer disabled:opacity-50 flex-shrink-0"
+          title="Plan photo gallery"
+        >
+          <Pencil className="w-5 h-5" />
+        </button>
       </div>
 
       {/* Center Image Canvas — shows the original (full) plan image */}
@@ -233,45 +311,21 @@ export const EditPlanImageScreen: React.FC<EditPlanImageScreenProps> = ({
           )}
         </div>
         <p className="text-xs text-white/40 mt-3 text-center select-none">
-          This image appears in your Plan Preview. Tap ✏️ to pick a new photo and crop it for the Home card.
+          View and edit your plan photo.
         </p>
       </div>
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div
-          onClick={() => !isDeleting && setShowDeleteConfirm(false)}
-          className="fixed inset-0 bg-black/75 z-[120] flex items-end justify-center animate-in fade-in duration-200"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-[#141414] border-t border-white/10 rounded-t-3xl p-6 flex flex-col gap-4 text-center select-none shadow-2xl"
-          >
-            <h3 className="text-base font-semibold text-white">Delete plan image?</h3>
-            <p className="text-sm text-zinc-400">
-              The plan will use the default image instead.
-            </p>
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 py-3 px-4 bg-white/[0.08] hover:bg-white/[0.12] rounded-xl text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={handleConfirmDelete}
-                className="flex-1 py-3 px-4 bg-rose-500 hover:bg-rose-600 rounded-xl text-sm font-semibold text-white transition active:scale-[0.98] disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-              >
-                {isDeleting ? "Deleting..." : "Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Plan Photo Gallery Modal */}
+      <PlanPhotoGalleryModal
+        isOpen={isGalleryOpen}
+        onClose={() => setIsGalleryOpen(false)}
+        planId={planId}
+        currentCoverImage={coverImage}
+        onCommitSelection={handleCommitPhotoSelection}
+        onSelectPhoto={handleCommitPhotoSelection}
+        onEditCrop={handleEditCrop}
+        onAddNewPhoto={handleAddNewPhoto}
+      />
 
       {/* Crop Editor — positions the Home Card portrait crop */}
       {isEditorOpen && editorImageFile && (
@@ -281,6 +335,8 @@ export const EditPlanImageScreen: React.FC<EditPlanImageScreenProps> = ({
           onClose={() => {
             setIsEditorOpen(false);
             setEditorImageFile(null);
+            setIsEditingExistingCrop(false);
+            setSelectedPhotoForCrop(null);
           }}
           onSave={handleSaveCrop}
         />
@@ -288,3 +344,5 @@ export const EditPlanImageScreen: React.FC<EditPlanImageScreenProps> = ({
     </div>
   );
 };
+
+

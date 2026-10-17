@@ -484,13 +484,15 @@ new = ${planUpdate.cover_image}`);
     }
 
 
-    // Always keep setDbPlans updated in memory with cover_image
-    if (setDbPlans && updatedCoverImage !== undefined) {
+    // Always keep setDbPlans updated in memory with cover_image and cover_card_image
+    if (setDbPlans && (updatedCoverImage !== undefined || (updates as any).cover_card_image !== undefined)) {
+      const updatedCardImage = (updates as any).cover_card_image;
       setDbPlans(prev => prev.map(p => {
-        if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId) {
+        if (p.id === planUuid || (p as any).dbUuid === planUuid || p.id === planId || (p as any).public_id === planId) {
           return {
             ...p,
-            cover_image: updatedCoverImage,
+            ...(updatedCoverImage !== undefined ? { cover_image: updatedCoverImage, coverImage: updatedCoverImage } : {}),
+            ...(updatedCardImage !== undefined ? { cover_card_image: updatedCardImage, cardCoverImage: updatedCardImage } : {}),
           };
         }
         return p;

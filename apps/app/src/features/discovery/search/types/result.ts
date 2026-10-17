@@ -58,6 +58,10 @@ export interface SearchResultItem {
   supportedSports?: string[] | null;
   /** All Google photo references (for sport-aware photo selection). Index 0 = primary photo. */
   photo_references?: string[] | null;
+  /** Raw photos array from provider (for owner photo validation). */
+  photos?: any[] | null;
+  vicinity?: string;
+  _isCrossCity?: boolean;
   /** Indicates whether this venue's details/image are overridden by a Planless admin. */
   _hasPlanlessOverride?: boolean;
 

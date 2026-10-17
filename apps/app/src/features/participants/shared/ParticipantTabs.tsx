@@ -55,15 +55,18 @@ export const ParticipantTabs: React.FC<ParticipantTabsProps> = ({
       if (key === 'going') label = `Attended (${goingCount})`;
       if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
     } else {
+      const isNoLimit = capacity === undefined || capacity === null;
       if (key === 'invited') label = `Invited (${invitedCount ?? goingCount})`;
       if (key === 'going') {
-        const isNoLimit = capacity === undefined || capacity === null;
-        const denominator = isNoLimit ? (noLimitDenominator ?? invitedCount ?? goingCount) : capacity;
-        label = (!hideCapacityDenominator && denominator !== undefined && denominator !== null)
-          ? `Joined (${goingCount} / ${denominator})`
+        label = (!hideCapacityDenominator && !isNoLimit && capacity !== undefined && capacity !== null)
+          ? `Joined (${goingCount} / ${capacity})`
           : `Joined (${goingCount})`;
       }
-      if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;
+      if (key === 'waitlist') {
+        label = (!hideCapacityDenominator && !isNoLimit && capacity !== undefined && capacity !== null)
+          ? `Waitlist (${waitlistCount} / ${capacity})`
+          : `Waitlist (${waitlistCount})`;
+      }
       if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
     }
 

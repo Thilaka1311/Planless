@@ -32,15 +32,40 @@ export const StackingFriends: React.FC<StackingFriendsProps> = ({
   isItemDragged = false,
   className = '',
 }) => {
-  const isRejoined = item.rsvpStatus === 'REJOINED' || (item as any).rsvp_status === 'REJOINED';
+  const isHostParticipant = Boolean(item.isHost || (item as any).role === 'HOST' || (item as any).role === 'host');
+  const rawStatus = String(
+    item.rsvpStatus ||
+    (item as any).rsvp_status ||
+    (item as any).joinState ||
+    (item as any).status ||
+    ''
+  ).trim().toUpperCase();
+
+  const isRejoined = rawStatus === 'REJOINED';
   const isLeaveRequested = Boolean(
     (item.leave_requested === true || (item as any).leaveRequested === true) &&
-    item.rsvpStatus !== 'SKIPPED' && (item as any).rsvp_status !== 'SKIPPED'
+    rawStatus !== 'SKIPPED'
   );
   const hasPendingRequest = isLeaveRequested || isRejoined;
   const showPendingIndicator = Boolean(isHost && hasPendingRequest);
-  const isSkipped = item.rsvpStatus === 'SKIPPED' || (item as any).rsvp_status === 'SKIPPED' || isRejoined || Boolean(item.skipReason || (item as any).skip_reason);
-  const isDulled = isSkipped || (!showPendingIndicator && (item.isAccepted === false || item.rsvpStatus === 'INVITED' || (item as any).rsvp_status === 'INVITED'));
+  const isSkipped = rawStatus === 'SKIPPED' || isRejoined || Boolean(item.skipReason || (item as any).skip_reason);
+
+  const isActuallyJoined = !isSkipped && (
+    isHostParticipant ||
+    rawStatus === 'JOINED' ||
+    rawStatus === 'ACCEPTED' ||
+    rawStatus === 'GOING' ||
+    rawStatus === 'CONFIRMED' ||
+    (item.isAccepted === true && rawStatus !== 'INVITED' && rawStatus !== 'WAITLISTED')
+  );
+
+  const isActuallyWaitlisted = !isSkipped && (
+    rawStatus === 'WAITLISTED' ||
+    rawStatus === 'WAITLIST'
+  );
+
+  const isInvited = !isHostParticipant && !isActuallyJoined && !isActuallyWaitlisted && !isSkipped;
+  const isDulled = isSkipped || (!showPendingIndicator && !isHostParticipant && (isInvited || item.isAccepted === false));
   const skipReasonText = formatSkipReason(item.skipReason || (item as any).skip_reason || (isRejoined ? 'LEFT' : (isSkipped ? 'SKIPPED' : null)));
   const isMutedWithPendingIndicator = Boolean(isDulled && showPendingIndicator);
 

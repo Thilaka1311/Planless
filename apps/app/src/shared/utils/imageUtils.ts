@@ -265,10 +265,14 @@ export async function replacePlanImage(
   evictImageCache(fullDbPath, ImageType.PlanCover);
   evictImageCache(storagePath, ImageType.PlanCover);
 
-  // Update database with new image reference
+  // Update database with new image reference and clear legacy cover_card_image
   const { error: updateDbError } = await supabase
     .from("plans")
-    .update({ cover_image: fullDbPath, updated_at: new Date().toISOString() })
+    .update({
+      cover_image: fullDbPath,
+      cover_card_image: null,
+      updated_at: new Date().toISOString(),
+    } as any)
     .eq("id", planId);
 
   if (updateDbError) {
@@ -295,74 +299,21 @@ export const uploadPlanImage = replacePlanImage;
 export const uploadOriginalPlanImage = replacePlanImage;
 
 /**
- * Uploads the cropped 9:16 portrait blob for the Home Plan Card.
- * Stores the result in plans.cover_card_image.
- * Does NOT touch cover_image (the original full image).
+ * @deprecated Legacy dual-image upload function.
+ * Planless now operates on a single-image architecture where the canonical
+ * cover image (`plans.cover_image`) is stored once and presentations (such as 9:16
+ * card crops) are derived purely via frontend CSS (`object-fit: cover`).
+ *
+ * Kept strictly for backward compatibility with older unmigrated calls.
  */
 export async function uploadPlanCardImage(
   rawPlanId: string,
   cardBlob: Blob
 ): Promise<{ success: boolean; path: string }> {
-  if (!rawPlanId) throw new Error('Missing planId for card image upload');
-  if (!cardBlob) throw new Error('No blob provided for card image upload');
-
-  const planId = cleanPlanId(rawPlanId).trim();
-
-  // Determine the next sequential card image number
-  const { data: fileList } = await supabase.storage.from('plan-images').list(planId);
-  let maxNum = 0;
-  if (fileList && fileList.length > 0) {
-    for (const file of fileList) {
-      const match = file.name.match(/^plancardimage(\d+)\.webp$/i);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (!isNaN(num) && num > maxNum) maxNum = num;
-      }
-    }
-  }
-  let nextNum = maxNum + 1;
-  let storagePath = `${planId}/plancardimage${nextNum}.webp`;
-  let fullDbPath = `plan-images/${storagePath}`;
-  let uploadSuccess = false;
-  let attempts = 0;
-
-  while (!uploadSuccess && attempts < 3) {
-    attempts++;
-    storagePath = `${planId}/plancardimage${nextNum}.webp`;
-    fullDbPath = `plan-images/${storagePath}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('plan-images')
-      .upload(storagePath, cardBlob, {
-        contentType: 'image/webp',
-        upsert: false,
-        cacheControl: '3600',
-      });
-
-    if (!uploadError) {
-      uploadSuccess = true;
-      break;
-    }
-
-    // Conflict — increment and retry
-    nextNum = nextNum + 1;
-  }
-
-  if (!uploadSuccess) {
-    throw new Error('Failed to upload plan card image after 3 attempts');
-  }
-
-  // Update database cover_card_image
-  const { error: updateDbError } = await supabase
-    .from('plans')
-    .update({ cover_card_image: fullDbPath, updated_at: new Date().toISOString() } as any)
-    .eq('id', planId);
-
-  if (updateDbError) {
-    throw new Error(`Failed to update cover_card_image in DB: ${updateDbError.message}`);
-  }
-
-  return { success: true, path: fullDbPath };
+  console.warn(
+    `[imageUtils:uploadPlanCardImage] DEPRECATED: Plan ${rawPlanId} skipped card upload. Single-image architecture active.`
+  );
+  return { success: true, path: "" };
 }
 
 /**
@@ -409,18 +360,20 @@ export async function deleteCustomPlanImage(
     throw new Error(`[VERIFY DB CLEAR FAILED]: cover_image is not null: ${freshPlan.cover_image}`);
   }
 
-  // 3. Evict the old image from local cache so the resolver uses planimagedefault.png
+  // 3. Evict the old image from local cache so the resolver uses placeholder.webp
   evictPlanImage(planId);
 
-  // 4. Verify the image resolver now returns planimagedefault.png
+  // 4. Verify the image resolver now returns placeholder.webp
   const finalDetails = resolveImageDetails(null, ImageType.PlanCover);
   const finalResolverResult = finalDetails.url;
 
   if (
     !finalResolverResult ||
-    (!finalResolverResult.includes("planimagedefault") && !finalResolverResult.startsWith("/assets/"))
+    (!finalResolverResult.includes("placeholder") &&
+     !finalResolverResult.includes("planimagedefault") &&
+     !finalResolverResult.startsWith("/assets/"))
   ) {
-    throw new Error(`[VERIFY CACHE/RESOLVER FAILED]: Final resolver did not return planimagedefault: ${finalResolverResult}`);
+    throw new Error(`[VERIFY CACHE/RESOLVER FAILED]: Final resolver did not return placeholder or default: ${finalResolverResult}`);
   }
 
   return { success: true };

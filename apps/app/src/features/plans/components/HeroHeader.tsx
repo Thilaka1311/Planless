@@ -60,6 +60,7 @@ interface HeroHeaderProps {
   onSelectPage?: (pageIndex: number) => void;
   titleError?: boolean | string | null;
   validationShakeKey?: number;
+  initialIsEditingTitle?: boolean;
 }
 
 export const HeroHeader: React.FC<HeroHeaderProps> = ({
@@ -91,9 +92,10 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   onSelectPage,
   titleError,
   validationShakeKey = 0,
+  initialIsEditingTitle = false,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const [isEditingTitle, setIsEditingTitle] = React.useState(false);
+  const [isEditingTitle, setIsEditingTitle] = React.useState(initialIsEditingTitle);
   const [tempTitle, setTempTitle] = React.useState(title);
   const titleInputRef = React.useRef<HTMLInputElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -439,52 +441,55 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
             </div>
           )}
 
-          {isEditingTitle ? (
-            <div className="pointer-events-auto px-14 w-full max-w-[320px]">
-              <input
-                ref={titleInputRef}
-                type="text"
-                value={tempTitle === "Set a title" || tempTitle === "Enter Title" ? "" : tempTitle}
-                onChange={(e) => setTempTitle(e.target.value)}
-                onBlur={handleSaveTitle}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveTitle();
-                  if (e.key === "Escape") {
-                    setIsEditingTitle(false);
-                    setTempTitle(title);
+          {/* Reserved title area — fixed height & identical layout constraints in view and edit modes */}
+          <div className="w-full max-w-full px-14 flex items-center justify-center min-w-0 h-[26px] flex-shrink-0">
+            {isEditingTitle ? (
+              <div className="w-full h-full flex items-center justify-center min-w-0 pointer-events-auto">
+                <input
+                  ref={titleInputRef}
+                  type="text"
+                  value={tempTitle === "Set a title" || tempTitle === "Enter Title" ? "" : tempTitle}
+                  onChange={(e) => setTempTitle(e.target.value)}
+                  onBlur={handleSaveTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveTitle();
+                    if (e.key === "Escape") {
+                      setIsEditingTitle(false);
+                      setTempTitle(title);
+                    }
+                  }}
+                  placeholder="Set a title"
+                  className="w-full h-full bg-transparent border-none outline-none text-center text-[17px] font-bold text-white leading-tight placeholder:text-white/60 placeholder:font-semibold focus:outline-none focus:ring-0 p-0 m-0 shadow-none appearance-none min-w-0"
+                  maxLength={50}
+                />
+              </div>
+            ) : (
+              <h1
+                onClick={(e) => {
+                  if (isHost && onEditTitle) {
+                    e.stopPropagation();
+                    setTempTitle(title === "Set a title" || title === "Enter Title" ? "" : title);
+                    setIsEditingTitle(true);
                   }
                 }}
-                placeholder="Set a title"
-                className="w-full bg-transparent border-none outline-none text-center text-[17px] font-bold text-white leading-tight placeholder:text-white/60 placeholder:font-semibold focus:outline-none focus:ring-0 p-0 m-0 shadow-none"
-                maxLength={50}
-              />
-            </div>
-          ) : (
-            <h1
-              onClick={(e) => {
-                if (isHost && onEditTitle) {
-                  e.stopPropagation();
-                  setTempTitle(title === "Set a title" || title === "Enter Title" ? "" : title);
-                  setIsEditingTitle(true);
-                }
-              }}
-              className={`w-full text-[17px] font-bold leading-tight select-text text-center px-14 max-w-full flex items-center justify-center gap-1.5 min-w-0 ${
-                isHost && onEditTitle ? "cursor-pointer pointer-events-auto hover:opacity-90 active:opacity-75" : ""
-              } ${!title || title === "Set a title" || title === "Enter Title" ? "text-white/60 font-semibold" : "text-white"}`}
-            >
-              <span className="truncate max-w-full min-w-0">{title && title !== "Enter Title" ? title : "Set a title"}</span>
-              {Boolean(titleError) && (!title || title === "Set a title" || title === "Enter Title") && (
-                <motion.span
-                  key={validationShakeKey}
-                  animate={validationShakeKey > 0 ? { x: [0, -4, 4, -3, 3, -1, 1, 0] } : {}}
-                  transition={{ duration: 0.35, ease: "easeInOut" }}
-                  className="inline-flex items-center justify-center flex-shrink-0"
-                >
-                  <AlertCircle className="w-3.5 h-3.5 text-[#FF6B2C] opacity-100 flex-shrink-0" />
-                </motion.span>
-              )}
-            </h1>
-          )}
+                className={`w-full h-full text-[17px] font-bold leading-tight select-text text-center max-w-full flex items-center justify-center gap-1.5 min-w-0 m-0 p-0 ${
+                  isHost && onEditTitle ? "cursor-pointer pointer-events-auto hover:opacity-90 active:opacity-75" : ""
+                } ${!title || title === "Set a title" || title === "Enter Title" ? "text-white/60 font-semibold" : "text-white"}`}
+              >
+                <span className="truncate max-w-full min-w-0">{title && title !== "Enter Title" ? title : "Set a title"}</span>
+                {Boolean(titleError) && (!title || title === "Set a title" || title === "Enter Title") && (
+                  <motion.span
+                    key={validationShakeKey}
+                    animate={validationShakeKey > 0 ? { x: [0, -4, 4, -3, 3, -1, 1, 0] } : {}}
+                    transition={{ duration: 0.35, ease: "easeInOut" }}
+                    className="inline-flex items-center justify-center flex-shrink-0"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 text-[#FF6B2C] opacity-100 flex-shrink-0" />
+                  </motion.span>
+                )}
+              </h1>
+            )}
+          </div>
         </div>
 
         {/* Centered Hosted By directly below Plan title with Host Avatars (Plan Details Mode) */}

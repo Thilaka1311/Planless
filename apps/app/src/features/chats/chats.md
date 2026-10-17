@@ -81,9 +81,9 @@ The **Chats** feature is the real-time group communication and coordination hub 
 ### Chats Directory (`ChatsScreen`)
 * **Layout & Container**: Root dark viewport container (`bg-[#050505] text-left flex-1 flex flex-col relative overflow-hidden h-full`) designed for seamless navigation inside Tab 4 of the main app shell.
 * **Top Header**:
-  * Fixed 56px bar (`h-14 bg-[#050505] px-6 shrink-0 flex items-center justify-between z-30 select-none`).
+  * Rendered persistently by `HomeHeader` in `MainApp.tsx` (`h-14 bg-[#050505] px-6 shrink-0 flex items-center justify-between z-30 select-none`), unified across Home, Plans, and Chats tabs.
   * Left-aligned title: `Chats` in `text-stone-100 font-sans font-bold text-xl tracking-tight leading-none truncate`.
-  * Right column: Empty flex spacer maintaining symmetry with Home and Plans tab headers.
+  * Eliminates layout jitter and duplicate header unmounting by keeping the 56px application shell header mounted across tab switches.
 * **Sticky Search Bar**:
   * Padded container (`px-4 pt-0.5 pb-2.5 bg-[#050505] shrink-0 z-20 select-none`) sitting immediately below the top header.
   * Embeds `<SearchBar />` (`#search-chats-input`) with rounded pill frame, search magnifying glass icon, placeholder "Search chats...", and active clear button (`X`).

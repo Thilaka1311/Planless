@@ -325,7 +325,12 @@ export const BrowseExperiencesStep: React.FC<DiscoveryProps> = ({
       .then((data) => {
         if (active) {
           if (data && data.length > 0) {
-            setSections(data);
+            const sanitized = data.filter((sec) => {
+              const cat = (sec.category || "").toUpperCase();
+              const title = (sec.title || "").trim().toLowerCase();
+              return cat !== "NEARBY" && title !== "nearby" && title !== "nearby places";
+            });
+            setSections(sanitized);
           }
           setIsLoading(false);
         }

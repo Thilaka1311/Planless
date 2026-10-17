@@ -758,12 +758,15 @@ let cloudflareTunnelUrl: string | null = null;
 
 async function getRunningCloudflareTunnelUrl(): Promise<string | null> {
   return new Promise((resolve) => {
-    const proc = spawn("docker", ["logs", "cf_tunnel"], { stdio: ["ignore", "pipe", "pipe"] });
+    const proc = spawn("docker", ["logs", "cf_tunnel", "--tail", "50"], { stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
     proc.stdout?.on("data", (d) => { output += d.toString(); });
     proc.stderr?.on("data", (d) => { output += d.toString(); });
     proc.on("close", (code) => {
       if (code === 0 && output) {
+        if (output.includes("Unauthorized: Tunnel not found") || output.includes("ERR Register tunnel error")) {
+          return resolve(null);
+        }
         const matches = output.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/g);
         if (matches && matches.length > 0) {
           return resolve(matches[matches.length - 1]);
@@ -817,10 +820,16 @@ async function ensureCloudflareTunnel(port: number) {
         console.log(`\n🚀 [Cloudflare] Persistent tunnel active: ${existingUrl}`);
         console.log(`⚡ [Cloudflare] Connected to localhost:${port} and local Supabase (/auth/v1, /rest/v1, /storage/v1, /realtime/v1, /functions/v1)\n`);
         return;
+      } else {
+        console.log("⚡ [Cloudflare] Existing cf_tunnel has expired or failed. Re-spawning fresh tunnel...");
+        await new Promise((resolve) => {
+          const proc = spawn("docker", ["rm", "-f", "cf_tunnel"]);
+          proc.on("close", resolve);
+        });
       }
     }
 
-    // Check if stopped container exists, start it to retain persistent tunnel link
+    // Check if stopped container exists, remove it so a fresh valid session is spawned
     const hasExisting = await new Promise<boolean>((resolve) => {
       const proc = spawn("docker", ["ps", "-a", "--filter", "name=cf_tunnel", "--format", "{{.Names}}"], {
         stdio: ["ignore", "pipe", "pipe"],
@@ -832,36 +841,35 @@ async function ensureCloudflareTunnel(port: number) {
     });
 
     if (hasExisting) {
-      console.log("⚡ [Cloudflare] Starting existing cf_tunnel container...");
       await new Promise((resolve) => {
-        const proc = spawn("docker", ["start", "cf_tunnel"]);
-        proc.on("close", resolve);
-      });
-    } else {
-      console.log("⚡ [Cloudflare] Spawning new persistent cf_tunnel container...");
-      const token = process.env.CLOUDFLARE_TUNNEL_TOKEN;
-      const dockerArgs = [
-        "run",
-        "-d",
-        "--name",
-        "cf_tunnel",
-        "--restart",
-        "always",
-        "--add-host=host.docker.internal:host-gateway",
-        "cloudflare/cloudflared:latest",
-        "tunnel",
-      ];
-      if (token) {
-        dockerArgs.push("run", "--token", token);
-      } else {
-        dockerArgs.push("--url", `http://host.docker.internal:${port}`);
-      }
-
-      await new Promise((resolve) => {
-        const proc = spawn("docker", dockerArgs);
+        const proc = spawn("docker", ["rm", "-f", "cf_tunnel"]);
         proc.on("close", resolve);
       });
     }
+
+    console.log("⚡ [Cloudflare] Spawning new cf_tunnel container...");
+    const token = process.env.CLOUDFLARE_TUNNEL_TOKEN;
+    const dockerArgs = [
+      "run",
+      "-d",
+      "--name",
+      "cf_tunnel",
+      "--restart",
+      "always",
+      "--add-host=host.docker.internal:host-gateway",
+      "cloudflare/cloudflared:latest",
+      "tunnel",
+    ];
+    if (token) {
+      dockerArgs.push("run", "--token", token);
+    } else {
+      dockerArgs.push("--url", `http://host.docker.internal:${port}`);
+    }
+
+    await new Promise((resolve) => {
+      const proc = spawn("docker", dockerArgs);
+      proc.on("close", resolve);
+    });
 
     // Poll for the URL
     for (let i = 0; i < 20; i++) {

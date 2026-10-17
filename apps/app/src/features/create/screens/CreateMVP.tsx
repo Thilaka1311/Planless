@@ -22,7 +22,7 @@ import { FriendshipsScreen } from "../../friendships/screens/FriendshipsScreen";
 
 import { supabase } from "../../../../lib/supabaseClient";
 import defaultPlanCover from "../../../assets/planimagedefault.webp";
-import { uploadPlanImage, uploadPlanCardImage } from "../../../shared/utils/imageUtils";
+import { uploadPlanImage } from "../../../shared/utils/imageUtils";
 import { toCanonicalPlanPhoto } from "../../../shared/imaging/imageResolver";
 import {
   getSavedCreatePlanDraft,
@@ -323,27 +323,13 @@ export const CreateMVP: React.FC<CreateMVPProps> = ({
         form.priorityGuestIds || []
       );
 
-      // Upload original image → cover_image
-      if (form.customOriginalBlob && dbPlanRow?.id) {
+      // Single-source architecture: upload only canonical cover image
+      const coverBlobToUpload = form.customOriginalBlob || form.customCoverBlob;
+      if (coverBlobToUpload && dbPlanRow?.id) {
         try {
-          await uploadPlanImage(dbPlanRow.id, form.customOriginalBlob);
+          await uploadPlanImage(dbPlanRow.id, coverBlobToUpload);
         } catch (uploadErr) {
-          console.error('[CreateMVP] Failed to upload original plan cover image:', uploadErr);
-        }
-      } else if (form.customCoverBlob && dbPlanRow?.id) {
-        try {
-          await uploadPlanImage(dbPlanRow.id, form.customCoverBlob);
-        } catch (uploadErr) {
-          console.error('[CreateMVP] Failed to upload plan cover image (fallback):', uploadErr);
-        }
-      }
-
-      // Upload cropped portrait → cover_card_image
-      if (form.customCoverBlob && form.customOriginalBlob && dbPlanRow?.id) {
-        try {
-          await uploadPlanCardImage(dbPlanRow.id, form.customCoverBlob);
-        } catch (uploadErr) {
-          console.error('[CreateMVP] Failed to upload plan card image:', uploadErr);
+          console.error('[CreateMVP] Failed to upload plan cover image:', uploadErr);
         }
       }
 

@@ -241,7 +241,7 @@ export function calculateDistanceKm(
 }
 
 export function formatDistanceKm(distanceKm: number): string {
-  if (isNaN(distanceKm) || distanceKm < 0) return "Nearby";
+  if (isNaN(distanceKm) || distanceKm < 0) return "";
   return `${distanceKm.toFixed(1)} km`;
 }
 
@@ -299,12 +299,12 @@ export function resolveVenueDistance(
   if (
     typeof (item as any).distance === "string" &&
     (item as any).distance &&
-    (item as any).distance !== "Nearby"
+    (item as any).distance.trim().toLowerCase() !== "nearby"
   ) {
     return (item as any).distance;
   }
 
-  return "Nearby";
+  return "";
 }
 
 /**
@@ -430,10 +430,10 @@ export const DiscoveryCard = React.memo<DiscoveryCardProps>(({
           )}
         </div>
 
-        {/* Bottom Row: Distance on the left, Rating on the right */}
+        {/* Bottom Row: Distance / Price on the left, Rating on the right */}
         <div className="flex items-center justify-between text-[11px] min-w-0 select-none pt-1">
           <span className="text-zinc-300 font-medium select-none truncate">
-            {isMovie ? movieMeta : distance}
+            {isMovie ? movieMeta : (distance || (item as any).price || (item as any).price_tier || "")}
           </span>
           {rating && (
             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#178544] text-white font-bold rounded text-[10px] shrink-0 leading-none select-none ml-2">

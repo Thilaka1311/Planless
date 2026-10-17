@@ -12,6 +12,7 @@ import { formatPlanDate } from "../../../../lib/mappers";
 import defaultAvatar from "../../../assets/default_avatar.webp";
 import { normalizeStatus } from "../../../../lib/participantStatus";
 import { getPlanCover } from "../../plans/config/planCoverImages";
+import { parseCropConfig } from "../../plans/utils/planPhotos";
 import { DiscoveryImages } from "../../../IMGfromDB/PlanImages";
 import { Calendar, Hourglass, IndianRupee, User, Film, CalendarDays } from "lucide-react";
 import { CategoryIcon } from "../../../shared/components/CategoryIcon";
@@ -559,10 +560,25 @@ export const PlanCard: React.FC<PlanCardProps> = ({
     return "from-emerald-500/15 to-emerald-600/5 text-emerald-300 border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.25)]";
   }, [categoryStr]);
 
+  const cropStyle = React.useMemo(() => {
+    const rawCard = (plan as any).cardCoverImage || (plan as any).cover_card_image;
+    const config = parseCropConfig(rawCard);
+    if (config) {
+      return {
+        objectPosition: config.objectPosition || "center",
+        ...(config.scale && config.scale !== 1 ? { transform: `scale(${config.scale})` } : {}),
+      };
+    }
+    return {};
+  }, [(plan as any).cardCoverImage, (plan as any).cover_card_image]);
+
   const coverToUse = React.useMemo(() => {
-    // Prefer the explicit Home Card crop; fall back to the original cover image, then category default
-    return (plan as any).cardCoverImage || plan.coverImage || getPlanCover(plan.category, (plan as any).subcategory || (plan as any).sports_type);
-  }, [(plan as any).cardCoverImage, plan.coverImage, plan.category, (plan as any).subcategory, (plan as any).sports_type]);
+    // Single-source architecture: use canonical plan coverImage as source for card crop.
+    // Falls back to legacy cardCoverImage if coverImage is absent, then category default.
+    const rawCard = (plan as any).cardCoverImage || (plan as any).cover_card_image;
+    const legacyCard = typeof rawCard === "string" && !rawCard.startsWith("crop:") ? rawCard : null;
+    return plan.coverImage || legacyCard || getPlanCover(plan.category, (plan as any).subcategory || (plan as any).sports_type);
+  }, [plan.coverImage, (plan as any).cardCoverImage, (plan as any).cover_card_image, plan.category, (plan as any).subcategory, (plan as any).sports_type]);
 
   const maxSpots = React.useMemo(() => {
     return plan.maxSpots || (plan.category === "movies" ? 10 : plan.category === "sports" ? 14 : 8);
@@ -662,18 +678,26 @@ export const PlanCard: React.FC<PlanCardProps> = ({
       }}
       className="h-full w-full snap-start snap-always relative rounded-none border-0 overflow-hidden flex flex-col justify-end bg-[#050505] group cursor-pointer flex-shrink-0 mb-0"
     >
-      {/* Full-bleed crisp hero poster cover image - original colors & brightness */}
-      <DiscoveryImages
-        src={coverToUse}
-        planId={plan.dbUuid || plan.id}
-        category={plan.category}
-        subcategory={(plan as any).subcategory || (plan as any).sports_type}
-        alt={plan.title}
-        className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 pointer-events-none"
-      />
+      {/* Full-bleed crisp hero poster cover image - strictly bounded inside card image container */}
+      <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
+        <DiscoveryImages
+          src={coverToUse}
+          planId={plan.dbUuid || plan.id}
+          category={plan.category}
+          subcategory={(plan as any).subcategory || (plan as any).sports_type}
+          alt={plan.title}
+          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 pointer-events-none"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            ...cropStyle,
+          }}
+        />
+      </div>
 
       {/* Subtle bottom-only gradient for legibility */}
-      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent pointer-events-none z-0" />
+      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none z-10" />
 
       {/* Top Row Badges of the event poster */}
       <div

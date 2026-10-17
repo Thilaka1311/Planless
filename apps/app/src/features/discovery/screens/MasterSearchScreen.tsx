@@ -7,9 +7,22 @@ import { DiscoverySection } from "../components/DiscoverySection";
 import { DiscoveryFeedSkeleton } from "../components/DiscoveryFeedSkeleton";
 import { PlacePreviewSheet } from "../components/PlacePreviewSheet";
 import { AdminPlaceEditSheet } from "../components/AdminPlaceEditSheet";
-import { extractCleanPlaceId } from "../services/venueRelevance";
+import { extractCleanPlaceId, isPlaceholderImageUrl, isPhotoUrlBroken } from "../services/venueRelevance";
 import { useProfileStore } from "../../profile/state/ProfileContext";
 import { subscribePlaceOverrides } from "../services/placeOverridesService";
+import { getCityBoundingBoxSync } from "../services/cityBoundary";
+
+export const isDisplayableCard = (item: DiscoveryItem): boolean => {
+  if (!item) return false;
+  const cat = (item.category || "").toUpperCase();
+  const isStrict = cat === "SPORTS" || cat === "DINING" || cat === "ACTIVITIES" || cat === "MOVIES";
+  if (isStrict) {
+    if (!item.cover_image_url) return false;
+    if (isPlaceholderImageUrl(item.cover_image_url)) return false;
+    if (isPhotoUrlBroken(item.cover_image_url)) return false;
+  }
+  return true;
+};
 
 export interface MasterSearchScreenProps {
   onBack: () => void;
@@ -71,10 +84,22 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
 
   const requestCounterRef = useRef(0);
 
-  // Debounce search query (300ms)
+  // Debounce search query (300ms), or immediately clear if query is empty
   useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setDebouncedQuery("");
+      requestCounterRef.current++;
+      setDiningResults(INITIAL_CATEGORY_STATE);
+      setSportsResults(INITIAL_CATEGORY_STATE);
+      setActivitiesResults(INITIAL_CATEGORY_STATE);
+      setMoviesResults(INITIAL_CATEGORY_STATE);
+      setIsSearching(false);
+      return;
+    }
+
     const handler = setTimeout(() => {
-      setDebouncedQuery(searchQuery.trim());
+      setDebouncedQuery(trimmed);
     }, 300);
     return () => clearTimeout(handler);
   }, [searchQuery]);
@@ -104,6 +129,7 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
   useEffect(() => {
     const trimmed = debouncedQuery.trim();
     if (!trimmed) {
+      requestCounterRef.current++;
       setDiningResults(INITIAL_CATEGORY_STATE);
       setSportsResults(INITIAL_CATEGORY_STATE);
       setActivitiesResults(INITIAL_CATEGORY_STATE);
@@ -114,23 +140,32 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
 
     const currentRequestId = ++requestCounterRef.current;
     setIsSearching(true);
+    const cityBounds = getCityBoundingBoxSync(currentCity);
 
     // Concurrently search Dining, Sports, Activities (via searchCoordinator) and Movies (via TMDB)
     Promise.allSettled([
       searchCoordinator.executeSearch(trimmed, {
         category: "DINING",
+        city: currentCity,
+        cityBounds,
         discoveryCoordinates: currentCoordinates,
       }),
       searchCoordinator.executeSearch(trimmed, {
         category: "SPORTS",
+        city: currentCity,
+        cityBounds,
         discoveryCoordinates: currentCoordinates,
       }),
       searchCoordinator.executeSearch(trimmed, {
         category: "ACTIVITIES",
+        city: currentCity,
+        cityBounds,
         discoveryCoordinates: currentCoordinates,
       }),
       searchCoordinator.executeSearch(trimmed, {
         category: "MOVIES",
+        city: currentCity,
+        cityBounds,
         discoveryCoordinates: currentCoordinates,
       }),
     ]).then(([diningRes, sportsRes, activitiesRes, moviesRes]) => {
@@ -138,8 +173,9 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
       if (currentRequestId !== requestCounterRef.current) return;
 
       if (diningRes.status === "fulfilled") {
+        const renderable = (diningRes.value.items || []).filter(isDisplayableCard);
         setDiningResults({
-          items: diningRes.value.items || [],
+          items: renderable,
           nextPageToken: diningRes.value.nextPageToken || null,
           hasMore: !diningRes.value.isExhausted,
           isLoadingMore: false,
@@ -149,8 +185,9 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
       }
 
       if (sportsRes.status === "fulfilled") {
+        const renderable = (sportsRes.value.items || []).filter(isDisplayableCard);
         setSportsResults({
-          items: sportsRes.value.items || [],
+          items: renderable,
           nextPageToken: sportsRes.value.nextPageToken || null,
           hasMore: !sportsRes.value.isExhausted,
           isLoadingMore: false,
@@ -160,8 +197,9 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
       }
 
       if (activitiesRes.status === "fulfilled") {
+        const renderable = (activitiesRes.value.items || []).filter(isDisplayableCard);
         setActivitiesResults({
-          items: activitiesRes.value.items || [],
+          items: renderable,
           nextPageToken: activitiesRes.value.nextPageToken || null,
           hasMore: !activitiesRes.value.isExhausted,
           isLoadingMore: false,
@@ -171,8 +209,9 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
       }
 
       if (moviesRes.status === "fulfilled") {
+        const renderable = (moviesRes.value.items || []).filter(isDisplayableCard);
         setMoviesResults({
-          items: moviesRes.value.items || [],
+          items: renderable,
           nextPageToken: moviesRes.value.nextPageToken || null,
           hasMore: !moviesRes.value.isExhausted,
           isLoadingMore: false,
@@ -183,17 +222,17 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
 
       setIsSearching(false);
     });
-  }, [debouncedQuery, currentCoordinates, currentCity]);
+  }, [debouncedQuery, currentCoordinates?.latitude, currentCoordinates?.longitude, currentCity]);
 
   // Load more pagination handlers per category using searchCoordinator
   const loadMoreDining = async () => {
     if (diningResults.isLoadingMore || !diningResults.hasMore) return;
     setDiningResults((prev) => ({ ...prev, isLoadingMore: true }));
     try {
-      const res = await searchCoordinator.loadNextPage("DINING");
+      const res = await searchCoordinator.loadNextPage("DINING", undefined, currentCity);
       if (res) {
         setDiningResults({
-          items: res.items,
+          items: (res.items || []).filter(isDisplayableCard),
           nextPageToken: res.nextPageToken || null,
           hasMore: !res.isExhausted,
           isLoadingMore: false,
@@ -210,10 +249,10 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
     if (sportsResults.isLoadingMore || !sportsResults.hasMore) return;
     setSportsResults((prev) => ({ ...prev, isLoadingMore: true }));
     try {
-      const res = await searchCoordinator.loadNextPage("SPORTS");
+      const res = await searchCoordinator.loadNextPage("SPORTS", undefined, currentCity);
       if (res) {
         setSportsResults({
-          items: res.items,
+          items: (res.items || []).filter(isDisplayableCard),
           nextPageToken: res.nextPageToken || null,
           hasMore: !res.isExhausted,
           isLoadingMore: false,
@@ -230,10 +269,10 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
     if (activitiesResults.isLoadingMore || !activitiesResults.hasMore) return;
     setActivitiesResults((prev) => ({ ...prev, isLoadingMore: true }));
     try {
-      const res = await searchCoordinator.loadNextPage("ACTIVITIES");
+      const res = await searchCoordinator.loadNextPage("ACTIVITIES", undefined, currentCity);
       if (res) {
         setActivitiesResults({
-          items: res.items,
+          items: (res.items || []).filter(isDisplayableCard),
           nextPageToken: res.nextPageToken || null,
           hasMore: !res.isExhausted,
           isLoadingMore: false,
@@ -250,10 +289,10 @@ export const MasterSearchScreen: React.FC<MasterSearchScreenProps> = ({
     if (moviesResults.isLoadingMore || !moviesResults.hasMore) return;
     setMoviesResults((prev) => ({ ...prev, isLoadingMore: true }));
     try {
-      const res = await searchCoordinator.loadNextPage("MOVIES");
+      const res = await searchCoordinator.loadNextPage("MOVIES", undefined, currentCity);
       if (res) {
         setMoviesResults({
-          items: res.items,
+          items: (res.items || []).filter(isDisplayableCard),
           nextPageToken: res.nextPageToken || null,
           hasMore: !res.isExhausted,
           isLoadingMore: false,

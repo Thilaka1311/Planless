@@ -47,7 +47,7 @@ const ScreenLoadingFallback = (
 import { createQuickPlan } from "../services/quickPlanService";
 
 import defaultPlanCover from "../../../assets/planimagedefault.webp";
-import { uploadPlanImage, uploadPlanCardImage } from "../../../shared/utils/imageUtils";
+import { uploadPlanImage } from "../../../shared/utils/imageUtils";
 import { toCanonicalPlanPhoto } from "../../../shared/imaging/imageResolver";
 import { clearDraftParticipants, clearCreatePlanDraft } from "../utils/draftParticipantStorage";
 import {
@@ -480,28 +480,13 @@ export const CreatePlanScreen = ({
         form.priorityGuestIds || []
       );
 
-      // Upload original image → cover_image
-      if (form.customOriginalBlob && dbPlanRow?.id) {
+      // Single-source architecture: upload only canonical cover image
+      const coverBlobToUpload = form.customOriginalBlob || form.customCoverBlob;
+      if (coverBlobToUpload && dbPlanRow?.id) {
         try {
-          await uploadPlanImage(dbPlanRow.id, form.customOriginalBlob);
+          await uploadPlanImage(dbPlanRow.id, coverBlobToUpload);
         } catch (uploadErr) {
-          console.error('[CreatePlanFlow] Failed to upload original plan cover image:', uploadErr);
-        }
-      } else if (form.customCoverBlob && dbPlanRow?.id) {
-        // Fallback: no separate original — treat cropped as the cover_image
-        try {
-          await uploadPlanImage(dbPlanRow.id, form.customCoverBlob);
-        } catch (uploadErr) {
-          console.error('[CreatePlanFlow] Failed to upload plan cover image (fallback):', uploadErr);
-        }
-      }
-
-      // Upload cropped portrait → cover_card_image (only if a separate crop was produced)
-      if (form.customCoverBlob && form.customOriginalBlob && dbPlanRow?.id) {
-        try {
-          await uploadPlanCardImage(dbPlanRow.id, form.customCoverBlob);
-        } catch (uploadErr) {
-          console.error('[CreatePlanFlow] Failed to upload plan card image:', uploadErr);
+          console.error('[CreatePlanFlow] Failed to upload plan cover image:', uploadErr);
         }
       }
 

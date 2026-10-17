@@ -31,8 +31,11 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
   const rating = resolveVenueRating(effectiveItem);
   const distance = resolveVenueDistance(effectiveItem, userCoordinates);
 
-  const rawLocationText = effectiveItem.place_address || effectiveItem.location || "Nearby";
-  const displayLocation = rawLocationText === "Nearby" ? "Nearby" : (getPlanAreaName(rawLocationText) || rawLocationText);
+  const rawLocationText = effectiveItem.place_address || effectiveItem.location || "";
+  const displayLocation =
+    rawLocationText && rawLocationText.toLowerCase() !== "nearby"
+      ? (getPlanAreaName(rawLocationText) || rawLocationText)
+      : "";
   const hasDistinctDescription =
     Boolean(effectiveItem.description) &&
     effectiveItem.description !== effectiveItem.location &&
@@ -136,9 +139,11 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
               /* Venue Specific Metadata (Dining, Sports) */
               <>
                 <div className="flex items-center justify-between text-xs font-sans">
-                  <span className="text-zinc-400 font-medium shrink-0">
-                    {distance}
-                  </span>
+                  {distance ? (
+                    <span className="text-zinc-400 font-medium shrink-0">
+                      {distance}
+                    </span>
+                  ) : <span />}
 
                   {rating && (
                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#178544] text-white font-bold rounded text-[11px] shrink-0 leading-none ml-auto">
@@ -148,10 +153,12 @@ export const PlacePreviewSheet: React.FC<PlacePreviewSheetProps> = ({
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5 text-xs text-zinc-400 leading-relaxed pt-0.5 font-sans min-w-0">
-                  <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                  <span className="truncate whitespace-nowrap">{displayLocation}</span>
-                </div>
+                {displayLocation ? (
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-400 leading-relaxed pt-0.5 font-sans min-w-0">
+                    <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                    <span className="truncate whitespace-nowrap">{displayLocation}</span>
+                  </div>
+                ) : null}
 
                 {hasDistinctDescription && (
                   <p className="text-xs text-zinc-400 font-normal leading-relaxed pt-1 line-clamp-3 font-sans">

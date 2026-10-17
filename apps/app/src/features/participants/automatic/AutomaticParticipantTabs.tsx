@@ -44,12 +44,11 @@ export const AutomaticParticipantTabs: React.FC<AutomaticParticipantTabsProps> =
       if (key === 'going') label = `Attended (${goingCount})`;
       if (key === 'skipped') label = skippedCount !== undefined ? `Skipped (${skippedCount})` : `Skipped`;
     } else {
+      const isNoLimit = capacity === undefined || capacity === null;
       if (key === 'invited') label = `Invited (${invitedCount ?? 0})`;
       if (key === 'going') {
-        const isNoLimit = capacity === undefined || capacity === null;
-        const denominator = isNoLimit ? (noLimitDenominator ?? invitedCount ?? goingCount) : capacity;
-        label = (!hideCapacityDenominator && denominator !== undefined && denominator !== null)
-          ? `Joined (${goingCount} / ${denominator})`
+        label = (!hideCapacityDenominator && !isNoLimit && capacity !== undefined && capacity !== null)
+          ? `Joined (${goingCount} / ${capacity})`
           : `Joined (${goingCount})`;
       }
       if (key === 'waitlist') label = `Waitlist (${waitlistCount})`;

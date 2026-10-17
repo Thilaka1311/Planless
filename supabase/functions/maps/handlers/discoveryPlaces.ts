@@ -262,6 +262,32 @@ const CITY_ALIASES: Record<string, string[]> = {
   chennai: [
     "chennai",
     "madras",
+    "potheri",
+    "kattankulathur",
+    "maraimalai nagar",
+    "guduvanchery",
+    "vandalur",
+    "tambaram",
+    "chromepet",
+    "pallavaram",
+    "guindy",
+    "porur",
+    "avadi",
+    "ambattur",
+    "sholinganallur",
+    "thiruvanmiyur",
+    "omr",
+    "ecr",
+    "siruseri",
+    "navalur",
+    "kelambakkam",
+    "sriperumbudur",
+    "poonamallee",
+    "chengalpattu",
+    "perambur",
+    "egmore",
+    "triplicane",
+    "saidapet",
     "anna nagar",
     "t nagar",
     "adyar",
@@ -274,6 +300,32 @@ const CITY_ALIASES: Record<string, string[]> = {
   madras: [
     "chennai",
     "madras",
+    "potheri",
+    "kattankulathur",
+    "maraimalai nagar",
+    "guduvanchery",
+    "vandalur",
+    "tambaram",
+    "chromepet",
+    "pallavaram",
+    "guindy",
+    "porur",
+    "avadi",
+    "ambattur",
+    "sholinganallur",
+    "thiruvanmiyur",
+    "omr",
+    "ecr",
+    "siruseri",
+    "navalur",
+    "kelambakkam",
+    "sriperumbudur",
+    "poonamallee",
+    "chengalpattu",
+    "perambur",
+    "egmore",
+    "triplicane",
+    "saidapet",
     "anna nagar",
     "t nagar",
     "adyar",
@@ -478,15 +530,32 @@ async function fetchPlacesSearchNew(
     if (includedType) {
       body.includedType = includedType;
     }
-    if (typeof lat === "number" && typeof lng === "number") {
+    const hasCityBounds = cityBounds && typeof cityBounds.north === "number" && typeof cityBounds.south === "number";
+    let effectiveLat = lat;
+    let effectiveLng = lng;
+    if (hasCityBounds && typeof lat === "number" && typeof lng === "number") {
+      // If provided coordinate falls outside city bounds, center bias on city center
+      const isWithinBounds =
+        lat >= cityBounds.south - 0.05 &&
+        lat <= cityBounds.north + 0.05 &&
+        lng >= cityBounds.west - 0.05 &&
+        lng <= cityBounds.east + 0.05;
+      if (!isWithinBounds) {
+        effectiveLat = (cityBounds.north + cityBounds.south) / 2;
+        effectiveLng = (cityBounds.east + cityBounds.west) / 2;
+      }
+    }
+
+    if (typeof effectiveLat === "number" && typeof effectiveLng === "number") {
+      const safeRadius = Math.min(Math.max(radius || DEFAULT_RADIUS_METERS, 100), 50000.0);
       body.locationBias = {
         circle: {
-          center: { latitude: lat, longitude: lng },
-          radius: radius || DEFAULT_RADIUS_METERS,
+          center: { latitude: effectiveLat, longitude: effectiveLng },
+          radius: safeRadius,
         },
       };
       body.rankPreference = "DISTANCE";
-    } else if (cityBounds && typeof cityBounds.north === "number" && typeof cityBounds.south === "number") {
+    } else if (hasCityBounds) {
       body.locationRestriction = {
         rectangle: {
           low: { latitude: cityBounds.south, longitude: cityBounds.west },
@@ -1309,7 +1378,7 @@ function normalizePlaces(
       ? `${photoBaseUrl}?action=photo&photo_reference=${encodeURIComponent(photoRef)}&maxwidth=800${placeId ? `&place_id=${encodeURIComponent(placeId)}` : ""}`
       : null;
 
-    const locText = place.vicinity || place.formatted_address || "Nearby";
+    const locText = place.vicinity || place.formatted_address || "";
     const placeName = place.name || "Unnamed Place";
     
     // Derive categories directly from Google types
@@ -1426,7 +1495,12 @@ function normalizePlaces(
 export async function handleDiscoveryPlaces(
   body: any,
   req: Request
-): Promise<{ sections: PlaceSection[]; items?: PlaceItem[]; nextPageToken?: string | null }> {
+): Promise<{
+  sections: PlaceSection[];
+  items?: PlaceItem[];
+  rawPlaces?: any[];
+  nextPageToken?: string | null;
+}> {
   const apiKey = getGoogleApiKey();
   const photoBaseUrl = body?.photoBaseUrl || "/functions/v1/maps";
 
@@ -1486,12 +1560,21 @@ export async function handleDiscoveryPlaces(
     );
 
     const sectionCategory = requestedCategory === "ALL" ? "DINING" : requestedCategory;
+    const categoryTitle =
+      sectionCategory === "SPORTS"
+        ? "Sports"
+        : sectionCategory === "DINING"
+        ? "Restaurants"
+        : sectionCategory === "ACTIVITIES"
+        ? "Activities"
+        : "Discover Places";
+
     const section: PlaceSection = {
-      id: `places_${sectionCategory.toLowerCase()}_nearby`,
-      public_id: `places_${sectionCategory.toLowerCase()}_nearby`,
+      id: `places_${sectionCategory.toLowerCase()}`,
+      public_id: `places_${sectionCategory.toLowerCase()}`,
       category: sectionCategory as any,
-      title: "Nearby Places",
-      description: `Nearby ${sectionCategory.toLowerCase()} places`,
+      title: categoryTitle,
+      description: `${categoryTitle} around you`,
       display_order: 1,
       status: "ACTIVE",
       created_at: new Date().toISOString(),

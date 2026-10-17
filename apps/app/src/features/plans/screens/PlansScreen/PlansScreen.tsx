@@ -123,6 +123,12 @@ export const PlansScreen = React.memo(({
     });
 
     for (const plan of sortedPlans) {
+      const isCancelled = (plan.status || "").toUpperCase() === "CANCELLED" || (plan.status || "").toUpperCase() === "CANCELED";
+      if (isCancelled) {
+        groups.past.push(plan);
+        continue;
+      }
+
       const planDate = getPlanDateTime(plan);
       const planTime = planDate.getTime();
 

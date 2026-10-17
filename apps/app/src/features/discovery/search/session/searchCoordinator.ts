@@ -12,8 +12,8 @@ import { planlessSearchCache } from "../cache/searchCache";
 import { supabase } from "../../../../../lib/supabaseClient";
 import { searchDiscoveryItems } from "../../services/discoveryQueries";
 import { extractCleanPlaceId } from "../../services/venueRelevance";
-import { applyPlaceOverrides, subscribePlaceOverrides, getDatabaseSportsCandidatePlaces } from "../../services/placeOverridesService";
-import { isPlaceInCity, CityBoundingBox, cleanCityString } from "../../services/cityBoundary";
+import { applyPlaceOverrides, subscribePlaceOverrides, getDatabaseCandidatePlaces } from "../../services/placeOverridesService";
+import { isPlaceInCity, isCoordinateInCity, CityBoundingBox, cleanCityString, getCityCenter } from "../../services/cityBoundary";
 import { onDiscoveryLocationChange, getStoredDiscoveryLocation } from "../../hooks/useUserLocation";
 
 export interface SearchExecutionOptions {
@@ -78,7 +78,7 @@ export class SearchCoordinator {
         ? rawCat
         : "ALL";
     const storedLoc = getStoredDiscoveryLocation();
-    const targetCity = options.city || storedLoc?.city;
+    const targetCity = options.city || storedLoc?.city || "Bengaluru";
     const isSameCityAsStored =
       !options.city ||
       (storedLoc?.city && cleanCityString(storedLoc.city) === cleanCityString(options.city));
@@ -96,7 +96,24 @@ export class SearchCoordinator {
     const parsedQuery = understandQuery(rawQuery, category, options.subcategory);
 
     // 2. Determine Search Location vs Discovery Location
-    const discoveryCoords = options.discoveryCoordinates || null;
+    // Resolve city center as geographic anchor when GPS coordinates are unavailable or outside selected city
+    const cityCenterCoords = getCityCenter(targetCity);
+    const storedCoords =
+      storedLoc?.latitude && storedLoc?.longitude
+        ? { latitude: storedLoc.latitude, longitude: storedLoc.longitude }
+        : null;
+
+    const isCoordInTargetCity = (coord?: GeoPoint | null): boolean => {
+      if (!coord || typeof coord.latitude !== "number" || typeof coord.longitude !== "number") return false;
+      return isCoordinateInCity(coord.latitude, coord.longitude, targetCity);
+    };
+
+    const validCityBiasCoords =
+      (options.discoveryCoordinates && isCoordInTargetCity(options.discoveryCoordinates) ? options.discoveryCoordinates : null) ||
+      (storedCoords && isSameCityAsStored && isCoordInTargetCity(storedCoords) ? storedCoords : null);
+
+    const searchBiasCoords = validCityBiasCoords || cityCenterCoords;
+    const userPhysicalCoords = options.discoveryCoordinates || storedCoords || cityCenterCoords;
     let searchCoords = options.searchCoordinates || null;
 
     // Resolve explicit location query if provided ("in Koramangala", "near Indiranagar", or pure location)
@@ -106,10 +123,11 @@ export class SearchCoordinator {
 
     if (locQuery && !searchCoords) {
       try {
+        const cityClean = targetCity || "Bengaluru";
         const queryWithContext =
-          locQuery.toLowerCase().includes("bengaluru") || locQuery.toLowerCase().includes("bangalore")
+          locQuery.toLowerCase().includes(cityClean.toLowerCase())
             ? locQuery
-            : `${locQuery}, Bengaluru, India`;
+            : `${locQuery}, ${cityClean}, India`;
 
         const { data: geoData } = await supabase.functions.invoke("maps", {
           body: { action: "geocode", address: queryWithContext },
@@ -131,7 +149,7 @@ export class SearchCoordinator {
 
     // 3. Formulate Search Strategy
     const strategy = routeSearchStrategy(parsedQuery, {
-      discoveryLocation: searchCoords || discoveryCoords,
+      discoveryLocation: searchCoords || searchBiasCoords,
       searchLocation: searchCoords,
       category,
       subcategory: options.subcategory,
@@ -168,7 +186,7 @@ export class SearchCoordinator {
       subcategory: options.subcategory,
       intent: parsedQuery.intent,
       normalizedQuery: parsedQuery.normalizedQuery,
-      coordinates: searchCoords || discoveryCoords,
+      coordinates: searchCoords || searchBiasCoords,
       city: targetCity,
     });
 
@@ -210,12 +228,10 @@ export class SearchCoordinator {
 
         let allCandidates: RawCandidatePlace[] = [...candidateResult.candidates];
 
-        if (category === "SPORTS") {
-          // SPORTS-SPECIFIC REQUIREMENT:
-          // Search from BOTH: 1. Google Places API + 2. discovery_place_overrides / database data.
-          // Deduplicate using Google place_id (Google Places candidate is base, DB candidates appended).
+        // 5a. Retrieve curated database candidates from discovery_place_overrides for all physical categories
+        if (category !== "MOVIES") {
           try {
-            const dbCandidates = await getDatabaseSportsCandidatePlaces(rawQuery);
+            const dbCandidates = await getDatabaseCandidatePlaces(rawQuery, category, targetCity, targetCityBounds);
             if (dbCandidates.length > 0) {
               const seenIds = new Set<string>();
               for (const gc of candidateResult.candidates) {
@@ -231,14 +247,42 @@ export class SearchCoordinator {
               }
             }
           } catch (dbErr) {
-            console.warn("[SearchCoordinator] Error fetching sports database candidates:", dbErr);
+            console.warn("[SearchCoordinator] Error fetching database candidate places:", dbErr);
           }
-        } else if (candidateResult.candidates.length === 0) {
-          // Database fallback if provider returned 0 candidates
+        }
+
+        // 5b. When searching ALL categories, also retrieve TMDB movies concurrently
+        if (category === "ALL" && !options.subcategory) {
+          try {
+            const tmdbProvider = searchProviderRegistry.get("TMDB");
+            const movieRes = await tmdbProvider.search({
+              providerType: "TMDB",
+              endpoint: "tmdb_search",
+              query: rawQuery,
+              category: "MOVIES",
+            });
+            if (movieRes.candidates.length > 0) {
+              const seenIds = new Set(allCandidates.map((c) => extractCleanPlaceId(c.place_id || c.id)));
+              for (const mc of movieRes.candidates) {
+                const cleanId = extractCleanPlaceId(mc.place_id || mc.id);
+                if (!cleanId || !seenIds.has(cleanId)) {
+                  if (cleanId) seenIds.add(cleanId);
+                  allCandidates.push(mc);
+                }
+              }
+            }
+          } catch (movieErr) {
+            console.warn("[SearchCoordinator] TMDB search in ALL failed:", movieErr);
+          }
+        }
+
+        // 5c. Database fallback if all sources returned 0 candidates
+        if (allCandidates.length === 0) {
           try {
             const dbRecords = await searchDiscoveryItems({
               query: rawQuery,
               category: (category as any) || "ALL",
+              city: targetCity,
             });
             if (dbRecords && dbRecords.length > 0) {
               allCandidates = dbRecords.map((d: any) => ({
@@ -275,7 +319,7 @@ export class SearchCoordinator {
         let normalizedItems = allCandidates
           .map((c) =>
             normalizeCandidate(c, {
-              discoveryCoords,
+              discoveryCoords: userPhysicalCoords,
               searchCoords,
               category: (parsedQuery.categoryHint as DiscoveryCategory) || (category !== "ALL" ? (category as DiscoveryCategory) : undefined),
             })
@@ -287,11 +331,19 @@ export class SearchCoordinator {
         // 7. Planless Strict Relevance Filtering, City Boundary Filtering & Deduplication
         const filteredItems = planlessRelevanceEngine.filterBatch(normalizedItems, parsedQuery);
         let relevantItems: SearchResultItem[] = [];
+        const crossCityCandidates: SearchResultItem[] = [];
         const seen = new Set<string>();
 
         for (const item of filteredItems) {
-          // FINAL SAFETY FILTER: Place must strictly be inside the target discovery city boundary
-          if (targetCity && !isPlaceInCity(item, targetCity, targetCityBounds)) {
+          const inCity = !targetCity || isPlaceInCity(item, targetCity, targetCityBounds);
+          if (!inCity) {
+            if (
+              item._isExactMatch ||
+              (item._textMatchTier && item._textMatchTier <= 4) ||
+              parsedQuery.intent === "SEARCH_PLACE"
+            ) {
+              crossCityCandidates.push(item);
+            }
             continue;
           }
           if (!seen.has(item.place_id)) {
@@ -313,7 +365,7 @@ export class SearchCoordinator {
           let nextNormalized = nextPageResult.candidates
             .map((c) =>
               normalizeCandidate(c, {
-                discoveryCoords,
+                discoveryCoords: userPhysicalCoords,
                 searchCoords,
                 category: (parsedQuery.categoryHint as DiscoveryCategory) || (category !== "ALL" ? (category as DiscoveryCategory) : undefined),
               })
@@ -322,13 +374,82 @@ export class SearchCoordinator {
           const nextRelevant = planlessRelevanceEngine.filterBatch(nextNormalized, parsedQuery);
 
           for (const item of nextRelevant) {
-            if (!isPlaceInCity(item, targetCity, targetCityBounds)) {
+            const inCity = !targetCity || isPlaceInCity(item, targetCity, targetCityBounds);
+            if (!inCity) {
+              if (
+                item._isExactMatch ||
+                (item._textMatchTier && item._textMatchTier <= 4) ||
+                parsedQuery.intent === "SEARCH_PLACE"
+              ) {
+                crossCityCandidates.push(item);
+              }
               continue;
             }
             if (!seen.has(item.place_id)) {
               seen.add(item.place_id);
               relevantItems.push(item);
             }
+          }
+        }
+
+        // Cross-city fallback: If 0 items were found in the selected city,
+        // and the query is a specific place-name search, surface strong cross-city matches!
+        const isSpecificPlaceSearch =
+          parsedQuery.intent === "SEARCH_PLACE" ||
+          Boolean(parsedQuery.searchTerm && parsedQuery.searchTerm.trim().length >= 3);
+
+        if (relevantItems.length === 0 && crossCityCandidates.length > 0 && isSpecificPlaceSearch) {
+          for (const item of crossCityCandidates) {
+            if (!seen.has(item.place_id)) {
+              seen.add(item.place_id);
+              (item as any)._isCrossCity = true;
+              relevantItems.push(item);
+            }
+          }
+        }
+
+        // Secondary fallback for specific place searches when target city returned 0 matching candidates:
+        // Try searching with the national / major hub (Bengaluru) location bias if the target city is not Bengaluru
+        if (
+          relevantItems.length === 0 &&
+          isSpecificPlaceSearch &&
+          cleanCityString(targetCity) !== "bengaluru" &&
+          category !== "MOVIES"
+        ) {
+          try {
+            const fallbackStrategy: SearchStrategy = {
+              ...strategy,
+              locationBias: {
+                latitude: 12.9716,
+                longitude: 77.5946,
+                radiusMeters: 50000,
+              },
+              city: "Bengaluru",
+              cityBounds: null,
+            };
+            const fallbackResult = await provider.search(fallbackStrategy);
+            if (fallbackResult.candidates.length > 0) {
+              let fbNormalized = fallbackResult.candidates.map((c) =>
+                normalizeCandidate(c, {
+                  discoveryCoords: userPhysicalCoords,
+                  searchCoords,
+                  category:
+                    (parsedQuery.categoryHint as DiscoveryCategory) ||
+                    (category !== "ALL" ? (category as DiscoveryCategory) : undefined),
+                })
+              );
+              fbNormalized = await applyPlaceOverrides(fbNormalized);
+              const fbFiltered = planlessRelevanceEngine.filterBatch(fbNormalized, parsedQuery);
+              for (const it of fbFiltered) {
+                if (!seen.has(it.place_id)) {
+                  seen.add(it.place_id);
+                  (it as any)._isCrossCity = true;
+                  relevantItems.push(it);
+                }
+              }
+            }
+          } catch (fbErr) {
+            console.warn("[SearchCoordinator] Secondary cross-city fallback failed:", fbErr);
           }
         }
 
@@ -389,9 +510,15 @@ export class SearchCoordinator {
   /**
    * Loads the next batch of results for the given session or current active session.
    */
-  async loadNextPage(sessionKeyOrCategory?: string): Promise<SearchSessionState | null> {
+  async loadNextPage(
+    sessionKeyOrCategory?: string,
+    subcategory?: string,
+    city?: string
+  ): Promise<SearchSessionState | null> {
     const targetKey = sessionKeyOrCategory
-      ? (this.sessions.has(sessionKeyOrCategory) ? sessionKeyOrCategory : this.getSessionKey(sessionKeyOrCategory))
+      ? (this.sessions.has(sessionKeyOrCategory)
+          ? sessionKeyOrCategory
+          : this.getSessionKey(sessionKeyOrCategory, subcategory, city))
       : this.currentSession?.sessionKey;
 
     const session = targetKey ? this.sessions.get(targetKey) : this.currentSession;

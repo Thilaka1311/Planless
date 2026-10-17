@@ -108,10 +108,10 @@ export class GooglePlacesProvider implements ISearchProvider {
             user_ratings_total: typeof p.user_ratings_total === "number" ? p.user_ratings_total : null,
             photos: Array.isArray(p.photos) ? p.photos : [],
             cover_image_url: p.cover_image_url || null,
-            photo_references: Array.isArray(p.photo_references)
+            photo_references: Array.isArray(p.photo_references) && p.photo_references.length > 0
               ? p.photo_references
               : (Array.isArray(p.photos)
-                ? p.photos.map((ph: any) => ph?.photo_reference).filter(Boolean)
+                ? p.photos.map((ph: any) => ph?.name || ph?.photo_reference).filter(Boolean)
                 : null),
             // Retain raw object for downstream normalization
             _raw: p,

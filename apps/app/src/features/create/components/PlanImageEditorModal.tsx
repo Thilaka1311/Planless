@@ -32,6 +32,10 @@ export interface PlanImageEditorModalProps {
     originalPreviewUrl: string; // Original image preview URL
     width: number;
     height: number;
+    cropConfig?: {
+      objectPosition: string;
+      scale: number;
+    };
   }) => Promise<void> | void;
 }
 
@@ -615,6 +619,11 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
             originalPreviewUrl = capturedSrc;
           }
 
+          const posX = Math.round(Math.max(0, Math.min(100, (centerOnImageX / imgWidth) * 100)));
+          const posY = Math.round(Math.max(0, Math.min(100, (centerOnImageY / imgHeight) * 100)));
+          const objectPosition = `${posX}% ${posY}%`;
+          const cropScale = Number((scale / minScale).toFixed(2));
+
           try {
             await onSave({
               previewUrl,
@@ -623,6 +632,10 @@ export const PlanImageEditorModal: React.FC<PlanImageEditorModalProps> = ({
               originalPreviewUrl,
               width: targetOutputWidth,
               height: targetOutputHeight,
+              cropConfig: {
+                objectPosition,
+                scale: cropScale,
+              },
             });
           } catch (saveErr) {
             console.error('[PlanImageEditorModal] onSave error:', saveErr);

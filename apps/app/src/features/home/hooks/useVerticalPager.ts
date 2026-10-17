@@ -19,19 +19,14 @@ export function useVerticalPager(options: UseVerticalPagerOptions) {
   const isAnimatingRef = useRef<boolean>(false);
   const isDraggingRef = useRef<boolean>(false);
 
-  const [containerHeight, setContainerHeight] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      return window.innerHeight;
-    }
-    return 800;
-  });
+  const [containerHeight, setContainerHeight] = useState<number>(0);
 
-  const pageY = useMotionValue(-initialPage * containerHeight);
+  const pageY = useMotionValue(-initialPage * (containerHeight || 0));
 
-  // Sync measured height of container
+  // Sync measured height of container using clientHeight / offsetHeight
   const updateHeight = useCallback(() => {
     if (containerRef.current) {
-      const h = containerRef.current.offsetHeight;
+      const h = containerRef.current.clientHeight || containerRef.current.offsetHeight;
       if (h > 0) {
         setContainerHeight(h);
         pageY.set(-currentPageRef.current * h);
@@ -41,14 +36,32 @@ export function useVerticalPager(options: UseVerticalPagerOptions) {
 
   useEffect(() => {
     updateHeight();
+    const el = containerRef.current;
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && el) {
+      ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const h = entry.contentRect.height || el.clientHeight || el.offsetHeight;
+          if (h > 0) {
+            setContainerHeight(h);
+            pageY.set(-currentPageRef.current * h);
+          }
+        }
+      });
+      ro.observe(el);
+    }
+
     window.addEventListener("resize", updateHeight);
-    return () => window.removeEventListener("resize", updateHeight);
-  }, [updateHeight]);
+    return () => {
+      window.removeEventListener("resize", updateHeight);
+      if (ro) ro.disconnect();
+    };
+  }, [updateHeight, pageY]);
 
   // Smooth programmatic transition to a target page
   const goToPage = useCallback(
     (targetIndex: number, velocity: number = 0) => {
-      const h = containerRef.current?.offsetHeight || containerHeight || window.innerHeight;
+      const h = containerRef.current?.clientHeight || containerRef.current?.offsetHeight || containerHeight || (typeof window !== "undefined" ? window.innerHeight : 800);
       const clamped = Math.max(0, Math.min(totalPages - 1, targetIndex));
 
       setCurrentPage(clamped);
@@ -76,7 +89,7 @@ export function useVerticalPager(options: UseVerticalPagerOptions) {
   };
 
   const handleDragEnd = (_: any, info: PanInfo) => {
-    const h = containerRef.current?.offsetHeight || containerHeight || window.innerHeight;
+    const h = containerRef.current?.clientHeight || containerRef.current?.offsetHeight || containerHeight || (typeof window !== "undefined" ? window.innerHeight : 800);
     const offset = info.offset.y;
     const velocity = info.velocity.y;
 
@@ -148,7 +161,7 @@ export function useVerticalPager(options: UseVerticalPagerOptions) {
         dragDirectionLock: true,
         dragPropagation: false,
         dragConstraints: {
-          top: -(totalPages - 1) * (containerRef.current?.offsetHeight || containerHeight),
+          top: -(totalPages - 1) * (containerRef.current?.clientHeight || containerRef.current?.offsetHeight || containerHeight || (typeof window !== "undefined" ? window.innerHeight : 800)),
           bottom: 0,
         },
         dragElastic: 0.15,

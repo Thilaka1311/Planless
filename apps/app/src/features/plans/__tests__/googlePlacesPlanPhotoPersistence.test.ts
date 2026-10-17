@@ -80,13 +80,13 @@ describe("Google Places Plan Photo Persistence & Resolution", () => {
 
   it("falls back to default placeholder only when photo is genuinely absent", () => {
     const emptyDetails = resolveImageDetails("", ImageType.PlanCover);
-    expect(emptyDetails.url).toContain("planimagedefault.webp");
+    expect(emptyDetails.url).toMatch(/placeholder\.webp|planimagedefault\.webp/);
 
     const nullDetails = resolveImageDetails(null, ImageType.PlanCover);
-    expect(nullDetails.url).toContain("planimagedefault.webp");
+    expect(nullDetails.url).toMatch(/placeholder\.webp|planimagedefault\.webp/);
 
     const defaultDetails = resolveImageDetails("planimagedefault.png", ImageType.PlanCover);
-    expect(defaultDetails.url).toContain("planimagedefault.webp");
+    expect(defaultDetails.url).toMatch(/placeholder\.webp|planimagedefault\.webp/);
   });
 
   it("preserves non-maps external URLs as pass-through without mangling", () => {

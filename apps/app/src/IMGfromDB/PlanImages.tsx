@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { resolveImageDetails, ImageType, subscribeToImageCache, getPlanCachedImage } from "../shared/imaging/imageResolver";
 import { getPlanCover, PLAN_COVER_IMAGES } from "../features/plans/config/planCoverImages";
+import placeholderCoverSrc from "../assets/placeholder.webp";
 
 export interface DiscoveryImagesProps {
   id?: string;
@@ -46,7 +47,8 @@ export function classifyImageSource(
   // If this plan has been evicted/reset to default, classify directly as LOCAL_DEFAULT
   if (
     planId &&
-    (getPlanCachedImage(planId) === "planimagedefault.png" ||
+    (getPlanCachedImage(planId) === "placeholder.webp" ||
+      getPlanCachedImage(planId) === "planimagedefault.png" ||
       getPlanCachedImage(planId) === "planimagedefault.webp")
   ) {
     return { sourceType: "LOCAL_DEFAULT", cleanedPath: "" };
@@ -58,16 +60,19 @@ export function classifyImageSource(
     src === "null" ||
     src === "undefined" ||
     src === "default" ||
+    src === "placeholder.webp" ||
     src === "planimagedefault.png" ||
     src === "planimagedefault.webp" ||
+    src.includes("placeholder") ||
     src.includes("planimagedefault")
   ) {
     return { sourceType: "LOCAL_DEFAULT", cleanedPath: "" };
   }
   const raw = src.trim();
 
-  // If the raw path itself is cached as planimagedefault, points to obsolete plan-covers, or points to obsolete .png category assets
+  // If the raw path itself is cached as placeholder/planimagedefault, points to obsolete plan-covers, or points to obsolete .png category assets
   if (
+    getPlanCachedImage(raw) === "placeholder.webp" ||
     getPlanCachedImage(raw) === "planimagedefault.png" ||
     getPlanCachedImage(raw) === "planimagedefault.webp" ||
     raw.includes("plan-covers") ||
@@ -149,6 +154,7 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
   const [version, setVersion] = useState<number>(0);
   const [catalogFailed, setCatalogFailed] = useState(false);
   const [localFailed, setLocalFailed] = useState(false);
+  const [planFailed, setPlanFailed] = useState(false);
 
   const isStrictDiscoveryCategory = ["SPORTS", "DINING", "ACTIVITIES"].includes(
     (category || "").toUpperCase()
@@ -167,21 +173,24 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
         evictedPath.includes(cleanSrc) ||
         (fileName && fileName === evictedFile) ||
         (cleanPlan && (evictedPath.includes(cleanPlan) || cleanPlan.includes(evictedPath))) ||
+        evictedPath === "placeholder.webp" ||
         evictedPath === "planimagedefault.png" ||
         evictedPath === "planimagedefault.webp"
       ) {
         setCatalogFailed(false);
         setLocalFailed(false);
+        setPlanFailed(false);
         setVersion(newVersion || Date.now());
       }
     });
   }, [src, planId]);
 
-  // Reset state when src changes
+  // Reset state when src or planId changes
   useEffect(() => {
     setCatalogFailed(false);
     setLocalFailed(false);
-  }, [src]);
+    setPlanFailed(false);
+  }, [src, planId]);
 
   const { sourceType, cleanedPath } = useMemo(
     () => classifyImageSource(src, planId),
@@ -189,45 +198,47 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
   );
 
   const { resolvedPath, resolvedUrl } = useMemo(() => {
+    const isDiscoveryCard = screen === "Discovery Card" || (!planId && !screen);
+    const defaultAsset = getPlanCover(category, subcategory) || placeholderCoverSrc;
+
     if (sourceType === "PLAN") {
-      // ONLY load from plan-images bucket. Never fallback.
+      if (planFailed) {
+        return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
+      }
       const details = resolveImageDetails(cleanedPath, ImageType.PlanCover);
-      return { resolvedPath: cleanedPath, resolvedUrl: details.url };
+      return { resolvedPath: cleanedPath, resolvedUrl: details.url || defaultAsset };
     }
 
     if (sourceType === "CATALOG") {
       if (catalogFailed) {
-        if (isStrictDiscoveryCategory) {
+        if (isDiscoveryCard && isStrictDiscoveryCategory) {
           return { resolvedPath: "", resolvedUrl: "" };
         }
-        const defaultAsset = getPlanCover(category, subcategory);
         return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
       }
       const details = resolveImageDetails(cleanedPath, ImageType.DiscoveryCover);
-      return { resolvedPath: cleanedPath, resolvedUrl: details.url };
+      return { resolvedPath: cleanedPath, resolvedUrl: details.url || defaultAsset };
     }
 
-    // LOCAL_DEFAULT (cover_image absent, deleted, or planimagedefault.png)
+    // LOCAL_DEFAULT (cover_image absent, deleted, or placeholder)
     if (localFailed) {
-      if (isStrictDiscoveryCategory) {
+      if (isDiscoveryCard && isStrictDiscoveryCategory) {
         return { resolvedPath: "", resolvedUrl: "" };
       }
-      const defaultAsset = getPlanCover(category, subcategory);
       return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
     }
 
     if (cleanedPath) {
       const details = resolveImageDetails(cleanedPath, ImageType.PlanCover);
-      return { resolvedPath: details.objectKey, resolvedUrl: details.url };
+      return { resolvedPath: details.objectKey, resolvedUrl: details.url || defaultAsset };
     }
 
-    if (isStrictDiscoveryCategory) {
+    if (isDiscoveryCard && isStrictDiscoveryCategory) {
       return { resolvedPath: "", resolvedUrl: "" };
     }
 
-    const defaultAsset = getPlanCover(category, subcategory);
     return { resolvedPath: defaultAsset, resolvedUrl: defaultAsset };
-  }, [sourceType, cleanedPath, catalogFailed, localFailed, category, subcategory, version, isStrictDiscoveryCategory]);
+  }, [sourceType, cleanedPath, catalogFailed, localFailed, planFailed, category, subcategory, version, isStrictDiscoveryCategory, screen, planId]);
 
   useEffect(() => {
     if (isStrictDiscoveryCategory && (!resolvedUrl || resolvedUrl === "")) {
@@ -240,8 +251,9 @@ export const DiscoveryImages: React.FC<DiscoveryImagesProps> = ({
   };
 
   const handleLoadFailure = () => {
-    // If sourceType is PLAN: DO NOT FALLBACK. Keep failed state visible.
-    if (sourceType === "CATALOG") {
+    if (sourceType === "PLAN") {
+      setPlanFailed(true);
+    } else if (sourceType === "CATALOG") {
       setCatalogFailed(true);
     } else if (sourceType === "LOCAL_DEFAULT") {
       setLocalFailed(true);

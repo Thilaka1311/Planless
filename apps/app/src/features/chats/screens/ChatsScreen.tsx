@@ -513,12 +513,8 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
     const formattedTime = rawTimestamp ? formatChatListTimestamp(rawTimestamp) : "";
 
     return (
-      <motion.div
+      <div
         key={plan.id}
-        layout
-        initial={false}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
         onClick={() => onSelectChatPlan(plan.id)}
         onMouseEnter={() => {
           const uuid = plan.dbUuid || plan.id;
@@ -582,30 +578,12 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = React.memo(({
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     );
   };
 
   return (
     <div className="flex-1 flex flex-col relative overflow-hidden h-full bg-[#050505] text-left">
-      {/* TOP HEADER: Matching Home & Plans layout */}
-      <header
-        id="chats_screen_header"
-        className="shrink-0 bg-[#050505] pt-[env(safe-area-inset-top,0px)] z-30 select-none relative"
-      >
-        <div className="h-14 flex items-center justify-between px-6">
-          {/* Left Column: Title */}
-          <div className="flex-1 flex items-center justify-start z-10 min-w-0">
-            <h1 className="text-stone-100 font-sans font-bold text-xl tracking-tight leading-none text-left truncate">
-              Chats
-            </h1>
-          </div>
-
-          {/* Right Column: Empty spacer for horizontal balance */}
-          <div className="flex-1 flex items-center justify-end z-10" />
-        </div>
-      </header>
-
       {/* STICKY SEARCH BAR CONTAINER */}
       <div
         className="shrink-0 bg-[#050505] px-4 pt-0.5 pb-2.5 z-20 select-none"

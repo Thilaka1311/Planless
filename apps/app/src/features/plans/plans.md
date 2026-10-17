@@ -21,10 +21,10 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
 * Plans are sorted chronologically and grouped under date headers: `Today`, `Tomorrow`, `This Week`, `Later`, and `Past`.
 * If a plan requires host attention (such as an unresolved leave request or overdue status), an amber exclamation mark (`!`) appears on that row.
 
-### 2. Viewing Hosted & Cancelled Plans
+### 2. Viewing Hosted Plans & Past Plans
 * Tapping the Crown icon in the navigation header opens `<HostedPlansScreen />`.
 * Displays active plans where the authenticated user is an active Host (`role === 'HOST'` and `rsvp_status === 'JOINED'`).
-* If any cancelled plans exist where the user was a host, a bottom action bar ("View Cancelled Plans →") appears, opening `<CancelledPlans />`.
+* Cancelled plans are consolidated directly into `<PastPlans />` (accessible via Past Plans / Profile), removing the separate "View Cancelled Plans" bottom bar. Cancellation status takes precedence over scheduled date in Past Plans categorization.
 
 ### 3. Searching Plans
 * Tapping the Search icon in the header opens `<SearchYourPlansScreen />`.
@@ -42,7 +42,7 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
 * **Rejoining a Plan**: A skipped user can tap "Request to Rejoin" via `<RejoinPlanBottomSheet />`, setting status to `REJOINED` awaiting host approval.
 
 ### 6. Host Coordination & Roster Management
-* **Editing Plan Details**: Hosts can edit the title inline in the header, update date/time and RSVP deadline via `<EditDateTimeBottomSheet />` (which opens existing/live plans—including overdue plans—normally with zero validation errors, separates existing plan date/time from newly edited values, supports tapping Cancel to discard and restore without error blocking, and only enforces past-time/date validation when the user actively selects a new invalid past value, while plan creation enforces that new plans cannot be scheduled in the past), update location via Google Places autocomplete, or change cover images via `<EditPlanImageScreen />` (which saves both the original image and a 9:16 card crop).
+* **Editing Plan Details**: Hosts can edit the title inline in the header, update date/time and RSVP deadline via `<EditDateTimeBottomSheet />` (which opens existing/live plans—including overdue plans—normally with zero validation errors, separates existing plan date/time from newly edited values, supports tapping Cancel to discard and restore without error blocking, and only enforces past-time/date validation when the user actively selects a new invalid past value, while plan creation enforces that new plans cannot be scheduled in the past), update location via Google Places autocomplete, or manage cover images via `<EditPlanImageScreen />` and `<PlanPhotoGalleryModal />` (which provides a gallery of previously uploaded photos for that plan, immediate cover photo selection without duplicate uploads, in-software Home card crop adjustments via `cover_card_image` metadata, WebP photo additions, and default placeholder restoration on deletion).
 * **Setting Plan Cost**: The host opens `<SetCostScreen />` to enter a total plan expense. The per-person cost is automatically divided by the plan capacity (`plan_size`).
 * **Managing Roster**: The host opens `<PlanParticipantManagementWrapper />`:
   * *Adjusting Capacity*: Pinned header Plan Size adjuster opens `EditCapacityBottomSheet`. The host can choose between two explicit options:
@@ -147,7 +147,8 @@ The **Plans** feature is the central coordination hub of Planless. It owns the e
 | `PlansDetailsScreen` | `src/features/plans/screens/PlansScreen/PlansPreview/PlansPreviewScreen.tsx` | Core multi-page modal view for an individual plan. Hosts details, hero header, metadata cards, roster previews, and nested navigation. | Mounted by `DetailedPlanModal` when `activeTab !== "home"`. Controls child screens and bottom sheets. |
 | `PlanSettingsScreen` | `src/features/plans/screens/PlansScreen/PlansPreview/PlanSettingsScreen.tsx` | Host and participant settings panel. Handles leave/cancel actions, participant invite permissions, title edits, and image changes. | Rendered inside `PlansDetailsScreen`. Connects to `usePlanLifecycle`. |
 | `PlanParticipantManagementWrapper` | `src/features/plans/screens/PlansScreen/PlansPreview/PlanParticipantManagementWrapper.tsx` | Full-screen roster manager. Coordinates capacity changes, group movement (Going vs Waitlist), waitlist reordering, swaps, and removals. | Wraps `ParticipantManagementScreen`. Interfaces with `usePlanParticipants`. |
-| `EditPlanImageScreen` | `src/features/plans/screens/PlansScreen/PlansPreview/EditPlanImageScreen.tsx` | Manages dual image uploads: full-bleed cover image (`cover_image`) and 9:16 portrait crop (`cover_card_image`). | Uses `PlanImageEditorModal` and `uploadOriginalPlanImage` / `uploadPlanCardImage`. |
+| `EditPlanImageScreen` | `src/features/plans/screens/PlansScreen/PlansPreview/EditPlanImageScreen.tsx` | Manages plan cover photo viewing, gallery trigger, card crop editing, photo uploads, and default placeholder restoration. | Uses `PlanPhotoGalleryModal`, `PlanImageEditorModal`, `planPhotos.ts`, and `uploadOriginalPlanImage`. |
+| `PlanPhotoGalleryModal` | `src/features/plans/components/PlanPhotoGalleryModal.tsx` | Scoped photo gallery bottom sheet displaying all previously uploaded photos for the plan. Supports instant cover selection, crop trigger, and add-new-photo trigger. | Uses `fetchPlanPhotos` and `selectExistingPlanPhoto`. |
 | `SetCostScreen` | `src/features/plans/components/SetCost.tsx` | Numeric input screen for setting plan total cost and previewing per-person cost share. | Invoked from `HeroMetadataCard` or `PlansDetailsScreen`. |
 | `HeroHeader` | `src/features/plans/components/HeroHeader.tsx` | Sticky navigation bar for plan preview with inline title editing, host badge, share button, and overflow menu. | Embedded at top of `PlansDetailsScreen`. |
 | `HeroMetadataCard` | `src/features/plans/components/HeroMetadataCard.tsx` | Floating glass card displaying formatted date, capacity pill, location link, and cost breakdown popover trigger. | Uses `useRSVPDeadline`, `formatPlanDate`, and `CostBreakdownPopover`. |
@@ -391,7 +392,7 @@ A plan exists in one of four states:
 ### Pre-Modification Checklist
 Before modifying the Plans feature, verify:
 1. **Separation of Concerns with Home**: Never modify `getHomeFeedPlans()` or `getHubPlans()` without ensuring that Home receives only `role === 'PARTICIPANT'` and `rsvp_status === 'INVITED'`. Joined, waitlisted, and hosted plans must exclusively belong to the Plans tab.
-2. **Dual Image Protocol**: When modifying cover images, ensure both `cover_image` (full original) and `cover_card_image` (9:16 portrait crop) are updated to preserve Home feed card formatting.
+2. **Single-Image Protocol**: Store one canonical `cover_image` per plan. Do not generate or upload separate card-image files. Visual presentations (e.g. 9:16 Home feed card crop) are derived purely via frontend CSS (`object-fit: cover`).
 3. **Capacity Invariant (`plan_size`)**: Any changes to capacity must update `plan_size` (not `max_participants`) and invoke `updatePlanCapacityRPC` so PostgreSQL auto-promotes waitlist candidates.
 4. **Last-Host Rule**: Never allow a host removal or leave action without checking whether other active hosts exist on the plan. If the user is the sole active host, require host transfer first.
 5. **Wallet Sync**: Any operation that mutates joined participants or `plan_size` must invoke `recalculateWalletExpenses(planUuid)` to maintain cost split integrity.

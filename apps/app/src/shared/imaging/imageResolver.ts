@@ -106,9 +106,9 @@ import defaultPlanCoverSrc from "../../assets/planimagedefault.webp";
 
 const PLACEHOLDER_REGISTRY: Record<ImageType, string> = {
   [ImageType.Avatar]: defaultAvatarSrc,
-  [ImageType.DiscoveryCover]: defaultPlanCoverSrc,
-  [ImageType.PlanCover]: defaultPlanCoverSrc,
-  [ImageType.Unknown]: defaultPlanCoverSrc,
+  [ImageType.DiscoveryCover]: placeholderCoverSrc,
+  [ImageType.PlanCover]: placeholderCoverSrc,
+  [ImageType.Unknown]: placeholderCoverSrc,
 };
 
 // ─── URL cache ────────────────────────────────────────────────────────────────
@@ -165,11 +165,12 @@ export function evictPlanImage(planId: string): void {
         urlCache.delete(key);
       }
     }
-    urlCache.set(`${t}:${storagePath}`, defaultPlanCoverSrc);
-    urlCache.set(`${t}:${cleanId}`, defaultPlanCoverSrc);
-    urlCache.set(`${t}:plan-images/${storagePath}`, defaultPlanCoverSrc);
-    urlCache.set(`${t}:planimagedefault.png`, defaultPlanCoverSrc);
-    urlCache.set(`${t}:planimagedefault.webp`, defaultPlanCoverSrc);
+    urlCache.set(`${t}:${storagePath}`, placeholderCoverSrc);
+    urlCache.set(`${t}:${cleanId}`, placeholderCoverSrc);
+    urlCache.set(`${t}:plan-images/${storagePath}`, placeholderCoverSrc);
+    urlCache.set(`${t}:placeholder.webp`, placeholderCoverSrc);
+    urlCache.set(`${t}:planimagedefault.png`, placeholderCoverSrc);
+    urlCache.set(`${t}:planimagedefault.webp`, placeholderCoverSrc);
   }
 
   // 2. Clear old imageVersions for this plan
@@ -179,8 +180,8 @@ export function evictPlanImage(planId: string): void {
     }
   }
 
-  // 3. Mark planImageCache as strictly planimagedefault.webp
-  setPlanCachedImage(cleanId, "planimagedefault.webp");
+  // 3. Mark planImageCache as strictly placeholder.webp
+  setPlanCachedImage(cleanId, "placeholder.webp");
 
   // 4. Invalidate browser Cache API if available
   if (typeof window !== "undefined" && "caches" in window) {
@@ -202,7 +203,9 @@ export function evictPlanImage(planId: string): void {
   cacheListeners.forEach((listener) => {
     try {
       listener(storagePath, 0);
+      listener("placeholder.webp", 0);
       listener("planimagedefault.png", 0);
+      listener("planimagedefault.webp", 0);
       listener(cleanId, 0);
     } catch {
       // silent
@@ -272,26 +275,31 @@ export function resolveImageDetails(
     !storagePath ||
     !storagePath.trim() ||
     storagePath.trim() === "default" ||
+    storagePath.trim() === "placeholder.webp" ||
     storagePath.trim() === "planimagedefault.png" ||
     storagePath.trim() === "planimagedefault.webp" ||
+    storagePath.trim().includes("placeholder") ||
     storagePath.trim().includes("planimagedefault")
   ) {
-    return { bucket: "none", objectKey: "planimagedefault.webp", url: defaultPlanCoverSrc };
+    return { bucket: "none", objectKey: "placeholder.webp", url: placeholderCoverSrc };
   }
 
   const raw = storagePath.trim();
   const cleanKey = raw.replace(/\.webp$/i, "").replace(/^plan-images\//, "");
 
-  // Check if planImageCache has mapped this plan or path to planimagedefault
+  // Check if planImageCache has mapped this plan or path to placeholder / planimagedefault
   if (
+    planImageCache.get(raw) === "placeholder.webp" ||
     planImageCache.get(raw) === "planimagedefault.png" ||
     planImageCache.get(raw) === "planimagedefault.webp" ||
+    planImageCache.get(cleanKey) === "placeholder.webp" ||
     planImageCache.get(cleanKey) === "planimagedefault.png" ||
     planImageCache.get(cleanKey) === "planimagedefault.webp" ||
+    planImageCache.get(`${cleanKey}.webp`) === "placeholder.webp" ||
     planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.png" ||
     planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.webp"
   ) {
-    return { bucket: "none", objectKey: "planimagedefault.webp", url: defaultPlanCoverSrc };
+    return { bucket: "none", objectKey: "placeholder.webp", url: placeholderCoverSrc };
   }
 
   // ── 2. Maps photo proxy URL or Google Places photo reference ───────────────────
@@ -408,18 +416,23 @@ export function resolveImage(
   const cleanKey = raw.replace(/\.webp$/i, "").replace(/^plan-images\//, "");
 
   if (
+    raw === "placeholder.webp" ||
     raw === "planimagedefault.png" ||
     raw === "planimagedefault.webp" ||
     raw === "default" ||
+    raw.includes("placeholder") ||
     raw.includes("planimagedefault") ||
+    planImageCache.get(raw) === "placeholder.webp" ||
     planImageCache.get(raw) === "planimagedefault.png" ||
     planImageCache.get(raw) === "planimagedefault.webp" ||
+    planImageCache.get(cleanKey) === "placeholder.webp" ||
     planImageCache.get(cleanKey) === "planimagedefault.png" ||
     planImageCache.get(cleanKey) === "planimagedefault.webp" ||
+    planImageCache.get(`${cleanKey}.webp`) === "placeholder.webp" ||
     planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.png" ||
     planImageCache.get(`${cleanKey}.webp`) === "planimagedefault.webp"
   ) {
-    return defaultPlanCoverSrc;
+    return placeholderCoverSrc;
   }
 
   const cacheKey = `${imageType}:${raw}`;

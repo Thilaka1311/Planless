@@ -15,6 +15,9 @@ import {
 import { calculateDistanceKm, formatDistanceKm } from "../components/DiscoveryCard";
 import { getStoredDiscoveryLocation } from "../hooks/useUserLocation";
 import {
+  isPlayableSportsVenue,
+  isAuthenticDiningVenue,
+  isAuthenticActivityVenue,
   extractCleanPlaceId,
   hasOwnerPostedPhoto,
   hasValidRealVenuePhoto,
@@ -22,6 +25,12 @@ import {
   areVenuesIdentical,
   mergeDuplicateVenues,
 } from "../services/venueRelevance";
+import {
+  getCityCenter,
+  isCoordinateInCity,
+  getCityBoundingBoxSync,
+  isPlaceInCity,
+} from "../services/cityBoundary";
 
 export interface StreamSection {
   id: string;
@@ -231,6 +240,22 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
     return unique;
   }, [initialItems, category]);
 
+  // Compute stable geographic reference point for discovery:
+  // If user coordinates are inside the target city, use them so closest places appear first.
+  // If GPS is null or outside the target city, use the city's civic center to guarantee discovery.
+  const effectiveOrigin = useMemo((): GeoPoint => {
+    const cityCenter = getCityCenter(currentCity);
+    const hasUserCoords =
+      currentCoordinates &&
+      typeof currentCoordinates.latitude === "number" &&
+      typeof currentCoordinates.longitude === "number";
+    const isUserInCity =
+      hasUserCoords &&
+      isCoordinateInCity(currentCoordinates.latitude, currentCoordinates.longitude, currentCity);
+
+    return isUserInCity ? currentCoordinates : cityCenter;
+  }, [currentCoordinates, currentCity]);
+
   // Compute synchronous initial sections from preloaded items (if provided)
   // to avoid any skeleton flash on first mount and support SSR / testing
   const initialCalculated = useMemo(() => {
@@ -240,11 +265,11 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
     const { sections, sortedVenues } = createDistanceOrderedDiscoverySections(
       category,
       sanitizedInitialItems.slice(0, initialBatchSize),
-      currentCoordinates,
+      effectiveOrigin,
       DISCOVERY_CARDS_PER_ROW
     );
     return { sections, venues: sortedVenues };
-  }, [sanitizedInitialItems, category, currentCoordinates, initialBatchSize]);
+  }, [sanitizedInitialItems, category, effectiveOrigin, initialBatchSize]);
 
   const [sections, setSections] = useState<StreamSection[]>(initialCalculated.sections);
   const [allVenues, setAllVenues] = useState<DiscoveryItem[]>(initialCalculated.venues);
@@ -280,6 +305,7 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
   const committedRowCountRef = useRef<number>(initialCalculated.sections.length);
 
   // Progressive query queue state stored in refs to prevent dependency loops
+  const anchorIndexRef = useRef<number>(0);
   const queryIndexRef = useRef<number>(0);
   const pageTokenRef = useRef<string | null>(null);
   const radiusMetersRef = useRef<number>(10000);
@@ -306,6 +332,7 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
   // Reset stream helper
   const resetStream = useCallback(() => {
     isInitializedRef.current = false;
+    anchorIndexRef.current = 0;
     queryIndexRef.current = 0;
     pageTokenRef.current = null;
     radiusMetersRef.current = 10000;
@@ -326,7 +353,7 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
 
   // Fetch next batch helper: merges new venues, appends strictly sorted 7-card rows after existing results
   const loadMore = useCallback(async () => {
-    if (isLoadingMoreRef.current || isLoadingInitialRef.current || !hasMoreRef.current || !currentCoordinates) return;
+    if (isLoadingMoreRef.current || isLoadingInitialRef.current || !hasMoreRef.current) return;
 
     isLoadingMoreRef.current = true;
     setIsLoadingMore(true);
@@ -374,20 +401,22 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
 
       // 4. If we don't have enough candidates to form at least 1 section of 7 cards, fetch progressive batches
       let loopAttempts = 0;
-      while (candidateVenues.length < DISCOVERY_CARDS_PER_ROW && hasMoreRef.current && loopAttempts < 15) {
+      while (candidateVenues.length < DISCOVERY_CARDS_PER_ROW && hasMoreRef.current && loopAttempts < 25) {
         loopAttempts++;
         const currentResult = await fetchProgressiveDiscoveryBatch({
           category,
-          originCoords: currentCoordinates,
+          originCoords: effectiveOrigin,
           city: currentCity,
+          anchorIndex: anchorIndexRef.current,
           queryIndex: queryIndexRef.current,
           pageToken: pageTokenRef.current,
           radiusMeters: radiusMetersRef.current,
           seenPlaceIds: querySeenPlaceIds,
           minDistanceKm: 0,
-          maxDistanceKm: 25,
+          maxDistanceKm: 70,
         });
 
+        anchorIndexRef.current = currentResult.nextAnchorIndex;
         queryIndexRef.current = currentResult.nextQueryIndex;
         pageTokenRef.current = currentResult.nextPageToken;
         radiusMetersRef.current = currentResult.radiusMeters;
@@ -402,13 +431,13 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
         }
       }
 
-      // Apply overrides and ensure distances are computed
+      // Apply overrides and ensure distances are computed from effectiveOrigin
       const processedCandidates = applyPlaceOverridesSync(candidateVenues).map((v) => {
         let dist = typeof (v as any)._distanceKm === "number" ? (v as any)._distanceKm : undefined;
         if (dist === undefined && v.latitude != null && v.longitude != null) {
           dist = calculateDistanceKm(
-            currentCoordinates.latitude,
-            currentCoordinates.longitude,
+            effectiveOrigin.latitude,
+            effectiveOrigin.longitude,
             Number(v.latitude),
             Number(v.longitude)
           );
@@ -501,7 +530,7 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
       isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [category, currentCoordinates, currentCity, sections]);
+  }, [category, effectiveOrigin, currentCity, sections]);
 
   // Keep loadMore in a ref so sentinelRef does not re-create on every render
   const loadMoreRef = useRef(loadMore);
@@ -513,22 +542,23 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
 
     // Detect if category or location changed genuinely
     const categoryChanged = prevCategoryRef.current !== category;
+    const cityChanged = prevCityRef.current !== currentCity;
     const coordsChanged =
-      Boolean(prevCoordsRef.current && currentCoordinates &&
-      (Math.abs(prevCoordsRef.current.latitude - currentCoordinates.latitude) > 0.005 ||
-       Math.abs(prevCoordsRef.current.longitude - currentCoordinates.longitude) > 0.005)) ||
-      Boolean(prevCoordsRef.current && prevCityRef.current !== currentCity);
+      Boolean(
+        prevCoordsRef.current &&
+          effectiveOrigin &&
+          (Math.abs(prevCoordsRef.current.latitude - effectiveOrigin.latitude) > 0.005 ||
+            Math.abs(prevCoordsRef.current.longitude - effectiveOrigin.longitude) > 0.005)
+      ) || cityChanged;
 
     if (categoryChanged || coordsChanged) {
-      prevCoordsRef.current = currentCoordinates || null;
+      prevCoordsRef.current = effectiveOrigin;
       prevCityRef.current = currentCity;
       prevCategoryRef.current = category;
       resetStream();
-    } else if (!prevCoordsRef.current && currentCoordinates) {
-      prevCoordsRef.current = currentCoordinates;
+    } else if (!prevCoordsRef.current && effectiveOrigin) {
+      prevCoordsRef.current = effectiveOrigin;
     }
-
-    if (!currentCoordinates) return;
 
     // Do NOT re-initialize feed if already initialized for these coordinates and category!
     // Prevents wiping dynamically loaded batches on parent re-renders.
@@ -566,10 +596,10 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
               typeof (it as any)._distanceKm === "number" && !isNaN((it as any)._distanceKm)
                 ? (it as any)._distanceKm
                 : undefined;
-            if (distKm === undefined && pLat != null && pLng != null && currentCoordinates) {
+            if (distKm === undefined && pLat != null && pLng != null && effectiveOrigin) {
               distKm = calculateDistanceKm(
-                currentCoordinates.latitude,
-                currentCoordinates.longitude,
+                effectiveOrigin.latitude,
+                effectiveOrigin.longitude,
                 pLat,
                 pLng
               );
@@ -615,16 +645,20 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
           getVenueDeduplicationKeys(it).forEach((k) => seenPlaceIdsRef.current.add(k));
         });
 
-        // Inject database venues in this immediate proximity band (0-3km)
+        // Inject database venues across the metropolitan region (0-70km) strictly for currentCity
+        const streamCityBounds = currentCity ? getCityBoundingBoxSync(currentCity) : null;
         const dbVenues = getDatabasePlacesForCategoryAndDistanceBand(
           category,
-          currentCoordinates,
+          effectiveOrigin,
           0,
-          3,
-          seenPlaceIdsRef.current
+          70,
+          seenPlaceIdsRef.current,
+          currentCity,
+          streamCityBounds
         );
         dbVenues.forEach((it) => {
           if (!hasValidRealVenuePhoto(it)) return;
+          if (currentCity && !isPlaceInCity(it, currentCity, streamCityBounds)) return;
           if (!initialBatch.some((ex) => areVenuesIdentical(ex, it))) {
             const cid = extractCleanPlaceId(it.place_id || it.id);
             if (cid) venuesMapRef.current.set(cid, it);
@@ -663,7 +697,7 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
         const { sections: initialSections, sortedVenues } = createDistanceOrderedDiscoverySections(
           category,
           itemsToCommit,
-          currentCoordinates,
+          effectiveOrigin,
           DISCOVERY_CARDS_PER_ROW
         );
 
@@ -704,16 +738,18 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
       try {
         const result = await fetchProgressiveDiscoveryBatch({
           category,
-          originCoords: currentCoordinates,
+          originCoords: effectiveOrigin,
           city: currentCity,
+          anchorIndex: 0,
           queryIndex: 0,
           radiusMeters: 10000,
           seenPlaceIds: seenPlaceIdsRef.current,
           minDistanceKm: 0,
-          maxDistanceKm: 5,
+          maxDistanceKm: 70,
         });
 
         if (!isCancelled) {
+          anchorIndexRef.current = result.nextAnchorIndex;
           queryIndexRef.current = result.nextQueryIndex;
           pageTokenRef.current = result.nextPageToken;
           radiusMetersRef.current = result.radiusMeters;
@@ -732,7 +768,7 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
           const { sections: initialSections, sortedVenues } = createDistanceOrderedDiscoverySections(
             category,
             batchToCommit,
-            currentCoordinates,
+            effectiveOrigin,
             DISCOVERY_CARDS_PER_ROW
           );
 
@@ -777,7 +813,7 @@ export function useDiscoveryStream(props: UseDiscoveryStreamProps): UseDiscovery
     return () => {
       isCancelled = true;
     };
-  }, [category, currentCoordinates, currentCity, sanitizedInitialItems, initialBatchSize, resetStream]);
+  }, [category, effectiveOrigin, currentCity, sanitizedInitialItems, initialBatchSize, resetStream]);
 
   // Infinite scroll intersection observer sentinel
   const sentinelRef = useCallback((node: HTMLElement | null) => {

@@ -373,7 +373,7 @@ export const AutomaticParticipantScreen: React.FC<AutomaticParticipantScreenProp
         invitedCount={isNoLimit ? noLimitDenominator : totalInvitedCount}
         skippedCount={displaySkipped.length}
         isCompletedPlan={isCompletedPlan}
-        hideCapacityDenominator={mode === 'wizard'}
+        hideCapacityDenominator={isNoLimit}
         onTabChange={setActiveTab}
         onTapInvited={() => {
           if (mode === 'wizard' && effectiveIsHost && !isCompletedPlan) {
